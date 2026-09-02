@@ -7,7 +7,7 @@ type SchoolWithCity = School & { city: City };
 
 export function SchoolCard({ school }: { school: SchoolWithCity }) {
   return (
-    <article className="card">
+    <article className="card card--interactive">
       <VerificationBadge status={school.verificationStatus} />
       <h3 style={{ margin: "8px 0 4px" }}>
         <Link href={`/schools/${school.slug}`}>{school.name}</Link>

@@ -7,7 +7,7 @@ type EventWithRelations = Event & { city: City; school: School | null };
 
 export function EventCard({ event }: { event: EventWithRelations }) {
   return (
-    <article className="card">
+    <article className="card card--interactive">
       <p className="hint-text" style={{ margin: 0 }}>
         {formatDateTime(event.startsAt)} · {event.city.nameRu}
       </p>
