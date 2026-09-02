@@ -15,7 +15,7 @@
     "seed:if-empty": "tsx prisma/seed-if-empty.ts"
   },
   "dependencies": {
-    "next": "15.3.3",
+    "next": "15.3.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "@prisma/client": "5.18.0",
