@@ -1,0 +1,411 @@
+// ============================================================================
+// Bachata HUB Belarus — слой 1 (агрегатор: календарь, школы, профиль танцора)
+// ============================================================================
+// Архитектурный принцип: схема проектируется так, чтобы слой 2 (оплата,
+// подтверждённая регистрация через ЕРИП/bePaid) и слой 3 (судейство конкурсов
+// Jack&Jill/Strictly/Solo Battle, автоматические достижения) подключались
+// НОВЫМИ таблицами и связями, без миграции существующих данных и без смены
+// смысла существующих полей. Места, зарезервированные под будущее, отмечены
+// комментарием "СЛОЙ 2" / "СЛОЙ 3".
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Пользователи и роли
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  GUEST // не хранится в БД, используется только в коде авторизации
+  DANCER
+  SCHOOL_REP
+  ORGANIZER
+  MODERATOR
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  role          UserRole  @default(DANCER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  isBlocked     Boolean   @default(false)
+
+  dancer        Dancer?
+  schoolClaims  SchoolClaim[]      @relation("Claimant")
+  reviewedClaims SchoolClaim[]     @relation("ClaimReviewer")
+  ownedSchools  School[]           @relation("SchoolOwner")
+  createdEvents Event[]            @relation("EventCreator")
+  moderatedEvents Event[]          @relation("EventModerator")
+  reviews       Review[]           @relation("ReviewAuthor")
+  moderatedReviews Review[]        @relation("ReviewModerator")
+  moderationLogs ModerationLog[]   @relation("ModerationActor")
+
+  @@index([role])
+}
+
+// ---------------------------------------------------------------------------
+// Справочники
+// ---------------------------------------------------------------------------
+
+model Country {
+  // СЛОЙ будущего расширения на СНГ — сегодня используется только Беларусь,
+  // но City ссылается на Country с самого начала, чтобы не переделывать схему.
+  id     String @id @default(cuid())
+  code   String @unique // ISO 3166-1 alpha-2, напр. "BY", "RU", "PL"
+  nameRu String
+
+  cities City[]
+}
+
+model City {
+  id        String  @id @default(cuid())
+  slug      String  @unique // человекочитаемый URL: /minsk, /gomel
+  nameRu    String
+  countryId String
+  country   Country @relation(fields: [countryId], references: [id])
+  isActive  Boolean @default(true) // видна ли в переключателе городов на старте
+
+  schools        School[]
+  events         Event[]
+  dancers        Dancer[]
+  schoolBranches SchoolBranch[]
+
+  @@index([countryId])
+}
+
+// ---------------------------------------------------------------------------
+// Школы
+// ---------------------------------------------------------------------------
+
+enum SchoolVerificationStatus {
+  COMMUNITY   // «профиль создан сообществом» — карточку никто не подтвердил
+  VERIFIED    // «профиль подтверждён представителем школы»
+}
+
+model School {
+  id                 String                    @id @default(cuid())
+  slug               String                    @unique
+  name               String
+  cityId             String
+  city               City                      @relation(fields: [cityId], references: [id])
+  description        String?
+  directions         String[]                  // направления: бачата, сальса, кизомба...
+  levels             DanceLevel[]              // какие уровни преподаются
+  contactPhone       String?
+  contactEmail       String?
+  socialLinks        Json?                     // { instagram, telegram, vk, website }
+  verificationStatus SchoolVerificationStatus  @default(COMMUNITY)
+  ownerUserId        String?                   // представитель-владелец после подтверждения заявки
+  owner              User?                     @relation("SchoolOwner", fields: [ownerUserId], references: [id])
+  isActive           Boolean                   @default(true)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  branches   SchoolBranch[]
+  teachers   Teacher[]
+  schedules  ClassSchedule[]
+  events     Event[]
+  reviews    Review[]
+  claims     SchoolClaim[]
+
+  @@index([cityId])
+  @@index([verificationStatus])
+}
+
+model SchoolBranch {
+  // «Филиалы (адреса)» школы — вынесено отдельной таблицей, т.к. филиалов
+  // может быть несколько на школу.
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  address  String
+  cityId   String? // филиал может быть в другом городе, чем головная школа
+  city     City?   @relation(fields: [cityId], references: [id])
+
+  @@index([schoolId])
+}
+
+model Teacher {
+  id        String  @id @default(cuid())
+  name      String
+  photoUrl  String?
+  bio       String?
+  schoolId  String? // может быть без школы — приглашённый преподаватель
+  school    School? @relation(fields: [schoolId], references: [id])
+  isActive  Boolean @default(true)
+
+  schedules ClassSchedule[]
+
+  @@index([schoolId])
+}
+
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+model ClassSchedule {
+  // Регулярное расписание групп школы
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherId String?
+  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+  weekday   Weekday
+  startTime String   // "19:00" — хранится строкой намеренно, без таймзон-логики на MVP
+  endTime   String?
+  level     DanceLevel
+  hall      String?  // зал / адрес занятия, если отличается от филиала
+
+  @@index([schoolId])
+}
+
+enum DanceLevel {
+  BEGINNER
+  ALL_LEVELS
+  ADVANCED
+}
+
+// ---------------------------------------------------------------------------
+// SchoolClaim — заявка на владение карточкой школы
+// ---------------------------------------------------------------------------
+
+enum ClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model SchoolClaim {
+  id            String      @id @default(cuid())
+  schoolId      String
+  school        School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  claimantId    String
+  claimant      User        @relation("Claimant", fields: [claimantId], references: [id])
+  status        ClaimStatus @default(PENDING)
+  proofNote     String?     // как заявитель подтверждает свою связь со школой
+  reviewedById  String?
+  reviewedBy    User?       @relation("ClaimReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  reviewComment String?
+  createdAt     DateTime    @default(now())
+
+  @@index([schoolId, status])
+  @@index([claimantId])
+}
+
+// ---------------------------------------------------------------------------
+// Event — событие
+// ---------------------------------------------------------------------------
+
+enum EventFormat {
+  PARTY        // вечеринка
+  MASTERCLASS  // мастер-класс
+  FESTIVAL     // фестиваль
+  CONTEST      // конкурс
+  INTENSIVE    // воркшоп-интенсив
+}
+
+// event_type: зарезервированная точка расширения для СЛОЯ 3.
+// Сегодня используется только как более грубая метка поверх EventFormat
+// (обычное событие vs конкурс), чтобы в будущем event_type = CONTEST
+// безболезненно подключался к сущностям Round/CallbackScore и т.д.
+// Сами эти сущности слоя 3 в этом MVP НЕ реализуются.
+enum EventType {
+  REGULAR
+  CONTEST
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Event {
+  id                String            @id @default(cuid())
+  slug              String            @unique
+  title             String
+  cityId            String
+  city              City              @relation(fields: [cityId], references: [id])
+  schoolId          String?           // организатор — школа...
+  school            School?           @relation(fields: [schoolId], references: [id])
+  organizerName     String?           // ...или свободный текст, если организатор без школы
+  format            EventFormat
+  eventType         EventType         @default(REGULAR) // СЛОЙ 3: точка расширения, см. комментарий выше
+  level             DanceLevel
+  startsAt          DateTime
+  endsAt            DateTime?
+  venueName         String
+  venueAddress      String?
+  description       String?
+  photoUrl          String?
+  priceText         String?           // цена текстом ("15 BYN", "бесплатно", "по договорённости")
+  externalLinkUrl   String?           // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
+  tags              String[]
+  moderationStatus  ModerationStatus  @default(PENDING)
+  createdById       String
+  createdBy         User              @relation("EventCreator", fields: [createdById], references: [id])
+  moderatedById     String?
+  moderatedBy       User?             @relation("EventModerator", fields: [moderatedById], references: [id])
+  moderatedAt       DateTime?
+  isArchived        Boolean           @default(false) // просроченные события уходят из ленты, но не удаляются
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  attendances Attendance[]
+  achievements Achievement[]
+
+  // СЛОЙ 3 (не реализуется в этом MVP, только упоминается в комментарии):
+  // когда eventType = CONTEST, здесь появятся связи 1-N на Round и
+  // CallbackScore для цифрового судейства Jack&Jill/Strictly/Solo Battle.
+
+  @@index([cityId, startsAt])
+  @@index([schoolId])
+  @@index([moderationStatus])
+  @@index([eventType])
+}
+
+// ---------------------------------------------------------------------------
+// Review — отзыв о школе
+// ---------------------------------------------------------------------------
+
+model Review {
+  id               String            @id @default(cuid())
+  schoolId         String
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  authorId         String
+  author           User              @relation("ReviewAuthor", fields: [authorId], references: [id])
+  rating           Int               // 1..5
+  text             String
+  moderationStatus ModerationStatus  @default(PENDING) // публикуется только после проверки модератором (см. ТЗ);
+                                                        // автор видит свой отзыв и его статус независимо от модерации
+  moderatedById    String?
+  moderatedBy      User?             @relation("ReviewModerator", fields: [moderatedById], references: [id])
+  createdAt        DateTime          @default(now())
+
+  @@index([schoolId])
+  @@index([moderationStatus])
+}
+
+// ---------------------------------------------------------------------------
+// Dancer — профиль танцора
+// ---------------------------------------------------------------------------
+
+enum DanceRole {
+  LEADER
+  FOLLOWER
+  BOTH
+}
+
+model Dancer {
+  id           String     @id @default(cuid())
+  userId       String     @unique
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName  String
+  cityId       String?
+  city         City?      @relation(fields: [cityId], references: [id])
+  danceRole    DanceRole?
+  selfLevel    DanceLevel?
+  avatarUrl    String?
+  createdAt    DateTime   @default(now())
+
+  attendances  Attendance[]
+  achievements Achievement[]
+
+  @@index([cityId])
+}
+
+// ---------------------------------------------------------------------------
+// Attendance — отметка посещения
+// ---------------------------------------------------------------------------
+
+enum AttendanceStatus {
+  GOING   // «иду»
+  WENT    // «был»
+}
+
+enum AttendanceSource {
+  SELF_REPORTED   // сегодня — единственный источник, декларативный, без подтверждения оплатой
+  // СЛОЙ 2: сюда добавится значение типа CONFIRMED_REGISTRATION,
+  // когда посещение будет подтверждаться оплаченной регистрацией.
+}
+
+model Attendance {
+  id        String            @id @default(cuid())
+  dancerId  String
+  dancer    Dancer            @relation(fields: [dancerId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status    AttendanceStatus
+  source    AttendanceSource  @default(SELF_REPORTED)
+  createdAt DateTime          @default(now())
+
+  @@unique([dancerId, eventId]) // одна отметка на пару танцор-событие, статус можно менять
+  @@index([eventId])
+}
+
+// ---------------------------------------------------------------------------
+// Achievement — достижение танцора
+// ---------------------------------------------------------------------------
+
+enum AchievementSource {
+  MANUAL           // сегодня — заполняется вручную самим танцором
+  CONTEST_RESULT    // СЛОЙ 3: зарезервировано под автоматические записи от судейского модуля
+}
+
+model Achievement {
+  id          String             @id @default(cuid())
+  dancerId    String
+  dancer      Dancer             @relation(fields: [dancerId], references: [id], onDelete: Cascade)
+  description String             // «вышел в финал такого-то конкурса»
+  achievedAt  DateTime
+  source      AchievementSource  @default(MANUAL)
+  eventId     String?            // необязательная ссылка на событие
+  event       Event?             @relation(fields: [eventId], references: [id])
+  createdAt   DateTime           @default(now())
+
+  @@index([dancerId])
+}
+
+// ---------------------------------------------------------------------------
+// ModerationLog — журнал модераторских решений
+// ---------------------------------------------------------------------------
+
+enum ModerationEntity {
+  EVENT
+  REVIEW
+  SCHOOL_CLAIM
+  SCHOOL
+  USER
+}
+
+model ModerationLog {
+  id         String            @id @default(cuid())
+  actorId    String
+  actor      User              @relation("ModerationActor", fields: [actorId], references: [id])
+  entity     ModerationEntity
+  entityId   String
+  action     String            // "approved", "rejected", "blocked", ...
+  reason     String?
+  createdAt  DateTime          @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId])
+}
