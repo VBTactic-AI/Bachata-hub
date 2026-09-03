@@ -86,6 +86,48 @@ export async function listHelperCandidates(
   return { suggestedRegistrationId: suggestedDivision?.registrations[0]?.id ?? null, divisions: result };
 }
 
+type HelperSource = "GUEST_HIGHER_CATEGORY" | "REUSED_ALREADY_SCORED";
+
+// Общая проверка кандидата в помощники — используется и при добавлении
+// нового, и при замене уже вызванного (docs/00_DECISIONS.md, A9): один и тот
+// же набор правил, чтобы они не разошлись между addDrawHelper/replaceDrawHelper.
+async function resolveHelperSource(
+  heat: { id: string; roundId: string; divisionId: string },
+  competitionId: string,
+  registrationId: string,
+  role: RegistrationRole
+): Promise<HelperSource> {
+  const helperReg = await prisma.registration.findUniqueOrThrow({
+    where: { id: registrationId },
+    include: { checkIn: true },
+  });
+  if (helperReg.competitionId !== competitionId) {
+    throw new ValidationFailedError("Помощник должен быть зарегистрирован в этом же соревновании.");
+  }
+  if (helperReg.status !== "REGISTERED") {
+    throw new ValidationFailedError('Помощник должен быть в статусе "Зарегистрирован".');
+  }
+  if (!helperReg.checkIn || !["CHECKED_IN", "LATE"].includes(helperReg.checkIn.status)) {
+    throw new ValidationFailedError("Помощник должен пройти check-in.");
+  }
+  if (helperReg.role !== role) {
+    throw new ValidationFailedError("Роль помощника в заезде должна совпадать с его собственной ролью регистрации.");
+  }
+
+  if (helperReg.divisionId === heat.divisionId) {
+    const alreadyScored = await prisma.drawParticipant.findFirst({
+      where: { registrationId, scored: true, draw: { heat: { roundId: heat.roundId, id: { not: heat.id } } } },
+    });
+    if (!alreadyScored) {
+      throw new ValidationFailedError(
+        "Участник своего дивизиона может помогать только после того, как уже станцевал (получил оценку) в другом заезде этого раунда."
+      );
+    }
+    return "REUSED_ALREADY_SCORED";
+  }
+  return "GUEST_HIGHER_CATEGORY";
+}
+
 export async function addDrawHelper(
   heatId: string,
   registrationId: string,
@@ -112,37 +154,12 @@ export async function addDrawHelper(
     throw new ValidationFailedError("Для этого заезда ещё не сформирован список — сначала запустите жеребьёвку раунда.");
   }
 
-  const helperReg = await prisma.registration.findUniqueOrThrow({
-    where: { id: registrationId },
-    include: { checkIn: true },
-  });
-  if (helperReg.competitionId !== competitionId) {
-    throw new ValidationFailedError("Помощник должен быть зарегистрирован в этом же соревновании.");
-  }
-  if (helperReg.status !== "REGISTERED") {
-    throw new ValidationFailedError('Помощник должен быть в статусе "Зарегистрирован".');
-  }
-  if (!helperReg.checkIn || !["CHECKED_IN", "LATE"].includes(helperReg.checkIn.status)) {
-    throw new ValidationFailedError("Помощник должен пройти check-in.");
-  }
-  if (helperReg.role !== role) {
-    throw new ValidationFailedError("Роль помощника в заезде должна совпадать с его собственной ролью регистрации.");
-  }
-
-  let helperSource: "GUEST_HIGHER_CATEGORY" | "REUSED_ALREADY_SCORED";
-  if (helperReg.divisionId === heat.round.divisionId) {
-    const alreadyScored = await prisma.drawParticipant.findFirst({
-      where: { registrationId, scored: true, draw: { heat: { roundId: heat.roundId, id: { not: heatId } } } },
-    });
-    if (!alreadyScored) {
-      throw new ValidationFailedError(
-        "Участник своего дивизиона может помогать только после того, как уже станцевал (получил оценку) в другом заезде этого раунда."
-      );
-    }
-    helperSource = "REUSED_ALREADY_SCORED";
-  } else {
-    helperSource = "GUEST_HIGHER_CATEGORY";
-  }
+  const helperSource = await resolveHelperSource(
+    { id: heatId, roundId: heat.roundId, divisionId: heat.round.divisionId },
+    competitionId,
+    registrationId,
+    role
+  );
 
   const existing = await prisma.drawParticipant.findUnique({
     where: { drawId_registrationId: { drawId: draw.id, registrationId } },
@@ -200,4 +217,79 @@ export async function removeDrawHelper(drawParticipantId: string): Promise<void>
       before: { registrationId: participant.registrationId, role: participant.role, helperSource: participant.helperSource },
     });
   });
+}
+
+// Заменить уже вызванного помощника на другого человека одним действием
+// (вместо "убрать" + отдельно "добавить") — тот же слот (calledOrder), та
+// же роль. Доступно только для помощников, не для основных (scored) —
+// docs/00_DECISIONS.md, 2026-09-04.
+export async function replaceDrawHelper(
+  drawParticipantId: string,
+  newRegistrationId: string
+): Promise<{ id: string }> {
+  const participant = await prisma.drawParticipant.findUniqueOrThrow({
+    where: { id: drawParticipantId },
+    include: {
+      draw: {
+        include: { heat: { include: { round: { include: { division: { select: { id: true, competitionId: true } } } } } } },
+      },
+    },
+  });
+  const heat = participant.draw.heat;
+  const competitionId = heat.round.division.competitionId;
+  const actor = await requirePermission("draw:override", competitionId);
+
+  if (!participant.helperSource) {
+    throw new ValidationFailedError(
+      "Заменить можно только помощника, не основного участника жеребьёвки — для этого используйте пересборку заезда."
+    );
+  }
+  if (heat.round.status !== "DRAWING") {
+    throw new ValidationFailedError('Менять список можно только пока раунд в статусе "Жеребьёвка".');
+  }
+  if (heat.status !== "PENDING") {
+    throw new ValidationFailedError("Заезд уже запущен — список нельзя менять.");
+  }
+  if (newRegistrationId === participant.registrationId) {
+    throw new ValidationFailedError("Это тот же самый участник.");
+  }
+
+  const helperSource = await resolveHelperSource(
+    { id: heat.id, roundId: heat.roundId, divisionId: heat.round.divisionId },
+    competitionId,
+    newRegistrationId,
+    participant.role
+  );
+
+  const existing = await prisma.drawParticipant.findUnique({
+    where: { drawId_registrationId: { drawId: participant.drawId, registrationId: newRegistrationId } },
+  });
+  if (existing) {
+    throw new ValidationFailedError("Этот участник уже в списке этого заезда.");
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    const next = await tx.drawParticipant.create({
+      data: {
+        drawId: participant.drawId,
+        registrationId: newRegistrationId,
+        role: participant.role,
+        scored: false,
+        helperSource,
+        calledOrder: participant.calledOrder,
+      },
+    });
+    await tx.drawParticipant.delete({ where: { id: drawParticipantId } });
+    await writeAudit(tx, {
+      actor,
+      action: "draw_participant.replace_helper",
+      entityType: "DrawParticipant",
+      entityId: next.id,
+      before: { registrationId: participant.registrationId, helperSource: participant.helperSource },
+      after: { registrationId: newRegistrationId, helperSource },
+    });
+    return next;
+  });
+
+  return { id: created.id };
 }

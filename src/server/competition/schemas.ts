@@ -140,3 +140,8 @@ export const addDrawHelperSchema = z.object({
   role: registrationRoleSchema,
 });
 export type AddDrawHelperInput = z.infer<typeof addDrawHelperSchema>;
+
+export const replaceDrawHelperSchema = z.object({
+  registrationId: z.string().min(1),
+});
+export type ReplaceDrawHelperInput = z.infer<typeof replaceDrawHelperSchema>;

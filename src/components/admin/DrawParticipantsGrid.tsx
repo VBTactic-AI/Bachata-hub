@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { RemoveDrawHelperButton } from "./RemoveDrawHelperButton";
+import { ReplaceDrawHelperButton } from "./ReplaceDrawHelperButton";
 
 type Participant = {
   id: string;
@@ -9,10 +10,14 @@ type Participant = {
 };
 
 function Column({
+  heatId,
+  role,
   title,
   participants,
   canEditDraw,
 }: {
+  heatId: string;
+  role: "LEADER" | "FOLLOWER";
   title: string;
   participants: Participant[];
   canEditDraw: boolean;
@@ -30,7 +35,12 @@ function Column({
               {p.registration.checkIn?.bibNumber ? ` №${p.registration.checkIn.bibNumber}` : ""}
             </span>
             {!p.scored && <Badge variant="pending">помощник</Badge>}
-            {!p.scored && canEditDraw && <RemoveDrawHelperButton participantId={p.id} />}
+            {!p.scored && canEditDraw && (
+              <>
+                <ReplaceDrawHelperButton heatId={heatId} participantId={p.id} role={role} />
+                <RemoveDrawHelperButton participantId={p.id} />
+              </>
+            )}
           </p>
         ))}
       </div>
@@ -41,9 +51,11 @@ function Column({
 // Ведущие и ведомые — двумя колонками рядом (не единым списком вперемешку) —
 // так сразу видно и число, и состав каждой стороны, удобно ловить дисбаланс.
 export function DrawParticipantsGrid({
+  heatId,
   participants,
   canEditDraw,
 }: {
+  heatId: string;
   participants: Participant[];
   canEditDraw: boolean;
 }) {
@@ -52,8 +64,8 @@ export function DrawParticipantsGrid({
 
   return (
     <div className="grid grid-cols-2 gap-4 mt-2 pl-3" style={{ maxWidth: 420 }}>
-      <Column title="Ведущий" participants={leaders} canEditDraw={canEditDraw} />
-      <Column title="Ведомый" participants={followers} canEditDraw={canEditDraw} />
+      <Column heatId={heatId} role="LEADER" title="Ведущий" participants={leaders} canEditDraw={canEditDraw} />
+      <Column heatId={heatId} role="FOLLOWER" title="Ведомый" participants={followers} canEditDraw={canEditDraw} />
     </div>
   );
 }

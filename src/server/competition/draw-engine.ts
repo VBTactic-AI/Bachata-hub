@@ -91,6 +91,55 @@ async function alreadyScoredElsewhereInRound(tx: PrismaTx, roundId: string, excl
   return new Set(ids);
 }
 
+// Гости для авто-добора при дисбалансе — только из ДРУГИХ дивизионов этого
+// соревнования (свой дивизион для авто-добора не трогаем: переиспользование
+// уже станцевавших "своих" остаётся ручным действием — заменить/добавить).
+// Приоритет — ближайшая категория СТРОГО выше по уровню, если там никого
+// подходящего нет — ближайшая ниже (та же логика, что и в подсказке для
+// ручного добавления, draw-helper.ts listHelperCandidates).
+async function pickGuestHelpers(
+  tx: PrismaTx,
+  params: {
+    competitionId: string;
+    ownDivisionId: string;
+    ownCategoryOrder: number;
+    role: RegistrationRole;
+    count: number;
+  }
+): Promise<string[]> {
+  if (params.count <= 0) return [];
+
+  const divisions = await tx.division.findMany({
+    where: { competitionId: params.competitionId, id: { not: params.ownDivisionId } },
+    select: { id: true, category: { select: { order: true } } },
+  });
+  const higher = divisions
+    .filter((d) => d.category.order > params.ownCategoryOrder)
+    .sort((a, b) => a.category.order - b.category.order);
+  const lower = divisions
+    .filter((d) => d.category.order < params.ownCategoryOrder)
+    .sort((a, b) => b.category.order - a.category.order);
+
+  const picked: string[] = [];
+  for (const division of [...higher, ...lower]) {
+    if (picked.length >= params.count) break;
+    const regs = await tx.registration.findMany({
+      where: {
+        divisionId: division.id,
+        role: params.role,
+        status: "REGISTERED",
+        checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
+      },
+      select: { id: true },
+    });
+    for (const r of regs) {
+      if (picked.length >= params.count) break;
+      picked.push(r.id);
+    }
+  }
+  return picked;
+}
+
 // Формирует список вызванных для ОДНОГО заезда — общее ядро и для первой
 // раскладки раунда (вызывается по кругу для каждого заезда), и для
 // пересборки (reroll) одного заезда отдельно. Пары НЕ назначаются — только
@@ -142,6 +191,40 @@ export async function formDrawInTx(
     });
   }
 
+  // Авто-добор помощников сразу при жеребьёвке, без подтверждения — по
+  // явному запросу пользователя (2026-09-04). Только гости из ДРУГИХ
+  // дивизионов (переиспользование "своих" уже станцевавших — по-прежнему
+  // только вручную, см. draw-helper.ts). Если желающих не хватило на всех —
+  // заезд остаётся частично разбалансированным, "+ Помощник" в UI не исчезнет.
+  let autoHelperIds: string[] = [];
+  if (leaders.length !== followers.length) {
+    const needyRole: RegistrationRole = leaders.length < followers.length ? "LEADER" : "FOLLOWER";
+    const shortage = Math.abs(leaders.length - followers.length);
+    const division = await tx.division.findUniqueOrThrow({
+      where: { id: divisionId },
+      select: { competitionId: true, category: { select: { order: true } } },
+    });
+    autoHelperIds = await pickGuestHelpers(tx, {
+      competitionId: division.competitionId,
+      ownDivisionId: divisionId,
+      ownCategoryOrder: division.category.order,
+      role: needyRole,
+      count: shortage,
+    });
+    for (const registrationId of autoHelperIds) {
+      await tx.drawParticipant.create({
+        data: {
+          drawId: draw.id,
+          registrationId,
+          role: needyRole,
+          scored: false,
+          helperSource: "GUEST_HIGHER_CATEGORY",
+          calledOrder: calledOrder++,
+        },
+      });
+    }
+  }
+
   await writeAudit(tx, {
     actor,
     action: "draw.create",
@@ -157,6 +240,7 @@ export async function formDrawInTx(
       followerCount: followers.length,
       leaderIds: leaders.map((r) => r.id),
       followerIds: followers.map((r) => r.id),
+      autoHelperIds,
     },
     reason,
   });

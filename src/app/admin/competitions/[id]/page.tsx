@@ -197,6 +197,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             {round.heats.map((heat) => {
                               const draw = heat.draws[0];
                               const canEditDraw = round.status === "DRAWING" && heat.status === "PENDING" && !!draw;
+                              // Кого звать в помощь — определяется по факту
+                              // (какой стороны сейчас меньше в списке), а не
+                              // выбором организатора: если уже поровну,
+                              // помощь не нужна вообще (docs/00_DECISIONS.md,
+                              // 2026-09-04).
+                              const leaderCount = draw?.participants.filter((p) => p.role === "LEADER").length ?? 0;
+                              const followerCount = draw?.participants.filter((p) => p.role === "FOLLOWER").length ?? 0;
+                              const neededRole =
+                                leaderCount === followerCount ? null : leaderCount < followerCount ? "LEADER" : "FOLLOWER";
                               return (
                                 <div key={heat.id} className="pl-3">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -205,11 +214,17 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                     </span>
                                     <HeatStatusControls heatId={heat.id} status={heat.status} roundStatus={round.status} />
                                   </div>
-                                  {draw && <DrawParticipantsGrid participants={draw.participants} canEditDraw={canEditDraw} />}
+                                  {draw && (
+                                    <DrawParticipantsGrid
+                                      heatId={heat.id}
+                                      participants={draw.participants}
+                                      canEditDraw={canEditDraw}
+                                    />
+                                  )}
                                   {canEditDraw && (
                                     <div className="flex flex-wrap items-center gap-2 mt-1 pl-3">
                                       <RerollDrawButton heatId={heat.id} />
-                                      <AddDrawHelperForm heatId={heat.id} />
+                                      {neededRole && <AddDrawHelperForm heatId={heat.id} role={neededRole} />}
                                     </div>
                                   )}
                                 </div>

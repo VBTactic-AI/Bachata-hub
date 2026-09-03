@@ -38,7 +38,9 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { addDrawHelper, removeDrawHelper, listHelperCandidates } = await import("@/server/competition/draw-helper");
+const { addDrawHelper, removeDrawHelper, replaceDrawHelper, listHelperCandidates } = await import(
+  "@/server/competition/draw-helper"
+);
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -194,6 +196,108 @@ describe("removeDrawHelper()", () => {
     await removeDrawHelper("participant1");
     expect(txDrawParticipantDelete).toHaveBeenCalledWith({ where: { id: "participant1" } });
     expect(auditCreate).toHaveBeenCalledOnce();
+  });
+});
+
+describe("replaceDrawHelper()", () => {
+  function baseParticipant(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "participant1",
+      drawId: "draw1",
+      registrationId: "reg-old",
+      role: "LEADER",
+      calledOrder: 3,
+      helperSource: "GUEST_HIGHER_CATEGORY",
+      draw: {
+        heat: {
+          id: "heat1",
+          roundId: "round1",
+          status: "PENDING",
+          round: { status: "DRAWING", divisionId: "div1", division: { id: "div1", competitionId: "comp1" } },
+        },
+      },
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    drawParticipantFindUniqueOrThrow.mockResolvedValue(baseParticipant());
+    registrationFindUniqueOrThrow.mockResolvedValue(baseHelperReg({ id: "reg-new", role: "LEADER" }));
+  });
+
+  it("проверяет право draw:override", async () => {
+    await replaceDrawHelper("participant1", "reg-new");
+    expect(requirePermissionMock).toHaveBeenCalledWith("draw:override", "comp1");
+  });
+
+  it("отклоняет замену НЕ-помощника (helperSource = null)", async () => {
+    drawParticipantFindUniqueOrThrow.mockResolvedValue(baseParticipant({ helperSource: null }));
+    await expect(replaceDrawHelper("participant1", "reg-new")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txDrawParticipantCreate).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет, если раунд не в статусе DRAWING", async () => {
+    drawParticipantFindUniqueOrThrow.mockResolvedValue(
+      baseParticipant({
+        draw: {
+          heat: {
+            id: "heat1",
+            roundId: "round1",
+            status: "PENDING",
+            round: { status: "DRAW_LOCKED", divisionId: "div1", division: { id: "div1", competitionId: "comp1" } },
+          },
+        },
+      })
+    );
+    await expect(replaceDrawHelper("participant1", "reg-new")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("отклоняет, если заезд уже не PENDING", async () => {
+    drawParticipantFindUniqueOrThrow.mockResolvedValue(
+      baseParticipant({
+        draw: {
+          heat: {
+            id: "heat1",
+            roundId: "round1",
+            status: "RUNNING",
+            round: { status: "DRAWING", divisionId: "div1", division: { id: "div1", competitionId: "comp1" } },
+          },
+        },
+      })
+    );
+    await expect(replaceDrawHelper("participant1", "reg-new")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("отклоняет замену на самого себя", async () => {
+    await expect(replaceDrawHelper("participant1", "reg-old")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("переиспользует общую проверку кандидата — отклоняет из другого соревнования", async () => {
+    registrationFindUniqueOrThrow.mockResolvedValue(baseHelperReg({ id: "reg-new", role: "LEADER", competitionId: "comp-other" }));
+    await expect(replaceDrawHelper("participant1", "reg-new")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("отклоняет, если новый кандидат уже в списке этого заезда", async () => {
+    drawParticipantFindUnique.mockResolvedValue({ id: "already-here" });
+    await expect(replaceDrawHelper("participant1", "reg-new")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("создаёт нового участника (та же роль и calledOrder) и удаляет старого, с аудитом", async () => {
+    await replaceDrawHelper("participant1", "reg-new");
+
+    expect(txDrawParticipantCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          drawId: "draw1",
+          registrationId: "reg-new",
+          role: "LEADER",
+          scored: false,
+          calledOrder: 3,
+        }),
+      })
+    );
+    expect(txDrawParticipantDelete).toHaveBeenCalledWith({ where: { id: "participant1" } });
+    expect(auditCreate.mock.calls[0][0].data.action).toBe("draw_participant.replace_helper");
   });
 });
 

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/field";
-import { REGISTRATION_ROLE_LABELS as ROLE_LABELS } from "@/lib/competition-labels";
 
 type Candidate = { id: string; displayName: string; bibNumber: string | null };
 type CandidateGroup = {
@@ -15,10 +14,15 @@ type CandidateGroup = {
   registrations: Candidate[];
 };
 
-// Роль всегда та, которой реально не хватает в заезде (родитель считает это
-// по факту текущего списка и не рендерит форму вовсе, если сторон уже
-// поровну — docs/00_DECISIONS.md, 2026-09-04) — выбора роли тут нет.
-export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEADER" | "FOLLOWER" }) {
+export function ReplaceDrawHelperButton({
+  heatId,
+  participantId,
+  role,
+}: {
+  heatId: string;
+  participantId: string;
+  role: "LEADER" | "FOLLOWER";
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [groups, setGroups] = useState<CandidateGroup[]>([]);
@@ -50,15 +54,15 @@ export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEA
     if (!registrationId) return;
     setSubmitting(true);
     setError(null);
-    const res = await fetch(`/api/heats/${heatId}/helpers`, {
-      method: "POST",
+    const res = await fetch(`/api/draw-participants/${participantId}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ registrationId, role }),
+      body: JSON.stringify({ registrationId }),
     });
     setSubmitting(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Не удалось добавить помощника.");
+      setError(data.error || "Не удалось заменить помощника.");
       return;
     }
     setOpen(false);
@@ -67,15 +71,14 @@ export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEA
 
   if (!open) {
     return (
-      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-        + Помощник ({ROLE_LABELS[role] ?? role})
+      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>
+        заменить
       </Button>
     );
   }
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <span className="hint-text">Не хватает: {ROLE_LABELS[role] ?? role}</span>
       {loadingCandidates ? (
         <span className="hint-text">Загрузка…</span>
       ) : groups.length === 0 ? (
@@ -95,7 +98,7 @@ export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEA
         </Select>
       )}
       <Button type="button" size="sm" disabled={submitting || !registrationId} onClick={submit}>
-        Позвать
+        Заменить
       </Button>
       <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
         Отмена

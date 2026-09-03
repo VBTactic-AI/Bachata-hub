@@ -12,6 +12,8 @@ const heatFindUniqueOrThrow = vi.fn();
 const drawFindFirst = vi.fn();
 const heatFindMany = vi.fn();
 const registrationFindMany = vi.fn();
+const divisionFindUniqueOrThrow = vi.fn();
+const divisionFindMany = vi.fn();
 const drawCreate = vi.fn();
 const drawParticipantCreate = vi.fn();
 const auditCreate = vi.fn();
@@ -20,6 +22,7 @@ const fakeTx = {
   draw: { findFirst: drawFindFirst, create: drawCreate },
   heat: { findMany: heatFindMany },
   registration: { findMany: registrationFindMany },
+  division: { findUniqueOrThrow: divisionFindUniqueOrThrow, findMany: divisionFindMany },
   drawParticipant: { create: drawParticipantCreate },
   auditLog: { create: auditCreate },
 };
@@ -45,9 +48,14 @@ beforeEach(() => {
   heatFindUniqueOrThrow.mockReset();
   drawFindFirst.mockReset().mockResolvedValue(null);
   heatFindMany.mockReset().mockResolvedValue([]); // нет других заездов с уже станцевавшими
-  registrationFindMany.mockReset().mockImplementation(({ where }: { where: { role: string } }) =>
-    Promise.resolve(where.role === "LEADER" ? [reg("l1", "3"), reg("l2", "1"), reg("l3", "2")] : [reg("f1", "5"), reg("f2", "4")])
-  );
+  registrationFindMany.mockReset().mockImplementation(({ where }: { where: { role: string; divisionId: string } }) => {
+    if (where.divisionId !== "div1") return Promise.resolve([]); // гостевые дивизионы по умолчанию пустые
+    return Promise.resolve(
+      where.role === "LEADER" ? [reg("l1", "3"), reg("l2", "1"), reg("l3", "2")] : [reg("f1", "5"), reg("f2", "4")]
+    );
+  });
+  divisionFindUniqueOrThrow.mockReset().mockResolvedValue({ competitionId: "comp1", category: { order: 2 } });
+  divisionFindMany.mockReset().mockResolvedValue([]); // по умолчанию гостевых дивизионов нет
   drawCreate.mockReset().mockImplementation(({ data }: { data: { version: number } }) =>
     Promise.resolve({ id: `draw-v${data.version}`, ...data })
   );
@@ -195,6 +203,90 @@ describe("formDrawInTx() — версии и reroll", () => {
     });
     expect(drawCreate.mock.calls[0][0].data.version).toBe(2);
     expect(drawCreate.mock.calls[0][0].data.reason).toBe("судья ошибся с составом");
+  });
+});
+
+// Авто-добор помощников сразу при жеребьёвке, без подтверждения — по
+// явному запросу пользователя (2026-09-04).
+describe("formDrawInTx() — авто-добор помощников при дисбалансе", () => {
+  it("не трогает гостевые дивизионы и не зовёт помощников, если сторон и так поровну", async () => {
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string } }) => {
+      if (where.divisionId !== "div1") return Promise.resolve([]);
+      return Promise.resolve(where.role === "LEADER" ? [reg("l1", "1"), reg("l2", "2")] : [reg("f1", "3"), reg("f2", "4")]);
+    });
+
+    await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(divisionFindUniqueOrThrow).not.toHaveBeenCalled();
+    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    expect(helperCalls).toHaveLength(0);
+  });
+
+  it("при дисбалансе сам добавляет гостя из другого дивизиона без подтверждения", async () => {
+    divisionFindMany.mockResolvedValue([{ id: "div-guest", category: { order: 3 } }]);
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string } }) => {
+      if (where.divisionId === "div1") {
+        return Promise.resolve(
+          where.role === "LEADER" ? [reg("l1", "1"), reg("l2", "2"), reg("l3", "3")] : [reg("f1", "4"), reg("f2", "5")]
+        );
+      }
+      if (where.divisionId === "div-guest" && where.role === "FOLLOWER") {
+        return Promise.resolve([reg("guest-f1", "99")]);
+      }
+      return Promise.resolve([]);
+    });
+
+    await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    expect(helperCalls).toHaveLength(1);
+    expect(helperCalls[0][0].data).toMatchObject({
+      registrationId: "guest-f1",
+      role: "FOLLOWER",
+      scored: false,
+      helperSource: "GUEST_HIGHER_CATEGORY",
+    });
+    expect(auditCreate.mock.calls[0][0].data.after.autoHelperIds).toEqual(["guest-f1"]);
+  });
+
+  it("если подходящих гостей не нашлось — не падает, просто оставляет дисбаланс", async () => {
+    divisionFindMany.mockResolvedValue([{ id: "div-guest", category: { order: 3 } }]);
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string } }) => {
+      if (where.divisionId !== "div1") return Promise.resolve([]);
+      return Promise.resolve(
+        where.role === "LEADER"
+          ? [reg("l1", "1"), reg("l2", "2"), reg("l3", "3"), reg("l4", "4"), reg("l5", "5")]
+          : [reg("f1", "6")]
+      );
+    });
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    expect(helperCalls).toHaveLength(0);
+    expect(result.leaderCount).toBe(5);
+    expect(result.followerCount).toBe(1);
   });
 });
 
