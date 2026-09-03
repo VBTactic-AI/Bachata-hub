@@ -5,6 +5,8 @@ import { t } from "@/lib/i18n/dictionary";
 import { pluralizeRu } from "@/lib/format";
 import { UserBlockToggle } from "@/components/UserBlockToggle";
 import type { UserRole } from "@prisma/client";
+import { Button } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/field";
 
 const ROLES: UserRole[] = ["DANCER", "SCHOOL_REP", "ORGANIZER", "MODERATOR", "ADMIN"];
 
@@ -37,19 +39,19 @@ export default async function AdminUsersPage({
     <div className="stack">
       <h1 className="page-title">{t.moderation.users}</h1>
 
-      <form method="get" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <input type="text" name="q" defaultValue={q} placeholder={t.moderation.searchByEmail} />
-        <select name="role" defaultValue={role ?? ""}>
+      <form method="get" className="flex flex-wrap gap-2">
+        <Input type="text" name="q" defaultValue={q} placeholder={t.moderation.searchByEmail} className="w-auto" />
+        <Select name="role" defaultValue={role ?? ""} className="w-auto">
           <option value="">{t.common.all}</option>
           {ROLES.map((r) => (
             <option key={r} value={r}>
               {t.auth.roleNames[r]}
             </option>
           ))}
-        </select>
-        <button className="btn btn-sm" type="submit">
+        </Select>
+        <Button size="sm" type="submit">
           {t.common.search}
-        </button>
+        </Button>
       </form>
 
       <p className="hint-text">
@@ -59,33 +61,33 @@ export default async function AdminUsersPage({
       {users.length === 0 ? (
         <p className="hint-text">{t.moderation.noUsersFound}</p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--color-border)", textAlign: "left" }}>
-                <th style={{ padding: "6px 8px 6px 0" }}>{t.auth.email}</th>
-                <th style={{ padding: "6px 8px" }}>{t.moderation.roleFilterLabel}</th>
-                <th style={{ padding: "6px 8px" }}>{t.moderation.registeredAt}</th>
-                <th style={{ padding: "6px 8px" }}>{t.moderation.lastLoginAt}</th>
-                <th style={{ padding: "6px 8px" }}>{t.moderation.statusLabel}</th>
-                <th style={{ padding: "6px 0" }} />
+              <tr className="border-b border-line text-left">
+                <th className="py-1.5 pr-2">{t.auth.email}</th>
+                <th className="px-2 py-1.5">{t.moderation.roleFilterLabel}</th>
+                <th className="px-2 py-1.5">{t.moderation.registeredAt}</th>
+                <th className="px-2 py-1.5">{t.moderation.lastLoginAt}</th>
+                <th className="px-2 py-1.5">{t.moderation.statusLabel}</th>
+                <th className="py-1.5" />
               </tr>
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                  <td style={{ padding: "6px 8px 6px 0" }}>{u.email}</td>
-                  <td style={{ padding: "6px 8px" }}>{t.auth.roleNames[u.role]}</td>
-                  <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
+                <tr key={u.id} className="border-b border-line">
+                  <td className="py-1.5 pr-2">{u.email}</td>
+                  <td className="px-2 py-1.5">{t.auth.roleNames[u.role]}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
                     {u.createdAt.toLocaleDateString("ru-RU")}
                   </td>
-                  <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
+                  <td className="whitespace-nowrap px-2 py-1.5">
                     {u.lastLoginAt ? u.lastLoginAt.toLocaleString("ru-RU") : t.moderation.neverLoggedIn}
                   </td>
-                  <td style={{ padding: "6px 8px" }}>
+                  <td className="px-2 py-1.5">
                     {u.isBlocked ? t.moderation.statusBlocked : t.moderation.statusActive}
                   </td>
-                  <td style={{ padding: "6px 0" }}>
+                  <td className="py-1.5">
                     {u.id !== currentUser.id && <UserBlockToggle userId={u.id} isBlocked={u.isBlocked} />}
                   </td>
                 </tr>
