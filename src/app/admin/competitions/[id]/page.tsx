@@ -29,10 +29,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       include: {
         divisions: { include: { category: true }, orderBy: { category: { order: "asc" } } },
         city: true,
-        registrations: {
-          include: { dancer: true, checkIn: true, division: { include: { category: true } } },
-          orderBy: { createdAt: "asc" },
-        },
       },
     }),
     prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
@@ -52,14 +48,37 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canCheckIn = can(actor, "checkin:manage", competition.id);
   const canReviewRoleOverride = can(actor, "registration:role_override_review", competition.id);
   const canChangeDivision = can(actor, "registration:change_division", competition.id);
+  // Полный список участников — только у тех, кому реально нужно им
+  // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
+  // должен видеть чужие регистрации — только свою собственную, ниже.
+  const canViewAllRegistrations = can(actor, "registration:view", competition.id);
+
   const myDancer = await prisma.dancer.findUnique({
     where: { userId: actor.userId },
     select: { id: true, gender: true },
   });
+
+  const registrations = canViewAllRegistrations
+    ? await prisma.registration.findMany({
+        where: { competitionId: competition.id },
+        include: { dancer: true, checkIn: true, division: { include: { category: true } } },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+  const myRegistration =
+    !canViewAllRegistrations && myDancer
+      ? await prisma.registration.findFirst({
+          where: { competitionId: competition.id, dancerId: myDancer.id },
+          include: { checkIn: true, division: { include: { category: true } } },
+        })
+      : null;
+
   const isRegistrationOpen = competition.status === "REGISTRATION_OPEN";
-  const alreadyRegistered = myDancer
-    ? competition.registrations.some((r) => r.dancerId === myDancer.id)
-    : false;
+  const alreadyRegistered = canViewAllRegistrations
+    ? myDancer
+      ? registrations.some((r) => r.dancerId === myDancer.id)
+      : false
+    : myRegistration !== null;
 
   // Формы регистрации ждут { id, name } — категория дивизиона теперь и есть
   // его "имя" для пользователя.
@@ -105,57 +124,78 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         </div>
       )}
 
-      <div>
-        <h2 className="page-title">Участники</h2>
-        {competition.registrations.length === 0 ? (
-          <p className="hint-text">Пока никто не зарегистрирован.</p>
-        ) : (
-          <div className="stack gap-3">
-            {competition.registrations.map((r) => (
-              <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <strong>{r.dancer.displayName}</strong>
-                  <p className="hint-text mt-1">
-                    {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
-                    {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
-                    {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
-                  </p>
-                  {r.roleOverrideStatus === "PENDING" && (
-                    <p className="hint-text mt-1 text-accent">
-                      Просит роль «{ROLE_LABELS[r.requestedRole ?? ""] ?? r.requestedRole}» вместо подсказки по полу —
-                      ждёт подтверждения.
+      {canViewAllRegistrations ? (
+        <div>
+          <h2 className="page-title">Участники</h2>
+          {registrations.length === 0 ? (
+            <p className="hint-text">Пока никто не зарегистрирован.</p>
+          ) : (
+            <div className="stack gap-3">
+              {registrations.map((r) => (
+                <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <strong>{r.dancer.displayName}</strong>
+                    <p className="hint-text mt-1">
+                      {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
+                      {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
+                      {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
                     </p>
-                  )}
-                  {r.roleOverrideStatus === "REJECTED" && (
-                    <p className="hint-text mt-1">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {canChangeDivision && (
-                    <ChangeDivisionControl
-                      registrationId={r.id}
-                      currentDivisionId={r.divisionId}
-                      divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))}
-                    />
-                  )}
-                  {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
-                    <RoleOverrideReview registrationId={r.id} />
-                  )}
-                  {canCheckIn && r.status === "REGISTERED" && !r.checkIn && (
-                    <CheckInButton registrationId={r.id} />
-                  )}
-                </div>
-              </Card>
-            ))}
+                    {r.roleOverrideStatus === "PENDING" && (
+                      <p className="hint-text mt-1 text-accent">
+                        Просит роль «{ROLE_LABELS[r.requestedRole ?? ""] ?? r.requestedRole}» вместо подсказки по
+                        полу — ждёт подтверждения.
+                      </p>
+                    )}
+                    {r.roleOverrideStatus === "REJECTED" && (
+                      <p className="hint-text mt-1">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canChangeDivision && (
+                      <ChangeDivisionControl
+                        registrationId={r.id}
+                        currentDivisionId={r.divisionId}
+                        divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))}
+                      />
+                    )}
+                    {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
+                      <RoleOverrideReview registrationId={r.id} />
+                    )}
+                    {canCheckIn && r.status === "REGISTERED" && !r.checkIn && (
+                      <CheckInButton registrationId={r.id} />
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+          {canManageRegistrations && divisionOptions.length > 0 && (
+            <div className="mt-4">
+              <h3 className="mb-2">Добавить участника вручную</h3>
+              <AdminRegisterForm competitionId={competition.id} divisions={divisionOptions} />
+            </div>
+          )}
+        </div>
+      ) : (
+        myRegistration && (
+          <div>
+            <h2 className="page-title">Моя регистрация</h2>
+            <Card>
+              <p className="m-0">
+                {myRegistration.division.category.name} · {ROLE_LABELS[myRegistration.role] ?? myRegistration.role} ·{" "}
+                {REGISTRATION_STATUS_LABELS[myRegistration.status] ?? myRegistration.status}
+                {myRegistration.checkIn && ` · номер ${myRegistration.checkIn.bibNumber}`}
+              </p>
+              {myRegistration.roleOverrideStatus === "PENDING" && (
+                <p className="hint-text mt-1 text-accent">
+                  Вы запросили роль «{ROLE_LABELS[myRegistration.requestedRole ?? ""] ?? myRegistration.requestedRole}»
+                  вместо подсказки по полу — организатор ещё не подтвердил.
+                </p>
+              )}
+            </Card>
           </div>
-        )}
-        {canManageRegistrations && divisionOptions.length > 0 && (
-          <div className="mt-4">
-            <h3 className="mb-2">Добавить участника вручную</h3>
-            <AdminRegisterForm competitionId={competition.id} divisions={divisionOptions} />
-          </div>
-        )}
-      </div>
+        )
+      )}
     </div>
   );
 }
