@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/field";
+import { Card } from "@/components/ui/card";
 
 export function ClaimSchoolButton({ schoolSlug }: { schoolSlug: string }) {
   const [note, setNote] = useState("");
@@ -15,9 +18,9 @@ export function ClaimSchoolButton({ schoolSlug }: { schoolSlug: string }) {
 
   if (!open) {
     return (
-      <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOpen(true)}>
+      <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
         {t.school.claimSchool}
-      </button>
+      </Button>
     );
   }
 
@@ -33,12 +36,12 @@ export function ClaimSchoolButton({ schoolSlug }: { schoolSlug: string }) {
   }
 
   return (
-    <div className="card" style={{ maxWidth: 420 }}>
+    <Card className="flex max-w-[420px] flex-col gap-3.5">
       <p className="hint-text">{t.school.claimHint}</p>
-      <textarea value={note} onChange={(e) => setNote(e.target.value)} />
-      <button className="btn btn-sm" type="button" disabled={loading} onClick={submit}>
+      <Textarea value={note} onChange={(e) => setNote(e.target.value)} />
+      <Button size="sm" type="button" disabled={loading} onClick={submit} className="self-start">
         {t.common.submit}
-      </button>
-    </div>
+      </Button>
+    </Card>
   );
 }
