@@ -16,32 +16,55 @@ export async function Header() {
   ]);
 
   return (
-    <header className="site-header">
-      <div className="container">
-        <Link href="/" className="site-logo">
+    <header className="sticky top-0 z-10 border-b border-line bg-white/90 backdrop-blur-md">
+      <div className="container flex flex-wrap items-center justify-between gap-3 py-3">
+        <Link
+          href="/"
+          className="bg-gradient-primary bg-clip-text font-display text-[1.15rem] font-extrabold tracking-tight text-transparent no-underline hover:no-underline"
+        >
           {t.common.siteName}
         </Link>
 
         <CitySwitcher cities={cities} currentSlug={preferredCity?.slug ?? null} />
 
-        <nav className="site-nav">
-          <Link href="/events">{t.nav.calendar}</Link>
-          <Link href="/schools">{t.nav.schools}</Link>
-          {canCreateEvents(user) && <Link href="/events/new">{t.nav.addEvent}</Link>}
-          {isModerator(user) && <Link href="/moderation">{t.nav.admin}</Link>}
+        <nav className="flex flex-wrap items-center gap-[18px] text-[0.95rem]">
+          <Link href="/events" className="text-ink hover:text-primary hover:no-underline">
+            {t.nav.calendar}
+          </Link>
+          <Link href="/schools" className="text-ink hover:text-primary hover:no-underline">
+            {t.nav.schools}
+          </Link>
+          {canCreateEvents(user) && (
+            <Link href="/events/new" className="text-ink hover:text-primary hover:no-underline">
+              {t.nav.addEvent}
+            </Link>
+          )}
+          {isModerator(user) && (
+            <Link href="/moderation" className="text-ink hover:text-primary hover:no-underline">
+              {t.nav.admin}
+            </Link>
+          )}
           {user ? (
             <>
-              {dancer && <Link href="/profile">{t.nav.profile}</Link>}
-              <form action="/api/auth/logout" method="post" style={{ display: "inline" }}>
-                <button type="submit" className="btn btn-secondary" style={{ border: "none", background: "none", boxShadow: "none", cursor: "pointer", padding: 0, font: "inherit" }}>
+              {dancer && (
+                <Link href="/profile" className="text-ink hover:text-primary hover:no-underline">
+                  {t.nav.profile}
+                </Link>
+              )}
+              <form action="/api/auth/logout" method="post" className="inline">
+                <button type="submit" className="cursor-pointer border-none bg-transparent p-0 font-body text-ink hover:text-primary">
                   {t.nav.logout}
                 </button>
               </form>
             </>
           ) : (
             <>
-              <Link href="/login">{t.nav.login}</Link>
-              <Link href="/register">{t.nav.register}</Link>
+              <Link href="/login" className="text-ink hover:text-primary hover:no-underline">
+                {t.nav.login}
+              </Link>
+              <Link href="/register" className="text-ink hover:text-primary hover:no-underline">
+                {t.nav.register}
+              </Link>
             </>
           )}
         </nav>
