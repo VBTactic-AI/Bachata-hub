@@ -6,6 +6,8 @@ import { t } from "@/lib/i18n/dictionary";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ReviewForm } from "@/components/ReviewForm";
 import { ClaimSchoolButton } from "@/components/ClaimSchoolButton";
+import { Card } from "@/components/ui/card";
+import { Tag } from "@/components/ui/tag";
 
 // userId передаётся только когда известен текущий пользователь — тогда в
 // выборку дополнительно попадают его СОБСТВЕННЫЕ отзывы в любом статусе
@@ -98,18 +100,16 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
       {school.directions.length > 0 && (
         <div>
           {school.directions.map((d) => (
-            <span key={d} className="tag">
-              {d}
-            </span>
+            <Tag key={d}>{d}</Tag>
           ))}
         </div>
       )}
 
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>{t.school.contacts}</h2>
-        <p style={{ margin: 0 }}>{school.contactPhone}</p>
-        <p style={{ margin: 0 }}>{school.contactEmail}</p>
-      </div>
+      <Card>
+        <h2 className="mt-0">{t.school.contacts}</h2>
+        <p className="m-0">{school.contactPhone}</p>
+        <p className="m-0">{school.contactEmail}</p>
+      </Card>
 
       {school.branches.length > 0 && (
         <div>
@@ -130,17 +130,17 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
           <h2 className="page-title">{t.school.teachers}</h2>
           <div className="card-grid">
             {school.teachers.map((teacher) => (
-              <div key={teacher.id} className="card">
+              <Card key={teacher.id}>
                 {teacher.photoUrl && (
                   <img
                     src={teacher.photoUrl}
                     alt={teacher.name}
-                    style={{ borderRadius: 8, marginBottom: 8, aspectRatio: "1", objectFit: "cover" }}
+                    className="mb-2 aspect-square rounded-lg object-cover"
                   />
                 )}
                 <strong>{teacher.name}</strong>
                 {teacher.bio && <p className="hint-text">{teacher.bio}</p>}
-              </div>
+              </Card>
             ))}
           </div>
         </div>
@@ -149,18 +149,18 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
       {school.schedules.length > 0 && (
         <div>
           <h2 className="page-title">{t.school.schedule}</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="w-full border-collapse">
             <tbody>
               {school.schedules.map((s) => (
-                <tr key={s.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                  <td style={{ padding: "6px 0" }}>{t.school.weekdays[s.weekday]}</td>
-                  <td style={{ padding: "6px 0" }}>
+                <tr key={s.id} className="border-b border-line">
+                  <td className="py-1.5">{t.school.weekdays[s.weekday]}</td>
+                  <td className="py-1.5">
                     {s.startTime}
                     {s.endTime ? `–${s.endTime}` : ""}
                   </td>
-                  <td style={{ padding: "6px 0" }}>{t.event.levels[s.level]}</td>
-                  <td style={{ padding: "6px 0" }}>{s.teacher?.name ?? "—"}</td>
-                  <td style={{ padding: "6px 0" }}>{s.hall ?? ""}</td>
+                  <td className="py-1.5">{t.event.levels[s.level]}</td>
+                  <td className="py-1.5">{s.teacher?.name ?? "—"}</td>
+                  <td className="py-1.5">{s.hall ?? ""}</td>
                 </tr>
               ))}
             </tbody>
@@ -172,7 +172,7 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
         <h2 className="page-title">
           {t.school.reviews}
           {avgRating && (
-            <span className="stars" style={{ marginLeft: 8 }}>
+            <span className="ml-2 tracking-wide text-accent">
               {"★".repeat(Math.round(avgRating))} {avgRating.toFixed(1)}
             </span>
           )}
@@ -180,33 +180,29 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
         {school.reviews.length === 0 ? (
           <p className="hint-text">{t.school.noReviewsYet}</p>
         ) : (
-          <div className="stack" style={{ gap: 12 }}>
+          <div className="stack gap-3">
             {school.reviews.map((r) => (
-              <div key={r.id} className="card">
-                <p className="stars" style={{ margin: 0 }}>
+              <Card key={r.id}>
+                <p className="m-0 tracking-wide text-accent">
                   {"★".repeat(r.rating)}
                   {"☆".repeat(5 - r.rating)}
                 </p>
-                <p style={{ margin: "6px 0 0" }}>{r.text}</p>
-                <p className="hint-text" style={{ margin: "6px 0 0" }}>
+                <p className="mt-1.5">{r.text}</p>
+                <p className="hint-text mt-1.5">
                   {r.author.dancer?.displayName ?? t.school.reviewAuthorFallback}
                 </p>
                 {/* Виден только автору — остальным такие отзывы не приходят с сервера вообще (см. getSchool) */}
                 {r.moderationStatus === "PENDING" && (
-                  <p className="hint-text" style={{ margin: "4px 0 0", color: "var(--color-accent, inherit)" }}>
-                    {t.school.reviewPendingBadge}
-                  </p>
+                  <p className="hint-text mt-1 text-accent">{t.school.reviewPendingBadge}</p>
                 )}
                 {r.moderationStatus === "REJECTED" && (
-                  <p className="hint-text" style={{ margin: "4px 0 0" }}>
-                    {t.school.reviewRejectedBadge}
-                  </p>
+                  <p className="hint-text mt-1">{t.school.reviewRejectedBadge}</p>
                 )}
-              </div>
+              </Card>
             ))}
           </div>
         )}
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <ReviewForm schoolSlug={school.slug} loggedIn={!!user} />
         </div>
       </div>
