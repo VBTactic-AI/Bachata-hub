@@ -22,6 +22,7 @@ import {
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
   REGISTRATION_STATUS_LABELS,
   ROUND_TYPE_LABELS,
+  ROUND_STATUS_LABELS,
   HEAT_STATUS_LABELS,
 } from "@/lib/competition-labels";
 
@@ -283,6 +284,35 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 </p>
               )}
             </Card>
+
+            {(() => {
+              const myDivision = competition.divisions.find((d) => d.id === myRegistration.divisionId);
+              if (!myDivision || myDivision.rounds.length === 0) return null;
+              return (
+                <div className="stack gap-2 mt-3">
+                  {myDivision.rounds.map((round) => (
+                    <div key={round.id} className="rounded-app-sm border border-line p-3">
+                      <span>
+                        <strong>
+                          {round.stage?.name ?? (round.type ? (ROUND_TYPE_LABELS[round.type] ?? round.type) : "—")}
+                        </strong>{" "}
+                        · {ROUND_STATUS_LABELS[round.status] ?? round.status}
+                        {round.finalistsCount ? ` · проходят ${round.finalistsCount} пар` : ""}
+                      </span>
+                      {round.heats.length > 0 && (
+                        <div className="stack gap-1 mt-2">
+                          {round.heats.map((heat) => (
+                            <p key={heat.id} className="hint-text m-0 pl-3">
+                              Заезд {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )
       )}
