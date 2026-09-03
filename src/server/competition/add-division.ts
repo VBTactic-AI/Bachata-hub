@@ -25,6 +25,10 @@ export async function addDivision(competitionId: string, input: AddDivisionInput
         maxAge: input.maxAge,
         maxParticipants: input.maxParticipants,
         heatCapacity: input.heatCapacity,
+        rotationMode: input.rotationMode,
+        rotationIntervalSec: input.rotationIntervalSec,
+        rotationShiftMin: input.rotationShiftMin,
+        rotationShiftMax: input.rotationShiftMax,
         rules: (input.rules ?? {}) as Prisma.InputJsonValue,
       },
     });

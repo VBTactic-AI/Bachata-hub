@@ -481,6 +481,30 @@ enum HeatStatus {
   FINISHED
 }
 
+// Живой танцпол / ротация партнёров (Этап 6, docs/00_DECISIONS.md, A12).
+// Два независимых, реально используемых в зале сценария — пользователь
+// подтвердил, что это два разных режима, не переключатели одного сценария:
+// TRACK_AUTO_SHIFT — играет целый трек, программа сама (по таймеру) каждые
+// rotationIntervalSec показывает "СМЕНА" (партнёры сдвигаются на 1, всегда
+// на одного) прямо во время трека; SEGMENT_MANUAL_SHIFT — играет отрезок
+// трека, DJ вручную жмёт "Стоп", после чего выбирается число N (диапазон
+// rotationShiftMin..rotationShiftMax), на сколько партнёров переходят.
+// Программа НЕ хранит и не назначает конкретные пары (A5) — только считает
+// время и показывает надписи на экране, без звука.
+enum RotationMode {
+  TRACK_AUTO_SHIFT
+  SEGMENT_MANUAL_SHIFT
+}
+
+// Без RESUMED — как и у Round/Heat, возобновление это переход
+// (PAUSED -> RUNNING), не отдельное состояние (A2), см. 03 §10.
+enum RotationStatus {
+  IDLE
+  RUNNING
+  PAUSED
+  FINISHED
+}
+
 enum RoundType {
   PRELIMINARY
   CALLBACK
@@ -667,6 +691,14 @@ model Division {
   // посчитать, на сколько заездов делить раунд. Можно переопределить для
   // конкретного раунда через Round.heatCapacity.
   heatCapacity    Int              @default(10)
+  // Настройки ротации партнёров по умолчанию для раундов этого дивизиона
+  // (Этап 6, A12) — можно переопределить на уровне конкретного Round, как и
+  // heatCapacity (A7). rotationShiftMin/Max используются только в режиме
+  // SEGMENT_MANUAL_SHIFT — диапазон, из которого выбирается N.
+  rotationMode        RotationMode @default(TRACK_AUTO_SHIFT)
+  rotationIntervalSec Int          @default(30)
+  rotationShiftMin    Int          @default(1)
+  rotationShiftMax    Int          @default(3)
   rules           Json
   createdAt       DateTime         @default(now())
 
@@ -717,6 +749,12 @@ model Round {
   // Переопределяет Division.heatCapacity для этого конкретного раунда (напр.
   // финал часто идёт одним заездом независимо от общего правила).
   heatCapacity   Int?
+  // Переопределяют настройки ротации партнёров дивизиона для этого раунда
+  // (Этап 6, A12) — напр. у финала обычно другие правила, чем у отборочных.
+  rotationMode        RotationMode?
+  rotationIntervalSec Int?
+  rotationShiftMin    Int?
+  rotationShiftMax    Int?
   config         Json               @default("{}")
   rulesId        String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
   rules          CompetitionRules   @relation(fields: [rulesId], references: [id])
@@ -740,9 +778,54 @@ model Heat {
   startedAt     DateTime?
   endedAt       DateTime?
 
-  draws Draw[]
+  draws    Draw[]
+  rotation HeatRotation?
 
   @@unique([roundId, number])
+}
+
+// ---------------------------------------------------------------------------
+// Живой танцпол — ротация партнёров (Этап 6, docs/00_DECISIONS.md, A12)
+// ---------------------------------------------------------------------------
+
+// Ровно одна строка на Heat — таймер/состояние ротации, сервер источник
+// времени (CLAUDE.md §12). mode/intervalSec/shiftMin/shiftMax — СНИМОК
+// настроек дивизиона/раунда на момент старта (startRotation): если
+// организатор поменяет настройки дивизиона позже, уже идущий/прошедший
+// заезд не должен измениться задним числом (CLAUDE.md §50/§51).
+model HeatRotation {
+  id            String         @id @default(cuid())
+  heatId        String         @unique
+  heat          Heat           @relation(fields: [heatId], references: [id], onDelete: Cascade)
+  status        RotationStatus @default(IDLE)
+  statusVersion Int            @default(1) // оптимистичная блокировка, как у Round/Heat (03 §27)
+
+  mode        RotationMode
+  intervalSec Int
+  shiftMin    Int
+  shiftMax    Int
+
+  trackNumber Int     @default(0)
+  trackName   String?
+  // Начало текущего трека/отрезка с точки зрения сервера — единственный
+  // источник истины для отсчёта, клиент только отрисовывает обратный
+  // отсчёт по этому времени (CLAUDE.md §12). При паузе не меняется, при
+  // возобновлении сдвигается вперёд на длительность паузы.
+  segmentStartedAt DateTime?
+  pausedAt         DateTime?
+
+  // Режим SEGMENT_MANUAL_SHIFT: после "Стоп" заезд ждёт, пока DJ выберет N
+  // (случайно — с сохранением seed, CLAUDE.md §6 — или вручную), прежде чем
+  // можно будет запустить следующий отрезок.
+  awaitingShiftChoice Boolean @default(false)
+  pendingShiftN       Int?
+  pendingShiftSource  String? // RANDOM | MANUAL
+  pendingShiftSeed    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------

@@ -14,6 +14,12 @@ export const createCompetitionSchema = z.object({
 });
 export type CreateCompetitionInput = z.infer<typeof createCompetitionSchema>;
 
+// Режим ротации партнёров дивизиона по умолчанию (Этап 6, docs/00_DECISIONS.md,
+// A12) — два независимых сценария, не переключатели одного: TRACK_AUTO_SHIFT
+// (смены внутри трека по таймеру) и SEGMENT_MANUAL_SHIFT (DJ вручную
+// останавливает отрезок, затем выбирается число партнёров для перехода).
+export const rotationModeSchema = z.enum(["TRACK_AUTO_SHIFT", "SEGMENT_MANUAL_SHIFT"]);
+
 export const addDivisionSchema = z.object({
   categoryId: z.string().min(1),
   minAge: z.coerce.number().int().positive().optional(),
@@ -23,6 +29,10 @@ export const addDivisionSchema = z.object({
   // авто-генерации раундов/заездов. Необязательно — если не задать, в базе
   // используется значение по умолчанию (docs/00_DECISIONS.md, A7).
   heatCapacity: z.coerce.number().int().positive().optional(),
+  rotationMode: rotationModeSchema.optional(),
+  rotationIntervalSec: z.coerce.number().int().positive().optional(),
+  rotationShiftMin: z.coerce.number().int().positive().optional(),
+  rotationShiftMax: z.coerce.number().int().positive().optional(),
   rules: z.record(z.unknown()).default({}),
 });
 export type AddDivisionInput = z.infer<typeof addDivisionSchema>;
@@ -145,3 +155,23 @@ export const replaceDrawHelperSchema = z.object({
   registrationId: z.string().min(1),
 });
 export type ReplaceDrawHelperInput = z.infer<typeof replaceDrawHelperSchema>;
+
+// --- Живой танцпол / ротация партнёров (Этап 6, docs/00_DECISIONS.md A12) ---
+
+export const nextTrackSchema = z.object({
+  trackName: z.string().max(200).optional(),
+});
+export type NextTrackInput = z.infer<typeof nextTrackSchema>;
+
+export const shiftSourceSchema = z.enum(["RANDOM", "MANUAL"]);
+
+export const chooseShiftSchema = z
+  .object({
+    source: shiftSourceSchema,
+    n: z.coerce.number().int().optional(),
+  })
+  .refine((v) => v.source === "RANDOM" || v.n !== undefined, {
+    message: "Укажите число партнёров.",
+    path: ["n"],
+  });
+export type ChooseShiftInput = z.infer<typeof chooseShiftSchema>;

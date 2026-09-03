@@ -21,6 +21,7 @@ import { RerollDrawButton } from "@/components/admin/RerollDrawButton";
 import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
 import { SplitHeatButton } from "@/components/admin/SplitHeatButton";
 import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
+import { RotationPanel } from "@/components/admin/RotationPanel";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
@@ -238,6 +239,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                       {hasRealImbalance && <SplitHeatButton heatId={heat.id} />}
                                     </div>
                                   )}
+                                  {heat.status !== "PENDING" && <RotationPanel heatId={heat.id} />}
                                 </div>
                               );
                             })}

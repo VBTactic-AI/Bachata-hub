@@ -49,3 +49,15 @@ export const HEAT_STATUS_LABELS: Record<string, string> = {
   PAUSED: "Пауза",
   FINISHED: "Завершён",
 };
+
+export const ROTATION_MODE_LABELS: Record<string, string> = {
+  TRACK_AUTO_SHIFT: "Смены внутри трека (автоматически)",
+  SEGMENT_MANUAL_SHIFT: "Смена между отрезками (вручную, диджей называет число)",
+};
+
+export const ROTATION_STATUS_LABELS: Record<string, string> = {
+  IDLE: "Не начата",
+  RUNNING: "Идёт",
+  PAUSED: "Пауза",
+  FINISHED: "Завершена",
+};

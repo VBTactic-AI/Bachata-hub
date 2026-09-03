@@ -4,6 +4,13 @@ import type { Actor } from "@/server/rbac/actor";
 const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
+// Заезд завершается вместе со своей ротацией партнёров одной транзакцией
+// (Этап 6) — сама логика ротации протестирована отдельно
+// (tests/competition/rotation-engine.test.ts), здесь только проверяем, что
+// хук действительно вызывается.
+const finishRotationInTxMock = vi.fn();
+vi.mock("@/server/rotation/rotation-engine", () => ({ finishRotationInTx: (...a: unknown[]) => finishRotationInTxMock(...a) }));
+
 const heatFindUniqueOrThrow = vi.fn();
 const txHeatFindFirst = vi.fn();
 const txHeatUpdateMany = vi.fn();
@@ -37,6 +44,7 @@ beforeEach(() => {
   txHeatFindFirst.mockReset().mockResolvedValue(null);
   txHeatUpdateMany.mockReset().mockResolvedValue({ count: 1 });
   auditCreate.mockReset();
+  finishRotationInTxMock.mockReset();
 });
 
 // На паркете одновременно может танцевать только один заезд — заезды одного
@@ -113,5 +121,35 @@ describe("transitionHeat() — заезд не раньше своего рау�
     await transitionHeat("heat1", "RUNNING");
 
     expect(txHeatUpdateMany).toHaveBeenCalledOnce();
+  });
+});
+
+// Живой танцпол (Этап 6): ротация партнёров завершается вместе с заездом,
+// одной транзакцией, без отдельной кнопки.
+describe("transitionHeat() — завершение ротации партнёров вместе с заездом", () => {
+  it("вызывает finishRotationInTx при переходе в FINISHED", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      status: "RUNNING",
+      statusVersion: 1,
+      round: { status: "RUNNING", division: { competitionId: "comp1" } },
+    });
+
+    await transitionHeat("heat1", "FINISHED");
+
+    expect(finishRotationInTxMock).toHaveBeenCalledWith(fakeTx, "heat1", actor);
+  });
+
+  it("не вызывает finishRotationInTx для переходов, отличных от FINISHED", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      status: "PENDING",
+      statusVersion: 1,
+      round: { status: "RUNNING", division: { competitionId: "comp1" } },
+    });
+
+    await transitionHeat("heat1", "RUNNING");
+
+    expect(finishRotationInTxMock).not.toHaveBeenCalled();
   });
 });

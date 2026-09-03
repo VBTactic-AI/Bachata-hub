@@ -5,6 +5,7 @@ import { requirePermission } from "../rbac/authorize";
 import type { Permission } from "../rbac/permissions";
 import { ValidationFailedError } from "../errors";
 import { ROUND_TYPE_LABELS } from "@/lib/competition-labels";
+import { finishRotationInTx } from "../rotation/rotation-engine";
 
 const TABLE: TransitionTable<HeatStatus> = {
   PENDING: ["RUNNING"],
@@ -77,6 +78,11 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
         where: { id: heatId, statusVersion: expectedVersion },
         data: { status: to, statusVersion: { increment: 1 } },
       });
+      // Заезд завершается вместе со своей ротацией партнёров одной
+      // транзакцией (Этап 6) — не отдельной кнопкой "Завершить ротацию".
+      if (result.count > 0 && to === "FINISHED") {
+        await finishRotationInTx(tx, heatId, actor);
+      }
       return {
         before: { status: heat.status, statusVersion: expectedVersion },
         after: { status: to, statusVersion: expectedVersion + 1 },

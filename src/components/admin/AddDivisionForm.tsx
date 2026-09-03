@@ -11,6 +11,13 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
   const router = useRouter();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [heatCapacity, setHeatCapacity] = useState("10");
+  // Ротация партнёров (Этап 6, docs/00_DECISIONS.md, A12) — настройки по
+  // умолчанию для раундов этого дивизиона, можно переопределить позже на
+  // уровне конкретного раунда.
+  const [rotationMode, setRotationMode] = useState<"TRACK_AUTO_SHIFT" | "SEGMENT_MANUAL_SHIFT">("TRACK_AUTO_SHIFT");
+  const [rotationIntervalSec, setRotationIntervalSec] = useState("30");
+  const [rotationShiftMin, setRotationShiftMin] = useState("1");
+  const [rotationShiftMax, setRotationShiftMax] = useState("3");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -29,7 +36,15 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
     const res = await fetch(`/api/competitions/${competitionId}/divisions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categoryId, heatCapacity: Number(heatCapacity), rules: {} }),
+      body: JSON.stringify({
+        categoryId,
+        heatCapacity: Number(heatCapacity),
+        rotationMode,
+        rotationIntervalSec: Number(rotationIntervalSec),
+        rotationShiftMin: Number(rotationShiftMin),
+        rotationShiftMax: Number(rotationShiftMax),
+        rules: {},
+      }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -56,6 +71,35 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
         Вместимость заезда (пар одновременно на паркете)
         <Input type="number" min={1} value={heatCapacity} onChange={(e) => setHeatCapacity(e.target.value)} />
       </Label>
+      <Label>
+        Ротация партнёров по умолчанию
+        <Select value={rotationMode} onChange={(e) => setRotationMode(e.target.value as typeof rotationMode)}>
+          <option value="TRACK_AUTO_SHIFT">Смены внутри трека (автоматически, каждые N сек)</option>
+          <option value="SEGMENT_MANUAL_SHIFT">Смена между отрезками (диджей вручную, число партнёров)</option>
+        </Select>
+      </Label>
+      {rotationMode === "TRACK_AUTO_SHIFT" ? (
+        <Label>
+          Интервал смены внутри трека (сек)
+          <Input
+            type="number"
+            min={1}
+            value={rotationIntervalSec}
+            onChange={(e) => setRotationIntervalSec(e.target.value)}
+          />
+        </Label>
+      ) : (
+        <div className="flex gap-3">
+          <Label className="flex-1">
+            Мин. число партнёров
+            <Input type="number" min={1} value={rotationShiftMin} onChange={(e) => setRotationShiftMin(e.target.value)} />
+          </Label>
+          <Label className="flex-1">
+            Макс. число партнёров
+            <Input type="number" min={1} value={rotationShiftMax} onChange={(e) => setRotationShiftMax(e.target.value)} />
+          </Label>
+        </div>
+      )}
       {error && <p className="error-text">{error}</p>}
       <Button type="submit" size="sm" disabled={loading}>
         Добавить дивизион
