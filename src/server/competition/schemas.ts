@@ -37,6 +37,19 @@ export const createRoundStageSchema = z.object({
 });
 export type CreateRoundStageInput = z.infer<typeof createRoundStageSchema>;
 
+// Все поля необязательны по отдельности (можно поменять только isActive,
+// только название, или всё сразу) — но хотя бы одно обязано присутствовать.
+export const updateRoundStageSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    defaultAdvanceCount: z.coerce.number().int().positive().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((v) => v.name !== undefined || v.defaultAdvanceCount !== undefined || v.isActive !== undefined, {
+    message: "Нужно указать хотя бы одно поле для изменения.",
+  });
+export type UpdateRoundStageInput = z.infer<typeof updateRoundStageSchema>;
+
 export const changeRegistrationDivisionSchema = z.object({
   divisionId: z.string().min(1),
   reason: z.string().max(500).optional(),

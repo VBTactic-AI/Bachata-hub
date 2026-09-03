@@ -22,7 +22,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { createRoundStage, setRoundStageActive } = await import("@/server/competition/round-stage");
+const { createRoundStage, updateRoundStage } = await import("@/server/competition/round-stage");
 const { Prisma } = await import("@prisma/client");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -64,14 +64,45 @@ describe("createRoundStage()", () => {
   });
 });
 
-describe("setRoundStageActive()", () => {
+describe("updateRoundStage()", () => {
+  beforeEach(() => {
+    findUniqueOrThrow.mockResolvedValue({ id: "st1", name: "Четвертьфинал", defaultAdvanceCount: 8, isActive: true });
+    stageUpdate.mockResolvedValue({ id: "st1", name: "Четвертьфинал", defaultAdvanceCount: 8, isActive: true });
+  });
+
   it("не удаляет строку — только переключает isActive, с аудитом", async () => {
-    findUniqueOrThrow.mockResolvedValue({ id: "st1", isActive: true });
-    stageUpdate.mockResolvedValue({ id: "st1", isActive: false });
+    stageUpdate.mockResolvedValue({ id: "st1", name: "Четвертьфинал", defaultAdvanceCount: 8, isActive: false });
 
-    await setRoundStageActive("st1", false);
+    await updateRoundStage("st1", { isActive: false });
 
-    expect(stageUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "st1" }, data: { isActive: false } }));
+    expect(stageUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "st1" },
+        data: expect.objectContaining({ isActive: false, name: undefined, defaultAdvanceCount: undefined }),
+      })
+    );
     expect(auditCreate).toHaveBeenCalledOnce();
+  });
+
+  it("позволяет поправить название и число проходящих у уже существующего этапа", async () => {
+    stageUpdate.mockResolvedValue({ id: "st1", name: "1/4 финала", defaultAdvanceCount: 6, isActive: true });
+
+    await updateRoundStage("st1", { name: "1/4 финала", defaultAdvanceCount: 6 });
+
+    expect(stageUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ name: "1/4 финала", defaultAdvanceCount: 6 }) })
+    );
+    const auditData = auditCreate.mock.calls[0][0].data;
+    expect(auditData.before).toEqual({ name: "Четвертьфинал", defaultAdvanceCount: 8, isActive: true });
+    expect(auditData.after).toEqual({ name: "1/4 финала", defaultAdvanceCount: 6, isActive: true });
+  });
+
+  it("отклоняет переименование в уже занятое название понятной ошибкой", async () => {
+    const { ValidationFailedError } = await import("@/server/errors");
+    stageUpdate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.18.0" })
+    );
+
+    await expect(updateRoundStage("st1", { name: "Полуфинал" })).rejects.toBeInstanceOf(ValidationFailedError);
   });
 });
