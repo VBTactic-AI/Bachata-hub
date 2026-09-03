@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { FormRoot, Input, Label, Select, Textarea } from "@/components/ui/field";
 
 type City = { id: string; nameRu: string };
 type School = { id: string; name: string };
@@ -74,132 +76,132 @@ export function AddEventForm({
   }
 
   return (
-    <form onSubmit={onSubmit} style={{ maxWidth: 560 }}>
-      <label>
+    <FormRoot onSubmit={onSubmit} className="max-w-[560px]">
+      <Label>
         {t.event.addEventForm.titleField}
-        <input required value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
+        <Input required value={title} onChange={(e) => setTitle(e.target.value)} />
+      </Label>
 
-      <label>
+      <Label>
         {t.event.city}
-        <select required value={cityId} onChange={(e) => setCityId(e.target.value)}>
+        <Select required value={cityId} onChange={(e) => setCityId(e.target.value)}>
           {cities.map((c) => (
             <option key={c.id} value={c.id}>
               {c.nameRu}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </Label>
 
       {ownedSchools.length > 0 ? (
-        <label>
+        <Label>
           {t.event.organizer}
-          <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
+          <Select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
             {ownedSchools.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </Label>
       ) : (
-        <label>
+        <Label>
           {t.event.organizer}
-          <input
+          <Input
             placeholder={t.event.addEventForm.organizerPlaceholder}
             value={organizerName}
             onChange={(e) => setOrganizerName(e.target.value)}
           />
-        </label>
+        </Label>
       )}
 
-      <label>
+      <Label>
         {t.event.format}
-        <select value={format} onChange={(e) => setFormat(e.target.value as typeof format)}>
+        <Select value={format} onChange={(e) => setFormat(e.target.value as typeof format)}>
           {Object.entries(t.event.formats).map(([key, label]) => (
             <option key={key} value={key}>
               {label}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </Label>
 
-      <label>
+      <Label>
         {t.event.level}
-        <select value={level} onChange={(e) => setLevel(e.target.value as typeof level)}>
+        <Select value={level} onChange={(e) => setLevel(e.target.value as typeof level)}>
           {Object.entries(t.event.levels).map(([key, label]) => (
             <option key={key} value={key}>
               {label}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </Label>
 
-      <label>
+      <Label>
         {t.event.date} / {t.event.time}
-        <input
+        <Input
           type="datetime-local"
           required
           value={startsAt}
           onChange={(e) => setStartsAt(e.target.value)}
         />
-      </label>
+      </Label>
 
-      <label>
+      <Label>
         {t.event.place}
-        <input required value={venueName} onChange={(e) => setVenueName(e.target.value)} />
-      </label>
+        <Input required value={venueName} onChange={(e) => setVenueName(e.target.value)} />
+      </Label>
 
-      <label>
+      <Label>
         {t.event.addEventForm.addressLabel}
-        <input value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} />
-      </label>
+        <Input value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} />
+      </Label>
 
-      <label>
+      <Label>
         {t.event.description}
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
+        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+      </Label>
 
-      <label>
+      <Label>
         {t.event.price}
-        <input
+        <Input
           placeholder={t.event.addEventForm.pricePlaceholder}
           value={priceText}
           onChange={(e) => setPriceText(e.target.value)}
         />
-      </label>
+      </Label>
 
-      <label>
+      <Label>
         {t.event.registerExternal}
-        <input
+        <Input
           type="url"
           placeholder={t.event.addEventForm.linkPlaceholder}
           value={externalLinkUrl}
           onChange={(e) => setExternalLinkUrl(e.target.value)}
         />
-      </label>
+      </Label>
 
-      <label>
+      <Label>
         {t.event.addEventForm.photoUrlLabel}
-        <input
+        <Input
           type="url"
           placeholder={t.event.addEventForm.linkPlaceholder}
           value={photoUrl}
           onChange={(e) => setPhotoUrl(e.target.value)}
         />
-      </label>
+      </Label>
 
-      <label>
+      <Label>
         {t.event.tags} ({t.event.tagsHint})
-        <input value={tags} onChange={(e) => setTags(e.target.value)} />
-      </label>
+        <Input value={tags} onChange={(e) => setTags(e.target.value)} />
+      </Label>
 
       <p className="hint-text">{t.event.addEventForm.submitNote}</p>
       {error && <p className="error-text">{error}</p>}
 
-      <button className="btn" type="submit" disabled={loading}>
+      <Button type="submit" disabled={loading}>
         {t.common.submit}
-      </button>
-    </form>
+      </Button>
+    </FormRoot>
   );
 }
