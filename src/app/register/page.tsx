@@ -9,7 +9,7 @@ export default async function RegisterPage() {
   });
 
   return (
-    <div className="stack" style={{ maxWidth: 480 }}>
+    <div className="stack max-w-[480px]">
       <h1 className="page-title">{t.auth.registerTitle}</h1>
       <RegisterForm cities={cities} />
     </div>
