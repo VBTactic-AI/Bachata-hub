@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
 
 export function UserBlockToggle({ userId, isBlocked }: { userId: string; isBlocked: boolean }) {
   const router = useRouter();
@@ -22,13 +23,14 @@ export function UserBlockToggle({ userId, isBlocked }: { userId: string; isBlock
   }
 
   return (
-    <button
-      className={isBlocked ? "btn btn-sm" : "btn btn-secondary btn-sm"}
+    <Button
+      variant={isBlocked ? "default" : "secondary"}
+      size="sm"
       type="button"
       disabled={loading}
       onClick={toggle}
     >
       {isBlocked ? t.moderation.unblockUser : t.moderation.blockUser}
-    </button>
+    </Button>
   );
 }
