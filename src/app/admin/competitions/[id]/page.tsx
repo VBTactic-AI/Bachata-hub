@@ -19,6 +19,7 @@ import { HeatStatusControls } from "@/components/admin/HeatStatusControls";
 import { StartDrawingForm } from "@/components/admin/StartDrawingForm";
 import { RerollDrawButton } from "@/components/admin/RerollDrawButton";
 import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
+import { SplitHeatButton } from "@/components/admin/SplitHeatButton";
 import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import {
@@ -206,6 +207,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                               const followerCount = draw?.participants.filter((p) => p.role === "FOLLOWER").length ?? 0;
                               const neededRole =
                                 leaderCount === followerCount ? null : leaderCount < followerCount ? "LEADER" : "FOLLOWER";
+                              // "Разбить" смотрит на РЕАЛЬНЫЙ (не считая
+                              // помощников) дисбаланс — доступно, даже если
+                              // помощники уже сгладили общее число, это
+                              // альтернативный способ, не зависящий от них.
+                              const scoredLeaderCount =
+                                draw?.participants.filter((p) => p.role === "LEADER" && p.scored).length ?? 0;
+                              const scoredFollowerCount =
+                                draw?.participants.filter((p) => p.role === "FOLLOWER" && p.scored).length ?? 0;
+                              const hasRealImbalance = scoredLeaderCount !== scoredFollowerCount;
                               return (
                                 <div key={heat.id} className="pl-3">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -225,6 +235,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                     <div className="flex flex-wrap items-center gap-2 mt-1 pl-3">
                                       <RerollDrawButton heatId={heat.id} />
                                       {neededRole && <AddDrawHelperForm heatId={heat.id} role={neededRole} />}
+                                      {hasRealImbalance && <SplitHeatButton heatId={heat.id} />}
                                     </div>
                                   )}
                                 </div>

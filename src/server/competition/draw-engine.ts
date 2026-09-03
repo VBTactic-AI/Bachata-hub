@@ -140,9 +140,8 @@ async function pickHigherCategoryHelpers(
   return picked;
 }
 
-// Второй шаг каскада: переиспользовать СВОИХ, кто уже станцевал (получил
-// scored=true) в другом заезде этого раунда — только после того, как
-// категорий выше совсем не осталось (или там никого подходящего нет).
+// Переиспользовать СВОИХ, кто уже станцевал (получил scored=true) в другом
+// заезде этого раунда.
 function pickOwnDivisionReuseHelpers(
   tx: PrismaTx,
   params: { divisionId: string; role: RegistrationRole; alreadyScoredIds: Set<string>; count: number }
@@ -158,6 +157,62 @@ function pickOwnDivisionReuseHelpers(
     select: { id: true },
     take: params.count,
   });
+}
+
+type HelperSource = "GUEST_HIGHER_CATEGORY" | "REUSED_ALREADY_SCORED";
+type HelperPick = { registrationId: string; helperSource: HelperSource };
+
+// Общий каскад добора — порядок шагов НАСТРАИВАЕТСЯ, потому что в двух
+// ситуациях он разный (docs/00_DECISIONS.md, A10, уточнено 2026-09-04):
+// - при обычной жеребьёвке заезда: сначала категории выше, потом свои;
+// - при разбивке заезда на два выхода (splitHeatOverflow): наоборот —
+//   сначала свои, только что освободившиеся из первого выхода (они уже
+//   физически рядом), потом каскад по категориям выше.
+// Категории НИЖЕ своей сюда не входят никогда — это только ручное решение.
+async function fillHelperShortage(
+  tx: PrismaTx,
+  params: {
+    competitionId: string;
+    divisionId: string;
+    categoryOrder: number;
+    role: RegistrationRole;
+    count: number;
+    alreadyScoredIds: Set<string>;
+    preferOwnFirst: boolean;
+  }
+): Promise<HelperPick[]> {
+  const picks: HelperPick[] = [];
+
+  async function tryHigher(remaining: number) {
+    const ids = await pickHigherCategoryHelpers(tx, {
+      competitionId: params.competitionId,
+      ownDivisionId: params.divisionId,
+      ownCategoryOrder: params.categoryOrder,
+      role: params.role,
+      count: remaining,
+    });
+    picks.push(...ids.map((registrationId) => ({ registrationId, helperSource: "GUEST_HIGHER_CATEGORY" as const })));
+  }
+
+  async function tryOwn(remaining: number) {
+    const regs = await pickOwnDivisionReuseHelpers(tx, {
+      divisionId: params.divisionId,
+      role: params.role,
+      alreadyScoredIds: params.alreadyScoredIds,
+      count: remaining,
+    });
+    picks.push(...regs.map((r) => ({ registrationId: r.id, helperSource: "REUSED_ALREADY_SCORED" as const })));
+  }
+
+  if (params.preferOwnFirst) {
+    await tryOwn(params.count);
+    if (picks.length < params.count) await tryHigher(params.count - picks.length);
+  } else {
+    await tryHigher(params.count);
+    if (picks.length < params.count) await tryOwn(params.count - picks.length);
+  }
+
+  return picks;
 }
 
 // Формирует список вызванных для ОДНОГО заезда — общее ядро и для первой
@@ -220,7 +275,7 @@ export async function formDrawInTx(
   //    спускаться в категории НИЖЕ автоматически нельзя — это уже решение,
   //    которое организатор подтверждает вручную через "+ Помощник" (там
   //    подсказка сама предложит ближайшую ниже, если выше и правда нет).
-  const autoHelpers: { registrationId: string; helperSource: "GUEST_HIGHER_CATEGORY" | "REUSED_ALREADY_SCORED" }[] = [];
+  let autoHelpers: HelperPick[] = [];
   if (leaders.length !== followers.length) {
     const needyRole: RegistrationRole = leaders.length < followers.length ? "LEADER" : "FOLLOWER";
     const shortage = Math.abs(leaders.length - followers.length);
@@ -229,24 +284,15 @@ export async function formDrawInTx(
       select: { competitionId: true, category: { select: { order: true } } },
     });
 
-    const higherGuests = await pickHigherCategoryHelpers(tx, {
+    autoHelpers = await fillHelperShortage(tx, {
       competitionId: division.competitionId,
-      ownDivisionId: divisionId,
-      ownCategoryOrder: division.category.order,
+      divisionId,
+      categoryOrder: division.category.order,
       role: needyRole,
       count: shortage,
+      alreadyScoredIds: excludeIds,
+      preferOwnFirst: false,
     });
-    autoHelpers.push(...higherGuests.map((registrationId) => ({ registrationId, helperSource: "GUEST_HIGHER_CATEGORY" as const })));
-
-    if (autoHelpers.length < shortage) {
-      const reused = await pickOwnDivisionReuseHelpers(tx, {
-        divisionId,
-        role: needyRole,
-        alreadyScoredIds: excludeIds,
-        count: shortage - autoHelpers.length,
-      });
-      autoHelpers.push(...reused.map((r) => ({ registrationId: r.id, helperSource: "REUSED_ALREADY_SCORED" as const })));
-    }
 
     for (const helper of autoHelpers) {
       await tx.drawParticipant.create({
@@ -320,4 +366,140 @@ export async function rerollHeatDraw(
       reason,
     })
   );
+}
+
+// Разбить заезд на два выхода ("Способ Б", обсуждалось отдельно от "Способ
+// А" — помощь в рамках одного заезда): реальных (scored) участников
+// избыточной стороны сверх баланса переносим в НОВЫЙ заезд ЭТОГО ЖЕ раунда,
+// всех помощников текущего заезда удаляем совсем (не переносим — новый
+// заезд ищет себе помощников заново), и сразу же добираем недостающую
+// сторону нового заезда — но уже с ОБРАТНЫМ приоритетом каскада: сначала
+// свои, только что освободившиеся из первого выхода, потом категории выше
+// (docs/00_DECISIONS.md, A10, уточнено 2026-09-04).
+export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: string }> {
+  const heat = await prisma.heat.findUniqueOrThrow({
+    where: { id: heatId },
+    include: {
+      round: {
+        include: {
+          division: { select: { id: true, competitionId: true, category: { select: { order: true } } } },
+        },
+      },
+    },
+  });
+  const competitionId = heat.round.division.competitionId;
+  const actor = await requirePermission("draw:override", competitionId);
+
+  if (heat.round.status !== "DRAWING") {
+    throw new ValidationFailedError('Разбить заезд можно только пока раунд в статусе "Жеребьёвка".');
+  }
+  if (heat.status !== "PENDING") {
+    throw new ValidationFailedError("Заезд уже запущен — список нельзя менять.");
+  }
+
+  const draw = await prisma.draw.findFirst({
+    where: { heatId },
+    orderBy: { version: "desc" },
+    include: { participants: true },
+  });
+  if (!draw) {
+    throw new ValidationFailedError("Для этого заезда ещё не сформирован список — сначала запустите жеребьёвку раунда.");
+  }
+
+  const real = draw.participants.filter((p) => p.scored);
+  const helpers = draw.participants.filter((p) => !p.scored);
+  const leaders = real.filter((p) => p.role === "LEADER").sort((a, b) => a.calledOrder - b.calledOrder);
+  const followers = real.filter((p) => p.role === "FOLLOWER").sort((a, b) => a.calledOrder - b.calledOrder);
+
+  if (leaders.length === followers.length) {
+    throw new ValidationFailedError("Заезд уже сбалансирован — разбивать нечего.");
+  }
+
+  const balancedCount = Math.min(leaders.length, followers.length);
+  const excessRole: RegistrationRole = leaders.length > followers.length ? "LEADER" : "FOLLOWER";
+  const needyRole: RegistrationRole = excessRole === "LEADER" ? "FOLLOWER" : "LEADER";
+  const moved = (excessRole === "LEADER" ? leaders : followers).slice(balancedCount);
+
+  return prisma.$transaction(async (tx) => {
+    // 1. убрать лишних (переносятся в новый заезд) и ВСЕХ помощников
+    // (удаляются совсем, не переносятся) из текущего заезда.
+    const removeIds = [...moved.map((p) => p.id), ...helpers.map((p) => p.id)];
+    if (removeIds.length > 0) {
+      await tx.drawParticipant.deleteMany({ where: { id: { in: removeIds } } });
+    }
+    await writeAudit(tx, {
+      actor,
+      action: "heat.split_overflow",
+      entityType: "Heat",
+      entityId: heatId,
+      after: {
+        movedRegistrationIds: moved.map((p) => p.registrationId),
+        removedHelperRegistrationIds: helpers.map((p) => p.registrationId),
+      },
+    });
+
+    // 2. новый заезд в этом же раунде.
+    const lastHeat = await tx.heat.findFirst({ where: { roundId: heat.roundId }, orderBy: { number: "desc" } });
+    const newHeat = await tx.heat.create({ data: { roundId: heat.roundId, number: (lastHeat?.number ?? 0) + 1 } });
+    await writeAudit(tx, {
+      actor,
+      action: "heat.create",
+      entityType: "Heat",
+      entityId: newHeat.id,
+      after: { roundId: heat.roundId, number: newHeat.number, splitFromHeatId: heatId },
+    });
+
+    // 3. новый Draw версии 1 с перенесёнными людьми (не пересобирается
+    // заново — это конкретные люди, которым не хватило пары в первом выходе).
+    const newDraw = await tx.draw.create({
+      data: { heatId: newHeat.id, version: 1, seed: null, algorithmVersion: DRAW_ALGORITHM_VERSION, createdById: actor.userId },
+    });
+    let calledOrder = 1;
+    for (const p of moved) {
+      await tx.drawParticipant.create({
+        data: { drawId: newDraw.id, registrationId: p.registrationId, role: p.role, scored: true, calledOrder: calledOrder++ },
+      });
+    }
+
+    // 4. авто-добор недостающей стороны нового заезда — приоритет ОБРАТНЫЙ
+    // обычному (сначала свои, потом каскад выше), см. fillHelperShortage.
+    const alreadyScoredIds = await alreadyScoredElsewhereInRound(tx, heat.roundId, newHeat.id);
+    const autoHelpers = await fillHelperShortage(tx, {
+      competitionId,
+      divisionId: heat.round.division.id,
+      categoryOrder: heat.round.division.category.order,
+      role: needyRole,
+      count: moved.length,
+      alreadyScoredIds,
+      preferOwnFirst: true,
+    });
+    for (const helper of autoHelpers) {
+      await tx.drawParticipant.create({
+        data: {
+          drawId: newDraw.id,
+          registrationId: helper.registrationId,
+          role: needyRole,
+          scored: false,
+          helperSource: helper.helperSource,
+          calledOrder: calledOrder++,
+        },
+      });
+    }
+
+    await writeAudit(tx, {
+      actor,
+      action: "draw.create",
+      entityType: "Draw",
+      entityId: newDraw.id,
+      after: {
+        heatId: newHeat.id,
+        version: 1,
+        movedFromHeatId: heatId,
+        movedRegistrationIds: moved.map((p) => p.registrationId),
+        autoHelperIds: autoHelpers.map((h) => h.registrationId),
+      },
+    });
+
+    return { newHeatId: newHeat.id };
+  });
 }
