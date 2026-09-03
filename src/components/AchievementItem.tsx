@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { FormRoot, Input, Label, Select } from "@/components/ui/field";
 
 type AttendedEvent = { id: string; title: string };
 
@@ -58,41 +60,41 @@ export function AchievementItem({
 
     return (
       <li>
-        <form onSubmit={onSave} className="card" style={{ marginTop: 8, marginBottom: 8 }}>
-          <label>
+        <FormRoot onSubmit={onSave} className="my-2 rounded-app border border-line bg-surface p-[18px] shadow-sm">
+          <Label>
             {t.dancer.achievementDescription}
-            <input
+            <Input
               required
               placeholder={t.dancer.achievementPlaceholder}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
-          </label>
-          <label>
+          </Label>
+          <Label>
             {t.dancer.achievementDate}
-            <input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} />
-          </label>
-          <label>
+            <Input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} />
+          </Label>
+          <Label>
             {t.dancer.achievementEventLabel}
-            <select value={eventId} onChange={(e) => setEventId(e.target.value)}>
+            <Select value={eventId} onChange={(e) => setEventId(e.target.value)}>
               <option value="">{t.dancer.achievementNoEvent}</option>
               {attendedEvents.map((ev) => (
                 <option key={ev.id} value={ev.id}>
                   {ev.title}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </Label>
           {error && <p className="error-text">{error}</p>}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-sm" type="submit" disabled={loading}>
+          <div className="flex gap-2">
+            <Button size="sm" type="submit" disabled={loading}>
               {t.common.save}
-            </button>
-            <button className="btn btn-secondary btn-sm" type="button" onClick={() => setEditing(false)}>
+            </Button>
+            <Button variant="secondary" size="sm" type="button" onClick={() => setEditing(false)}>
               {t.common.cancel}
-            </button>
+            </Button>
           </div>
-        </form>
+        </FormRoot>
       </li>
     );
   }
@@ -120,18 +122,19 @@ export function AchievementItem({
       )}
       <span className="hint-text"> · {achievement.achievedAt.toLocaleDateString("ru-RU")}</span>
       {canManage && (
-        <span style={{ display: "inline-flex", gap: 6, marginLeft: 8 }}>
-          <button
-            className="btn btn-secondary btn-sm"
+        <span className="ml-2 inline-flex gap-1.5">
+          <Button
+            variant="secondary"
+            size="sm"
             type="button"
             disabled={loading}
             onClick={() => setEditing(true)}
           >
             {t.common.edit}
-          </button>
-          <button className="btn btn-secondary btn-sm" type="button" disabled={loading} onClick={onDelete}>
+          </Button>
+          <Button variant="secondary" size="sm" type="button" disabled={loading} onClick={onDelete}>
             {t.common.delete}
-          </button>
+          </Button>
         </span>
       )}
       {error && <p className="error-text">{error}</p>}
