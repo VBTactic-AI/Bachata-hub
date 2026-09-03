@@ -32,24 +32,37 @@ enum UserRole {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  passwordHash  String
-  role          UserRole  @default(DANCER)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastLoginAt   DateTime?
-  isBlocked     Boolean   @default(false)
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(DANCER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+  isBlocked    Boolean   @default(false)
 
-  dancer        Dancer?
-  schoolClaims  SchoolClaim[]      @relation("Claimant")
-  reviewedClaims SchoolClaim[]     @relation("ClaimReviewer")
-  ownedSchools  School[]           @relation("SchoolOwner")
-  createdEvents Event[]            @relation("EventCreator")
-  moderatedEvents Event[]          @relation("EventModerator")
-  reviews       Review[]           @relation("ReviewAuthor")
+  dancer           Dancer?
+  schoolClaims     SchoolClaim[]   @relation("Claimant")
+  reviewedClaims   SchoolClaim[]   @relation("ClaimReviewer")
+  ownedSchools     School[]        @relation("SchoolOwner")
+  createdEvents    Event[]         @relation("EventCreator")
+  moderatedEvents  Event[]         @relation("EventModerator")
+  reviews          Review[]        @relation("ReviewAuthor")
   moderatedReviews Review[]        @relation("ReviewModerator")
-  moderationLogs ModerationLog[]   @relation("ModerationActor")
+  moderationLogs   ModerationLog[] @relation("ModerationActor")
+
+  // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
+  // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
+  // UserRole управляет модерацией афиши/школ, а роли ниже — доступом внутри
+  // конкретных соревнований (EVENT_ADMIN, HEAD_JUDGE, JUDGE, ...).
+  competitionRoleAssignments UserRoleAssignment[] @relation("UserRoleAssignee")
+  grantedRoleAssignments     UserRoleAssignment[] @relation("UserRoleGrantor")
+  competitionMemberships     CompetitionMember[]  @relation("CompetitionMemberUser")
+  grantedCompetitionMembers  CompetitionMember[]  @relation("CompetitionMemberGrantor")
+  createdCompetitions        Competition[]        @relation("CompetitionCreator")
+  lockedCompetitionRules     CompetitionRules[]   @relation("CompetitionRulesLocker")
+  competitionAuditLogs       AuditLog[]           @relation("AuditLogActor")
+  competitionEvents          CompetitionEvent[]   @relation("CompetitionEventActor")
 
   @@index([role])
 }
@@ -80,6 +93,7 @@ model City {
   events         Event[]
   dancers        Dancer[]
   schoolBranches SchoolBranch[]
+  competitions   Competition[]
 
   @@index([countryId])
 }
@@ -89,35 +103,35 @@ model City {
 // ---------------------------------------------------------------------------
 
 enum SchoolVerificationStatus {
-  COMMUNITY   // «профиль создан сообществом» — карточку никто не подтвердил
-  VERIFIED    // «профиль подтверждён представителем школы»
+  COMMUNITY // «профиль создан сообществом» — карточку никто не подтвердил
+  VERIFIED // «профиль подтверждён представителем школы»
 }
 
 model School {
-  id                 String                    @id @default(cuid())
-  slug               String                    @unique
+  id                 String                   @id @default(cuid())
+  slug               String                   @unique
   name               String
   cityId             String
-  city               City                      @relation(fields: [cityId], references: [id])
+  city               City                     @relation(fields: [cityId], references: [id])
   description        String?
-  directions         String[]                  // направления: бачата, сальса, кизомба...
-  levels             DanceLevel[]              // какие уровни преподаются
+  directions         String[] // направления: бачата, сальса, кизомба...
+  levels             DanceLevel[] // какие уровни преподаются
   contactPhone       String?
   contactEmail       String?
-  socialLinks        Json?                     // { instagram, telegram, vk, website }
-  verificationStatus SchoolVerificationStatus  @default(COMMUNITY)
-  ownerUserId        String?                   // представитель-владелец после подтверждения заявки
-  owner              User?                     @relation("SchoolOwner", fields: [ownerUserId], references: [id])
-  isActive           Boolean                   @default(true)
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
+  socialLinks        Json? // { instagram, telegram, vk, website }
+  verificationStatus SchoolVerificationStatus @default(COMMUNITY)
+  ownerUserId        String? // представитель-владелец после подтверждения заявки
+  owner              User?                    @relation("SchoolOwner", fields: [ownerUserId], references: [id])
+  isActive           Boolean                  @default(true)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
-  branches   SchoolBranch[]
-  teachers   Teacher[]
-  schedules  ClassSchedule[]
-  events     Event[]
-  reviews    Review[]
-  claims     SchoolClaim[]
+  branches  SchoolBranch[]
+  teachers  Teacher[]
+  schedules ClassSchedule[]
+  events    Event[]
+  reviews   Review[]
+  claims    SchoolClaim[]
 
   @@index([cityId])
   @@index([verificationStatus])
@@ -126,9 +140,9 @@ model School {
 model SchoolBranch {
   // «Филиалы (адреса)» школы — вынесено отдельной таблицей, т.к. филиалов
   // может быть несколько на школу.
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   schoolId String
-  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school   School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   address  String
   cityId   String? // филиал может быть в другом городе, чем головная школа
   city     City?   @relation(fields: [cityId], references: [id])
@@ -137,13 +151,13 @@ model SchoolBranch {
 }
 
 model Teacher {
-  id        String  @id @default(cuid())
-  name      String
-  photoUrl  String?
-  bio       String?
-  schoolId  String? // может быть без школы — приглашённый преподаватель
-  school    School? @relation(fields: [schoolId], references: [id])
-  isActive  Boolean @default(true)
+  id       String  @id @default(cuid())
+  name     String
+  photoUrl String?
+  bio      String?
+  schoolId String? // может быть без школы — приглашённый преподаватель
+  school   School? @relation(fields: [schoolId], references: [id])
+  isActive Boolean @default(true)
 
   schedules ClassSchedule[]
 
@@ -162,16 +176,16 @@ enum Weekday {
 
 model ClassSchedule {
   // Регулярное расписание групп школы
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   teacherId String?
-  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+  teacher   Teacher?   @relation(fields: [teacherId], references: [id])
   weekday   Weekday
-  startTime String   // "19:00" — хранится строкой намеренно, без таймзон-логики на MVP
+  startTime String // "19:00" — хранится строкой намеренно, без таймзон-логики на MVP
   endTime   String?
   level     DanceLevel
-  hall      String?  // зал / адрес занятия, если отличается от филиала
+  hall      String? // зал / адрес занятия, если отличается от филиала
 
   @@index([schoolId])
 }
@@ -199,7 +213,7 @@ model SchoolClaim {
   claimantId    String
   claimant      User        @relation("Claimant", fields: [claimantId], references: [id])
   status        ClaimStatus @default(PENDING)
-  proofNote     String?     // как заявитель подтверждает свою связь со школой
+  proofNote     String? // как заявитель подтверждает свою связь со школой
   reviewedById  String?
   reviewedBy    User?       @relation("ClaimReviewer", fields: [reviewedById], references: [id])
   reviewedAt    DateTime?
@@ -215,11 +229,11 @@ model SchoolClaim {
 // ---------------------------------------------------------------------------
 
 enum EventFormat {
-  PARTY        // вечеринка
-  MASTERCLASS  // мастер-класс
-  FESTIVAL     // фестиваль
-  CONTEST      // конкурс
-  INTENSIVE    // воркшоп-интенсив
+  PARTY // вечеринка
+  MASTERCLASS // мастер-класс
+  FESTIVAL // фестиваль
+  CONTEST // конкурс
+  INTENSIVE // воркшоп-интенсив
 }
 
 // event_type: зарезервированная точка расширения для СЛОЯ 3.
@@ -239,42 +253,39 @@ enum ModerationStatus {
 }
 
 model Event {
-  id                String            @id @default(cuid())
-  slug              String            @unique
-  title             String
-  cityId            String
-  city              City              @relation(fields: [cityId], references: [id])
-  schoolId          String?           // организатор — школа...
-  school            School?           @relation(fields: [schoolId], references: [id])
-  organizerName     String?           // ...или свободный текст, если организатор без школы
-  format            EventFormat
-  eventType         EventType         @default(REGULAR) // СЛОЙ 3: точка расширения, см. комментарий выше
-  level             DanceLevel
-  startsAt          DateTime
-  endsAt            DateTime?
-  venueName         String
-  venueAddress      String?
-  description       String?
-  photoUrl          String?
-  priceText         String?           // цена текстом ("15 BYN", "бесплатно", "по договорённости")
-  externalLinkUrl   String?           // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
-  tags              String[]
-  moderationStatus  ModerationStatus  @default(PENDING)
-  createdById       String
-  createdBy         User              @relation("EventCreator", fields: [createdById], references: [id])
-  moderatedById     String?
-  moderatedBy       User?             @relation("EventModerator", fields: [moderatedById], references: [id])
-  moderatedAt       DateTime?
-  isArchived        Boolean           @default(false) // просроченные события уходят из ленты, но не удаляются
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id               String           @id @default(cuid())
+  slug             String           @unique
+  title            String
+  cityId           String
+  city             City             @relation(fields: [cityId], references: [id])
+  schoolId         String? // организатор — школа...
+  school           School?          @relation(fields: [schoolId], references: [id])
+  organizerName    String? // ...или свободный текст, если организатор без школы
+  format           EventFormat
+  eventType        EventType        @default(REGULAR) // СЛОЙ 3: точка расширения, см. комментарий выше
+  level            DanceLevel
+  startsAt         DateTime
+  endsAt           DateTime?
+  venueName        String
+  venueAddress     String?
+  description      String?
+  photoUrl         String?
+  priceText        String? // цена текстом ("15 BYN", "бесплатно", "по договорённости")
+  externalLinkUrl  String? // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
+  tags             String[]
+  moderationStatus ModerationStatus @default(PENDING)
+  createdById      String
+  createdBy        User             @relation("EventCreator", fields: [createdById], references: [id])
+  moderatedById    String?
+  moderatedBy      User?            @relation("EventModerator", fields: [moderatedById], references: [id])
+  moderatedAt      DateTime?
+  isArchived       Boolean          @default(false) // просроченные события уходят из ленты, но не удаляются
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  attendances Attendance[]
+  attendances  Attendance[]
   achievements Achievement[]
-
-  // СЛОЙ 3 (не реализуется в этом MVP, только упоминается в комментарии):
-  // когда eventType = CONTEST, здесь появятся связи 1-N на Round и
-  // CallbackScore для цифрового судейства Jack&Jill/Strictly/Solo Battle.
+  competition  Competition? // СЛОЙ 3: когда eventType = CONTEST, здесь — привязанное соревнование движка Jack & Jill (см. docs/00_DECISIONS.md, D3)
 
   @@index([cityId, startsAt])
   @@index([schoolId])
@@ -287,18 +298,18 @@ model Event {
 // ---------------------------------------------------------------------------
 
 model Review {
-  id               String            @id @default(cuid())
+  id               String           @id @default(cuid())
   schoolId         String
-  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school           School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   authorId         String
-  author           User              @relation("ReviewAuthor", fields: [authorId], references: [id])
-  rating           Int               // 1..5
+  author           User             @relation("ReviewAuthor", fields: [authorId], references: [id])
+  rating           Int // 1..5
   text             String
-  moderationStatus ModerationStatus  @default(PENDING) // публикуется только после проверки модератором (см. ТЗ);
-                                                        // автор видит свой отзыв и его статус независимо от модерации
+  moderationStatus ModerationStatus @default(PENDING) // публикуется только после проверки модератором (см. ТЗ);
+  // автор видит свой отзыв и его статус независимо от модерации
   moderatedById    String?
-  moderatedBy      User?             @relation("ReviewModerator", fields: [moderatedById], references: [id])
-  createdAt        DateTime          @default(now())
+  moderatedBy      User?            @relation("ReviewModerator", fields: [moderatedById], references: [id])
+  createdAt        DateTime         @default(now())
 
   @@index([schoolId])
   @@index([moderationStatus])
@@ -315,16 +326,16 @@ enum DanceRole {
 }
 
 model Dancer {
-  id           String     @id @default(cuid())
-  userId       String     @unique
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName  String
-  cityId       String?
-  city         City?      @relation(fields: [cityId], references: [id])
-  danceRole    DanceRole?
-  selfLevel    DanceLevel?
-  avatarUrl    String?
-  createdAt    DateTime   @default(now())
+  id          String      @id @default(cuid())
+  userId      String      @unique
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String
+  cityId      String?
+  city        City?       @relation(fields: [cityId], references: [id])
+  danceRole   DanceRole?
+  selfLevel   DanceLevel?
+  avatarUrl   String?
+  createdAt   DateTime    @default(now())
 
   attendances  Attendance[]
   achievements Achievement[]
@@ -337,25 +348,25 @@ model Dancer {
 // ---------------------------------------------------------------------------
 
 enum AttendanceStatus {
-  GOING   // «иду»
-  WENT    // «был»
+  GOING // «иду»
+  WENT // «был»
 }
 
 enum AttendanceSource {
-  SELF_REPORTED   // сегодня — единственный источник, декларативный, без подтверждения оплатой
+  SELF_REPORTED // сегодня — единственный источник, декларативный, без подтверждения оплатой
   // СЛОЙ 2: сюда добавится значение типа CONFIRMED_REGISTRATION,
   // когда посещение будет подтверждаться оплаченной регистрацией.
 }
 
 model Attendance {
-  id        String            @id @default(cuid())
+  id        String           @id @default(cuid())
   dancerId  String
-  dancer    Dancer            @relation(fields: [dancerId], references: [id], onDelete: Cascade)
+  dancer    Dancer           @relation(fields: [dancerId], references: [id], onDelete: Cascade)
   eventId   String
-  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   status    AttendanceStatus
-  source    AttendanceSource  @default(SELF_REPORTED)
-  createdAt DateTime          @default(now())
+  source    AttendanceSource @default(SELF_REPORTED)
+  createdAt DateTime         @default(now())
 
   @@unique([dancerId, eventId]) // одна отметка на пару танцор-событие, статус можно менять
   @@index([eventId])
@@ -366,20 +377,20 @@ model Attendance {
 // ---------------------------------------------------------------------------
 
 enum AchievementSource {
-  MANUAL           // сегодня — заполняется вручную самим танцором
-  CONTEST_RESULT    // СЛОЙ 3: зарезервировано под автоматические записи от судейского модуля
+  MANUAL // сегодня — заполняется вручную самим танцором
+  CONTEST_RESULT // СЛОЙ 3: зарезервировано под автоматические записи от судейского модуля
 }
 
 model Achievement {
-  id          String             @id @default(cuid())
+  id          String            @id @default(cuid())
   dancerId    String
-  dancer      Dancer             @relation(fields: [dancerId], references: [id], onDelete: Cascade)
-  description String             // «вышел в финал такого-то конкурса»
+  dancer      Dancer            @relation(fields: [dancerId], references: [id], onDelete: Cascade)
+  description String // «вышел в финал такого-то конкурса»
   achievedAt  DateTime
-  source      AchievementSource  @default(MANUAL)
-  eventId     String?            // необязательная ссылка на событие
-  event       Event?             @relation(fields: [eventId], references: [id])
-  createdAt   DateTime           @default(now())
+  source      AchievementSource @default(MANUAL)
+  eventId     String? // необязательная ссылка на событие
+  event       Event?            @relation(fields: [eventId], references: [id])
+  createdAt   DateTime          @default(now())
 
   @@index([dancerId])
 }
@@ -397,15 +408,328 @@ enum ModerationEntity {
 }
 
 model ModerationLog {
-  id         String            @id @default(cuid())
-  actorId    String
-  actor      User              @relation("ModerationActor", fields: [actorId], references: [id])
-  entity     ModerationEntity
-  entityId   String
-  action     String            // "approved", "rejected", "blocked", ...
-  reason     String?
-  createdAt  DateTime          @default(now())
+  id        String           @id @default(cuid())
+  actorId   String
+  actor     User             @relation("ModerationActor", fields: [actorId], references: [id])
+  entity    ModerationEntity
+  entityId  String
+  action    String // "approved", "rejected", "blocked", ...
+  reason    String?
+  createdAt DateTime         @default(now())
 
   @@index([entity, entityId])
   @@index([actorId])
+}
+
+// ============================================================================
+// Слой 3 — движок соревнований Bachata Jack & Jill
+// ============================================================================
+// Этап 1 (фундамент): RBAC, соревнование/дивизион/правила, раунды/заезды,
+// аудит. Решения и обоснования — docs/00_DECISIONS.md.
+//
+// Draw/heat-participants/судейство/scoring/advancement/tie-break/результаты
+// в этот этап НЕ входят — модели для них проектируются и добавляются на
+// следующих этапах (см. docs/00_DECISIONS.md, открытые вопросы C1–C9).
+// ============================================================================
+
+enum CompetitionStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  CHECK_IN
+  READY
+  LIVE
+  SCORING
+  REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+// Без отдельного значения RESUMED — это переход (PAUSED -> RUNNING), а не
+// состояние (см. docs/00_DECISIONS.md, A2).
+enum RoundStatus {
+  DRAFT
+  READY
+  DRAWING
+  DRAW_LOCKED
+  RUNNING
+  PAUSED
+  FINISHED
+  SCORING
+  COMPLETED
+}
+
+enum HeatStatus {
+  PENDING
+  RUNNING
+  PAUSED
+  FINISHED
+}
+
+enum RoundType {
+  PRELIMINARY
+  CALLBACK
+  QUARTERFINAL
+  SEMIFINAL
+  FINAL
+  TIE_BREAK
+  DANCE_OFF
+}
+
+enum DivisionLevel {
+  NOVICE
+  INTERMEDIATE
+  ADVANCED
+  OPEN
+  INVITATIONAL
+  CUSTOM
+}
+
+// GLOBAL — роль действует на весь движок (напр. SUPER_ADMIN).
+// COMPETITION — роль назначается точечно, на конкретное соревнование
+// (через CompetitionMember), напр. HEAD_JUDGE или JUDGE.
+enum RoleScope {
+  GLOBAL
+  COMPETITION
+}
+
+// ---------------------------------------------------------------------------
+// RBAC
+// ---------------------------------------------------------------------------
+
+model Permission {
+  id   String @id @default(cuid())
+  code String @unique // "competition:create", "draw:lock", "judge:score", ...
+  name String
+
+  rolePermissions RolePermission[]
+}
+
+model Role {
+  id    String    @id @default(cuid())
+  code  String    @unique // SUPER_ADMIN, EVENT_ADMIN, HEAD_JUDGE, JUDGE, SCORER, DJ, MC, COMPETITOR
+  name  String
+  scope RoleScope
+
+  permissions       RolePermission[]
+  userAssignments   UserRoleAssignment[]
+  memberAssignments CompetitionMember[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+}
+
+// Глобальное назначение роли пользователю (напр. SUPER_ADMIN). Роль внутри
+// конкретного соревнования — через CompetitionMember, не здесь.
+model UserRoleAssignment {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation("UserRoleAssignee", fields: [userId], references: [id], onDelete: Cascade)
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  grantedAt   DateTime @default(now())
+  grantedById String?
+  grantedBy   User?    @relation("UserRoleGrantor", fields: [grantedById], references: [id])
+
+  @@unique([userId, roleId])
+  @@index([userId])
+}
+
+// Роль пользователя внутри конкретного соревнования — реализует шаг
+// "competition membership" конвейера авторизации (03 §3).
+model CompetitionMember {
+  id            String      @id @default(cuid())
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation("CompetitionMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  roleId        String
+  role          Role        @relation(fields: [roleId], references: [id])
+  addedAt       DateTime    @default(now())
+  addedById     String?
+  addedBy       User?       @relation("CompetitionMemberGrantor", fields: [addedById], references: [id])
+
+  @@unique([competitionId, userId, roleId])
+  @@index([competitionId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Соревнование / дивизион / правила
+// ---------------------------------------------------------------------------
+
+model CompetitionTemplate {
+  id      String  @id @default(cuid())
+  code    String  @unique
+  name    String
+  version String
+  rules   Json
+  active  Boolean @default(true)
+
+  competitions Competition[]
+}
+
+model Competition {
+  id            String               @id @default(cuid())
+  name          String
+  slug          String               @unique
+  description   String?
+  organizerName String?
+  venue         String?
+  cityId        String?
+  city          City?                @relation(fields: [cityId], references: [id])
+  timezone      String               @default("Europe/Minsk")
+  startAt       DateTime?
+  endAt         DateTime?
+  status        CompetitionStatus    @default(DRAFT)
+  statusVersion Int                  @default(1) // оптимистичная блокировка при переходах состояния (03 §27)
+  templateId    String?
+  template      CompetitionTemplate? @relation(fields: [templateId], references: [id])
+  eventId       String?              @unique // афишная карточка слоя 1; nullable — соревнование может быть без публичной афиши
+  event         Event?               @relation(fields: [eventId], references: [id])
+  publicResults Boolean              @default(false)
+  createdById   String
+  createdBy     User                 @relation("CompetitionCreator", fields: [createdById], references: [id])
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  rules     CompetitionRules[]
+  divisions Division[]
+  members   CompetitionMember[]
+
+  @@index([status])
+  @@index([cityId])
+}
+
+// Версии правил соревнования. Unique по (competitionId, version), НЕ по
+// одному competitionId — иначе Round.rulesId не на что было бы ссылаться
+// при появлении новой версии правил (docs/00_DECISIONS.md, A1).
+model CompetitionRules {
+  id            String      @id @default(cuid())
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  version       Int
+  rules         Json
+  lockedAt      DateTime?
+  lockedById    String?
+  lockedBy      User?       @relation("CompetitionRulesLocker", fields: [lockedById], references: [id])
+  createdAt     DateTime    @default(now())
+
+  rounds Round[]
+
+  @@unique([competitionId, version])
+  @@index([competitionId])
+}
+
+model Division {
+  id              String        @id @default(cuid())
+  competitionId   String
+  competition     Competition   @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  name            String
+  level           DivisionLevel
+  minAge          Int?
+  maxAge          Int?
+  maxParticipants Int?
+  rules           Json
+  createdAt       DateTime      @default(now())
+
+  rounds Round[]
+
+  @@unique([competitionId, name])
+}
+
+// ---------------------------------------------------------------------------
+// Раунды / заезды
+// ---------------------------------------------------------------------------
+
+model Round {
+  id             String           @id @default(cuid())
+  divisionId     String
+  division       Division         @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  name           String
+  type           RoundType
+  order          Int
+  status         RoundStatus      @default(DRAFT)
+  statusVersion  Int              @default(1)
+  finalistsCount Int?
+  config         Json             @default("{}")
+  rulesId        String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
+  rules          CompetitionRules @relation(fields: [rulesId], references: [id])
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime         @default(now())
+
+  heats Heat[]
+
+  @@unique([divisionId, order])
+  @@index([status])
+}
+
+model Heat {
+  id            String     @id @default(cuid())
+  roundId       String
+  round         Round      @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  number        Int
+  status        HeatStatus @default(PENDING)
+  statusVersion Int        @default(1)
+  startedAt     DateTime?
+  endedAt       DateTime?
+
+  @@unique([roundId, number])
+}
+
+// ---------------------------------------------------------------------------
+// Аудит / идемпотентность
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation("AuditLogActor", fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  reason     String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model CompetitionEvent {
+  id            String   @id @default(cuid())
+  competitionId String?
+  roundId       String?
+  heatId        String?
+  eventType     String
+  payload       Json
+  occurredAt    DateTime @default(now())
+  actorId       String?
+  actor         User?    @relation("CompetitionEventActor", fields: [actorId], references: [id])
+
+  @@index([competitionId, occurredAt])
+}
+
+// Идемпотентность для draw/расчёта результатов/публикации (03 §26).
+// Оценки судей используют собственный clientSubmissionId — сюда не относится.
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  scope     String // напр. "draw.generate", "result.publish"
+  key       String
+  createdAt DateTime @default(now())
+
+  @@unique([scope, key])
 }
