@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { TagButton } from "@/components/ui/tag";
 
 type City = { id: string; slug: string; nameRu: string };
 
@@ -13,17 +14,11 @@ export function CityPicker({ cities }: { cities: City[] }) {
   }
 
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div className="flex flex-wrap gap-2">
       {cities.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          className="tag"
-          style={{ padding: "6px 14px", border: "none", cursor: "pointer", font: "inherit" }}
-          onClick={() => pick(c.slug)}
-        >
+        <TagButton key={c.id} onClick={() => pick(c.slug)}>
           {c.nameRu}
-        </button>
+        </TagButton>
       ))}
     </div>
   );
