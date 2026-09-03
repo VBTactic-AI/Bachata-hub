@@ -6,29 +6,22 @@ import { can } from "@/server/rbac/authorize";
 import { buttonVariants } from "@/components/ui/button";
 import { cardVariants } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Черновик",
-  REGISTRATION_OPEN: "Регистрация открыта",
-  REGISTRATION_CLOSED: "Регистрация закрыта",
-  CHECK_IN: "Check-in",
-  READY: "Готово к старту",
-  LIVE: "Идёт",
-  SCORING: "Судейство",
-  REVIEW: "Проверка результатов",
-  PUBLISHED: "Опубликовано",
-  ARCHIVED: "Архив",
-};
+import { COMPETITION_STATUS_LABELS as STATUS_LABELS } from "@/lib/competition-labels";
 
 export default async function CompetitionsPage() {
   const actor = await getActor();
   if (!actor) redirect("/login");
 
   const isSuperAdmin = can(actor, "competition:create");
+  // Не только "свои" соревнования — иначе танцор, который ещё никуда не
+  // регистрировался, вообще не может узнать, что открыта регистрация
+  // (некуда было бы кликнуть, чтобы записаться в первый раз).
   const competitions = isSuperAdmin
     ? await prisma.competition.findMany({ orderBy: { createdAt: "desc" } })
     : await prisma.competition.findMany({
-        where: { members: { some: { userId: actor.userId } } },
+        where: {
+          OR: [{ members: { some: { userId: actor.userId } } }, { status: "REGISTRATION_OPEN" }],
+        },
         orderBy: { createdAt: "desc" },
       });
 

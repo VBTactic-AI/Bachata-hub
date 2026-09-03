@@ -31,6 +31,7 @@ export const ru = {
     register: "Регистрация",
     admin: "Модерация",
     addEvent: "Добавить событие",
+    competitions: "Соревнования",
   },
   city: {
     choose: "Выберите город",

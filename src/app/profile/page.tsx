@@ -3,9 +3,16 @@ import { getCurrentUser } from "@/lib/auth";
 import { getDancerByUserId } from "@/lib/dancer";
 import { prisma } from "@/lib/prisma";
 import { t } from "@/lib/i18n/dictionary";
+import Link from "next/link";
 import { DancerProfileView } from "@/components/DancerProfileView";
 import { ProfileEditForm } from "@/components/ProfileEditForm";
 import { AchievementForm } from "@/components/AchievementForm";
+import { Card } from "@/components/ui/card";
+import {
+  COMPETITION_STATUS_LABELS,
+  REGISTRATION_ROLE_LABELS,
+  REGISTRATION_STATUS_LABELS,
+} from "@/lib/competition-labels";
 
 export default async function ProfilePage() {
   const user = await getCurrentUser();
@@ -36,12 +43,47 @@ export default async function ProfilePage() {
     .filter((a) => a.status === "WENT")
     .map((a) => a.event);
 
+  // "Мои соревнования" (слой 3) — данные были готовы с этапа 3, здесь
+  // впервые выводятся в интерфейсе участника, а не только организатора.
+  const registrations = await prisma.registration.findMany({
+    where: { dancerId: dancer.id },
+    include: { competition: { select: { id: true, name: true, status: true } }, division: true, checkIn: true },
+    orderBy: { createdAt: "desc" },
+  });
+
   return (
     <div className="stack">
       <div className="flex justify-end gap-2">
         <ProfileEditForm dancer={dancer} cities={cities} />
       </div>
       <DancerProfileView dancer={dancer} editable />
+
+      <div>
+        <h2 className="page-title">Мои соревнования</h2>
+        {registrations.length === 0 ? (
+          <p className="hint-text">Вы пока не зарегистрированы ни на одно соревнование.</p>
+        ) : (
+          <div className="stack gap-3">
+            {registrations.map((r) => (
+              <Link key={r.id} href={`/admin/competitions/${r.competition.id}`} className="block no-underline">
+                <Card interactive>
+                  <strong className="text-ink">{r.competition.name}</strong>
+                  <p className="hint-text mt-1">
+                    {r.division.name} · {REGISTRATION_ROLE_LABELS[r.role] ?? r.role} ·{" "}
+                    {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
+                    {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
+                  </p>
+                  <p className="hint-text mt-1">
+                    {COMPETITION_STATUS_LABELS[r.competition.status] ?? r.competition.status}
+                    {r.roleOverrideStatus === "PENDING" && " · роль ждёт подтверждения организатора"}
+                  </p>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div>
         <AchievementForm attendedEvents={attendedEvents} />
       </div>

@@ -11,35 +11,12 @@ import { AdminRegisterForm } from "@/components/admin/AdminRegisterForm";
 import { CheckInButton } from "@/components/admin/CheckInButton";
 import { RoleOverrideReview } from "@/components/admin/RoleOverrideReview";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Черновик",
-  REGISTRATION_OPEN: "Регистрация открыта",
-  REGISTRATION_CLOSED: "Регистрация закрыта",
-  CHECK_IN: "Check-in",
-  READY: "Готово к старту",
-  LIVE: "Идёт",
-  SCORING: "Судейство",
-  REVIEW: "Проверка результатов",
-  PUBLISHED: "Опубликовано",
-  ARCHIVED: "Архив",
-};
-
-const DIVISION_LEVEL_LABELS: Record<string, string> = {
-  NOVICE: "Новички",
-  INTERMEDIATE: "Средний",
-  ADVANCED: "Продвинутые",
-  OPEN: "Открытый",
-  INVITATIONAL: "По приглашениям",
-  CUSTOM: "Свой",
-};
-
-const ROLE_LABELS: Record<string, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
-const REGISTRATION_STATUS_LABELS: Record<string, string> = {
-  REGISTERED: "Зарегистрирован",
-  SCRATCHED: "Снялся",
-  DISQUALIFIED: "Дисквалифицирован",
-};
+import {
+  COMPETITION_STATUS_LABELS as STATUS_LABELS,
+  DIVISION_LEVEL_LABELS,
+  REGISTRATION_ROLE_LABELS as ROLE_LABELS,
+  REGISTRATION_STATUS_LABELS,
+} from "@/lib/competition-labels";
 
 export default async function CompetitionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -59,11 +36,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   });
   if (!competition) notFound();
 
-  // Доступ к странице — глобальные права (SUPER_ADMIN) либо любое членство
-  // в этом конкретном соревновании; управление (кнопки) — отдельная,
-  // более узкая проверка ниже.
+  // Доступ к странице — глобальные права (SUPER_ADMIN), любое членство в
+  // этом конкретном соревновании, ИЛИ открытая регистрация (иначе танцор,
+  // который ещё никуда не записан, не смог бы дойти до формы регистрации,
+  // на которую сам список /admin/competitions его уже пускает); управление
+  // (кнопки) — отдельная, более узкая проверка ниже.
   const isMember = actor.permissionsByCompetition.has(competition.id) || actor.globalPermissions.size > 0;
-  if (!isMember) redirect("/admin/competitions");
+  if (!isMember && competition.status !== "REGISTRATION_OPEN") redirect("/admin/competitions");
 
   const canManage = can(actor, "competition:update", competition.id);
   const canManageRegistrations = can(actor, "registration:manage", competition.id);

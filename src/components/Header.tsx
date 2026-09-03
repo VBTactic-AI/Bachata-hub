@@ -14,6 +14,11 @@ export async function Header() {
     // "Профиль" им не показываем, а не молча редиректим при клике.
     user ? prisma.dancer.findUnique({ where: { userId: user.id }, select: { id: true } }) : null,
   ]);
+  // "Соревнования" — любому залогиненному, не только тем, у кого уже есть
+  // роль в движке: иначе танцор, который никуда ещё не регистрировался, не
+  // может даже узнать, что где-то открыта регистрация (/admin/competitions
+  // сам показывает открытые для регистрации соревнования всем).
+  const hasCompetitionAccess = !!user;
 
   return (
     <header className="sticky top-0 z-10 border-b border-line bg-white/90 backdrop-blur-md">
@@ -42,6 +47,11 @@ export async function Header() {
           {isModerator(user) && (
             <Link href="/moderation" className="text-ink hover:text-primary hover:no-underline">
               {t.nav.admin}
+            </Link>
+          )}
+          {hasCompetitionAccess && (
+            <Link href="/admin/competitions" className="text-ink hover:text-primary hover:no-underline">
+              {t.nav.competitions}
             </Link>
           )}
           {user ? (
