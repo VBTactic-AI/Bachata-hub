@@ -20,17 +20,15 @@ export default async function ModerationLogPage() {
       {logs.length === 0 ? (
         <p className="hint-text">{t.moderation.logEmpty}</p>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table className="w-full border-collapse">
           <tbody>
             {logs.map((l) => (
-              <tr key={l.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                <td style={{ padding: "6px 8px 6px 0", whiteSpace: "nowrap" }}>
-                  {l.createdAt.toLocaleString("ru-RU")}
-                </td>
-                <td style={{ padding: "6px 8px" }}>{l.actor.email}</td>
-                <td style={{ padding: "6px 8px" }}>{l.entity}</td>
-                <td style={{ padding: "6px 8px" }}>{l.action}</td>
-                <td style={{ padding: "6px 0" }}>{l.reason ?? ""}</td>
+              <tr key={l.id} className="border-b border-line">
+                <td className="whitespace-nowrap py-1.5 pr-2">{l.createdAt.toLocaleString("ru-RU")}</td>
+                <td className="px-2 py-1.5">{l.actor.email}</td>
+                <td className="px-2 py-1.5">{l.entity}</td>
+                <td className="px-2 py-1.5">{l.action}</td>
+                <td className="py-1.5">{l.reason ?? ""}</td>
               </tr>
             ))}
           </tbody>
