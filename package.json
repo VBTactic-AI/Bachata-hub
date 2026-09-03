@@ -12,7 +12,9 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "seed": "tsx prisma/seed.ts",
-    "seed:if-empty": "tsx prisma/seed-if-empty.ts"
+    "seed:if-empty": "tsx prisma/seed-if-empty.ts",
+    "seed:layer3": "tsx prisma/seed-layer3.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "next": "15.3.6",
@@ -37,6 +39,7 @@
     "tsx": "4.16.5",
     "tailwindcss": "3.4.15",
     "postcss": "8.4.49",
-    "autoprefixer": "10.4.20"
+    "autoprefixer": "10.4.20",
+    "vitest": "2.1.8"
   }
 }
