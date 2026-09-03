@@ -12,6 +12,7 @@ export const ru = {
     delete: "Удалить",
     edit: "Редактировать",
     submit: "Отправить",
+    details: "Подробнее",
     back: "Назад",
     search: "Поиск",
     all: "Все",

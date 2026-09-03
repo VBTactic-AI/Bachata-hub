@@ -33,7 +33,7 @@ export async function Header() {
             <>
               {dancer && <Link href="/profile">{t.nav.profile}</Link>}
               <form action="/api/auth/logout" method="post" style={{ display: "inline" }}>
-                <button type="submit" className="btn-secondary" style={{ border: "none", background: "none", cursor: "pointer", padding: 0, font: "inherit" }}>
+                <button type="submit" className="btn btn-secondary" style={{ border: "none", background: "none", boxShadow: "none", cursor: "pointer", padding: 0, font: "inherit" }}>
                   {t.nav.logout}
                 </button>
               </form>

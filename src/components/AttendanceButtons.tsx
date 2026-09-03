@@ -65,7 +65,7 @@ export function AttendanceButtons({
         {t.event.iWent}
       </button>
       {status && (
-        <button className="btn-secondary" style={{ border: "none", background: "none", cursor: "pointer" }} disabled={loading} onClick={clear} type="button">
+        <button className="btn btn-secondary" style={{ border: "none", background: "none", boxShadow: "none", cursor: "pointer" }} disabled={loading} onClick={clear} type="button">
           {t.event.cancelMark}
         </button>
       )}
