@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
 
 export function AttendanceButtons({
   eventSlug,
@@ -47,27 +48,27 @@ export function AttendanceButtons({
   }
 
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-      <button
-        className={status === "GOING" ? "btn" : "btn btn-secondary"}
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        variant={status === "GOING" ? "default" : "secondary"}
         disabled={loading}
         onClick={() => mark("GOING")}
         type="button"
       >
         {t.event.imGoing}
-      </button>
-      <button
-        className={status === "WENT" ? "btn" : "btn btn-secondary"}
+      </Button>
+      <Button
+        variant={status === "WENT" ? "default" : "secondary"}
         disabled={loading}
         onClick={() => mark("WENT")}
         type="button"
       >
         {t.event.iWent}
-      </button>
+      </Button>
       {status && (
-        <button className="btn btn-secondary" style={{ border: "none", background: "none", boxShadow: "none", cursor: "pointer" }} disabled={loading} onClick={clear} type="button">
+        <Button variant="ghost" disabled={loading} onClick={clear} type="button">
           {t.event.cancelMark}
-        </button>
+        </Button>
       )}
     </div>
   );
