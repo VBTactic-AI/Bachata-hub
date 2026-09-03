@@ -3,6 +3,8 @@ import { getCurrentUser, isModerator } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { t } from "@/lib/i18n/dictionary";
 import { ModerationActions } from "@/components/ModerationActions";
+import { Card } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 
 // Отзывы теперь публикуются только после проверки (moderationStatus:
 // PENDING по умолчанию — автору при этом отзыв виден сразу, см. страницу
@@ -33,11 +35,17 @@ export default async function ModerationReviewsPage({
     <div className="stack">
       <h1 className="page-title">{t.moderation.allReviews}</h1>
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <a href="/moderation/reviews?tab=new" className={tab === "new" ? "btn btn-sm" : "btn btn-secondary btn-sm"}>
+      <div className="flex gap-2">
+        <a
+          href="/moderation/reviews?tab=new"
+          className={buttonVariants({ variant: tab === "new" ? "default" : "secondary", size: "sm", className: "no-underline" })}
+        >
           {t.moderation.newReviewsTab}
         </a>
-        <a href="/moderation/reviews?tab=all" className={tab === "all" ? "btn btn-sm" : "btn btn-secondary btn-sm"}>
+        <a
+          href="/moderation/reviews?tab=all"
+          className={buttonVariants({ variant: tab === "all" ? "default" : "secondary", size: "sm", className: "no-underline" })}
+        >
           {t.moderation.allReviewsTab}
         </a>
       </div>
@@ -47,25 +55,23 @@ export default async function ModerationReviewsPage({
           {tab === "new" ? t.moderation.noNewReviews : t.moderation.noPendingEvents}
         </p>
       ) : (
-        <div className="stack" style={{ gap: 12 }}>
+        <div className="stack gap-3">
           {reviews.map((r) => (
-            <div key={r.id} className="card">
-              <p className="stars" style={{ margin: 0 }}>
+            <Card key={r.id}>
+              <p className="m-0 tracking-wide text-accent">
                 {"★".repeat(r.rating)}
                 {"☆".repeat(5 - r.rating)}
               </p>
-              <p style={{ margin: "6px 0" }}>{r.text}</p>
-              <p className="hint-text" style={{ margin: 0 }}>
+              <p className="my-1.5">{r.text}</p>
+              <p className="hint-text m-0">
                 {r.school.name} · {r.author.email} · {t.moderation.reviewStatus}:{" "}
                 {t.moderation.reviewStatusValues[r.moderationStatus]}
               </p>
               {tab === "all" && r.moderatedById && (
-                <p className="hint-text" style={{ margin: 0 }}>
-                  {t.moderation.reviewedNote}
-                </p>
+                <p className="hint-text m-0">{t.moderation.reviewedNote}</p>
               )}
               <ModerationActions endpoint={`/api/moderation/reviews/${r.id}`} />
-            </div>
+            </Card>
           ))}
         </div>
       )}
