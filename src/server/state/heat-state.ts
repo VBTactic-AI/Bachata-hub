@@ -46,6 +46,15 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
     // разошлись, следующий заезд запускать рано.
     guard: async (tx) => {
       if (to !== "RUNNING") return;
+      // Заезд не может стартовать раньше собственного раунда — раунд обязан
+      // быть в RUNNING (значит жеребьёвка для него уже зафиксирована,
+      // DRAW_LOCKED -> RUNNING), иначе заезд запустился бы "пустым", без
+      // единого вызванного участника (обнаружено на реальном тесте).
+      if (heat.round.status !== "RUNNING") {
+        throw new ValidationFailedError(
+          `Нельзя запустить этот заезд: раунд ещё не переведён в статус "Идёт" (сначала жеребьёвка, потом запуск раунда).`
+        );
+      }
       const activeElsewhere = await tx.heat.findFirst({
         where: {
           id: { not: heatId },

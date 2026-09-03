@@ -32,7 +32,7 @@ beforeEach(() => {
     id: "heat1",
     status: "PENDING",
     statusVersion: 1,
-    round: { division: { competitionId: "comp1" } },
+    round: { status: "RUNNING", division: { competitionId: "comp1" } },
   });
   txHeatFindFirst.mockReset().mockResolvedValue(null);
   txHeatUpdateMany.mockReset().mockResolvedValue({ count: 1 });
@@ -82,6 +82,36 @@ describe("transitionHeat() — эксклюзивность паркета", () 
     await transitionHeat("heat1", "FINISHED");
 
     expect(txHeatFindFirst).not.toHaveBeenCalled();
+    expect(txHeatUpdateMany).toHaveBeenCalledOnce();
+  });
+});
+
+// Заезд не может стартовать раньше собственного раунда — иначе он запустится
+// "пустым", без единого вызванного жеребьёвкой участника (найдено на реальном
+// тесте: заезд был запущен, пока раунд ещё был в DRAFT).
+describe("transitionHeat() — заезд не раньше своего раунда", () => {
+  it("отклоняет запуск заезда, если раунд ещё не в статусе RUNNING", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      status: "PENDING",
+      statusVersion: 1,
+      round: { status: "DRAWING", division: { competitionId: "comp1" } },
+    });
+
+    await expect(transitionHeat("heat1", "RUNNING")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txHeatUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("разрешает запуск, если раунд уже RUNNING", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      status: "PENDING",
+      statusVersion: 1,
+      round: { status: "RUNNING", division: { competitionId: "comp1" } },
+    });
+
+    await transitionHeat("heat1", "RUNNING");
+
     expect(txHeatUpdateMany).toHaveBeenCalledOnce();
   });
 });

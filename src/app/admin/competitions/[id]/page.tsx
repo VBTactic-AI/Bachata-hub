@@ -203,7 +203,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                     <span>
                                       Заезд {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
                                     </span>
-                                    <HeatStatusControls heatId={heat.id} status={heat.status} />
+                                    <HeatStatusControls heatId={heat.id} status={heat.status} roundStatus={round.status} />
                                   </div>
                                   {draw && (
                                     <div className="stack gap-1 mt-1 pl-3">

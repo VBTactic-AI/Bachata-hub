@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import type { HeatStatus } from "@prisma/client";
+import type { HeatStatus, RoundStatus } from "@prisma/client";
 
 // Дублирует таблицу переходов src/server/state/heat-state.ts только для
 // отображения кнопок — сервер проверяет допустимость и права сам.
@@ -21,11 +21,22 @@ const ACTION_LABELS: Record<HeatStatus, string> = {
   FINISHED: "Завершить",
 };
 
-export function HeatStatusControls({ heatId, status }: { heatId: string; status: HeatStatus }) {
+export function HeatStatusControls({
+  heatId,
+  status,
+  roundStatus,
+}: {
+  heatId: string;
+  status: HeatStatus;
+  // Заезд не может стартовать раньше собственного раунда (сервер это тоже
+  // проверяет — это только чтобы не показывать кнопку, которая всё равно
+  // будет отклонена).
+  roundStatus: RoundStatus;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const nextOptions = NEXT[status] ?? [];
+  const nextOptions = (NEXT[status] ?? []).filter((to) => to !== "RUNNING" || roundStatus === "RUNNING");
 
   async function go(to: HeatStatus) {
     setLoading(true);
