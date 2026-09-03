@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   "registration:create",
   "registration:update_own",
   "registration:manage",
+  "registration:role_override_review",
 
   "checkin:manage",
   "checkin:self",

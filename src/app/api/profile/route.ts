@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 const schema = z.object({
   displayName: z.string().min(1).max(80),
   cityId: z.string().optional().or(z.literal("")),
+  gender: z.enum(["MALE", "FEMALE"]).optional().or(z.literal("")),
   danceRole: z.enum(["LEADER", "FOLLOWER", "BOTH"]).optional().or(z.literal("")),
   selfLevel: z.enum(["BEGINNER", "ALL_LEVELS", "ADVANCED"]).optional().or(z.literal("")),
   avatarUrl: z.string().url().optional().or(z.literal("")),
@@ -25,6 +26,7 @@ export async function PATCH(req: NextRequest) {
     data: {
       displayName: data.displayName,
       cityId: data.cityId || null,
+      gender: data.gender || null,
       danceRole: data.danceRole || null,
       selfLevel: data.selfLevel || null,
       avatarUrl: data.avatarUrl || null,

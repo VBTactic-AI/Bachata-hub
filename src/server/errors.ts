@@ -50,3 +50,21 @@ export class ValidationFailedError extends DomainError {
     super(message);
   }
 }
+
+export class RegistrationNotOpenError extends DomainError {
+  constructor() {
+    super("Регистрация на это соревнование сейчас закрыта.");
+  }
+}
+
+export class AlreadyRegisteredError extends DomainError {
+  constructor() {
+    super("Этот участник уже зарегистрирован в этом дивизионе.");
+  }
+}
+
+export class NoDancerProfileError extends DomainError {
+  constructor() {
+    super("Чтобы зарегистрироваться на конкурс, сначала заполните профиль танцора.");
+  }
+}

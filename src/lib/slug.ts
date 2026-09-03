@@ -21,10 +21,10 @@ export function baseSlug(input: string): string {
   return slugify(transliterate(input), { lower: true, strict: true });
 }
 
-// Гарантирует уникальность slug'а в таблице `model` (school | event), добавляя
-// числовой суффикс при коллизии.
+// Гарантирует уникальность slug'а в таблице `model`, добавляя числовой
+// суффикс при коллизии.
 export async function uniqueSlug(
-  model: "school" | "event",
+  model: "school" | "event" | "competition",
   input: string
 ): Promise<string> {
   const base = baseSlug(input) || "item";
@@ -35,7 +35,9 @@ export async function uniqueSlug(
     const existing =
       model === "school"
         ? await prisma.school.findUnique({ where: { slug: candidate } })
-        : await prisma.event.findUnique({ where: { slug: candidate } });
+        : model === "event"
+          ? await prisma.event.findUnique({ where: { slug: candidate } })
+          : await prisma.competition.findUnique({ where: { slug: candidate } });
     if (!existing) return candidate;
     n += 1;
     candidate = `${base}-${n}`;

@@ -10,6 +10,7 @@ type City = { id: string; nameRu: string };
 type Dancer = {
   displayName: string;
   cityId: string | null;
+  gender: "MALE" | "FEMALE" | null;
   danceRole: "LEADER" | "FOLLOWER" | "BOTH" | null;
   selfLevel: "BEGINNER" | "ALL_LEVELS" | "ADVANCED" | null;
   avatarUrl: string | null;
@@ -19,6 +20,7 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
   const router = useRouter();
   const [displayName, setDisplayName] = useState(dancer.displayName);
   const [cityId, setCityId] = useState(dancer.cityId ?? "");
+  const [gender, setGender] = useState(dancer.gender ?? "");
   const [danceRole, setDanceRole] = useState(dancer.danceRole ?? "");
   const [selfLevel, setSelfLevel] = useState(dancer.selfLevel ?? "");
   const [avatarUrl, setAvatarUrl] = useState(dancer.avatarUrl ?? "");
@@ -41,7 +43,7 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
     const res = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ displayName, cityId, danceRole, selfLevel, avatarUrl }),
+      body: JSON.stringify({ displayName, cityId, gender, danceRole, selfLevel, avatarUrl }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -69,6 +71,15 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
           ))}
         </Select>
       </Label>
+      <Label>
+        {t.dancer.genderLabel}
+        <Select value={gender} onChange={(e) => setGender(e.target.value as typeof gender)}>
+          <option value="">—</option>
+          <option value="MALE">{t.dancer.gender.MALE}</option>
+          <option value="FEMALE">{t.dancer.gender.FEMALE}</option>
+        </Select>
+      </Label>
+      <p className="hint-text -mt-2">{t.dancer.genderHint}</p>
       <Label>
         {t.dancer.roleLabel}
         <Select value={danceRole} onChange={(e) => setDanceRole(e.target.value as typeof danceRole)}>
