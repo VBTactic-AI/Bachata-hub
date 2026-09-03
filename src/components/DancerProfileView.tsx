@@ -16,36 +16,23 @@ export function DancerProfileView({ dancer, editable = false }: { dancer: Dancer
 
   return (
     <div className="stack">
-      <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+      <div className="flex items-center gap-4">
         {dancer.avatarUrl ? (
           <img
             src={dancer.avatarUrl}
             alt={dancer.displayName}
             width={80}
             height={80}
-            style={{ borderRadius: "50%", objectFit: "cover" }}
+            className="rounded-full object-cover"
           />
         ) : (
-          <div
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              background: "var(--color-border)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 28,
-              fontWeight: 700,
-              color: "var(--color-text-muted)",
-            }}
-          >
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-line text-[28px] font-bold text-muted">
             {dancer.displayName.slice(0, 1).toUpperCase()}
           </div>
         )}
         <div>
           <h1 className="page-title">{dancer.displayName}</h1>
-          <p className="hint-text" style={{ margin: 0 }}>
+          <p className="hint-text m-0">
             {[dancer.city?.nameRu, dancer.danceRole ? t.dancer.role[dancer.danceRole] : null, dancer.selfLevel ? t.event.levels[dancer.selfLevel] : null]
               .filter(Boolean)
               .join(" · ")}
