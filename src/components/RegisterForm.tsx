@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { FormRoot, Input, Label, Select } from "@/components/ui/field";
 
 type City = { id: string; nameRu: string };
 
@@ -41,58 +43,58 @@ export function RegisterForm({ cities }: { cities: City[] }) {
   }
 
   return (
-    <form onSubmit={onSubmit}>
-      <label>
+    <FormRoot onSubmit={onSubmit}>
+      <Label>
         {t.auth.displayName}
-        <input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-      </label>
-      <label>
+        <Input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+      </Label>
+      <Label>
         {t.auth.email}
-        <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-      </label>
-      <label>
+        <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Label>
+      <Label>
         {t.auth.password}
-        <input
+        <Input
           type="password"
           required
           minLength={6}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-      </label>
-      <label>
+      </Label>
+      <Label>
         {t.auth.confirmPassword}
-        <input
+        <Input
           type="password"
           required
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
         />
-      </label>
-      <label>
+      </Label>
+      <Label>
         {t.city.choose}
-        <select value={cityId} onChange={(e) => setCityId(e.target.value)}>
+        <Select value={cityId} onChange={(e) => setCityId(e.target.value)}>
           <option value="">—</option>
           {cities.map((c) => (
             <option key={c.id} value={c.id}>
               {c.nameRu}
             </option>
           ))}
-        </select>
-      </label>
-      <label>
+        </Select>
+      </Label>
+      <Label>
         {t.auth.registerAs}
-        <select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
+        <Select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
           <option value="DANCER">{t.auth.roleDancer}</option>
           <option value="SCHOOL_REP">{t.auth.roleSchoolRep}</option>
           <option value="ORGANIZER">{t.auth.roleOrganizer}</option>
-        </select>
-      </label>
+        </Select>
+      </Label>
       {role === "SCHOOL_REP" && <p className="hint-text">{t.auth.schoolRepHint}</p>}
       {error && <p className="error-text">{error}</p>}
-      <button className="btn" type="submit" disabled={loading}>
+      <Button type="submit" disabled={loading}>
         {t.nav.register}
-      </button>
-    </form>
+      </Button>
+    </FormRoot>
   );
 }
