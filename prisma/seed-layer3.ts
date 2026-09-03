@@ -29,6 +29,7 @@ const PERMISSIONS = [
   ["registration:create", "Регистрация на соревнование"],
   ["registration:update_own", "Редактирование своей регистрации"],
   ["registration:manage", "Управление регистрациями участников"],
+  ["registration:role_override_review", "Подтверждение роли, отличной от пола участника"],
 
   ["checkin:manage", "Проведение check-in участников"],
   ["checkin:self", "Самостоятельный check-in"],
@@ -87,6 +88,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "competition:members_manage",
     "registration:view",
     "registration:manage",
+    "registration:role_override_review",
     "checkin:manage",
     "draw:generate",
     "draw:reroll",
@@ -108,6 +110,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   HEAD_JUDGE: [
     "competition:publish",
     "registration:view",
+    "registration:role_override_review",
     "checkin:manage",
     "draw:generate",
     "draw:reroll",
