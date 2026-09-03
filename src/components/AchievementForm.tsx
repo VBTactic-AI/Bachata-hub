@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { FormRoot, Input, Label, Select } from "@/components/ui/field";
 
 type AttendedEvent = { id: string; title: string };
 
@@ -17,9 +19,9 @@ export function AchievementForm({ attendedEvents }: { attendedEvents: AttendedEv
 
   if (!open) {
     return (
-      <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOpen(true)}>
+      <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
         {t.dancer.addAchievement}
-      </button>
+      </Button>
     );
   }
 
@@ -45,40 +47,40 @@ export function AchievementForm({ attendedEvents }: { attendedEvents: AttendedEv
   }
 
   return (
-    <form onSubmit={onSubmit} className="card">
-      <label>
+    <FormRoot onSubmit={onSubmit} className="rounded-app border border-line bg-surface p-[18px] shadow-sm">
+      <Label>
         {t.dancer.achievementDescription}
-        <input
+        <Input
           required
           placeholder={t.dancer.achievementPlaceholder}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-      </label>
-      <label>
+      </Label>
+      <Label>
         {t.dancer.achievementDate}
-        <input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} />
-      </label>
-      <label>
+        <Input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} />
+      </Label>
+      <Label>
         {t.dancer.achievementEventLabel}
-        <select value={eventId} onChange={(e) => setEventId(e.target.value)}>
+        <Select value={eventId} onChange={(e) => setEventId(e.target.value)}>
           <option value="">{t.dancer.achievementNoEvent}</option>
           {attendedEvents.map((ev) => (
             <option key={ev.id} value={ev.id}>
               {ev.title}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </Label>
       {error && <p className="error-text">{error}</p>}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-sm" type="submit" disabled={loading}>
+      <div className="flex gap-2">
+        <Button size="sm" type="submit" disabled={loading}>
           {t.common.save}
-        </button>
-        <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOpen(false)}>
+        </Button>
+        <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(false)}>
           {t.common.cancel}
-        </button>
+        </Button>
       </div>
-    </form>
+    </FormRoot>
   );
 }
