@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { searchEvents } from "@/lib/events";
 import { EventCard } from "@/components/EventCard";
 import { pluralizeRu } from "@/lib/format";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FiltersForm, Input, Label, Select } from "@/components/ui/field";
 
 export const metadata: Metadata = {
   title: t.nav.calendar,
@@ -39,68 +41,66 @@ export default async function EventsPage({
         {events.length} {pluralizeRu(events.length, t.event.eventsFoundCount)}
       </p>
 
-      <form className="filters-form" method="get">
-        <label>
+      <FiltersForm method="get">
+        <Label>
           {t.event.filters.city}
-          <select name="city" defaultValue={sp.city ?? ""}>
+          <Select name="city" defaultValue={sp.city ?? ""}>
             <option value="">{t.common.all}</option>
             {cities.map((c) => (
               <option key={c.id} value={c.slug}>
                 {c.nameRu}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
+          </Select>
+        </Label>
+        <Label>
           {t.event.filters.format}
-          <select name="format" defaultValue={sp.format ?? ""}>
+          <Select name="format" defaultValue={sp.format ?? ""}>
             <option value="">{t.common.all}</option>
             {Object.entries(t.event.formats).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
+          </Select>
+        </Label>
+        <Label>
           {t.event.filters.level}
-          <select name="level" defaultValue={sp.level ?? ""}>
+          <Select name="level" defaultValue={sp.level ?? ""}>
             <option value="">{t.common.all}</option>
             {Object.entries(t.event.levels).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
+          </Select>
+        </Label>
+        <Label>
           {t.event.filters.school}
-          <select name="school" defaultValue={sp.school ?? ""}>
+          <Select name="school" defaultValue={sp.school ?? ""}>
             <option value="">{t.common.all}</option>
             {schools.map((s) => (
               <option key={s.id} value={s.slug}>
                 {s.name}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
+          </Select>
+        </Label>
+        <Label>
           {t.event.filters.dateFrom}
-          <input type="date" name="from" defaultValue={sp.from ?? ""} />
-        </label>
-        <label>
+          <Input type="date" name="from" defaultValue={sp.from ?? ""} />
+        </Label>
+        <Label>
           {t.event.filters.dateTo}
-          <input type="date" name="to" defaultValue={sp.to ?? ""} />
-        </label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" type="submit">
-            {t.event.filters.apply}
-          </button>
-          <a className="btn btn-secondary" href="/events">
+          <Input type="date" name="to" defaultValue={sp.to ?? ""} />
+        </Label>
+        <div className="flex gap-2">
+          <Button type="submit">{t.event.filters.apply}</Button>
+          <a href="/events" className={buttonVariants({ variant: "secondary", className: "no-underline" })}>
             {t.event.filters.reset}
           </a>
         </div>
-      </form>
+      </FiltersForm>
 
       {events.length === 0 ? (
         <p className="hint-text">{t.home.noEventsToday}</p>
