@@ -3,23 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { FormRoot, Input, Label, Select } from "@/components/ui/field";
+import { FormRoot, Label, Select } from "@/components/ui/field";
 
-const LEVELS = [
-  ["NOVICE", "Новички"],
-  ["INTERMEDIATE", "Средний"],
-  ["ADVANCED", "Продвинутые"],
-  ["OPEN", "Открытый"],
-  ["INVITATIONAL", "По приглашениям"],
-  ["CUSTOM", "Свой"],
-] as const;
+type Category = { id: string; name: string };
 
-export function AddDivisionForm({ competitionId }: { competitionId: string }) {
+export function AddDivisionForm({ competitionId, categories }: { competitionId: string; categories: Category[] }) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [level, setLevel] = useState<string>("OPEN");
+  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  if (categories.length === 0) {
+    return (
+      <p className="hint-text">
+        Нет доступных категорий — сначала добавьте хотя бы одну в общем справочнике («Категории соревнований» в меню).
+      </p>
+    );
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,7 +28,7 @@ export function AddDivisionForm({ competitionId }: { competitionId: string }) {
     const res = await fetch(`/api/competitions/${competitionId}/divisions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, level, rules: {} }),
+      body: JSON.stringify({ categoryId, rules: {} }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -36,22 +36,17 @@ export function AddDivisionForm({ competitionId }: { competitionId: string }) {
       setError(data.error || "Не удалось добавить дивизион.");
       return;
     }
-    setName("");
     router.refresh();
   }
 
   return (
     <FormRoot onSubmit={onSubmit} className="mt-4 max-w-[420px]">
       <Label>
-        Название дивизиона
-        <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Новички" />
-      </Label>
-      <Label>
-        Уровень
-        <Select value={level} onChange={(e) => setLevel(e.target.value)}>
-          {LEVELS.map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
+        Категория
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
             </option>
           ))}
         </Select>

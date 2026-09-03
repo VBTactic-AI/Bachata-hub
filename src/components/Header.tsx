@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
-import { getCurrentUser, canCreateEvents, isModerator } from "@/lib/auth";
+import { getCurrentUser, canCreateEvents, isModerator, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getPreferredCity } from "@/lib/city-preference";
 import { CitySwitcher } from "./CitySwitcher";
@@ -52,6 +52,11 @@ export async function Header() {
           {hasCompetitionAccess && (
             <Link href="/admin/competitions" className="text-ink hover:text-primary hover:no-underline">
               {t.nav.competitions}
+            </Link>
+          )}
+          {isAdmin(user) && (
+            <Link href="/admin/division-categories" className="text-ink hover:text-primary hover:no-underline">
+              {t.nav.divisionCategories}
             </Link>
           )}
           {user ? (

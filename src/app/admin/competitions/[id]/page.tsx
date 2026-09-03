@@ -10,10 +10,10 @@ import { RegisterSelfForm } from "@/components/admin/RegisterSelfForm";
 import { AdminRegisterForm } from "@/components/admin/AdminRegisterForm";
 import { CheckInButton } from "@/components/admin/CheckInButton";
 import { RoleOverrideReview } from "@/components/admin/RoleOverrideReview";
+import { ChangeDivisionControl } from "@/components/admin/ChangeDivisionControl";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
-  DIVISION_LEVEL_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
   REGISTRATION_STATUS_LABELS,
 } from "@/lib/competition-labels";
@@ -23,17 +23,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const competition = await prisma.competition.findUnique({
-    where: { id },
-    include: {
-      divisions: { orderBy: { createdAt: "asc" } },
-      city: true,
-      registrations: {
-        include: { dancer: true, checkIn: true, division: { select: { name: true } } },
-        orderBy: { createdAt: "asc" },
+  const [competition, activeCategories] = await Promise.all([
+    prisma.competition.findUnique({
+      where: { id },
+      include: {
+        divisions: { include: { category: true }, orderBy: { category: { order: "asc" } } },
+        city: true,
+        registrations: {
+          include: { dancer: true, checkIn: true, division: { include: { category: true } } },
+          orderBy: { createdAt: "asc" },
+        },
       },
-    },
-  });
+    }),
+    prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
+  ]);
   if (!competition) notFound();
 
   // Доступ к странице — глобальные права (SUPER_ADMIN), любое членство в
@@ -48,6 +51,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canManageRegistrations = can(actor, "registration:manage", competition.id);
   const canCheckIn = can(actor, "checkin:manage", competition.id);
   const canReviewRoleOverride = can(actor, "registration:role_override_review", competition.id);
+  const canChangeDivision = can(actor, "registration:change_division", competition.id);
   const myDancer = await prisma.dancer.findUnique({
     where: { userId: actor.userId },
     select: { id: true, gender: true },
@@ -56,6 +60,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const alreadyRegistered = myDancer
     ? competition.registrations.some((r) => r.dancerId === myDancer.id)
     : false;
+
+  // Формы регистрации ждут { id, name } — категория дивизиона теперь и есть
+  // его "имя" для пользователя.
+  const divisionOptions = competition.divisions.map((d) => ({ id: d.id, name: d.category.name }));
 
   return (
     <div className="stack">
@@ -78,21 +86,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           <div className="card-grid">
             {competition.divisions.map((d) => (
               <Card key={d.id}>
-                <strong>{d.name}</strong>
-                <p className="hint-text mt-1">{DIVISION_LEVEL_LABELS[d.level] ?? d.level}</p>
+                <strong>{d.category.name}</strong>
               </Card>
             ))}
           </div>
         )}
-        {canManage && <AddDivisionForm competitionId={competition.id} />}
+        {canManage && <AddDivisionForm competitionId={competition.id} categories={activeCategories} />}
       </div>
 
-      {isRegistrationOpen && !alreadyRegistered && competition.divisions.length > 0 && (
+      {isRegistrationOpen && !alreadyRegistered && divisionOptions.length > 0 && (
         <div>
           <h2 className="page-title">Регистрация</h2>
           <RegisterSelfForm
             competitionId={competition.id}
-            divisions={competition.divisions}
+            divisions={divisionOptions}
             suggestedRole={suggestedRoleForGender(myDancer?.gender ?? null)}
           />
         </div>
@@ -109,7 +116,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 <div>
                   <strong>{r.dancer.displayName}</strong>
                   <p className="hint-text mt-1">
-                    {r.division.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
+                    {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
                     {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
                     {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
                   </p>
@@ -124,6 +131,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {canChangeDivision && (
+                    <ChangeDivisionControl
+                      registrationId={r.id}
+                      currentDivisionId={r.divisionId}
+                      divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))}
+                    />
+                  )}
                   {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
                     <RoleOverrideReview registrationId={r.id} />
                   )}
@@ -135,10 +149,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             ))}
           </div>
         )}
-        {canManageRegistrations && competition.divisions.length > 0 && (
+        {canManageRegistrations && divisionOptions.length > 0 && (
           <div className="mt-4">
             <h3 className="mb-2">Добавить участника вручную</h3>
-            <AdminRegisterForm competitionId={competition.id} divisions={competition.divisions} />
+            <AdminRegisterForm competitionId={competition.id} divisions={divisionOptions} />
           </div>
         )}
       </div>

@@ -13,15 +13,6 @@ export const COMPETITION_STATUS_LABELS: Record<string, string> = {
   ARCHIVED: "Архив",
 };
 
-export const DIVISION_LEVEL_LABELS: Record<string, string> = {
-  NOVICE: "Новички",
-  INTERMEDIATE: "Средний",
-  ADVANCED: "Продвинутые",
-  OPEN: "Открытый",
-  INVITATIONAL: "По приглашениям",
-  CUSTOM: "Свой",
-};
-
 export const REGISTRATION_ROLE_LABELS: Record<string, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
 
 export const REGISTRATION_STATUS_LABELS: Record<string, string> = {

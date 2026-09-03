@@ -47,7 +47,11 @@ export default async function ProfilePage() {
   // впервые выводятся в интерфейсе участника, а не только организатора.
   const registrations = await prisma.registration.findMany({
     where: { dancerId: dancer.id },
-    include: { competition: { select: { id: true, name: true, status: true } }, division: true, checkIn: true },
+    include: {
+      competition: { select: { id: true, name: true, status: true } },
+      division: { include: { category: true } },
+      checkIn: true,
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -69,7 +73,7 @@ export default async function ProfilePage() {
                 <Card interactive>
                   <strong className="text-ink">{r.competition.name}</strong>
                   <p className="hint-text mt-1">
-                    {r.division.name} · {REGISTRATION_ROLE_LABELS[r.role] ?? r.role} ·{" "}
+                    {r.division.category.name} · {REGISTRATION_ROLE_LABELS[r.role] ?? r.role} ·{" "}
                     {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
                     {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
                   </p>

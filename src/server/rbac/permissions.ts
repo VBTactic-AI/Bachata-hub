@@ -14,6 +14,9 @@ export const PERMISSIONS = [
   "registration:update_own",
   "registration:manage",
   "registration:role_override_review",
+  "registration:change_division",
+
+  "division_category:manage",
 
   "checkin:manage",
   "checkin:self",

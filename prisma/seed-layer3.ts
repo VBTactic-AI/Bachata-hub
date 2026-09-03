@@ -30,6 +30,9 @@ const PERMISSIONS = [
   ["registration:update_own", "Редактирование своей регистрации"],
   ["registration:manage", "Управление регистрациями участников"],
   ["registration:role_override_review", "Подтверждение роли, отличной от пола участника"],
+  ["registration:change_division", "Изменение категории (дивизиона) участника после регистрации"],
+
+  ["division_category:manage", "Управление общим справочником категорий соревнований"],
 
   ["checkin:manage", "Проведение check-in участников"],
   ["checkin:self", "Самостоятельный check-in"],
@@ -89,6 +92,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "registration:view",
     "registration:manage",
     "registration:role_override_review",
+    "registration:change_division",
     "checkin:manage",
     "draw:generate",
     "draw:reroll",
@@ -181,6 +185,23 @@ async function main() {
         create: { roleId: role.id, permissionId: permission.id },
       });
     }
+  }
+
+  // Стартовый общий справочник категорий соревнований — редактируется
+  // только через division_category:manage (SUPER_ADMIN), см. AddDivisionForm.
+  const DIVISION_CATEGORIES: [string, number][] = [
+    ["Дебютанты", 1],
+    ["Начинающие", 2],
+    ["Любители", 3],
+    ["Продвинутые", 4],
+    ["Профи", 5],
+  ];
+  for (const [name, order] of DIVISION_CATEGORIES) {
+    await prisma.divisionCategory.upsert({
+      where: { name },
+      update: { order },
+      create: { name, order },
+    });
   }
 
   // Демо-аккаунт для проверки SUPER_ADMIN (пароль — как у остальных demo

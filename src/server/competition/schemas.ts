@@ -13,24 +13,25 @@ export const createCompetitionSchema = z.object({
 });
 export type CreateCompetitionInput = z.infer<typeof createCompetitionSchema>;
 
-export const divisionLevelSchema = z.enum([
-  "NOVICE",
-  "INTERMEDIATE",
-  "ADVANCED",
-  "OPEN",
-  "INVITATIONAL",
-  "CUSTOM",
-]);
-
 export const addDivisionSchema = z.object({
-  name: z.string().min(1).max(100),
-  level: divisionLevelSchema,
+  categoryId: z.string().min(1),
   minAge: z.coerce.number().int().positive().optional(),
   maxAge: z.coerce.number().int().positive().optional(),
   maxParticipants: z.coerce.number().int().positive().optional(),
   rules: z.record(z.unknown()).default({}),
 });
 export type AddDivisionInput = z.infer<typeof addDivisionSchema>;
+
+export const createDivisionCategorySchema = z.object({
+  name: z.string().min(1).max(100),
+});
+export type CreateDivisionCategoryInput = z.infer<typeof createDivisionCategorySchema>;
+
+export const changeRegistrationDivisionSchema = z.object({
+  divisionId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+export type ChangeRegistrationDivisionInput = z.infer<typeof changeRegistrationDivisionSchema>;
 
 export const setRulesSchema = z.object({
   rules: z.record(z.unknown()),

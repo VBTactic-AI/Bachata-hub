@@ -12,13 +12,17 @@ const auditCreate = vi.fn();
 const divisionCreate = vi.fn();
 const rulesFindFirst = vi.fn();
 const rulesCreate = vi.fn();
+const divisionCategoryFindUnique = vi.fn();
 const fakeTx = {
   division: { create: divisionCreate },
   competitionRules: { findFirst: rulesFindFirst, create: rulesCreate },
   auditLog: { create: auditCreate },
 };
 vi.mock("@/lib/prisma", () => ({
-  prisma: { $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx) },
+  prisma: {
+    divisionCategory: { findUnique: (...a: unknown[]) => divisionCategoryFindUnique(...a) },
+    $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
+  },
 }));
 
 const { addDivision } = await import("@/server/competition/add-division");
@@ -29,15 +33,26 @@ const actor = { userId: "u1", email: "a@b.by" };
 beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
   auditCreate.mockReset();
-  divisionCreate.mockReset().mockResolvedValue({ id: "div1", name: "Novice", level: "NOVICE" });
+  divisionCreate.mockReset().mockResolvedValue({ id: "div1", categoryId: "cat1" });
+  divisionCategoryFindUnique.mockReset().mockResolvedValue({ id: "cat1", name: "Начинающие", isActive: true });
   rulesFindFirst.mockReset().mockResolvedValue(null);
   rulesCreate.mockReset().mockResolvedValue({ id: "rules1", version: 1 });
 });
 
 describe("привязка прав к конкретному соревнованию", () => {
   it("addDivision проверяет competition:update ИМЕННО для этого competitionId", async () => {
-    await addDivision("comp1", { name: "Novice", level: "NOVICE", rules: {} } as never);
+    await addDivision("comp1", { categoryId: "cat1", rules: {} } as never);
     expect(requirePermissionMock).toHaveBeenCalledWith("competition:update", "comp1");
+  });
+
+  it("addDivision отклоняет неактивную категорию", async () => {
+    divisionCategoryFindUnique.mockResolvedValue({ id: "cat1", name: "Легаси", isActive: false });
+    const { ValidationFailedError } = await import("@/server/errors");
+
+    await expect(addDivision("comp1", { categoryId: "cat1", rules: {} } as never)).rejects.toBeInstanceOf(
+      ValidationFailedError
+    );
+    expect(divisionCreate).not.toHaveBeenCalled();
   });
 
   it("setCompetitionRules проверяет competition:settings_update ИМЕННО для этого competitionId", async () => {

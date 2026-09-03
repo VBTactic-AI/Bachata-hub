@@ -490,15 +490,6 @@ enum RoundType {
   DANCE_OFF
 }
 
-enum DivisionLevel {
-  NOVICE
-  INTERMEDIATE
-  ADVANCED
-  OPEN
-  INVITATIONAL
-  CUSTOM
-}
-
 // GLOBAL — роль действует на весь движок (напр. SUPER_ADMIN).
 // COMPETITION — роль назначается точечно, на конкретное соревнование
 // (через CompetitionMember), напр. HEAD_JUDGE или JUDGE.
@@ -645,22 +636,38 @@ model CompetitionRules {
   @@index([competitionId])
 }
 
+// Общий для всех соревнований справочник категорий — редактирует только
+// SUPER_ADMIN (добавление/деактивация, не физическое удаление — иначе
+// потерялась бы связь с уже существующими Division/Registration,
+// CLAUDE.md §18). Организатор конкретного соревнования просто выбирает
+// нужные категории отсюда при создании дивизионов, а не придумывает
+// названия сам. Уровень никак не ограничивает регистрацию — это подпись,
+// не правило.
+model DivisionCategory {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  divisions Division[]
+}
+
 model Division {
-  id              String        @id @default(cuid())
+  id              String           @id @default(cuid())
   competitionId   String
-  competition     Competition   @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  name            String
-  level           DivisionLevel
+  competition     Competition      @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        DivisionCategory @relation(fields: [categoryId], references: [id])
   minAge          Int?
   maxAge          Int?
   maxParticipants Int?
   rules           Json
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime         @default(now())
 
   rounds        Round[]
   registrations Registration[]
 
-  @@unique([competitionId, name])
+  @@unique([competitionId, categoryId])
 }
 
 // ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@ export const ru = {
     admin: "Модерация",
     addEvent: "Добавить событие",
     competitions: "Соревнования",
+    divisionCategories: "Категории",
   },
   city: {
     choose: "Выберите город",
