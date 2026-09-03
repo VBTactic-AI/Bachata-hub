@@ -36,7 +36,7 @@ export default async function ProfilePage() {
 
   return (
     <div className="stack">
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      <div className="flex justify-end gap-2">
         <ProfileEditForm dancer={dancer} cities={cities} />
       </div>
       <DancerProfileView dancer={dancer} editable />
