@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { transition, type TransitionTable } from "./machine";
 import { requirePermission } from "../rbac/authorize";
 import type { Permission } from "../rbac/permissions";
+import { ValidationFailedError } from "../errors";
 
 const TABLE: TransitionTable<HeatStatus> = {
   PENDING: ["RUNNING"],
@@ -37,6 +38,27 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
     to,
     actor,
     reason: opts?.reason,
+    // На паркете физически может танцевать только один заезд одновременно —
+    // схема не моделирует несколько площадок (Stage/Floor), поэтому пока
+    // ограничение действует на всё соревнование целиком (docs/00_DECISIONS.md,
+    // A4). PAUSED тоже считается "занимающим паркет" — пары просто ждут, а не
+    // разошлись, следующий заезд запускать рано.
+    guard: async (tx) => {
+      if (to !== "RUNNING") return;
+      const activeElsewhere = await tx.heat.findFirst({
+        where: {
+          id: { not: heatId },
+          status: { in: ["RUNNING", "PAUSED"] },
+          round: { division: { competitionId } },
+        },
+        include: { round: { select: { name: true } } },
+      });
+      if (activeElsewhere) {
+        throw new ValidationFailedError(
+          `Нельзя запустить этот заезд: сейчас уже идёт (или на паузе) заезд №${activeElsewhere.number} раунда «${activeElsewhere.round.name}» — сначала завершите его.`
+        );
+      }
+    },
     applyUpdate: async (tx, { to, expectedVersion }) => {
       const result = await tx.heat.updateMany({
         where: { id: heatId, statusVersion: expectedVersion },
