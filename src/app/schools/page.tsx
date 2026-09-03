@@ -4,6 +4,8 @@ import { t } from "@/lib/i18n/dictionary";
 import { prisma } from "@/lib/prisma";
 import { SchoolCard } from "@/components/SchoolCard";
 import { pluralizeRu } from "@/lib/format";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FiltersForm, Label, Select } from "@/components/ui/field";
 
 export const metadata: Metadata = {
   title: t.nav.schools,
@@ -36,38 +38,36 @@ export default async function SchoolsPage({
         {schools.length} {pluralizeRu(schools.length, t.school.schoolsFoundCount)}
       </p>
 
-      <form className="filters-form" method="get">
-        <label>
+      <FiltersForm method="get">
+        <Label>
           {t.event.filters.city}
-          <select name="city" defaultValue={sp.city ?? ""}>
+          <Select name="city" defaultValue={sp.city ?? ""}>
             <option value="">{t.common.all}</option>
             {cities.map((c) => (
               <option key={c.id} value={c.slug}>
                 {c.nameRu}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
+          </Select>
+        </Label>
+        <Label>
           {t.event.filters.level}
-          <select name="level" defaultValue={sp.level ?? ""}>
+          <Select name="level" defaultValue={sp.level ?? ""}>
             <option value="">{t.common.all}</option>
             {Object.entries(t.event.levels).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
             ))}
-          </select>
-        </label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" type="submit">
-            {t.event.filters.apply}
-          </button>
-          <a className="btn btn-secondary" href="/schools">
+          </Select>
+        </Label>
+        <div className="flex gap-2">
+          <Button type="submit">{t.event.filters.apply}</Button>
+          <a href="/schools" className={buttonVariants({ variant: "secondary", className: "no-underline" })}>
             {t.event.filters.reset}
           </a>
         </div>
-      </form>
+      </FiltersForm>
 
       {schools.length === 0 ? (
         <p className="hint-text">{t.school.noSchoolsFound}</p>
