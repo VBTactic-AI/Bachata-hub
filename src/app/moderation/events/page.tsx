@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { t } from "@/lib/i18n/dictionary";
 import { formatDateTime } from "@/lib/format";
 import { ModerationActions } from "@/components/ModerationActions";
+import { Card } from "@/components/ui/card";
 
 export default async function ModerationEventsPage() {
   const user = await getCurrentUser();
@@ -22,22 +23,22 @@ export default async function ModerationEventsPage() {
       {events.length === 0 ? (
         <p className="hint-text">{t.moderation.noPendingEvents}</p>
       ) : (
-        <div className="stack" style={{ gap: 12 }}>
+        <div className="stack gap-3">
           {events.map((e) => (
-            <div key={e.id} className="card">
+            <Card key={e.id}>
               <strong>{e.title}</strong>
-              <p className="hint-text" style={{ margin: "4px 0" }}>
+              <p className="hint-text my-1">
                 {formatDateTime(e.startsAt)} · {e.city.nameRu} · {e.venueName}
               </p>
-              <p style={{ margin: 0 }}>
+              <p className="m-0">
                 {t.event.formats[e.format]} · {t.event.levels[e.level]}
               </p>
-              <p className="hint-text" style={{ margin: "4px 0" }}>
+              <p className="hint-text my-1">
                 {t.event.organizer}: {e.school?.name ?? e.organizerName ?? "—"} · {e.createdBy.email}
               </p>
-              {e.description && <p style={{ margin: "4px 0" }}>{e.description}</p>}
+              {e.description && <p className="my-1">{e.description}</p>}
               <ModerationActions endpoint={`/api/moderation/events/${e.id}`} />
-            </div>
+            </Card>
           ))}
         </div>
       )}
