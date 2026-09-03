@@ -3,6 +3,7 @@ import { getCurrentUser, isModerator } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { t } from "@/lib/i18n/dictionary";
 import { ModerationActions } from "@/components/ModerationActions";
+import { Card } from "@/components/ui/card";
 
 export default async function ModerationSchoolClaimsPage() {
   const user = await getCurrentUser();
@@ -21,25 +22,25 @@ export default async function ModerationSchoolClaimsPage() {
       {claims.length === 0 ? (
         <p className="hint-text">{t.moderation.noPendingClaims}</p>
       ) : (
-        <div className="stack" style={{ gap: 12 }}>
+        <div className="stack gap-3">
           {claims.map((c) => (
-            <div key={c.id} className="card">
+            <Card key={c.id}>
               <strong>
                 {t.moderation.claimedSchool}: {c.school.name} ({c.school.city.nameRu})
               </strong>
-              <p className="hint-text" style={{ margin: "4px 0" }}>
+              <p className="hint-text my-1">
                 {t.moderation.claimant}: {c.claimant.email}
               </p>
               {c.proofNote && (
-                <p style={{ margin: "4px 0" }}>
+                <p className="my-1">
                   {t.moderation.claimNote}: {c.proofNote}
                 </p>
               )}
-              <p className="hint-text" style={{ margin: 0 }}>
+              <p className="hint-text m-0">
                 {t.moderation.submittedAt}: {c.createdAt.toLocaleDateString("ru-RU")}
               </p>
               <ModerationActions endpoint={`/api/moderation/claims/${c.id}`} />
-            </div>
+            </Card>
           ))}
         </div>
       )}
