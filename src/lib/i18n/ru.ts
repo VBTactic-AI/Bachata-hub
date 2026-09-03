@@ -33,6 +33,7 @@ export const ru = {
     addEvent: "Добавить событие",
     competitions: "Соревнования",
     divisionCategories: "Категории",
+    roundStages: "Этапы отбора",
   },
   city: {
     choose: "Выберите город",

@@ -1,14 +1,14 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
+import { ValidationFailedError } from "../errors";
+import { getOrCreateLatestRulesVersion } from "./rules-version";
 import type { CreateRoundInput } from "./schemas";
 
-// Round.rulesId обязателен (02 §4), а отдельного шага "настроить правила"
-// перед раундами пока нет. Решение (docs/00_DECISIONS.md, A3): при создании
-// раунда переиспользуем последнюю версию CompetitionRules соревнования, а
-// если её ещё нет — заводим версию 1 с пустыми {} тем же аудитом, что и
-// ручной setCompetitionRules (не молчаливое действие, CLAUDE.md §60).
+// Раунд ссылается на этап из общего справочника (RoundStageCatalog), а не
+// на свободный текст/enum (docs/00_DECISIONS.md, A7) — название организатор
+// не придумывает, только выбирает и, при необходимости, правит число
+// "сколько проходит дальше" под размер своего дивизиона.
 export async function createRound(divisionId: string, input: CreateRoundInput): Promise<{ id: string }> {
   const division = await prisma.division.findUniqueOrThrow({
     where: { id: divisionId },
@@ -16,24 +16,13 @@ export async function createRound(divisionId: string, input: CreateRoundInput): 
   });
   const actor = await requirePermission("round:create", division.competitionId);
 
+  const stage = await prisma.roundStageCatalog.findUnique({ where: { id: input.stageId } });
+  if (!stage || !stage.isActive) {
+    throw new ValidationFailedError("Выбранный этап отбора недоступен.");
+  }
+
   const round = await prisma.$transaction(async (tx) => {
-    let rules = await tx.competitionRules.findFirst({
-      where: { competitionId: division.competitionId },
-      orderBy: { version: "desc" },
-    });
-    if (!rules) {
-      rules = await tx.competitionRules.create({
-        data: { competitionId: division.competitionId, version: 1, rules: {} as Prisma.InputJsonValue },
-      });
-      await writeAudit(tx, {
-        actor,
-        action: "competition_rules.create",
-        entityType: "CompetitionRules",
-        entityId: rules.id,
-        after: { competitionId: division.competitionId, version: 1, auto: true },
-        reason: "Автоматически создано при первом раунде — правила ещё не настроены явно.",
-      });
-    }
+    const rules = await getOrCreateLatestRulesVersion(tx, division.competitionId, actor);
 
     const last = await tx.round.findFirst({ where: { divisionId }, orderBy: { order: "desc" } });
     const order = (last?.order ?? 0) + 1;
@@ -41,10 +30,10 @@ export async function createRound(divisionId: string, input: CreateRoundInput): 
     const created = await tx.round.create({
       data: {
         divisionId,
-        name: input.name,
-        type: input.type,
+        stageId: input.stageId,
         order,
         finalistsCount: input.finalistsCount,
+        heatCapacity: input.heatCapacity,
         rulesId: rules.id,
       },
     });
@@ -54,7 +43,14 @@ export async function createRound(divisionId: string, input: CreateRoundInput): 
       action: "round.create",
       entityType: "Round",
       entityId: created.id,
-      after: { divisionId, name: created.name, type: created.type, order, rulesId: rules.id },
+      after: {
+        divisionId,
+        stageId: input.stageId,
+        stageName: stage.name,
+        order,
+        finalistsCount: input.finalistsCount,
+        rulesId: rules.id,
+      },
     });
 
     return created;

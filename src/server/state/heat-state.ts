@@ -4,6 +4,7 @@ import { transition, type TransitionTable } from "./machine";
 import { requirePermission } from "../rbac/authorize";
 import type { Permission } from "../rbac/permissions";
 import { ValidationFailedError } from "../errors";
+import { ROUND_TYPE_LABELS } from "@/lib/competition-labels";
 
 const TABLE: TransitionTable<HeatStatus> = {
   PENDING: ["RUNNING"],
@@ -51,11 +52,14 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
           status: { in: ["RUNNING", "PAUSED"] },
           round: { division: { competitionId } },
         },
-        include: { round: { select: { name: true } } },
+        include: { round: { select: { type: true, stage: { select: { name: true } } } } },
       });
       if (activeElsewhere) {
+        const roundName =
+          activeElsewhere.round.stage?.name ??
+          (activeElsewhere.round.type ? (ROUND_TYPE_LABELS[activeElsewhere.round.type] ?? activeElsewhere.round.type) : "раунда");
         throw new ValidationFailedError(
-          `Нельзя запустить этот заезд: сейчас уже идёт (или на паузе) заезд №${activeElsewhere.number} раунда «${activeElsewhere.round.name}» — сначала завершите его.`
+          `Нельзя запустить этот заезд: сейчас уже идёт (или на паузе) заезд №${activeElsewhere.number} раунда «${roundName}» — сначала завершите его.`
         );
       }
     },

@@ -4,20 +4,29 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Label, Input, Select } from "@/components/ui/field";
-import { ROUND_TYPE_LABELS } from "@/lib/competition-labels";
 
-// TIE_BREAK/DANCE_OFF не показываем — их создаёт Advancement Engine
-// автоматически при ничьей на cutoff (этап 8), не организатор вручную
-// (docs/00_DECISIONS.md, createRoundSchema ограничивает то же самое на сервере).
-const MANUAL_TYPES = ["PRELIMINARY", "CALLBACK", "QUARTERFINAL", "SEMIFINAL", "FINAL"] as const;
+type Stage = { id: string; name: string; defaultAdvanceCount: number };
 
-export function AddRoundForm({ divisionId }: { divisionId: string }) {
+export function AddRoundForm({ divisionId, stages }: { divisionId: string; stages: Stage[] }) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [type, setType] = useState<(typeof MANUAL_TYPES)[number]>("PRELIMINARY");
-  const [finalistsCount, setFinalistsCount] = useState("");
+  const [stageId, setStageId] = useState(stages[0]?.id ?? "");
+  const [finalistsCount, setFinalistsCount] = useState(String(stages[0]?.defaultAdvanceCount ?? ""));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  if (stages.length === 0) {
+    return (
+      <p className="hint-text">
+        Нет доступных этапов отбора — сначала добавьте хотя бы один в общем справочнике («Этапы отбора» в меню).
+      </p>
+    );
+  }
+
+  function onStageChange(id: string) {
+    setStageId(id);
+    const stage = stages.find((s) => s.id === id);
+    if (stage) setFinalistsCount(String(stage.defaultAdvanceCount));
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,11 +35,7 @@ export function AddRoundForm({ divisionId }: { divisionId: string }) {
     const res = await fetch(`/api/divisions/${divisionId}/rounds`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        type,
-        finalistsCount: finalistsCount ? Number(finalistsCount) : undefined,
-      }),
+      body: JSON.stringify({ stageId, finalistsCount: Number(finalistsCount) }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -38,39 +43,33 @@ export function AddRoundForm({ divisionId }: { divisionId: string }) {
       setError(data.error || "Не удалось создать раунд.");
       return;
     }
-    setName("");
-    setFinalistsCount("");
     router.refresh();
   }
 
   return (
     <FormRoot onSubmit={onSubmit} className="mt-2 max-w-[420px]">
       <Label>
-        Название раунда
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Напр. Первый отборочный" required />
-      </Label>
-      <Label>
-        Тип
-        <Select value={type} onChange={(e) => setType(e.target.value as typeof type)}>
-          {MANUAL_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {ROUND_TYPE_LABELS[t]}
+        Этап
+        <Select value={stageId} onChange={(e) => onStageChange(e.target.value)}>
+          {stages.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
             </option>
           ))}
         </Select>
       </Label>
       <Label>
-        Сколько проходит дальше (необязательно)
+        Сколько проходит дальше
         <Input
+          required
           type="number"
           min={1}
           value={finalistsCount}
           onChange={(e) => setFinalistsCount(e.target.value)}
-          placeholder="Оставьте пустым, если не финальный отбор"
         />
       </Label>
       {error && <p className="error-text">{error}</p>}
-      <Button type="submit" size="sm" disabled={loading || !name.trim()}>
+      <Button type="submit" size="sm" disabled={loading || !stageId}>
         Добавить раунд
       </Button>
     </FormRoot>

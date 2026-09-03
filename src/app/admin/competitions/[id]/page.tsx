@@ -12,6 +12,7 @@ import { CheckInButton } from "@/components/admin/CheckInButton";
 import { RoleOverrideReview } from "@/components/admin/RoleOverrideReview";
 import { ChangeDivisionControl } from "@/components/admin/ChangeDivisionControl";
 import { AddRoundForm } from "@/components/admin/AddRoundForm";
+import { GenerateRoundsButton } from "@/components/admin/GenerateRoundsButton";
 import { RoundStatusControls } from "@/components/admin/RoundStatusControls";
 import { AddHeatButton } from "@/components/admin/AddHeatButton";
 import { HeatStatusControls } from "@/components/admin/HeatStatusControls";
@@ -29,14 +30,17 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const [competition, activeCategories] = await Promise.all([
+  const [competition, activeCategories, activeStages] = await Promise.all([
     prisma.competition.findUnique({
       where: { id },
       include: {
         divisions: {
           include: {
             category: true,
-            rounds: { include: { heats: { orderBy: { number: "asc" } } }, orderBy: { order: "asc" } },
+            rounds: {
+              include: { heats: { orderBy: { number: "asc" } }, stage: true },
+              orderBy: { order: "asc" },
+            },
           },
           orderBy: { category: { order: "asc" } },
         },
@@ -44,6 +48,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       },
     }),
     prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
+    prisma.roundStageCatalog.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
   ]);
   if (!competition) notFound();
 
@@ -128,7 +133,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       <div key={round.id} className="rounded-app-sm border border-line p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span>
-                            <strong>{round.name}</strong> · {ROUND_TYPE_LABELS[round.type] ?? round.type}
+                            <strong>{round.stage?.name ?? (round.type ? (ROUND_TYPE_LABELS[round.type] ?? round.type) : "—")}</strong>
                             {round.finalistsCount ? ` · проходят ${round.finalistsCount}` : ""}
                           </span>
                           {canManageRounds && <RoundStatusControls roundId={round.id} status={round.status} />}
@@ -152,7 +157,12 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       </div>
                     ))
                   )}
-                  {canManageRounds && <AddRoundForm divisionId={d.id} />}
+                  {canManageRounds && (
+                    <div className="flex flex-wrap items-start gap-4">
+                      <GenerateRoundsButton divisionId={d.id} />
+                      <AddRoundForm divisionId={d.id} stages={activeStages} />
+                    </div>
+                  )}
                 </div>
               </Card>
             ))}

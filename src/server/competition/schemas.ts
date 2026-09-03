@@ -18,6 +18,10 @@ export const addDivisionSchema = z.object({
   minAge: z.coerce.number().int().positive().optional(),
   maxAge: z.coerce.number().int().positive().optional(),
   maxParticipants: z.coerce.number().int().positive().optional(),
+  // Вместимость заезда (пар одновременно на паркете) — используется при
+  // авто-генерации раундов/заездов. Необязательно — если не задать, в базе
+  // используется значение по умолчанию (docs/00_DECISIONS.md, A7).
+  heatCapacity: z.coerce.number().int().positive().optional(),
   rules: z.record(z.unknown()).default({}),
 });
 export type AddDivisionInput = z.infer<typeof addDivisionSchema>;
@@ -26,6 +30,12 @@ export const createDivisionCategorySchema = z.object({
   name: z.string().min(1).max(100),
 });
 export type CreateDivisionCategoryInput = z.infer<typeof createDivisionCategorySchema>;
+
+export const createRoundStageSchema = z.object({
+  name: z.string().min(1).max(100),
+  defaultAdvanceCount: z.coerce.number().int().positive(),
+});
+export type CreateRoundStageInput = z.infer<typeof createRoundStageSchema>;
 
 export const changeRegistrationDivisionSchema = z.object({
   divisionId: z.string().min(1),
@@ -57,17 +67,19 @@ export const transitionCompetitionSchema = z.object({
 });
 export type TransitionCompetitionInput = z.infer<typeof transitionCompetitionSchema>;
 
-// TIE_BREAK/DANCE_OFF намеренно исключены — эти раунды создаёт Advancement
-// Engine автоматически при ничьей на cutoff (CLAUDE.md §19-21, этап 8), а не
-// организатор вручную через эту форму.
-export const manualRoundTypeSchema = z.enum(["PRELIMINARY", "CALLBACK", "QUARTERFINAL", "SEMIFINAL", "FINAL"]);
-
+// Раунд теперь всегда ссылается на этап из общего справочника
+// (RoundStageCatalog) — свободного названия/типа больше нет
+// (docs/00_DECISIONS.md, A7). TIE_BREAK/DANCE_OFF создаёт сам Advancement
+// Engine (Этап 8), через этот эндпоинт недоступны.
 export const createRoundSchema = z.object({
-  name: z.string().min(1).max(200),
-  type: manualRoundTypeSchema,
-  finalistsCount: z.coerce.number().int().positive().optional(),
+  stageId: z.string().min(1),
+  finalistsCount: z.coerce.number().int().positive(),
+  heatCapacity: z.coerce.number().int().positive().optional(),
 });
 export type CreateRoundInput = z.infer<typeof createRoundSchema>;
+
+export const generateRoundsSchema = z.object({}).default({});
+export type GenerateRoundsInput = z.infer<typeof generateRoundsSchema>;
 
 export const roundStatusSchema = z.enum([
   "DRAFT",

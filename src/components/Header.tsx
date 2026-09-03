@@ -59,6 +59,11 @@ export async function Header() {
               {t.nav.divisionCategories}
             </Link>
           )}
+          {isAdmin(user) && (
+            <Link href="/admin/round-stages" className="text-ink hover:text-primary hover:no-underline">
+              {t.nav.roundStages}
+            </Link>
+          )}
           {user ? (
             <>
               {dancer && (

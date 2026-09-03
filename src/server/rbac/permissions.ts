@@ -17,6 +17,7 @@ export const PERMISSIONS = [
   "registration:change_division",
 
   "division_category:manage",
+  "round_stage:manage",
 
   "checkin:manage",
   "checkin:self",

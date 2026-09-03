@@ -51,7 +51,7 @@ describe("transitionHeat() — эксклюзивность паркета", () 
   });
 
   it("отклоняет запуск, если другой заезд соревнования уже RUNNING", async () => {
-    txHeatFindFirst.mockResolvedValue({ id: "heat2", number: 2, round: { name: "Полуфинал" } });
+    txHeatFindFirst.mockResolvedValue({ id: "heat2", number: 2, round: { type: null, stage: { name: "Полуфинал" } } });
 
     await expect(transitionHeat("heat1", "RUNNING")).rejects.toBeInstanceOf(ValidationFailedError);
     expect(txHeatUpdateMany).not.toHaveBeenCalled();

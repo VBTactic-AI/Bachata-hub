@@ -661,6 +661,11 @@ model Division {
   minAge          Int?
   maxAge          Int?
   maxParticipants Int?
+  // Сколько пар помещается на паркет одновременно — используется при
+  // авто-генерации раундов/заездов (docs/00_DECISIONS.md, A7), чтобы
+  // посчитать, на сколько заездов делить раунд. Можно переопределить для
+  // конкретного раунда через Round.heatCapacity.
+  heatCapacity    Int              @default(10)
   rules           Json
   createdAt       DateTime         @default(now())
 
@@ -670,26 +675,53 @@ model Division {
   @@unique([competitionId, categoryId])
 }
 
+// Общий для всех соревнований справочник этапов отбора (Отборочный,
+// Четвертьфинал, Полуфинал, Финал...) — управляет только SUPER_ADMIN, как и
+// DivisionCategory (docs/00_DECISIONS.md, A7). defaultAdvanceCount —
+// стандартное "сколько проходит дальше" для этого этапа, используется как
+// значение по умолчанию при создании/авто-генерации раунда, но
+// переопределяется на уровне конкретного Round под размер дивизиона.
+model RoundStageCatalog {
+  id                  String  @id @default(cuid())
+  name                String  @unique
+  order               Int     @default(0)
+  isActive            Boolean @default(true)
+  defaultAdvanceCount Int
+
+  rounds Round[]
+}
+
 // ---------------------------------------------------------------------------
 // Раунды / заезды
 // ---------------------------------------------------------------------------
 
 model Round {
-  id             String           @id @default(cuid())
-  divisionId     String
-  division       Division         @relation(fields: [divisionId], references: [id], onDelete: Cascade)
-  name           String
-  type           RoundType
-  order          Int
-  status         RoundStatus      @default(DRAFT)
-  statusVersion  Int              @default(1)
+  id            String             @id @default(cuid())
+  divisionId    String
+  division      Division           @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  // Ровно одно из двух: stageId — обычный раунд организатора, выбранный из
+  // общего справочника этапов (имя берётся из stage.name, свободного текста
+  // больше нет); type — служебный раунд, который заводит сам движок
+  // (TIE_BREAK/DANCE_OFF, Этап 8), в справочник не входит. Обеспечено CHECK
+  // constraint в миграции (docs/00_DECISIONS.md, A7).
+  stageId       String?
+  stage         RoundStageCatalog? @relation(fields: [stageId], references: [id])
+  type          RoundType?
+  order         Int
+  status        RoundStatus        @default(DRAFT)
+  statusVersion Int                @default(1)
+  // Обязателен для stageId-раундов (проверяется в сервисе, не в схеме — тай-брейк
+  // без справочника может создаваться и без этого числа сразу).
   finalistsCount Int?
-  config         Json             @default("{}")
-  rulesId        String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
-  rules          CompetitionRules @relation(fields: [rulesId], references: [id])
-  startedAt      DateTime?
-  endedAt        DateTime?
-  createdAt      DateTime         @default(now())
+  // Переопределяет Division.heatCapacity для этого конкретного раунда (напр.
+  // финал часто идёт одним заездом независимо от общего правила).
+  heatCapacity  Int?
+  config        Json               @default("{}")
+  rulesId       String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
+  rules         CompetitionRules   @relation(fields: [rulesId], references: [id])
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime           @default(now())
 
   heats Heat[]
 

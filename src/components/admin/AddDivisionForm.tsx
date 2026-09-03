@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { FormRoot, Label, Select } from "@/components/ui/field";
+import { FormRoot, Label, Select, Input } from "@/components/ui/field";
 
 type Category = { id: string; name: string };
 
 export function AddDivisionForm({ competitionId, categories }: { competitionId: string; categories: Category[] }) {
   const router = useRouter();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
+  const [heatCapacity, setHeatCapacity] = useState("10");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,7 +29,7 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
     const res = await fetch(`/api/competitions/${competitionId}/divisions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categoryId, rules: {} }),
+      body: JSON.stringify({ categoryId, heatCapacity: Number(heatCapacity), rules: {} }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -50,6 +51,10 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
             </option>
           ))}
         </Select>
+      </Label>
+      <Label>
+        Вместимость заезда (пар одновременно на паркете)
+        <Input type="number" min={1} value={heatCapacity} onChange={(e) => setHeatCapacity(e.target.value)} />
       </Label>
       {error && <p className="error-text">{error}</p>}
       <Button type="submit" size="sm" disabled={loading}>

@@ -33,6 +33,7 @@ const PERMISSIONS = [
   ["registration:change_division", "Изменение категории (дивизиона) участника после регистрации"],
 
   ["division_category:manage", "Управление общим справочником категорий соревнований"],
+  ["round_stage:manage", "Управление общим справочником этапов отбора"],
 
   ["checkin:manage", "Проведение check-in участников"],
   ["checkin:self", "Самостоятельный check-in"],
