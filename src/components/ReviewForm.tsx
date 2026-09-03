@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { FormRoot, Label, Select, Textarea } from "@/components/ui/field";
 
 export function ReviewForm({ schoolSlug, loggedIn }: { schoolSlug: string; loggedIn: boolean }) {
   const router = useRouter();
@@ -41,26 +43,26 @@ export function ReviewForm({ schoolSlug, loggedIn }: { schoolSlug: string; logge
   }
 
   return (
-    <form onSubmit={onSubmit}>
-      <label>
+    <FormRoot onSubmit={onSubmit}>
+      <Label>
         {t.school.rating}
-        <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+        <Select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
           {[5, 4, 3, 2, 1].map((n) => (
             <option key={n} value={n}>
               {"★".repeat(n)}
               {"☆".repeat(5 - n)}
             </option>
           ))}
-        </select>
-      </label>
-      <label>
+        </Select>
+      </Label>
+      <Label>
         {t.school.reviewText}
-        <textarea required minLength={3} value={text} onChange={(e) => setText(e.target.value)} />
-      </label>
+        <Textarea required minLength={3} value={text} onChange={(e) => setText(e.target.value)} />
+      </Label>
       {error && <p className="error-text">{error}</p>}
-      <button className="btn" type="submit" disabled={loading}>
+      <Button type="submit" disabled={loading}>
         {t.school.addReview}
-      </button>
-    </form>
+      </Button>
+    </FormRoot>
   );
 }
