@@ -20,3 +20,32 @@ export const REGISTRATION_STATUS_LABELS: Record<string, string> = {
   SCRATCHED: "Снялся",
   DISQUALIFIED: "Дисквалифицирован",
 };
+
+export const ROUND_TYPE_LABELS: Record<string, string> = {
+  PRELIMINARY: "Отборочный",
+  CALLBACK: "Каллбэк",
+  QUARTERFINAL: "Четвертьфинал",
+  SEMIFINAL: "Полуфинал",
+  FINAL: "Финал",
+  TIE_BREAK: "Тай-брейк",
+  DANCE_OFF: "Dance-off",
+};
+
+export const ROUND_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Черновик",
+  READY: "Готов",
+  DRAWING: "Жеребьёвка",
+  DRAW_LOCKED: "Жеребьёвка зафиксирована",
+  RUNNING: "Идёт",
+  PAUSED: "Пауза",
+  FINISHED: "Завершён",
+  SCORING: "Судейство",
+  COMPLETED: "Готово",
+};
+
+export const HEAT_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Ожидает",
+  RUNNING: "Идёт",
+  PAUSED: "Пауза",
+  FINISHED: "Завершён",
+};

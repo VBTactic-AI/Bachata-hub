@@ -56,3 +56,41 @@ export const transitionCompetitionSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 export type TransitionCompetitionInput = z.infer<typeof transitionCompetitionSchema>;
+
+// TIE_BREAK/DANCE_OFF намеренно исключены — эти раунды создаёт Advancement
+// Engine автоматически при ничьей на cutoff (CLAUDE.md §19-21, этап 8), а не
+// организатор вручную через эту форму.
+export const manualRoundTypeSchema = z.enum(["PRELIMINARY", "CALLBACK", "QUARTERFINAL", "SEMIFINAL", "FINAL"]);
+
+export const createRoundSchema = z.object({
+  name: z.string().min(1).max(200),
+  type: manualRoundTypeSchema,
+  finalistsCount: z.coerce.number().int().positive().optional(),
+});
+export type CreateRoundInput = z.infer<typeof createRoundSchema>;
+
+export const roundStatusSchema = z.enum([
+  "DRAFT",
+  "READY",
+  "DRAWING",
+  "DRAW_LOCKED",
+  "RUNNING",
+  "PAUSED",
+  "FINISHED",
+  "SCORING",
+  "COMPLETED",
+]);
+
+export const transitionRoundSchema = z.object({
+  to: roundStatusSchema,
+  reason: z.string().max(500).optional(),
+});
+export type TransitionRoundInput = z.infer<typeof transitionRoundSchema>;
+
+export const heatStatusSchema = z.enum(["PENDING", "RUNNING", "PAUSED", "FINISHED"]);
+
+export const transitionHeatSchema = z.object({
+  to: heatStatusSchema,
+  reason: z.string().max(500).optional(),
+});
+export type TransitionHeatInput = z.infer<typeof transitionHeatSchema>;

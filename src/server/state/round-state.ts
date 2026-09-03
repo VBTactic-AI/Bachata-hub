@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { transition, type TransitionTable } from "./machine";
 import { requirePermission } from "../rbac/authorize";
 import type { Permission } from "../rbac/permissions";
+import { ValidationFailedError } from "../errors";
 
 // Без RESUMED — это переход (PAUSED -> RUNNING), а не отдельное состояние
 // (docs/00_DECISIONS.md, A2).
@@ -63,7 +64,10 @@ export async function transitionRound(
     reason: opts?.reason,
     guard: () => {
       if (REQUIRES_DRAW_ENGINE.includes(to)) {
-        throw new Error(
+        // ValidationFailedError — не обычный Error: respondToDomainError()
+        // отдаёт понятное сообщение (CLAUDE.md §46) вместо generic 500
+        // "Внутренняя ошибка сервера", в который сваливается голый Error.
+        throw new ValidationFailedError(
           `Переход раунда в статус "${to}" требует Draw Engine — он появится на следующем этапе разработки.`
         );
       }

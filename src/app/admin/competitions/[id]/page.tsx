@@ -11,11 +11,17 @@ import { AdminRegisterForm } from "@/components/admin/AdminRegisterForm";
 import { CheckInButton } from "@/components/admin/CheckInButton";
 import { RoleOverrideReview } from "@/components/admin/RoleOverrideReview";
 import { ChangeDivisionControl } from "@/components/admin/ChangeDivisionControl";
+import { AddRoundForm } from "@/components/admin/AddRoundForm";
+import { RoundStatusControls } from "@/components/admin/RoundStatusControls";
+import { AddHeatButton } from "@/components/admin/AddHeatButton";
+import { HeatStatusControls } from "@/components/admin/HeatStatusControls";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
   REGISTRATION_STATUS_LABELS,
+  ROUND_TYPE_LABELS,
+  HEAT_STATUS_LABELS,
 } from "@/lib/competition-labels";
 
 export default async function CompetitionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -27,7 +33,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     prisma.competition.findUnique({
       where: { id },
       include: {
-        divisions: { include: { category: true }, orderBy: { category: { order: "asc" } } },
+        divisions: {
+          include: {
+            category: true,
+            rounds: { include: { heats: { orderBy: { number: "asc" } } }, orderBy: { order: "asc" } },
+          },
+          orderBy: { category: { order: "asc" } },
+        },
         city: true,
       },
     }),
@@ -48,6 +60,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canCheckIn = can(actor, "checkin:manage", competition.id);
   const canReviewRoleOverride = can(actor, "registration:role_override_review", competition.id);
   const canChangeDivision = can(actor, "registration:change_division", competition.id);
+  const canManageRounds = can(actor, "round:create", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
   // должен видеть чужие регистрации — только свою собственную, ниже.
@@ -102,10 +115,45 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         {competition.divisions.length === 0 ? (
           <p className="hint-text">Дивизионов пока нет.</p>
         ) : (
-          <div className="card-grid">
+          <div className="stack gap-3">
             {competition.divisions.map((d) => (
               <Card key={d.id}>
                 <strong>{d.category.name}</strong>
+
+                <div className="stack gap-2 mt-3">
+                  {d.rounds.length === 0 ? (
+                    <p className="hint-text">Раундов пока нет.</p>
+                  ) : (
+                    d.rounds.map((round) => (
+                      <div key={round.id} className="rounded-app-sm border border-line p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span>
+                            <strong>{round.name}</strong> · {ROUND_TYPE_LABELS[round.type] ?? round.type}
+                            {round.finalistsCount ? ` · проходят ${round.finalistsCount}` : ""}
+                          </span>
+                          {canManageRounds && <RoundStatusControls roundId={round.id} status={round.status} />}
+                        </div>
+
+                        <div className="stack gap-1.5 mt-2">
+                          {round.heats.map((heat) => (
+                            <div key={heat.id} className="flex flex-wrap items-center justify-between gap-2 pl-3">
+                              <span>
+                                Заезд {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                              </span>
+                              {canManageRounds && <HeatStatusControls heatId={heat.id} status={heat.status} />}
+                            </div>
+                          ))}
+                          {canManageRounds && (
+                            <div className="pl-3">
+                              <AddHeatButton roundId={round.id} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {canManageRounds && <AddRoundForm divisionId={d.id} />}
+                </div>
               </Card>
             ))}
           </div>
