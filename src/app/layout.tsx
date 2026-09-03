@@ -28,10 +28,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru" className={displayFont.variable}>
       <body>
         <Header />
-        <main className="container" style={{ paddingTop: 24, paddingBottom: 24 }}>
+        <main className="container py-6">
           {children}
         </main>
-        <footer className="site-footer">
+        <footer className="mt-12 border-t border-line py-7 text-sm text-muted">
           <div className="container">
             <p>{t.footer.about}</p>
           </div>
