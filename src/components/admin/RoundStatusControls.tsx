@@ -8,11 +8,12 @@ import { ROUND_STATUS_LABELS } from "@/lib/competition-labels";
 
 // Дублирует таблицу переходов src/server/state/round-state.ts только для
 // отображения кнопок — сервер проверяет допустимость сам (CLAUDE.md §53).
-// DRAWING/DRAW_LOCKED сознательно показываются: guard на сервере отклонит их
-// понятным сообщением "требует Draw Engine" (этап 5), а не скрывает кнопку.
+// READY -> DRAWING сюда намеренно не входит: сервер требует передать выбор
+// порядка вызова участников вместе с переходом (extraData), поэтому у него
+// отдельная форма — StartDrawingForm, не голая кнопка (CLAUDE.md §45).
 const NEXT: Record<RoundStatus, RoundStatus[]> = {
   DRAFT: ["READY"],
-  READY: ["DRAWING"],
+  READY: [],
   DRAWING: ["DRAW_LOCKED"],
   DRAW_LOCKED: ["RUNNING"],
   RUNNING: ["PAUSED", "FINISHED"],

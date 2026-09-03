@@ -66,6 +66,7 @@ model User {
   registrationsMade          Registration[]       @relation("RegistrationRegisteredBy")
   checkInsPerformed          CheckIn[]            @relation("CheckInCheckedInBy")
   roleOverridesReviewed      Registration[]       @relation("RegistrationRoleOverrideReviewer")
+  drawsCreated               Draw[]               @relation("DrawCreatedBy")
 
   @@index([role])
 }
@@ -696,32 +697,32 @@ model RoundStageCatalog {
 // ---------------------------------------------------------------------------
 
 model Round {
-  id            String             @id @default(cuid())
-  divisionId    String
-  division      Division           @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  id             String             @id @default(cuid())
+  divisionId     String
+  division       Division           @relation(fields: [divisionId], references: [id], onDelete: Cascade)
   // Ровно одно из двух: stageId — обычный раунд организатора, выбранный из
   // общего справочника этапов (имя берётся из stage.name, свободного текста
   // больше нет); type — служебный раунд, который заводит сам движок
   // (TIE_BREAK/DANCE_OFF, Этап 8), в справочник не входит. Обеспечено CHECK
   // constraint в миграции (docs/00_DECISIONS.md, A7).
-  stageId       String?
-  stage         RoundStageCatalog? @relation(fields: [stageId], references: [id])
-  type          RoundType?
-  order         Int
-  status        RoundStatus        @default(DRAFT)
-  statusVersion Int                @default(1)
+  stageId        String?
+  stage          RoundStageCatalog? @relation(fields: [stageId], references: [id])
+  type           RoundType?
+  order          Int
+  status         RoundStatus        @default(DRAFT)
+  statusVersion  Int                @default(1)
   // Обязателен для stageId-раундов (проверяется в сервисе, не в схеме — тай-брейк
   // без справочника может создаваться и без этого числа сразу).
   finalistsCount Int?
   // Переопределяет Division.heatCapacity для этого конкретного раунда (напр.
   // финал часто идёт одним заездом независимо от общего правила).
-  heatCapacity  Int?
-  config        Json               @default("{}")
-  rulesId       String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
-  rules         CompetitionRules   @relation(fields: [rulesId], references: [id])
-  startedAt     DateTime?
-  endedAt       DateTime?
-  createdAt     DateTime           @default(now())
+  heatCapacity   Int?
+  config         Json               @default("{}")
+  rulesId        String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
+  rules          CompetitionRules   @relation(fields: [rulesId], references: [id])
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime           @default(now())
 
   heats Heat[]
 
@@ -739,7 +740,65 @@ model Heat {
   startedAt     DateTime?
   endedAt       DateTime?
 
+  draws Draw[]
+
   @@unique([roundId, number])
+}
+
+// ---------------------------------------------------------------------------
+// Жеребьёвка (Draw Engine, Этап 5)
+// ---------------------------------------------------------------------------
+
+// Конкретные пары НЕ хранятся и не назначаются движком (docs/00_DECISIONS.md,
+// A5) — участников вызывают по одному, пары образуются уже на паркете, это
+// физически не контролируется программой. Draw — один акт "сформировали
+// список вызванных для этого заезда"; версионируется как и CompetitionRules
+// (A1) — reroll не удаляет старую версию, создаёт новую (CLAUDE.md §6).
+model Draw {
+  id               String   @id @default(cuid())
+  heatId           String
+  heat             Heat     @relation(fields: [heatId], references: [id], onDelete: Cascade)
+  version          Int
+  // null при callOrder=SEQUENTIAL — порядок детерминирован номерами
+  // участников, случайности нет, сохранять нечего.
+  seed             String?
+  algorithmVersion String
+  createdById      String
+  createdBy        User     @relation("DrawCreatedBy", fields: [createdById], references: [id])
+  createdAt        DateTime @default(now())
+  reason           String? // обязателен при reroll (версия > 1), не при первом формировании
+
+  participants DrawParticipant[]
+
+  @@unique([heatId, version])
+}
+
+// GUEST_HIGHER_CATEGORY — участник другого дивизиона этого же соревнования
+// (не обязательно строго "старше" по DivisionCategory.order — это только
+// подсказка по умолчанию в UI, в коде не проверяется, docs/00_DECISIONS.md).
+// REUSED_ALREADY_SCORED — участник ЭТОГО ЖЕ дивизиона/раунда, уже получивший
+// scored=true в более раннем заезде этого раунда, помогает повторно без
+// повторной оценки.
+enum DrawHelperSource {
+  GUEST_HIGHER_CATEGORY
+  REUSED_ALREADY_SCORED
+}
+
+model DrawParticipant {
+  id             String            @id @default(cuid())
+  drawId         String
+  draw           Draw              @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  registrationId String
+  registration   Registration      @relation(fields: [registrationId], references: [id])
+  role           RegistrationRole
+  // Считается ли эта попытка в зачёт участнику в этом раунде. Помощник
+  // (гость или уже отработавший) — всегда false, CLAUDE.md §16: judge
+  // оценивает competitor, не пару.
+  scored         Boolean           @default(true)
+  helperSource   DrawHelperSource?
+  calledOrder    Int // порядок вызова на паркет в рамках этого Draw
+
+  @@unique([drawId, registrationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -856,7 +915,8 @@ model Registration {
   roleOverrideReviewedBy   User?                           @relation("RegistrationRoleOverrideReviewer", fields: [roleOverrideReviewedById], references: [id])
   roleOverrideReviewedAt   DateTime?
 
-  checkIn CheckIn?
+  checkIn            CheckIn?
+  drawParticipations DrawParticipant[]
 
   // Одна роль на дивизион на человека — нельзя зарегистрироваться в одном
   // дивизионе одновременно и LEADER, и FOLLOWER (docs/00_DECISIONS.md, B6).

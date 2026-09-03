@@ -7,10 +7,12 @@ vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[])
 const roundFindUniqueOrThrow = vi.fn();
 const txRoundFindFirst = vi.fn();
 const txRoundUpdateMany = vi.fn();
+const txHeatFindFirst = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
   round: { findFirst: txRoundFindFirst, updateMany: txRoundUpdateMany },
+  heat: { findFirst: txHeatFindFirst },
   auditLog: { create: auditCreate },
 };
 
@@ -37,11 +39,12 @@ beforeEach(() => {
   });
   txRoundFindFirst.mockReset().mockResolvedValue(null);
   txRoundUpdateMany.mockReset().mockResolvedValue({ count: 1 });
+  txHeatFindFirst.mockReset().mockResolvedValue(null);
   auditCreate.mockReset();
 });
 
-describe("transitionRound() — DRAWING/DRAW_LOCKED требуют Draw Engine", () => {
-  it("отклоняет переход в DRAWING понятной ошибкой (не голым Error)", async () => {
+describe("transitionRound() — DRAWING только через отдельное действие", () => {
+  beforeEach(() => {
     roundFindUniqueOrThrow.mockResolvedValue({
       id: "round1",
       order: 1,
@@ -49,9 +52,75 @@ describe("transitionRound() — DRAWING/DRAW_LOCKED требуют Draw Engine",
       statusVersion: 1,
       division: { id: "div1", competitionId: "comp1" },
     });
+  });
 
+  it("отклоняет прямой переход в DRAWING без extraData (без выбора порядка вызова)", async () => {
     await expect(transitionRound("round1", "DRAWING")).rejects.toBeInstanceOf(ValidationFailedError);
     expect(txRoundUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("проверяет право draw:generate для перехода в DRAWING", async () => {
+    await transitionRound("round1", "DRAWING", { extraData: { config: { drawCallOrder: "RANDOM" } } });
+    expect(requirePermissionMock).toHaveBeenCalledWith("draw:generate", "comp1");
+  });
+
+  it("разрешает переход в DRAWING с extraData и вызывает onApplied той же транзакцией", async () => {
+    const onApplied = vi.fn();
+
+    await transitionRound("round1", "DRAWING", {
+      extraData: { config: { drawCallOrder: "SEQUENTIAL" } },
+      onApplied,
+    });
+
+    expect(txRoundUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ config: { drawCallOrder: "SEQUENTIAL" } }) })
+    );
+    expect(onApplied).toHaveBeenCalledWith(fakeTx, actor);
+  });
+
+  it("не вызывает onApplied, если обновление проиграло гонку (updatedCount = 0)", async () => {
+    txRoundUpdateMany.mockResolvedValue({ count: 0 });
+    const onApplied = vi.fn();
+
+    await expect(
+      transitionRound("round1", "DRAWING", { extraData: { config: {} }, onApplied })
+    ).rejects.toThrow();
+    expect(onApplied).not.toHaveBeenCalled();
+  });
+});
+
+describe("transitionRound() — DRAW_LOCKED требует список у каждого заезда", () => {
+  beforeEach(() => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      id: "round1",
+      order: 1,
+      status: "DRAWING",
+      statusVersion: 1,
+      division: { id: "div1", competitionId: "comp1" },
+    });
+  });
+
+  it("проверяет право draw:lock", async () => {
+    await transitionRound("round1", "DRAW_LOCKED");
+    expect(requirePermissionMock).toHaveBeenCalledWith("draw:lock", "comp1");
+  });
+
+  it("отклоняет, если у какого-то заезда раунда нет ни одной жеребьёвки", async () => {
+    txHeatFindFirst.mockResolvedValue({ id: "heat3", number: 3 });
+
+    await expect(transitionRound("round1", "DRAW_LOCKED")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txRoundUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("разрешает, если у всех заездов раунда есть жеребьёвка", async () => {
+    txHeatFindFirst.mockResolvedValue(null);
+
+    await transitionRound("round1", "DRAW_LOCKED");
+
+    expect(txHeatFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { roundId: "round1", draws: { none: {} } } })
+    );
+    expect(txRoundUpdateMany).toHaveBeenCalledOnce();
   });
 });
 

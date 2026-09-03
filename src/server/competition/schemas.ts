@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { registrationRoleSchema } from "./registration-schemas";
 
 export const createCompetitionSchema = z.object({
   name: z.string().min(3).max(200),
@@ -119,3 +120,23 @@ export const transitionHeatSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 export type TransitionHeatInput = z.infer<typeof transitionHeatSchema>;
+
+// --- Draw Engine (Этап 5, docs/00_DECISIONS.md A5/A6) ---
+
+export const callOrderSchema = z.enum(["SEQUENTIAL", "RANDOM"]);
+
+export const startDrawingSchema = z.object({
+  callOrder: callOrderSchema,
+});
+export type StartDrawingInput = z.infer<typeof startDrawingSchema>;
+
+export const rerollDrawSchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+export type RerollDrawInput = z.infer<typeof rerollDrawSchema>;
+
+export const addDrawHelperSchema = z.object({
+  registrationId: z.string().min(1),
+  role: registrationRoleSchema,
+});
+export type AddDrawHelperInput = z.infer<typeof addDrawHelperSchema>;

@@ -16,6 +16,10 @@ import { GenerateRoundsButton } from "@/components/admin/GenerateRoundsButton";
 import { RoundStatusControls } from "@/components/admin/RoundStatusControls";
 import { AddHeatButton } from "@/components/admin/AddHeatButton";
 import { HeatStatusControls } from "@/components/admin/HeatStatusControls";
+import { StartDrawingForm } from "@/components/admin/StartDrawingForm";
+import { RerollDrawButton } from "@/components/admin/RerollDrawButton";
+import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
+import { RemoveDrawHelperButton } from "@/components/admin/RemoveDrawHelperButton";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
@@ -38,7 +42,24 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           include: {
             category: true,
             rounds: {
-              include: { heats: { orderBy: { number: "asc" } }, stage: true },
+              include: {
+                heats: {
+                  include: {
+                    draws: {
+                      orderBy: { version: "desc" },
+                      take: 1,
+                      include: {
+                        participants: {
+                          include: { registration: { include: { dancer: true, checkIn: true } } },
+                          orderBy: { calledOrder: "asc" },
+                        },
+                      },
+                    },
+                  },
+                  orderBy: { number: "asc" },
+                },
+                stage: true,
+              },
               orderBy: { order: "asc" },
             },
           },
@@ -173,18 +194,49 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                           </div>
 
                           <div className="stack gap-1.5 mt-2">
-                            {round.heats.map((heat) => (
-                              <div key={heat.id} className="flex flex-wrap items-center justify-between gap-2 pl-3">
-                                <span>
-                                  Заезд {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
-                                </span>
-                                <HeatStatusControls heatId={heat.id} status={heat.status} />
-                              </div>
-                            ))}
+                            {round.heats.map((heat) => {
+                              const draw = heat.draws[0];
+                              const canEditDraw = round.status === "DRAWING" && heat.status === "PENDING" && !!draw;
+                              return (
+                                <div key={heat.id} className="pl-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span>
+                                      Заезд {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                                    </span>
+                                    <HeatStatusControls heatId={heat.id} status={heat.status} />
+                                  </div>
+                                  {draw && (
+                                    <div className="stack gap-1 mt-1 pl-3">
+                                      {draw.participants.map((p) => (
+                                        <p key={p.id} className="hint-text m-0">
+                                          {ROLE_LABELS[p.role] ?? p.role} · {p.registration.dancer.displayName}
+                                          {p.registration.checkIn?.bibNumber ? ` (№${p.registration.checkIn.bibNumber})` : ""}
+                                          {!p.scored && (
+                                            <>
+                                              {" "}
+                                              · <Badge variant="pending">помощник</Badge>
+                                              {canEditDraw && <RemoveDrawHelperButton participantId={p.id} />}
+                                            </>
+                                          )}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {canEditDraw && (
+                                    <div className="flex flex-wrap items-center gap-2 mt-1 pl-3">
+                                      <RerollDrawButton heatId={heat.id} />
+                                      <AddDrawHelperForm heatId={heat.id} />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                             <div className="pl-3">
                               <AddHeatButton roundId={round.id} />
                             </div>
                           </div>
+
+                          {round.status === "READY" && <StartDrawingForm roundId={round.id} />}
                         </div>
                       ))
                     )}
