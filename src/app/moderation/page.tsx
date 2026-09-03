@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, isAdmin, isModerator } from "@/lib/auth";
 import { getGrowthStats, getModerationQueueCounts } from "@/lib/moderation";
 import { t } from "@/lib/i18n/dictionary";
+import { cardVariants, Card } from "@/components/ui/card";
 
 export default async function ModerationHomePage() {
   const user = await getCurrentUser();
@@ -16,29 +17,23 @@ export default async function ModerationHomePage() {
       <h1 className="page-title">{t.moderation.queue}</h1>
 
       <div className="card-grid">
-        <Link href="/moderation/events" className="card">
+        <Link href="/moderation/events" className={cardVariants({ interactive: true })}>
           <strong>{t.moderation.events}</strong>
-          <p className="hint-text" style={{ margin: "4px 0 0" }}>
-            {queue.pendingEvents}
-          </p>
+          <p className="hint-text mt-1">{queue.pendingEvents}</p>
         </Link>
-        <Link href="/moderation/schools" className="card">
+        <Link href="/moderation/schools" className={cardVariants({ interactive: true })}>
           <strong>{t.moderation.schoolClaims}</strong>
-          <p className="hint-text" style={{ margin: "4px 0 0" }}>
-            {queue.pendingClaims}
-          </p>
+          <p className="hint-text mt-1">{queue.pendingClaims}</p>
         </Link>
-        <Link href="/moderation/reviews" className="card">
+        <Link href="/moderation/reviews" className={cardVariants({ interactive: true })}>
           <strong>{t.moderation.reviews}</strong>
-          <p className="hint-text" style={{ margin: "4px 0 0" }}>
-            {queue.newReviews}
-          </p>
+          <p className="hint-text mt-1">{queue.newReviews}</p>
         </Link>
-        <Link href="/moderation/log" className="card">
+        <Link href="/moderation/log" className={cardVariants({ interactive: true })}>
           <strong>{t.moderation.log}</strong>
         </Link>
         {isAdmin(user) && (
-          <Link href="/moderation/users" className="card">
+          <Link href="/moderation/users" className={cardVariants({ interactive: true })}>
             <strong>{t.moderation.users}</strong>
           </Link>
         )}
@@ -47,24 +42,18 @@ export default async function ModerationHomePage() {
       <div>
         <h2 className="page-title">{t.moderation.stats}</h2>
         <div className="card-grid">
-          <div className="card">
-            <p style={{ fontSize: "1.6rem", margin: 0, fontWeight: 700 }}>{stats.activeCities}</p>
-            <p className="hint-text" style={{ margin: 0 }}>
-              {t.moderation.statsActiveCities}
-            </p>
-          </div>
-          <div className="card">
-            <p style={{ fontSize: "1.6rem", margin: 0, fontWeight: 700 }}>{stats.verifiedSchools}</p>
-            <p className="hint-text" style={{ margin: 0 }}>
-              {t.moderation.statsVerifiedSchools}
-            </p>
-          </div>
-          <div className="card">
-            <p style={{ fontSize: "1.6rem", margin: 0, fontWeight: 700 }}>{stats.dancersWithHistory}</p>
-            <p className="hint-text" style={{ margin: 0 }}>
-              {t.moderation.statsDancersWithHistory}
-            </p>
-          </div>
+          <Card>
+            <p className="m-0 text-[1.6rem] font-bold">{stats.activeCities}</p>
+            <p className="hint-text m-0">{t.moderation.statsActiveCities}</p>
+          </Card>
+          <Card>
+            <p className="m-0 text-[1.6rem] font-bold">{stats.verifiedSchools}</p>
+            <p className="hint-text m-0">{t.moderation.statsVerifiedSchools}</p>
+          </Card>
+          <Card>
+            <p className="m-0 text-[1.6rem] font-bold">{stats.dancersWithHistory}</p>
+            <p className="hint-text m-0">{t.moderation.statsDancersWithHistory}</p>
+          </Card>
         </div>
       </div>
     </div>
