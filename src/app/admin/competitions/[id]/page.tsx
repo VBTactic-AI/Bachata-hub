@@ -76,6 +76,30 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     select: { id: true, gender: true },
   });
 
+  // Сколько ведущих/ведомых в каждом дивизионе — нужно организатору ДО
+  // генерации сетки раундов (та же логика, что использует generateRounds()),
+  // поэтому считаем и показываем сразу на карточке дивизиона.
+  const [registeredCounts, checkedInCounts] = canManageRounds
+    ? await Promise.all([
+        prisma.registration.groupBy({
+          by: ["divisionId", "role"],
+          where: { competitionId: competition.id, status: "REGISTERED" },
+          _count: { _all: true },
+        }),
+        prisma.registration.groupBy({
+          by: ["divisionId", "role"],
+          where: {
+            competitionId: competition.id,
+            status: "REGISTERED",
+            checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
+          },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], []];
+  const countFor = (rows: { divisionId: string; role: string; _count: { _all: number } }[], divisionId: string, role: string) =>
+    rows.find((r) => r.divisionId === divisionId && r.role === role)?._count._all ?? 0;
+
   const registrations = canViewAllRegistrations
     ? await prisma.registration.findMany({
         where: { competitionId: competition.id },
@@ -124,6 +148,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             {competition.divisions.map((d) => (
               <Card key={d.id}>
                 <strong>{d.category.name}</strong>
+                {canManageRounds && (
+                  <p className="hint-text mt-1">
+                    Ведущих: {countFor(registeredCounts, d.id, "LEADER")} (
+                    {countFor(checkedInCounts, d.id, "LEADER")} прошли check-in) · Ведомых:{" "}
+                    {countFor(registeredCounts, d.id, "FOLLOWER")} ({countFor(checkedInCounts, d.id, "FOLLOWER")} прошли
+                    check-in)
+                  </p>
+                )}
 
                 <div className="stack gap-2 mt-3">
                   {d.rounds.length === 0 ? (
@@ -134,7 +166,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span>
                             <strong>{round.stage?.name ?? (round.type ? (ROUND_TYPE_LABELS[round.type] ?? round.type) : "—")}</strong>
-                            {round.finalistsCount ? ` · проходят ${round.finalistsCount}` : ""}
+                            {round.finalistsCount ? ` · проходят ${round.finalistsCount} пар` : ""}
                           </span>
                           {canManageRounds && <RoundStatusControls roundId={round.id} status={round.status} />}
                         </div>
