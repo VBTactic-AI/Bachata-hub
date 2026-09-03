@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { FormRoot, Input, Label, Select } from "@/components/ui/field";
 
 type City = { id: string; nameRu: string };
 type Dancer = {
@@ -26,9 +28,9 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
 
   if (!open) {
     return (
-      <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOpen(true)}>
+      <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
         {t.dancer.editProfile}
-      </button>
+      </Button>
     );
   }
 
@@ -51,55 +53,55 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
   }
 
   return (
-    <form onSubmit={onSubmit} className="card">
-      <label>
+    <FormRoot onSubmit={onSubmit} className="rounded-app border border-line bg-surface p-[18px] shadow-sm">
+      <Label>
         {t.auth.displayName}
-        <input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-      </label>
-      <label>
+        <Input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+      </Label>
+      <Label>
         {t.city.choose}
-        <select value={cityId} onChange={(e) => setCityId(e.target.value)}>
+        <Select value={cityId} onChange={(e) => setCityId(e.target.value)}>
           <option value="">—</option>
           {cities.map((c) => (
             <option key={c.id} value={c.id}>
               {c.nameRu}
             </option>
           ))}
-        </select>
-      </label>
-      <label>
+        </Select>
+      </Label>
+      <Label>
         {t.dancer.roleLabel}
-        <select value={danceRole} onChange={(e) => setDanceRole(e.target.value as typeof danceRole)}>
+        <Select value={danceRole} onChange={(e) => setDanceRole(e.target.value as typeof danceRole)}>
           <option value="">—</option>
           <option value="LEADER">{t.dancer.role.LEADER}</option>
           <option value="FOLLOWER">{t.dancer.role.FOLLOWER}</option>
           <option value="BOTH">{t.dancer.role.BOTH}</option>
-        </select>
-      </label>
-      <label>
+        </Select>
+      </Label>
+      <Label>
         {t.dancer.selfLevel}
-        <select value={selfLevel} onChange={(e) => setSelfLevel(e.target.value as typeof selfLevel)}>
+        <Select value={selfLevel} onChange={(e) => setSelfLevel(e.target.value as typeof selfLevel)}>
           <option value="">—</option>
           {Object.entries(t.event.levels).map(([key, label]) => (
             <option key={key} value={key}>
               {label}
             </option>
           ))}
-        </select>
-      </label>
-      <label>
+        </Select>
+      </Label>
+      <Label>
         {t.dancer.avatarUrlLabel}
-        <input type="url" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} />
-      </label>
+        <Input type="url" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} />
+      </Label>
       {error && <p className="error-text">{error}</p>}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-sm" type="submit" disabled={loading}>
+      <div className="flex gap-2">
+        <Button size="sm" type="submit" disabled={loading}>
           {t.common.save}
-        </button>
-        <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOpen(false)}>
+        </Button>
+        <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(false)}>
           {t.common.cancel}
-        </button>
+        </Button>
       </div>
-    </form>
+    </FormRoot>
   );
 }
