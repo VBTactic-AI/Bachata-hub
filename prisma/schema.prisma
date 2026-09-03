@@ -63,6 +63,9 @@ model User {
   lockedCompetitionRules     CompetitionRules[]   @relation("CompetitionRulesLocker")
   competitionAuditLogs       AuditLog[]           @relation("AuditLogActor")
   competitionEvents          CompetitionEvent[]   @relation("CompetitionEventActor")
+  registrationsMade          Registration[]       @relation("RegistrationRegisteredBy")
+  checkInsPerformed          CheckIn[]            @relation("CheckInCheckedInBy")
+  roleOverridesReviewed      Registration[]       @relation("RegistrationRoleOverrideReviewer")
 
   @@index([role])
 }
@@ -325,6 +328,15 @@ enum DanceRole {
   BOTH
 }
 
+// Пол — отдельно от danceRole (танцевальное амплуа) и от роли в конкретном
+// соревновании (Registration.role). Используется только как ПОДСКАЗКА по
+// умолчанию при регистрации на конкурс (docs/00_DECISIONS.md) — ни в коем
+// случае не как жёсткое правило "Leader = мужчина" (CLAUDE.md §4, §60).
+enum Gender {
+  MALE
+  FEMALE
+}
+
 model Dancer {
   id          String      @id @default(cuid())
   userId      String      @unique
@@ -332,13 +344,15 @@ model Dancer {
   displayName String
   cityId      String?
   city        City?       @relation(fields: [cityId], references: [id])
+  gender      Gender?
   danceRole   DanceRole?
   selfLevel   DanceLevel?
   avatarUrl   String?
   createdAt   DateTime    @default(now())
 
-  attendances  Attendance[]
-  achievements Achievement[]
+  attendances   Attendance[]
+  achievements  Achievement[]
+  registrations Registration[] // СЛОЙ 3: регистрации на соревнования Jack & Jill
 
   @@index([cityId])
 }
@@ -601,9 +615,11 @@ model Competition {
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 
-  rules     CompetitionRules[]
-  divisions Division[]
-  members   CompetitionMember[]
+  rules         CompetitionRules[]
+  divisions     Division[]
+  members       CompetitionMember[]
+  registrations Registration[]
+  checkIns      CheckIn[]
 
   @@index([status])
   @@index([cityId])
@@ -641,7 +657,8 @@ model Division {
   rules           Json
   createdAt       DateTime      @default(now())
 
-  rounds Round[]
+  rounds        Round[]
+  registrations Registration[]
 
   @@unique([competitionId, name])
 }
@@ -732,4 +749,95 @@ model IdempotencyKey {
   createdAt DateTime @default(now())
 
   @@unique([scope, key])
+}
+
+// ---------------------------------------------------------------------------
+// Регистрация и check-in участников (этап 3)
+// ---------------------------------------------------------------------------
+// Competitor как отдельная сущность не заводится: аккаунт обязателен для
+// участия (решение пользователя), поэтому регистрация ссылается напрямую на
+// уже существующий layer-1 Dancer — заводить параллельную таблицу с теми же
+// полями (имя, город, аватар) было бы дублированием.
+
+enum RegistrationRole {
+  LEADER
+  FOLLOWER
+}
+
+// SCRATCHED — участник снялся сам/его сняли ДО исхода на площадку;
+// DISQUALIFIED — решение по нарушению (см. Penalty/DQ на будущих этапах).
+// Явка (пришёл/не пришёл) — не здесь, а в CheckIn (docs/00_DECISIONS.md, A6).
+enum RegistrationStatus {
+  REGISTERED
+  SCRATCHED
+  DISQUALIFIED
+}
+
+enum CheckInStatus {
+  CHECKED_IN
+  LATE
+  NO_SHOW
+}
+
+// PENDING — участник выбрал роль, отличную от подсказки по полу, решение
+// ждёт EVENT_ADMIN/HEAD_JUDGE (docs/00_DECISIONS.md). APPROVED — роль
+// участника подтверждена как есть. REJECTED — роль возвращена к подсказке
+// по полу.
+enum RegistrationRoleOverrideStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Registration {
+  id             String             @id @default(cuid())
+  competitionId  String
+  competition    Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  divisionId     String
+  division       Division           @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  dancerId       String
+  dancer         Dancer             @relation(fields: [dancerId], references: [id])
+  // Действующая роль. Пока roleOverrideStatus = PENDING, здесь лежит
+  // безопасное значение по умолчанию (подсказка по полу), а не то, что
+  // попросил участник, — на случай, если запрос так и не будет рассмотрен
+  // (docs/00_DECISIONS.md).
+  role           RegistrationRole
+  status         RegistrationStatus @default(REGISTERED)
+  registeredById String // кто оформил: сам участник или админ (CLAUDE.md §28 — регистрация аудируется)
+  registeredBy   User               @relation("RegistrationRegisteredBy", fields: [registeredById], references: [id])
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  // Роль, которую в реальности выбрал участник, если она разошлась с
+  // подсказкой по полу; null, если подсказка не противоречила выбору или
+  // пол профиля не заполнен (сравнивать не с чем — противоречия нет).
+  requestedRole            RegistrationRole?
+  roleOverrideStatus       RegistrationRoleOverrideStatus?
+  roleOverrideReviewedById String?
+  roleOverrideReviewedBy   User?                           @relation("RegistrationRoleOverrideReviewer", fields: [roleOverrideReviewedById], references: [id])
+  roleOverrideReviewedAt   DateTime?
+
+  checkIn CheckIn?
+
+  // Одна роль на дивизион на человека — нельзя зарегистрироваться в одном
+  // дивизионе одновременно и LEADER, и FOLLOWER (docs/00_DECISIONS.md, B6).
+  @@unique([competitionId, divisionId, dancerId])
+  @@index([competitionId, divisionId])
+  @@index([dancerId])
+}
+
+model CheckIn {
+  id             String        @id @default(cuid())
+  registrationId String        @unique
+  registration   Registration  @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  competitionId  String // денормализовано для уникальности bib-номера в рамках соревнования (docs/00_DECISIONS.md, B4)
+  competition    Competition   @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  status         CheckInStatus
+  bibNumber      String?
+  checkedInAt    DateTime      @default(now())
+  checkedInById  String
+  checkedInBy    User          @relation("CheckInCheckedInBy", fields: [checkedInById], references: [id])
+
+  @@unique([competitionId, bibNumber])
+  @@index([registrationId])
 }
