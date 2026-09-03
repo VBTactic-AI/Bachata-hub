@@ -5,6 +5,7 @@ import { eventsForHome } from "@/lib/events";
 import { EventCard } from "@/components/EventCard";
 import { CityPicker } from "@/components/CityPicker";
 import { prisma } from "@/lib/prisma";
+import { cardVariants } from "@/components/ui/card";
 
 export default async function HomePage() {
   const preferredCity = await getPreferredCity();
@@ -18,12 +19,10 @@ export default async function HomePage() {
   return (
     <div className="stack">
       {!preferredCity && (
-        <section className="card">
-          <p style={{ margin: "0 0 12px" }}>{t.city.choose}:</p>
+        <section className={cardVariants()}>
+          <p className="mb-3 mt-0">{t.city.choose}:</p>
           <CityPicker cities={cities} />
-          <p className="hint-text" style={{ marginTop: 12 }}>
-            {t.city.switchHint}
-          </p>
+          <p className="hint-text mt-3">{t.city.switchHint}</p>
         </section>
       )}
 
@@ -53,7 +52,7 @@ export default async function HomePage() {
         )}
       </section>
 
-      <Link href="/events" className="btn-secondary" style={{ alignSelf: "flex-start" }}>
+      <Link href="/events" className="self-start text-primary hover:text-primary-dark hover:underline">
         {t.home.seeFullCalendar} →
       </Link>
     </div>
