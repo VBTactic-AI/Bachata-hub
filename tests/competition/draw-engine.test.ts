@@ -290,6 +290,89 @@ describe("formDrawInTx() — авто-добор помощников при д�
   });
 });
 
+// Уточнение каскада от 2026-09-04: перебираем ВСЕ категории выше по очереди
+// (не только ближайшую), потом — своих уже станцевавших, и только тогда
+// оставляем разбалансированным — категории НИЖЕ сама жеребьёвка не трогает,
+// это уже ручное решение организатора (docs/00_DECISIONS.md, A10).
+describe("formDrawInTx() — каскад: все категории выше, потом свои, ниже — только вручную", () => {
+  it("перебирает КАЖДУЮ категорию выше по очереди, пока не найдёт кандидата", async () => {
+    divisionFindMany.mockResolvedValue([
+      { id: "div-higher1", category: { order: 3 } },
+      { id: "div-higher2", category: { order: 4 } },
+    ]);
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string; id?: unknown } }) => {
+      if (where.id) return Promise.resolve([]); // до переиспользования своих дойти не должно
+      if (where.divisionId === "div-higher1") return Promise.resolve([]); // в ближайшей выше — никого
+      if (where.divisionId === "div-higher2") return Promise.resolve([reg("guest-higher2", "50")]); // в следующей — есть
+      if (where.divisionId !== "div1") return Promise.resolve([]);
+      return Promise.resolve(where.role === "LEADER" ? [reg("l1", "1"), reg("l2", "2"), reg("l3", "3")] : [reg("f1", "4")]);
+    });
+
+    await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    expect(helperCalls).toHaveLength(1);
+    expect(helperCalls[0][0].data).toMatchObject({ registrationId: "guest-higher2", helperSource: "GUEST_HIGHER_CATEGORY" });
+  });
+
+  it("если категорий выше совсем нет (или там пусто) — переиспользует своих уже станцевавших", async () => {
+    heatFindMany.mockResolvedValue([{ draws: [{ participants: [{ registrationId: "reused-f1" }] }] }]);
+    divisionFindMany.mockResolvedValue([]);
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string; id?: unknown } }) => {
+      if (where.id) return Promise.resolve([{ id: "reused-f1" }]);
+      if (where.divisionId !== "div1") return Promise.resolve([]);
+      return Promise.resolve(where.role === "LEADER" ? [reg("l1", "1"), reg("l2", "2"), reg("l3", "3")] : [reg("f1", "4")]);
+    });
+
+    await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    expect(helperCalls).toHaveLength(1);
+    expect(helperCalls[0][0].data).toMatchObject({
+      registrationId: "reused-f1",
+      role: "FOLLOWER",
+      helperSource: "REUSED_ALREADY_SCORED",
+    });
+  });
+
+  it("не спускается в категории ниже сама, даже если выше и переиспользовать некого", async () => {
+    divisionFindMany.mockResolvedValue([]); // нет категорий выше
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string; id?: unknown } }) => {
+      if (where.id) return Promise.resolve([]); // переиспользовать некого (нет уже станцевавших)
+      if (where.divisionId !== "div1") return Promise.resolve([]);
+      return Promise.resolve(where.role === "LEADER" ? [reg("l1", "1"), reg("l2", "2"), reg("l3", "3")] : [reg("f1", "4")]);
+    });
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    expect(helperCalls).toHaveLength(0);
+    expect(result.leaderCount).toBe(3);
+    expect(result.followerCount).toBe(1);
+  });
+});
+
 describe("rerollHeatDraw()", () => {
   beforeEach(() => {
     heatFindUniqueOrThrow.mockResolvedValue({

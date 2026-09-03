@@ -367,4 +367,34 @@ describe("listHelperCandidates()", () => {
     const own = result.divisions.find((d) => d.divisionId === "div1");
     expect(own?.registrations.map((r) => r.id)).toEqual(["reg-scored"]);
   });
+
+  // Тот же порядок приоритета, что и в авто-доборе при жеребьёвке (A10,
+  // уточнено 2026-09-04): выше -> свои уже станцевавшие -> ниже.
+  it("если категории выше нет, но есть свои уже станцевавшие — предлагает их, а не категорию ниже", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 3 } } },
+    });
+    divisionFindMany.mockResolvedValue([
+      { id: "div1", category: { name: "Профи", order: 3 } },
+      { id: "div-lower", category: { name: "Начинающие", order: 1 } },
+    ]);
+    registrationFindMany.mockImplementation(({ where }: { where: { divisionId: string } }) => {
+      if (where.divisionId === "div1") {
+        return Promise.resolve([
+          { id: "reg-own-scored", dancer: { displayName: "Свой" }, checkIn: { bibNumber: "9" } },
+        ]);
+      }
+      if (where.divisionId === "div-lower") {
+        return Promise.resolve([{ id: "reg-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } }]);
+      }
+      return Promise.resolve([]);
+    });
+    drawParticipantFindMany.mockResolvedValue([{ registrationId: "reg-own-scored" }]);
+
+    const result = await listHelperCandidates("heat1", "LEADER");
+
+    expect(result.suggestedRegistrationId).toBe("reg-own-scored");
+  });
 });

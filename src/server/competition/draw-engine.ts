@@ -91,13 +91,16 @@ async function alreadyScoredElsewhereInRound(tx: PrismaTx, roundId: string, excl
   return new Set(ids);
 }
 
-// Гости для авто-добора при дисбалансе — только из ДРУГИХ дивизионов этого
-// соревнования (свой дивизион для авто-добора не трогаем: переиспользование
-// уже станцевавших "своих" остаётся ручным действием — заменить/добавить).
-// Приоритет — ближайшая категория СТРОГО выше по уровню, если там никого
-// подходящего нет — ближайшая ниже (та же логика, что и в подсказке для
-// ручного добавления, draw-helper.ts listHelperCandidates).
-async function pickGuestHelpers(
+// Гости для авто-добора при дисбалансе — каскадом ЧЕРЕЗ КАЖДУЮ категорию
+// строго выше по уровню, от ближайшей к дальней (не только ближайшую) —
+// докладываем до нужного количества, переходя выше, пока не наберём или не
+// кончатся категории (docs/00_DECISIONS.md, A10, уточнено 2026-09-04). Ниже
+// своей категории автоматически НЕ спускаемся — это уже не "гость
+// повыше", а отдельное решение, которое должен подтвердить организатор
+// (см. formDrawInTx: после этого пробуем ещё переиспользовать своих, и
+// только если и там пусто — заезд остаётся разбалансированным, добор ниже
+// доступен только вручную через "+ Помощник").
+async function pickHigherCategoryHelpers(
   tx: PrismaTx,
   params: {
     competitionId: string;
@@ -116,12 +119,9 @@ async function pickGuestHelpers(
   const higher = divisions
     .filter((d) => d.category.order > params.ownCategoryOrder)
     .sort((a, b) => a.category.order - b.category.order);
-  const lower = divisions
-    .filter((d) => d.category.order < params.ownCategoryOrder)
-    .sort((a, b) => b.category.order - a.category.order);
 
   const picked: string[] = [];
-  for (const division of [...higher, ...lower]) {
+  for (const division of higher) {
     if (picked.length >= params.count) break;
     const regs = await tx.registration.findMany({
       where: {
@@ -138,6 +138,26 @@ async function pickGuestHelpers(
     }
   }
   return picked;
+}
+
+// Второй шаг каскада: переиспользовать СВОИХ, кто уже станцевал (получил
+// scored=true) в другом заезде этого раунда — только после того, как
+// категорий выше совсем не осталось (или там никого подходящего нет).
+function pickOwnDivisionReuseHelpers(
+  tx: PrismaTx,
+  params: { divisionId: string; role: RegistrationRole; alreadyScoredIds: Set<string>; count: number }
+): Promise<{ id: string }[]> {
+  if (params.count <= 0 || params.alreadyScoredIds.size === 0) return Promise.resolve([]);
+  return tx.registration.findMany({
+    where: {
+      divisionId: params.divisionId,
+      role: params.role,
+      status: "REGISTERED",
+      id: { in: [...params.alreadyScoredIds] },
+    },
+    select: { id: true },
+    take: params.count,
+  });
 }
 
 // Формирует список вызванных для ОДНОГО заезда — общее ядро и для первой
@@ -192,11 +212,15 @@ export async function formDrawInTx(
   }
 
   // Авто-добор помощников сразу при жеребьёвке, без подтверждения — по
-  // явному запросу пользователя (2026-09-04). Только гости из ДРУГИХ
-  // дивизионов (переиспользование "своих" уже станцевавших — по-прежнему
-  // только вручную, см. draw-helper.ts). Если желающих не хватило на всех —
-  // заезд остаётся частично разбалансированным, "+ Помощник" в UI не исчезнет.
-  let autoHelperIds: string[] = [];
+  // явному запросу пользователя (2026-09-04, уточнено там же). Каскад:
+  // 1) категории строго выше, одна за другой, от ближайшей к дальней;
+  // 2) если категорий выше больше нет (или там никого не набралось) —
+  //    переиспользуем своих, кто уже станцевал в другом заезде раунда;
+  // 3) если и это не покрыло нехватку — заезд остаётся разбалансированным,
+  //    спускаться в категории НИЖЕ автоматически нельзя — это уже решение,
+  //    которое организатор подтверждает вручную через "+ Помощник" (там
+  //    подсказка сама предложит ближайшую ниже, если выше и правда нет).
+  const autoHelpers: { registrationId: string; helperSource: "GUEST_HIGHER_CATEGORY" | "REUSED_ALREADY_SCORED" }[] = [];
   if (leaders.length !== followers.length) {
     const needyRole: RegistrationRole = leaders.length < followers.length ? "LEADER" : "FOLLOWER";
     const shortage = Math.abs(leaders.length - followers.length);
@@ -204,26 +228,40 @@ export async function formDrawInTx(
       where: { id: divisionId },
       select: { competitionId: true, category: { select: { order: true } } },
     });
-    autoHelperIds = await pickGuestHelpers(tx, {
+
+    const higherGuests = await pickHigherCategoryHelpers(tx, {
       competitionId: division.competitionId,
       ownDivisionId: divisionId,
       ownCategoryOrder: division.category.order,
       role: needyRole,
       count: shortage,
     });
-    for (const registrationId of autoHelperIds) {
+    autoHelpers.push(...higherGuests.map((registrationId) => ({ registrationId, helperSource: "GUEST_HIGHER_CATEGORY" as const })));
+
+    if (autoHelpers.length < shortage) {
+      const reused = await pickOwnDivisionReuseHelpers(tx, {
+        divisionId,
+        role: needyRole,
+        alreadyScoredIds: excludeIds,
+        count: shortage - autoHelpers.length,
+      });
+      autoHelpers.push(...reused.map((r) => ({ registrationId: r.id, helperSource: "REUSED_ALREADY_SCORED" as const })));
+    }
+
+    for (const helper of autoHelpers) {
       await tx.drawParticipant.create({
         data: {
           drawId: draw.id,
-          registrationId,
+          registrationId: helper.registrationId,
           role: needyRole,
           scored: false,
-          helperSource: "GUEST_HIGHER_CATEGORY",
+          helperSource: helper.helperSource,
           calledOrder: calledOrder++,
         },
       });
     }
   }
+  const autoHelperIds = autoHelpers.map((h) => h.registrationId);
 
   await writeAudit(tx, {
     actor,

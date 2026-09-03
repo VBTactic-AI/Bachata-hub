@@ -5,11 +5,14 @@ import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 
 // Кандидаты в помощники для конкретного заезда/роли — список по дивизионам
-// этого же соревнования плюс подсказка "кого предложить по умолчанию"
-// (ближайшая категория СТРОГО выше по уровню; если такой нет — ближайшая
-// ниже). Это только подсказка для UI — организатор может выбрать любого
-// показанного кандидата, ничего не блокируется по уровню категории
-// (docs/00_DECISIONS.md).
+// этого же соревнования плюс подсказка "кого предложить по умолчанию", тот
+// же порядок приоритета, что и в авто-доборе при жеребьёвке (A10, уточнено
+// 2026-09-04): ближайшая категория СТРОГО выше (если несколько подряд без
+// людей — следующая выше и т.д.); если категорий выше совсем нет — свои,
+// кто уже станцевал в другом заезде раунда; и только если и там пусто —
+// ближайшая категория ниже. Это только подсказка для UI — организатор может
+// выбрать любого показанного кандидата, ничего не блокируется по уровню
+// категории (docs/00_DECISIONS.md).
 export async function listHelperCandidates(
   heatId: string,
   role: RegistrationRole
@@ -78,10 +81,11 @@ export async function listHelperCandidates(
   const higher = result
     .filter((d) => !d.isOwnDivision && d.categoryOrder > ownOrder)
     .sort((a, b) => a.categoryOrder - b.categoryOrder);
+  const own = result.find((d) => d.isOwnDivision);
   const lower = result
     .filter((d) => !d.isOwnDivision && d.categoryOrder < ownOrder)
     .sort((a, b) => b.categoryOrder - a.categoryOrder);
-  const suggestedDivision = higher[0] ?? lower[0] ?? null;
+  const suggestedDivision = higher[0] ?? own ?? lower[0] ?? null;
 
   return { suggestedRegistrationId: suggestedDivision?.registrations[0]?.id ?? null, divisions: result };
 }
