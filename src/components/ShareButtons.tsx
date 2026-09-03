@@ -1,6 +1,7 @@
 "use client";
 
 import { t } from "@/lib/i18n/dictionary";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 // Заточено под то, как реально расшаривают контент в этой аудитории —
 // Telegram и Instagram, а не абстрактная кнопка Web Share API.
@@ -17,13 +18,18 @@ export function ShareButtons({ url, title }: { url: string; title: string }) {
   }
 
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <a className="btn btn-secondary btn-sm" href={telegramHref} target="_blank" rel="noopener noreferrer">
+    <div className="flex flex-wrap gap-2">
+      <a
+        className={buttonVariants({ variant: "secondary", size: "sm", className: "no-underline" })}
+        href={telegramHref}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         {t.event.shareTelegram}
       </a>
-      <button className="btn btn-secondary btn-sm" type="button" onClick={copyForInstagram}>
+      <Button variant="secondary" size="sm" type="button" onClick={copyForInstagram}>
         {t.event.shareInstagram}
-      </button>
+      </Button>
     </div>
   );
 }
