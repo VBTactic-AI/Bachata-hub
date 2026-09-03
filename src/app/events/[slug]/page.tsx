@@ -6,6 +6,9 @@ import { t } from "@/lib/i18n/dictionary";
 import { formatDateTime } from "@/lib/format";
 import { AttendanceButtons } from "@/components/AttendanceButtons";
 import { ShareButtons } from "@/components/ShareButtons";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tag } from "@/components/ui/tag";
 
 async function getEvent(slug: string) {
   return prisma.event.findUnique({
@@ -89,26 +92,26 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {event.photoUrl && <img src={event.photoUrl} alt={event.title} style={{ borderRadius: 12 }} />}
+      {event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-xl" />}
 
       <div>
-        <p className="hint-text" style={{ margin: 0 }}>
+        <p className="hint-text m-0">
           {formatDateTime(event.startsAt)} · {event.city.nameRu}
         </p>
         <h1 className="page-title">{event.title}</h1>
         <div>
-          <span className="tag">{t.event.formats[event.format]}</span>
-          <span className="tag">{t.event.levels[event.level]}</span>
-          {isPast && <span className="badge badge-community">{t.event.pastEvent}</span>}
+          <Tag>{t.event.formats[event.format]}</Tag>
+          <Tag>{t.event.levels[event.level]}</Tag>
+          {isPast && <Badge variant="community">{t.event.pastEvent}</Badge>}
         </div>
       </div>
 
-      <div className="card stack" style={{ gap: 8 }}>
-        <p style={{ margin: 0 }}>
+      <Card className="stack gap-2">
+        <p className="m-0">
           <strong>{t.event.place}:</strong> {event.venueName}
           {event.venueAddress ? `, ${event.venueAddress}` : ""}
         </p>
-        <p style={{ margin: 0 }}>
+        <p className="m-0">
           <strong>{t.event.organizer}:</strong>{" "}
           {event.school ? (
             <a href={`/schools/${event.school.slug}`}>{event.school.name}</a>
@@ -117,32 +120,30 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
           )}
         </p>
         {event.priceText && (
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <strong>{t.event.price}:</strong> {event.priceText}
           </p>
         )}
         {event.externalLinkUrl && (
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <a href={event.externalLinkUrl} target="_blank" rel="noopener noreferrer">
               {t.event.registerExternal} →
             </a>
           </p>
         )}
-      </div>
+      </Card>
 
       {event.description && (
         <div>
           <h2 className="page-title">{t.event.description}</h2>
-          <p style={{ whiteSpace: "pre-wrap" }}>{event.description}</p>
+          <p className="whitespace-pre-wrap">{event.description}</p>
         </div>
       )}
 
       {event.tags.length > 0 && (
         <div>
           {event.tags.map((tag) => (
-            <span key={tag} className="tag">
-              #{tag}
-            </span>
+            <Tag key={tag}>#{tag}</Tag>
           ))}
         </div>
       )}
