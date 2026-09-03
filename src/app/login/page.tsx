@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { Button } from "@/components/ui/button";
+import { FormRoot, Input, Label } from "@/components/ui/field";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,27 +32,27 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="stack" style={{ maxWidth: 480 }}>
+    <div className="stack max-w-[480px]">
       <h1 className="page-title">{t.auth.loginTitle}</h1>
-      <form onSubmit={onSubmit}>
-        <label>
+      <FormRoot onSubmit={onSubmit}>
+        <Label>
           {t.auth.email}
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </label>
-        <label>
+          <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Label>
+        <Label>
           {t.auth.password}
-          <input
+          <Input
             type="password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-        </label>
+        </Label>
         {error && <p className="error-text">{error}</p>}
-        <button className="btn" type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading}>
           {t.nav.login}
-        </button>
-      </form>
+        </Button>
+      </FormRoot>
     </div>
   );
 }
