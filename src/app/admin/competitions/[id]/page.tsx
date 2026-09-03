@@ -19,7 +19,7 @@ import { HeatStatusControls } from "@/components/admin/HeatStatusControls";
 import { StartDrawingForm } from "@/components/admin/StartDrawingForm";
 import { RerollDrawButton } from "@/components/admin/RerollDrawButton";
 import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
-import { RemoveDrawHelperButton } from "@/components/admin/RemoveDrawHelperButton";
+import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
@@ -205,23 +205,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                     </span>
                                     <HeatStatusControls heatId={heat.id} status={heat.status} roundStatus={round.status} />
                                   </div>
-                                  {draw && (
-                                    <div className="stack gap-1 mt-1 pl-3">
-                                      {draw.participants.map((p) => (
-                                        <p key={p.id} className="hint-text m-0">
-                                          {ROLE_LABELS[p.role] ?? p.role} · {p.registration.dancer.displayName}
-                                          {p.registration.checkIn?.bibNumber ? ` (№${p.registration.checkIn.bibNumber})` : ""}
-                                          {!p.scored && (
-                                            <>
-                                              {" "}
-                                              · <Badge variant="pending">помощник</Badge>
-                                              {canEditDraw && <RemoveDrawHelperButton participantId={p.id} />}
-                                            </>
-                                          )}
-                                        </p>
-                                      ))}
-                                    </div>
-                                  )}
+                                  {draw && <DrawParticipantsGrid participants={draw.participants} canEditDraw={canEditDraw} />}
                                   {canEditDraw && (
                                     <div className="flex flex-wrap items-center gap-2 mt-1 pl-3">
                                       <RerollDrawButton heatId={heat.id} />
