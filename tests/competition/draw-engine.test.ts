@@ -534,6 +534,24 @@ describe("splitHeatOverflow() — «Способ Б»: перенос избыт
     await expect(splitHeatOverflow("heat1")).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
+  // По запросу пользователя (2026-09-04): если меньшая сторона — 0 реальных
+  // участников, разбивка унесла бы их всех в новый заезд, а текущий остался
+  // бы пустым (помощники при разбивке удаляются) — запрещено явно.
+  it("отклоняет разбивку, если реальных участников противоположной роли вообще нет (заезд стал бы пустым)", async () => {
+    topDrawFindFirst.mockResolvedValue(
+      baseSplitDraw({
+        participants: [
+          { id: "p-l1", registrationId: "l1", role: "LEADER", scored: true, calledOrder: 1 },
+          { id: "p-l2", registrationId: "l2", role: "LEADER", scored: true, calledOrder: 2 },
+          { id: "p-h1", registrationId: "guest0", role: "FOLLOWER", scored: false, helperSource: "GUEST_HIGHER_CATEGORY", calledOrder: 3 },
+        ],
+      })
+    );
+
+    await expect(splitHeatOverflow("heat1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(drawParticipantDeleteMany).not.toHaveBeenCalled();
+  });
+
   it("удаляет из текущего заезда лишних (излишек) и ВСЕХ помощников", async () => {
     await splitHeatOverflow("heat1");
     expect(drawParticipantDeleteMany).toHaveBeenCalledWith({ where: { id: { in: ["p-l2", "p-l3", "p-h1"] } } });

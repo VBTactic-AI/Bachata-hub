@@ -5,6 +5,7 @@ const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
 const divisionFindUniqueOrThrow = vi.fn();
+const divisionFindUnique = vi.fn();
 const divisionCategoryFindUnique = vi.fn();
 const roundStageCatalogFindMany = vi.fn();
 const txDivisionUpdate = vi.fn();
@@ -21,7 +22,10 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
+    division: {
+      findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a),
+      findUnique: (...a: unknown[]) => divisionFindUnique(...a),
+    },
     divisionCategory: { findUnique: (...a: unknown[]) => divisionCategoryFindUnique(...a) },
     roundStageCatalog: { findMany: (...a: unknown[]) => roundStageCatalogFindMany(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
@@ -54,6 +58,7 @@ beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
   divisionFindUniqueOrThrow.mockReset().mockResolvedValue(currentSettings);
   divisionCategoryFindUnique.mockReset().mockResolvedValue({ id: "cat1", name: "Продвинутые", isActive: true });
+  divisionFindUnique.mockReset().mockResolvedValue(null);
   roundStageCatalogFindMany.mockReset().mockResolvedValue([]);
   txDivisionUpdate.mockReset();
   txDivisionDelete.mockReset();

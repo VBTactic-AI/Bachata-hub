@@ -16,6 +16,16 @@ export async function addDivision(competitionId: string, input: AddDivisionInput
     throw new ValidationFailedError("Выбранная категория недоступна.");
   }
 
+  // Один дивизион на категорию в рамках соревнования (@@unique в схеме) —
+  // сама форма уже не предлагает занятые категории на выбор, но проверяем и
+  // на сервере понятным сообщением, а не общей ошибкой 500 (CLAUDE.md §44/§46).
+  const existing = await prisma.division.findUnique({
+    where: { competitionId_categoryId: { competitionId, categoryId: input.categoryId } },
+  });
+  if (existing) {
+    throw new ValidationFailedError(`Дивизион категории «${category.name}» в этом соревновании уже есть.`);
+  }
+
   // План "сколько пар участвует в каждом этапе" (docs/00_DECISIONS.md, A14) —
   // тоже проверяем на сервере, даже если форма отдаёт только активные этапы.
   const stagePlan = input.stagePlan ?? [];

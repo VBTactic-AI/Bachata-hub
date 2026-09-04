@@ -330,7 +330,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                 draw?.participants.filter((p) => p.role === "LEADER" && p.scored).length ?? 0;
                               const scoredFollowerCount =
                                 draw?.participants.filter((p) => p.role === "FOLLOWER" && p.scored).length ?? 0;
-                              const hasRealImbalance = scoredLeaderCount !== scoredFollowerCount;
+                              // Если меньшая сторона — 0 реальных участников,
+                              // разбивка унесла бы их всех в новый заезд и
+                              // текущий остался бы пустым — кнопку не
+                              // показываем вовсе (сервер такое тоже отклонит,
+                              // 2026-09-04).
+                              const hasRealImbalance =
+                                scoredLeaderCount !== scoredFollowerCount && Math.min(scoredLeaderCount, scoredFollowerCount) > 0;
                               return (
                                 <div key={heat.id} className="pl-3">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -380,7 +386,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             ))}
           </div>
         )}
-        {canManage && <AddDivisionForm competitionId={competition.id} categories={activeCategories} stages={activeStages} />}
+        {canManage && (
+          <AddDivisionForm
+            competitionId={competition.id}
+            categories={activeCategories.filter(
+              (c) => !competition.divisions.some((d) => d.categoryId === c.id)
+            )}
+            stages={activeStages}
+          />
+        )}
       </div>
 
       {isRegistrationOpen && !alreadyRegistered && divisionOptions.length > 0 && (

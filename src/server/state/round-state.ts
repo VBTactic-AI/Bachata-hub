@@ -8,6 +8,7 @@ import { ValidationFailedError } from "../errors";
 import { ROUND_TYPE_LABELS } from "@/lib/competition-labels";
 import { maybeCalculateOnEntryInTx } from "../judging/advancement";
 import { writeAudit } from "../audit/audit";
+import { getRoundEligiblePool } from "../competition/draw-engine";
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -107,6 +108,47 @@ export async function transitionRound(
         if (heatWithoutDraw) {
           throw new ValidationFailedError(
             `Нельзя зафиксировать жеребьёвку: для захода №${heatWithoutDraw.number} ещё не сформирован список вызванных.`
+          );
+        }
+
+        // Внутри каждого захода — поровну ведущих и ведомых (реальных и
+        // помощников вместе: помощник как раз и добавляется, чтобы у
+        // кого-то физически был партнёр на паркете) — иначе кто-то
+        // останется без пары (по запросу пользователя, 2026-09-04).
+        const heats = await tx.heat.findMany({
+          where: { roundId },
+          orderBy: { number: "asc" },
+          include: { draws: { orderBy: { version: "desc" }, take: 1, include: { participants: true } } },
+        });
+        const placedLeaderIds = new Set<string>();
+        const placedFollowerIds = new Set<string>();
+        for (const heat of heats) {
+          const participants = heat.draws[0]?.participants ?? [];
+          const leaders = participants.filter((p) => p.role === "LEADER");
+          const followers = participants.filter((p) => p.role === "FOLLOWER");
+          if (leaders.length !== followers.length) {
+            throw new ValidationFailedError(
+              `Нельзя зафиксировать жеребьёвку: в заходе №${heat.number} не поровну ведущих (${leaders.length}) и ведомых (${followers.length}) — кому-то не хватит партнёра. Добавьте помощника или разбейте заход.`
+            );
+          }
+          for (const p of leaders) if (p.scored) placedLeaderIds.add(p.registrationId);
+          for (const p of followers) if (p.scored) placedFollowerIds.add(p.registrationId);
+        }
+
+        // Все реально зарегистрированные и прошедшие check-in (с учётом
+        // фильтра по прошедшим предыдущий раунд, A9) обязаны попасть хоть в
+        // какой-то заход раунда — иначе не хватило вместимости заходов, и
+        // часть участников молча осталась бы за бортом.
+        const [eligibleLeaderIds, eligibleFollowerIds] = await Promise.all([
+          getRoundEligiblePool(tx, { divisionId: round.division.id, roundOrder: round.order, role: "LEADER" }),
+          getRoundEligiblePool(tx, { divisionId: round.division.id, roundOrder: round.order, role: "FOLLOWER" }),
+        ]);
+        const missingCount =
+          [...eligibleLeaderIds].filter((id) => !placedLeaderIds.has(id)).length +
+          [...eligibleFollowerIds].filter((id) => !placedFollowerIds.has(id)).length;
+        if (missingCount > 0) {
+          throw new ValidationFailedError(
+            `Нельзя зафиксировать жеребьёвку: ${missingCount} участник(ов), прошедших check-in, не попали ни в один заход этого раунда — не хватает вместимости заходов. Добавьте ещё заход или увеличьте вместимость.`
           );
         }
       }

@@ -16,12 +16,15 @@ const txRoundFindFirst = vi.fn();
 const txRoundFindUniqueOrThrow = vi.fn();
 const txRoundUpdateMany = vi.fn();
 const txHeatFindFirst = vi.fn();
+const txHeatFindMany = vi.fn();
 const txHeatCount = vi.fn();
+const txRegistrationFindMany = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
   round: { findFirst: txRoundFindFirst, findUniqueOrThrow: txRoundFindUniqueOrThrow, updateMany: txRoundUpdateMany },
-  heat: { findFirst: txHeatFindFirst, count: txHeatCount },
+  heat: { findFirst: txHeatFindFirst, findMany: txHeatFindMany, count: txHeatCount },
+  registration: { findMany: txRegistrationFindMany },
   auditLog: { create: auditCreate },
 };
 
@@ -50,7 +53,9 @@ beforeEach(() => {
   txRoundFindUniqueOrThrow.mockReset();
   txRoundUpdateMany.mockReset().mockResolvedValue({ count: 1 });
   txHeatFindFirst.mockReset().mockResolvedValue(null);
+  txHeatFindMany.mockReset().mockResolvedValue([]);
   txHeatCount.mockReset().mockResolvedValue(0);
+  txRegistrationFindMany.mockReset().mockResolvedValue([]);
   auditCreate.mockReset();
   maybeCalculateOnEntryMock.mockReset();
 });
@@ -132,6 +137,97 @@ describe("transitionRound() — DRAW_LOCKED требует список у ка�
     expect(txHeatFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { roundId: "round1", draws: { none: {} } } })
     );
+    expect(txRoundUpdateMany).toHaveBeenCalledOnce();
+  });
+});
+
+// По запросу пользователя (2026-09-04): перед фиксацией жеребьёвки все
+// зарегистрированные и прошедшие check-in обязаны попасть хоть в какой-то
+// заход, и в каждом заходе поровну ведущих/ведомых — иначе кто-то останется
+// без пары или вовсе за бортом раунда.
+describe("transitionRound() — DRAW_LOCKED требует полное распределение и баланс пар", () => {
+  beforeEach(() => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      id: "round1",
+      order: 1,
+      status: "DRAWING",
+      statusVersion: 1,
+      division: { id: "div1", competitionId: "comp1" },
+    });
+    txHeatFindFirst.mockResolvedValue(null); // у каждого захода есть жеребьёвка
+  });
+
+  function participant(registrationId: string, role: "LEADER" | "FOLLOWER", scored = true) {
+    return { registrationId, role, scored };
+  }
+
+  it("отклоняет, если в заходе не поровну ведущих и ведомых", async () => {
+    txHeatFindMany.mockResolvedValue([
+      {
+        number: 1,
+        draws: [{ participants: [participant("l1", "LEADER"), participant("l2", "LEADER"), participant("f1", "FOLLOWER")] }],
+      },
+    ]);
+
+    await expect(transitionRound("round1", "DRAW_LOCKED")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txRoundUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет, если прошедший check-in участник не попал ни в один заход", async () => {
+    txHeatFindMany.mockResolvedValue([
+      { number: 1, draws: [{ participants: [participant("l1", "LEADER"), participant("f1", "FOLLOWER")] }] },
+    ]);
+    txRegistrationFindMany.mockImplementation(({ where }: { where: { role: string } }) =>
+      Promise.resolve(
+        where.role === "LEADER" ? [{ id: "l1" }, { id: "l2" }] : [{ id: "f1" }] // l2 нигде не вызван
+      )
+    );
+
+    await expect(transitionRound("round1", "DRAW_LOCKED")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txRoundUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("разрешает, если все заходы сбалансированы и все прошедшие check-in распределены", async () => {
+    txHeatFindMany.mockResolvedValue([
+      { number: 1, draws: [{ participants: [participant("l1", "LEADER"), participant("f1", "FOLLOWER")] }] },
+      {
+        number: 2,
+        draws: [
+          {
+            participants: [
+              participant("l2", "LEADER"),
+              participant("l-helper", "LEADER", false), // помощник — тоже даёт пару
+              participant("f2", "FOLLOWER"),
+              participant("f3", "FOLLOWER"),
+            ],
+          },
+        ],
+      },
+    ]);
+    txRegistrationFindMany.mockImplementation(({ where }: { where: { role: string } }) =>
+      Promise.resolve(where.role === "LEADER" ? [{ id: "l1" }, { id: "l2" }] : [{ id: "f1" }, { id: "f2" }, { id: "f3" }])
+    );
+
+    await transitionRound("round1", "DRAW_LOCKED");
+
+    expect(txRoundUpdateMany).toHaveBeenCalledOnce();
+  });
+
+  it("не считает помощника (scored=false) за реального при проверке полноты распределения", async () => {
+    // f-helper — помощник, не входит в пул CHECKED_IN дивизиона, поэтому не
+    // должен требовать своего собственного покрытия.
+    txHeatFindMany.mockResolvedValue([
+      {
+        number: 1,
+        draws: [{ participants: [participant("l1", "LEADER"), participant("f-helper", "FOLLOWER", false)] }],
+      },
+    ]);
+    txRegistrationFindMany.mockImplementation(({ where }: { where: { role: string } }) =>
+      Promise.resolve(where.role === "LEADER" ? [{ id: "l1" }] : [])
+    );
+
+    await transitionRound("round1", "DRAW_LOCKED");
+
     expect(txRoundUpdateMany).toHaveBeenCalledOnce();
   });
 });

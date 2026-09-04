@@ -108,6 +108,29 @@ async function advancedRegistrationIdsFromPreviousRound(
   return new Set(results.map((r) => r.registrationId));
 }
 
+// Полный пул раунда для одной роли — та же фильтрация, что использует сама
+// жеребьёвка (CHECKED_IN/LATE + прошедшие предыдущий раунд, A9), но без
+// вместимости заезда и без "уже вызван в другом заезде" — нужно, чтобы
+// проверить, что ВСЕ подходящие попали хоть в какой-то заезд раунда, прежде
+// чем зафиксировать жеребьёвку (docs/00_DECISIONS.md, 2026-09-04).
+export async function getRoundEligiblePool(
+  tx: PrismaTx,
+  params: { divisionId: string; roundOrder: number; role: RegistrationRole }
+): Promise<Set<string>> {
+  const onlyRegistrationIds = await advancedRegistrationIdsFromPreviousRound(tx, params.divisionId, params.roundOrder);
+  const regs = await tx.registration.findMany({
+    where: {
+      divisionId: params.divisionId,
+      role: params.role,
+      status: "REGISTERED",
+      checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
+    },
+    select: { id: true },
+  });
+  const eligible = onlyRegistrationIds === null ? regs : regs.filter((r) => onlyRegistrationIds.has(r.id));
+  return new Set(eligible.map((r) => r.id));
+}
+
 // Кто уже вызывался и получил scored=true в ДРУГИХ заездах этого раунда —
 // такие люди исключаются из пула (уже отработали свою попытку в этом
 // раунде). Считаем только ПОСЛЕДНЮЮ версию Draw каждого заезда — старые
@@ -454,6 +477,15 @@ export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: st
   }
 
   const balancedCount = Math.min(leaders.length, followers.length);
+  // Если меньшая сторона — 0 реальных участников, разбивка унесла бы ВСЕХ
+  // реальных в новый заезд, а текущий остался бы пустым (все помощники при
+  // разбивке удаляются) — по запросу пользователя (2026-09-04) такое
+  // запрещено явно, а не молча создаёт бесполезный пустой заезд.
+  if (balancedCount === 0) {
+    throw new ValidationFailedError(
+      "Нельзя разбить: в заходе нет ни одного реального представителя противоположной роли — заход после разбивки останется пустым."
+    );
+  }
   const excessRole: RegistrationRole = leaders.length > followers.length ? "LEADER" : "FOLLOWER";
   const needyRole: RegistrationRole = excessRole === "LEADER" ? "FOLLOWER" : "LEADER";
   const moved = (excessRole === "LEADER" ? leaders : followers).slice(balancedCount);

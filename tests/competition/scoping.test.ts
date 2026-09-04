@@ -13,6 +13,7 @@ const divisionCreate = vi.fn();
 const rulesFindFirst = vi.fn();
 const rulesCreate = vi.fn();
 const divisionCategoryFindUnique = vi.fn();
+const divisionFindUnique = vi.fn();
 const fakeTx = {
   division: { create: divisionCreate },
   competitionRules: { findFirst: rulesFindFirst, create: rulesCreate },
@@ -21,6 +22,7 @@ const fakeTx = {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     divisionCategory: { findUnique: (...a: unknown[]) => divisionCategoryFindUnique(...a) },
+    division: { findUnique: (...a: unknown[]) => divisionFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
@@ -35,6 +37,7 @@ beforeEach(() => {
   auditCreate.mockReset();
   divisionCreate.mockReset().mockResolvedValue({ id: "div1", categoryId: "cat1" });
   divisionCategoryFindUnique.mockReset().mockResolvedValue({ id: "cat1", name: "Начинающие", isActive: true });
+  divisionFindUnique.mockReset().mockResolvedValue(null);
   rulesFindFirst.mockReset().mockResolvedValue(null);
   rulesCreate.mockReset().mockResolvedValue({ id: "rules1", version: 1 });
 });
@@ -47,6 +50,16 @@ describe("привязка прав к конкретному соревнова
 
   it("addDivision отклоняет неактивную категорию", async () => {
     divisionCategoryFindUnique.mockResolvedValue({ id: "cat1", name: "Легаси", isActive: false });
+    const { ValidationFailedError } = await import("@/server/errors");
+
+    await expect(addDivision("comp1", { categoryId: "cat1", rules: {} } as never)).rejects.toBeInstanceOf(
+      ValidationFailedError
+    );
+    expect(divisionCreate).not.toHaveBeenCalled();
+  });
+
+  it("addDivision отклоняет категорию, для которой в этом соревновании уже есть дивизион", async () => {
+    divisionFindUnique.mockResolvedValue({ id: "div-existing", categoryId: "cat1" });
     const { ValidationFailedError } = await import("@/server/errors");
 
     await expect(addDivision("comp1", { categoryId: "cat1", rules: {} } as never)).rejects.toBeInstanceOf(
