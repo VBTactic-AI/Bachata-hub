@@ -50,7 +50,7 @@ export function GenerateRoundsButton({ divisionId, hasExistingRounds }: { divisi
   return (
     <span className="inline-flex items-center gap-2">
       <Button type="button" size="sm" disabled={loading} onClick={() => (hasExistingRounds ? setConfirming(true) : run())}>
-        Перегенерировать раунды
+        {hasExistingRounds ? "Перегенерировать раунды" : "Сгенерировать раунды"}
       </Button>
       {error && <span className="error-text">{error}</span>}
     </span>
