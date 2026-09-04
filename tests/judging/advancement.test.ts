@@ -24,6 +24,7 @@ const txRoundResultUpsert = vi.fn();
 const txRoundResultUpdate = vi.fn();
 const txJudgeAssignmentFindMany = vi.fn();
 const txJudgeScoreCount = vi.fn();
+const txJudgeRoundConfirmationCount = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
@@ -46,6 +47,7 @@ const fakeTx = {
   },
   judgeAssignment: { findMany: txJudgeAssignmentFindMany },
   judgeScore: { count: txJudgeScoreCount },
+  judgeRoundConfirmation: { count: txJudgeRoundConfirmationCount },
   auditLog: { create: auditCreate },
 };
 
@@ -101,6 +103,7 @@ beforeEach(() => {
   txRoundResultUpdate.mockReset();
   txJudgeAssignmentFindMany.mockReset().mockResolvedValue([]);
   txJudgeScoreCount.mockReset().mockResolvedValue(0);
+  txJudgeRoundConfirmationCount.mockReset().mockResolvedValue(0);
   auditCreate.mockReset();
   prismaTransaction.mockClear();
   prismaHeatFindFirstOrThrow.mockReset();
@@ -287,20 +290,22 @@ describe("maybeCalculateOnEntryInTx() — роль без отсева не тр
   it("считает required только по ведомым, если ведущих не больше мест (раунд не финал)", async () => {
     txRoundFindUniqueOrThrow.mockResolvedValue(baseRound); // finalistsCount: 10
     txRoundCount.mockResolvedValue(1); // есть более поздний раунд дивизиона — это не финал
-    const leaders = Array.from({ length: 3 }, (_, i) => ({ id: `l${i}`, role: "LEADER" as const }));
-    const followers = Array.from({ length: 12 }, (_, i) => ({ id: `f${i}`, role: "FOLLOWER" as const }));
+    txRoundResultCount.mockResolvedValue(0);
+    // Ведущие (3, <= 10 мест) не оценены вовсе; ведомые (12) оценены
+    // единственным судьёй ПОЛНОСТЬЮ. Если бы ведущие ошибочно тоже
+    // считались required, раунд бы НЕ завершился (у них нет ни одной
+    // оценки) — завершается => required корректно не включает ведущих.
+    const leaders = Array.from({ length: 3 }, (_, i) => ({ id: `l${i}`, role: "LEADER" as const, judgeScores: [] }));
+    const followers = Array.from({ length: 12 }, (_, i) => ({ id: `f${i}`, role: "FOLLOWER" as const, judgeScores: [{ judgeAssignmentId: undefined, value: 1 }] }));
     txHeatFindMany.mockResolvedValue([{ draws: [{ participants: [...leaders, ...followers] }] }]);
     txJudgeAssignmentFindMany.mockResolvedValue([{ role: "LEADER" }, { role: "FOLLOWER" }]);
-    txJudgeScoreCount.mockResolvedValue(0);
 
-    await maybeCalculateOnEntryInTx(fakeTx as never, "round1", actor);
+    // maybeFinalizeAfterScoreInTx — проверка "уже всё собрано?" после
+    // отправки очередной оценки (не maybeCalculateOnEntryInTx, та — только
+    // для "изначально нечего оценивать", required===0).
+    await maybeFinalizeAfterScoreInTx(fakeTx as never, "round1", actor);
 
-    // required > 0 (ведомые) — раунд не завершается сразу же.
-    expect(txRoundResultCreateMany).not.toHaveBeenCalled();
-    const countArgs = txJudgeScoreCount.mock.calls.at(-1)![0] as { where: { drawParticipantId: { in: string[] } } };
-    const ids = countArgs.where.drawParticipantId.in;
-    expect(ids).toHaveLength(12);
-    expect(ids.every((id) => id.startsWith("f"))).toBe(true);
+    expect(txRoundResultCreateMany).toHaveBeenCalled();
   });
 
   it("завершает раунд автоматически (все ADVANCED), если оценивать вообще нечего — все роли <= мест", async () => {
@@ -323,16 +328,57 @@ describe("maybeCalculateOnEntryInTx() — роль без отсева не тр
     txRoundFindUniqueOrThrow.mockResolvedValue(baseRound);
     txRoundCount.mockResolvedValue(0); // нет более поздних раундов дивизиона — это финал
     const leaders = [
-      { id: "l0", role: "LEADER" as const },
-      { id: "l1", role: "LEADER" as const },
+      { id: "l0", role: "LEADER" as const, judgeScores: [] },
+      { id: "l1", role: "LEADER" as const, judgeScores: [] },
     ];
     txHeatFindMany.mockResolvedValue([{ draws: [{ participants: leaders }] }]);
     txJudgeAssignmentFindMany.mockResolvedValue([{ role: "LEADER" }]);
-    txJudgeScoreCount.mockResolvedValue(0);
 
     await maybeCalculateOnEntryInTx(fakeTx as never, "round1", actor);
 
     // required = 2 (не 0) — раунд ждёт реальных оценок судьи, а не проходит автоматически.
+    expect(txRoundResultCreateMany).not.toHaveBeenCalled();
+  });
+
+  // По запросу пользователя (2026-09-04): формат "Да/Нет" (judgingMaxScore=1)
+  // — раунд не ждёт явного "Нет" по каждому оставшемуся и не завершается по
+  // одним лишь сырым кликам "Да" (иначе случайный лишний клик мог бы
+  // необратимо закрыть раунд, пока судья ещё поправляет себя) — только
+  // когда ВСЕ судьи явно нажали "Готово" (JudgeRoundConfirmation).
+  it('формат "Да/Нет": раунд завершается, когда все судьи нажали "Готово" — не по одним кликам "Да"', async () => {
+    // 5 ведомых, finalistsCount=2 — роль НЕ попадает под пропуск судейства
+    // (A19, там участников не больше мест), значит проверяется именно
+    // подтверждение "Готово", не сырые оценки.
+    const round = { ...baseRound, judgingMaxScore: 1, finalistsCount: 2 };
+    txRoundFindUniqueOrThrow.mockResolvedValue(round);
+    txRoundCount.mockResolvedValue(1); // не финал
+    txRoundResultCount.mockResolvedValue(0);
+    const followers = Array.from({ length: 5 }, (_, i) => ({ id: `f${i}`, role: "FOLLOWER" as const, judgeScores: [] }));
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: followers }] }]);
+    txJudgeAssignmentFindMany.mockResolvedValue([{ id: "assign-f", role: "FOLLOWER" }]);
+    // Единственный судья роли уже нажал "Готово" — 1 подтверждение из 1 требуемого.
+    txJudgeRoundConfirmationCount.mockResolvedValue(1);
+
+    await maybeFinalizeAfterScoreInTx(fakeTx as never, "round1", actor);
+
+    expect(txRoundResultCreateMany).toHaveBeenCalled();
+  });
+
+  it('формат "Да/Нет": НЕ завершается, пока не все судьи нажали "Готово", даже если баллы уже расставлены', async () => {
+    const round = { ...baseRound, judgingMaxScore: 1, finalistsCount: 2 };
+    txRoundFindUniqueOrThrow.mockResolvedValue(round);
+    txRoundCount.mockResolvedValue(1); // не финал
+    const followers = Array.from({ length: 5 }, (_, i) => ({ id: `f${i}`, role: "FOLLOWER" as const, judgeScores: [] }));
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: followers }] }]);
+    // Два судьи назначены на роль — подтвердил пока только один.
+    txJudgeAssignmentFindMany.mockResolvedValue([
+      { id: "assign-f1", role: "FOLLOWER" },
+      { id: "assign-f2", role: "FOLLOWER" },
+    ]);
+    txJudgeRoundConfirmationCount.mockResolvedValue(1);
+
+    await maybeFinalizeAfterScoreInTx(fakeTx as never, "round1", actor);
+
     expect(txRoundResultCreateMany).not.toHaveBeenCalled();
   });
 });
@@ -352,9 +398,8 @@ describe("maybeCalculateOnEntryInTx()", () => {
 
   it("ничего не делает, если требуются реальные оценки", async () => {
     txRoundFindUniqueOrThrow.mockResolvedValue(baseRound);
-    txHeatFindMany.mockResolvedValueOnce([{ draws: [{ participants: [{ id: "p1", role: "LEADER" }] }] }]);
+    txHeatFindMany.mockResolvedValueOnce([{ draws: [{ participants: [{ id: "p1", role: "LEADER", judgeScores: [] }] }] }]);
     txJudgeAssignmentFindMany.mockResolvedValue([{ role: "LEADER" }]);
-    txJudgeScoreCount.mockResolvedValue(0);
 
     await maybeCalculateOnEntryInTx(fakeTx as never, "round1", actor);
 

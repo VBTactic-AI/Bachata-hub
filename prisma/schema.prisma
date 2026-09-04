@@ -806,8 +806,9 @@ model Round {
   endedAt             DateTime?
   createdAt           DateTime           @default(now())
 
-  heats   Heat[]
-  results RoundResult[]
+  heats         Heat[]
+  results       RoundResult[]
+  confirmations JudgeRoundConfirmation[]
 
   @@unique([divisionId, order])
   @@index([status])
@@ -953,7 +954,8 @@ model JudgeAssignment {
   assignedBy   User             @relation("JudgeAssignmentAssignedBy", fields: [assignedById], references: [id])
   createdAt    DateTime         @default(now())
 
-  scores JudgeScore[]
+  scores        JudgeScore[]
+  confirmations JudgeRoundConfirmation[]
 
   @@unique([divisionId, judgeUserId, role])
 }
@@ -979,6 +981,30 @@ model JudgeScore {
   updatedAt          DateTime        @updatedAt
 
   @@unique([drawParticipantId, judgeAssignmentId])
+}
+
+// Формат 0/1 ("Да/Нет"): судья свободно кликает "Да" по паркету, сколько
+// хочет, сколько угодно раз меняя мнение — но раунд не ждёт от него явного
+// "Нет" по каждому оставшемуся (CLAUDE.md §16 всё равно соблюдён: "нет
+// оценки" не превращается в 0 задним числом, отсутствующая JudgeScore
+// просто не прибавляет баллов в сумме). Вместо этого судья явно нажимает
+// "Готово" — принимается, только если "Да" ровно Round.finalistsCount;
+// после этого его оценки по этому раунду фиксируются (submitJudgeScore
+// больше их не принимает). Раунд реально завершается и перестаёт принимать
+// оценки только когда так подтвердили ВСЕ судьи раунда (по обеим ролям, где
+// судейство не пропущено) — по запросу пользователя, 2026-09-04.
+model JudgeRoundConfirmation {
+  id                String          @id @default(cuid())
+  roundId           String
+  round             Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  judgeAssignmentId String
+  judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
+  // Снимок числа "Да" на момент подтверждения — для истории/аудита, не
+  // пересчитывается позже.
+  yesCount          Int
+  createdAt         DateTime        @default(now())
+
+  @@unique([roundId, judgeAssignmentId])
 }
 
 // Итог Advancement Engine по раунду на одного участника (CLAUDE.md §23).

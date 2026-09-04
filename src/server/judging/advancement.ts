@@ -317,12 +317,21 @@ export function rolesNotNeedingJudging(
 async function getRoundScoringProgressInTx(tx: PrismaTx | typeof prisma, roundId: string): Promise<RoundScoringProgress> {
   const round = await tx.round.findUniqueOrThrow({
     where: { id: roundId },
-    select: { divisionId: true, finalistsCount: true, order: true, type: true },
+    select: { divisionId: true, finalistsCount: true, order: true, type: true, judgingMaxScore: true },
   });
   const heats = await tx.heat.findMany({
     where: { roundId },
     select: {
-      draws: { orderBy: { version: "desc" }, take: 1, select: { participants: { where: { scored: true }, select: { id: true, role: true } } } },
+      draws: {
+        orderBy: { version: "desc" },
+        take: 1,
+        select: {
+          participants: {
+            where: { scored: true },
+            select: { id: true, role: true, judgeScores: { select: { judgeAssignmentId: true, value: true } } },
+          },
+        },
+      },
     },
   });
   const allParticipants = heats.flatMap((h) => h.draws[0]?.participants ?? []);
@@ -335,13 +344,32 @@ async function getRoundScoringProgressInTx(tx: PrismaTx | typeof prisma, roundId
   const participants = allParticipants.filter((p) => !skippedRoles.has(p.role));
   if (participants.length === 0) return { required: 0, submitted: 0, complete: true };
 
-  const assignments = await tx.judgeAssignment.findMany({ where: { divisionId: round.divisionId }, select: { role: true } });
-  const judgesByRole: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
-  for (const a of assignments) judgesByRole[a.role]++;
+  const assignments = await tx.judgeAssignment.findMany({ where: { divisionId: round.divisionId }, select: { id: true, role: true } });
+  const relevantAssignments = assignments.filter((a) => !skippedRoles.has(a.role));
 
-  const required = participants.reduce((sum, p) => sum + judgesByRole[p.role], 0);
-  const participantIds = participants.map((p) => p.id);
-  const submitted = participantIds.length === 0 ? 0 : await tx.judgeScore.count({ where: { drawParticipantId: { in: participantIds } } });
+  // Формат 0/1 ("Да/Нет"): раунд не ждёт от судьи явного "Нет" по каждому
+  // оставшемуся (клики "Да" сами по себе не завершают раунд — только явное
+  // "Готово", confirmJudgeRoundDone в scoring.ts) — по запросу пользователя,
+  // 2026-09-04: судья свободно меняет мнение сколько угодно, а раунд не
+  // должен мгновенно и необратимо завершиться от случайного лишнего клика.
+  // "required"/"submitted" здесь — не сырые оценки, а число судей и число
+  // тех из них, кто уже нажал "Готово" (JudgeRoundConfirmation).
+  if (round.judgingMaxScore === 1 && (round.finalistsCount ?? 0) > 0) {
+    if (relevantAssignments.length === 0) return { required: 0, submitted: 0, complete: true };
+    const confirmed = await tx.judgeRoundConfirmation.count({
+      where: { roundId, judgeAssignmentId: { in: relevantAssignments.map((a) => a.id) } },
+    });
+    return { required: relevantAssignments.length, submitted: confirmed, complete: confirmed >= relevantAssignments.length };
+  }
+
+  let required = 0;
+  let submitted = 0;
+  for (const assignment of relevantAssignments) {
+    const roleParticipants = participants.filter((p) => p.role === assignment.role);
+    const myScores = roleParticipants.flatMap((p) => p.judgeScores.filter((s) => s.judgeAssignmentId === assignment.id));
+    required += roleParticipants.length;
+    submitted += myScores.length;
+  }
 
   return { required, submitted, complete: submitted >= required };
 }

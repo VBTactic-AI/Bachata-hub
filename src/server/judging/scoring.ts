@@ -58,6 +58,15 @@ export async function submitJudgeScore(drawParticipantId: string, value: number,
     throw new ValidationFailedError("Вы не назначены судить эту роль в этом дивизионе.");
   }
 
+  // Судья уже нажал "Готово" по этому раунду (формат "Да/Нет") — его оценки
+  // зафиксированы, даже если раунд ещё ждёт других судей (2026-09-04).
+  const myConfirmation = await prisma.judgeRoundConfirmation.findUnique({
+    where: { roundId_judgeAssignmentId: { roundId: round.id, judgeAssignmentId: assignment.id } },
+  });
+  if (myConfirmation) {
+    throw new ValidationFailedError('Вы уже нажали "Готово" по этому раунду — оценки зафиксированы, менять их больше нельзя.');
+  }
+
   await prisma.$transaction(async (tx) => {
     const existing = await tx.judgeScore.findUnique({
       where: { drawParticipantId_judgeAssignmentId: { drawParticipantId, judgeAssignmentId: assignment.id } },
@@ -84,6 +93,76 @@ export async function submitJudgeScore(drawParticipantId: string, value: number,
   });
 }
 
+// Судья явно нажимает "Готово" по раунду формата "Да/Нет" — по запросу
+// пользователя (2026-09-04): свободно кликает "Да"/"Нет" сколько угодно, но
+// раунд не ждёт явного "Нет" по каждому оставшемуся и не завершается сам по
+// первому попавшемуся моменту, когда числа сошлись (иначе случайный лишний
+// клик мог бы мгновенно и необратимо закрыть раунд, пока судья ещё
+// поправляет себя). Принимается, только если "Да" ровно
+// Round.finalistsCount — иначе понятная ошибка, ничего не фиксируется.
+// Судья может быть закреплён на обе роли одного дивизиона — тогда одно
+// нажатие подтверждает обе, только если ОБЕ уже готовы (частичного
+// подтверждения одной роли при неготовности другой не бывает — проще и
+// понятнее судье, чем два отдельных состояния "готово"/"не готово").
+export async function confirmJudgeRoundDone(roundId: string): Promise<void> {
+  const round = await prisma.round.findUniqueOrThrow({
+    where: { id: roundId },
+    include: { division: { select: { id: true, competitionId: true } } },
+  });
+  const competitionId = round.division.competitionId;
+  const actor = await requirePermission("score:submit", competitionId);
+
+  if (round.status === "COMPLETED") {
+    throw new ValidationFailedError("Раунд уже завершён.");
+  }
+  if (round.judgingMaxScore !== 1 || !round.finalistsCount) {
+    throw new ValidationFailedError('Кнопка "Готово" доступна только для формата оценки "Да/Нет".');
+  }
+
+  const myAssignments = await prisma.judgeAssignment.findMany({
+    where: { divisionId: round.division.id, judgeUserId: actor.userId },
+  });
+  if (myAssignments.length === 0) {
+    throw new ValidationFailedError("Вы не назначены судить этот дивизион.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const toConfirm: { assignmentId: string; role: RegistrationRole; yesCount: number }[] = [];
+    for (const assignment of myAssignments) {
+      const already = await tx.judgeRoundConfirmation.findUnique({
+        where: { roundId_judgeAssignmentId: { roundId, judgeAssignmentId: assignment.id } },
+      });
+      if (already) continue; // эта роль уже подтверждена раньше — молча пропускаем, не ошибка
+
+      const yesCount = await tx.judgeScore.count({
+        where: { judgeAssignmentId: assignment.id, value: 1, drawParticipant: { draw: { heat: { roundId } } } },
+      });
+      if (yesCount !== round.finalistsCount) {
+        const roleLabel = assignment.role === "LEADER" ? "Ведущие" : "Ведомые";
+        throw new ValidationFailedError(
+          `${roleLabel}: отмечено ${yesCount} "Да", нужно ровно ${round.finalistsCount} — поправьте перед тем как нажать "Готово".`
+        );
+      }
+      toConfirm.push({ assignmentId: assignment.id, role: assignment.role, yesCount });
+    }
+
+    for (const c of toConfirm) {
+      const created = await tx.judgeRoundConfirmation.create({
+        data: { roundId, judgeAssignmentId: c.assignmentId, yesCount: c.yesCount },
+      });
+      await writeAudit(tx, {
+        actor,
+        action: "judge.confirm_round",
+        entityType: "JudgeRoundConfirmation",
+        entityId: created.id,
+        after: { roundId, judgeAssignmentId: c.assignmentId, role: c.role, yesCount: c.yesCount },
+      });
+    }
+
+    await maybeFinalizeAfterScoreInTx(tx, roundId, actor);
+  });
+}
+
 export type JudgeQueueItem = {
   drawParticipantId: string;
   divisionId: string;
@@ -96,6 +175,12 @@ export type JudgeQueueItem = {
   displayName: string;
   myScore: number | null;
   maxValue: number;
+  // "Сколько должно пройти дальше" (Round.finalistsCount для роли этого
+  // пункта) — судья при формате 0/1 ("Да/Нет") видит, сколько "Да" от него
+  // ожидается на весь раунд (по запросу пользователя, 2026-09-04). Это
+  // подсказка, не ограничение — судьи независимы, сумма баллов по ВСЕМ
+  // судьям решает cutoff, а не то, сколько именно "да" поставил один судья.
+  finalistsCount: number;
 };
 
 // Раунд/роль, где судья назначен, но оценивать не нужно — участников этой
@@ -109,7 +194,14 @@ export type JudgeQueueSkippedNotice = {
   role: RegistrationRole;
 };
 
-export type JudgeQueue = { items: JudgeQueueItem[]; skippedNotices: JudgeQueueSkippedNotice[] };
+export type JudgeQueue = {
+  items: JudgeQueueItem[];
+  skippedNotices: JudgeQueueSkippedNotice[];
+  // Раунды, где ТЕКУЩИЙ судья уже нажал "Готово" по всем своим ролям в этом
+  // раунде (confirmJudgeRoundDone) — их оценки зафиксированы, страница
+  // показывает это явно, а не просто снова активные кнопки (2026-09-04).
+  confirmedRoundIds: string[];
+};
 
 // Что видит судья на своём мобильном экране: заходы дивизионов, на которые
 // он назначен, которые уже идут/оттанцевали, но раунд ещё не закрыт —
@@ -120,7 +212,7 @@ export async function getJudgeQueue(competitionId: string): Promise<JudgeQueue> 
   const myAssignments = await prisma.judgeAssignment.findMany({
     where: { judgeUserId: actor.userId, division: { competitionId } },
   });
-  if (myAssignments.length === 0) return { items: [], skippedNotices: [] };
+  if (myAssignments.length === 0) return { items: [], skippedNotices: [], confirmedRoundIds: [] };
   const assignmentByKey = new Map(myAssignments.map((a) => [`${a.divisionId}:${a.role}`, a]));
   const divisionIds = [...new Set(myAssignments.map((a) => a.divisionId))];
 
@@ -161,7 +253,7 @@ export async function getJudgeQueue(competitionId: string): Promise<JudgeQueue> 
       },
     },
   });
-  if (heats.length === 0) return { items: [], skippedNotices: [] };
+  if (heats.length === 0) return { items: [], skippedNotices: [], confirmedRoundIds: [] };
 
   // Порог "участников <= мест" нужно считать по ВСЕМ заходам раунда, а не
   // только по уже загруженным выше (в статусе RUNNING/PAUSED/FINISHED) —
@@ -225,12 +317,43 @@ export async function getJudgeQueue(competitionId: string): Promise<JudgeQueue> 
         displayName: p.registration.dancer.displayName,
         myScore: myScore?.value ?? null,
         maxValue: heat.round.judgingMaxScore,
+        finalistsCount: heat.round.finalistsCount ?? 0,
       });
     }
   }
 
+  // Раунды, где я уже нажал "Готово" по ВСЕМ своим ролям в этом раунде.
+  const myAssignmentsByRound = new Map<string, Set<string>>();
+  for (const item of items) {
+    const assignment = assignmentByKey.get(`${item.divisionId}:${item.role}`);
+    if (!assignment) continue;
+    const set = myAssignmentsByRound.get(item.roundId) ?? new Set<string>();
+    set.add(assignment.id);
+    myAssignmentsByRound.set(item.roundId, set);
+  }
+  const allMyRelevantAssignmentIds = [...new Set([...myAssignmentsByRound.values()].flatMap((s) => [...s]))];
+  const myConfirmations = allMyRelevantAssignmentIds.length
+    ? await prisma.judgeRoundConfirmation.findMany({
+        where: { judgeAssignmentId: { in: allMyRelevantAssignmentIds }, roundId: { in: [...myAssignmentsByRound.keys()] } },
+        select: { roundId: true, judgeAssignmentId: true },
+      })
+    : [];
+  const confirmedByRound = new Map<string, Set<string>>();
+  for (const c of myConfirmations) {
+    const set = confirmedByRound.get(c.roundId) ?? new Set<string>();
+    set.add(c.judgeAssignmentId);
+    confirmedByRound.set(c.roundId, set);
+  }
+  const confirmedRoundIds = [...myAssignmentsByRound.entries()]
+    .filter(([roundId, assignmentIds]) => {
+      const confirmed = confirmedByRound.get(roundId) ?? new Set<string>();
+      return [...assignmentIds].every((id) => confirmed.has(id));
+    })
+    .map(([roundId]) => roundId);
+
   return {
     items: items.sort((a, b) => a.heatNumber - b.heatNumber || Number(a.bibNumber ?? 0) - Number(b.bibNumber ?? 0)),
     skippedNotices,
+    confirmedRoundIds,
   };
 }

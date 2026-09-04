@@ -10,7 +10,20 @@ import { enqueueJudgeScore, getQueuedScore, subscribeJudgeScoreQueue } from "@/c
 // офлайн-очередь (CLAUDE.md §17) — клик сохраняет оценку локально и пробует
 // отправить сразу; если связи нет, кнопка покажет «ждёт отправки», и очередь
 // досошлёт её сама, когда связь вернётся.
-export function JudgeScoreButtons({ drawParticipantId, maxValue, myScore }: { drawParticipantId: string; maxValue: number; myScore: number | null }) {
+export function JudgeScoreButtons({
+  drawParticipantId,
+  maxValue,
+  myScore,
+  locked,
+}: {
+  drawParticipantId: string;
+  maxValue: number;
+  myScore: number | null;
+  // Судья уже нажал "Готово" по этому раунду — сервер такие изменения всё
+  // равно отклонит, но кнопки лучше сразу показать неактивными, а не ждать
+  // ошибки от клика (2026-09-04).
+  locked?: boolean;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(() => getQueuedScore(drawParticipantId));
   const [error, setError] = useState<string | null>(null);
@@ -32,17 +45,29 @@ export function JudgeScoreButtons({ drawParticipantId, maxValue, myScore }: { dr
 
   const savedValue = pending ? pending.value : myScore;
   const options = Array.from({ length: maxValue + 1 }, (_, v) => v);
+  // Формат 0/1 на практике — это "пропустить дальше или нет", "Да/Нет"
+  // читается судье понятнее двух цифр (по запросу пользователя, 2026-09-04).
+  // Шкала 0/1/2 остаётся числовой — там это не бинарный выбор.
+  const labelFor = (v: number) => (maxValue === 1 ? (v === 1 ? "Да" : "Нет") : String(v));
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       {options.map((v) => (
-        <Button key={v} type="button" size="sm" variant={savedValue === v ? "default" : "outline"} onClick={() => enqueueJudgeScore(drawParticipantId, v)}>
-          {v}
+        <Button
+          key={v}
+          type="button"
+          size="sm"
+          variant={savedValue === v ? "default" : "outline"}
+          disabled={locked}
+          onClick={() => enqueueJudgeScore(drawParticipantId, v)}
+        >
+          {labelFor(v)}
         </Button>
       ))}
-      {pending && <span className="hint-text">ждёт отправки…</span>}
-      {!pending && savedValue !== null && !error && <span className="hint-text">сохранено</span>}
-      {error && <span className="error-text">{error}</span>}
+      {locked && <span className="hint-text">зафиксировано</span>}
+      {!locked && pending && <span className="hint-text">ждёт отправки…</span>}
+      {!locked && !pending && savedValue !== null && !error && <span className="hint-text">сохранено</span>}
+      {!locked && error && <span className="error-text">{error}</span>}
     </span>
   );
 }
