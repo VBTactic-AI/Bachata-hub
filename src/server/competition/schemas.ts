@@ -227,3 +227,54 @@ export const recordTieBreakDecisionSchema = z.object({
   advancingRegistrationIds: z.array(z.string().min(1)).min(1),
 });
 export type RecordTieBreakDecisionInput = z.infer<typeof recordTieBreakDecisionSchema>;
+
+// --- Финал (Этап 9, docs/00_DECISIONS.md A21) ---
+
+export const finalFormatSchema = z.enum(["NORMAL", "JUDGES_DANCE", "RANDOM_COUPLES"]);
+
+export const setFinalSettingsSchema = z.object({
+  format: finalFormatSchema,
+  tracksCount: z.coerce.number().int().positive().default(1),
+  partnerChangeEnabled: z.boolean().default(false),
+  config: z.record(z.unknown()).default({}),
+});
+export type SetFinalSettingsInput = z.infer<typeof setFinalSettingsSchema>;
+
+// id — есть у уже существующего критерия (обновить), нет — создать новый.
+// priority — НЕ коэффициент (CLAUDE.md-стиль промта пользователя, 2026-09-04):
+// только порядок сравнения критериев при полной ничье общей суммы.
+export const finalCriterionInputSchema = z
+  .object({
+    id: z.string().optional(),
+    name: z.string().min(1).max(100),
+    priority: z.coerce.number().int().positive(),
+    minScore: z.coerce.number().int(),
+    maxScore: z.coerce.number().int(),
+    step: z.coerce.number().int().positive().default(1),
+  })
+  .refine((v) => v.maxScore > v.minScore, { message: "Максимум должен быть больше минимума.", path: ["maxScore"] });
+export type FinalCriterionInput = z.infer<typeof finalCriterionInputSchema>;
+
+// Полный список критериев дивизиона одним "Сохранить" (как setDivisionJudges) —
+// приоритеты обязаны быть уникальны и идти подряд 1..N (проверяется в
+// сервисе, промт пользователя п.50 "priority уникальны"/"идут последовательно").
+export const setFinalCriteriaSchema = z.object({
+  criteria: z.array(finalCriterionInputSchema).min(1),
+});
+export type SetFinalCriteriaInput = z.infer<typeof setFinalCriteriaSchema>;
+
+export const submitFinalJudgeScoreSchema = z.object({
+  criterionId: z.string().min(1),
+  value: z.coerce.number().int(),
+  clientSubmissionId: z.string().min(1),
+});
+export type SubmitFinalJudgeScoreInput = z.infer<typeof submitFinalJudgeScoreSchema>;
+
+// RANK_ALL (CLAUDE.md §22) — коллегиальное решение перетанцовки финала:
+// судьи расставили ВСЮ tie-группу по местам, не выбрали N прошедших
+// (в финале у всех уже есть место, нужно только разрешить порядок внутри
+// группы) — отличается от recordTieBreakDecisionSchema обычных раундов.
+export const recordFinalTieBreakDecisionSchema = z.object({
+  orderedRegistrationIds: z.array(z.string().min(1)).min(2),
+});
+export type RecordFinalTieBreakDecisionInput = z.infer<typeof recordFinalTieBreakDecisionSchema>;

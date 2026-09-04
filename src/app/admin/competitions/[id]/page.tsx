@@ -29,6 +29,11 @@ import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import { getRoundScoringProgress, rolesNotNeedingJudging } from "@/server/judging/advancement";
+import { getFinalScoringProgress } from "@/server/judging/final-advancement";
+import { FinalSettingsPanel } from "@/components/admin/FinalSettingsPanel";
+import { StartFinalPanel } from "@/components/admin/StartFinalPanel";
+import { FinalResultsTable } from "@/components/admin/FinalResultsTable";
+import { FinalTieBreakDecisionForm } from "@/components/admin/FinalTieBreakDecisionForm";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -84,11 +89,17 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   include: { registration: { include: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } } },
                   orderBy: { rank: "asc" },
                 },
+                finalSession: { select: { id: true, criteriaSnapshot: true } },
+                finalResults: {
+                  include: { registration: { include: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } } },
+                },
               },
               orderBy: { order: "asc" },
             },
             judgeAssignments: { include: { judge: { select: { email: true } } }, orderBy: { createdAt: "asc" } },
             stagePlan: { include: { stage: { select: { name: true } } }, orderBy: { stage: { order: "asc" } } },
+            finalSettings: true,
+            finalCriteria: { orderBy: { sortOrder: "asc" } },
             _count: { select: { registrations: true } },
           },
           orderBy: { category: { order: "asc" } },
@@ -118,6 +129,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canManageRounds = can(actor, "round:create", competition.id);
   const canAssignJudges = can(actor, "judge:assign", competition.id);
   const canDecideTieBreak = can(actor, "tie_break:decide", competition.id);
+  const canConfigureFinal = can(actor, "final:configure", competition.id);
+  const canManageFinal = can(actor, "final:manage", competition.id);
   const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
@@ -162,12 +175,17 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
   // Прогресс подсчёта баллов считается заранее (не внутри .map()) — реальные
   // цифры "сколько оценок собрано / сколько нужно", не выдуманный прогресс.
-  const scoringRoundIds = competition.divisions
+  const scoringRounds = competition.divisions
     .flatMap((d) => d.rounds)
-    .filter((r) => r.status === "SCORING" && r.type !== "TIE_BREAK")
-    .map((r) => r.id);
+    .filter((r) => r.status === "SCORING" && r.type !== "TIE_BREAK");
+  // Финал (FinalSession уже начата) считается своим прогрессом (критерий ×
+  // судья), обычные раунды — старым (одна оценка на участника).
   const scoringProgressByRoundId = new Map(
-    await Promise.all(scoringRoundIds.map(async (id) => [id, await getRoundScoringProgress(id)] as const))
+    await Promise.all(
+      scoringRounds.map(
+        async (r) => [r.id, r.finalSession ? await getFinalScoringProgress(r.id) : await getRoundScoringProgress(r.id)] as const
+      )
+    )
   );
 
   // Роли, которых в раунде не нужно оценивать (участников не больше, чем
@@ -286,12 +304,37 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   />
                 )}
 
+                {canConfigureFinal && (
+                  <FinalSettingsPanel
+                    divisionId={d.id}
+                    format={d.finalSettings?.format ?? "NORMAL"}
+                    tracksCount={d.finalSettings?.tracksCount ?? 1}
+                    partnerChangeEnabled={d.finalSettings?.partnerChangeEnabled ?? false}
+                    criteria={d.finalCriteria.map((c) => ({
+                      id: c.id,
+                      name: c.name,
+                      priority: c.priority,
+                      minScore: c.minScore,
+                      maxScore: c.maxScore,
+                      step: c.step,
+                    }))}
+                    locked={d.rounds.some((r) => r.finalSession)}
+                  />
+                )}
+
                 {canManageRounds && (
                   <div className="stack gap-2 mt-3">
                     {d.rounds.length === 0 ? (
                       <p className="hint-text">Раундов пока нет.</p>
                     ) : (
-                      d.rounds.map((round) => (
+                      d.rounds.map((round) => {
+                        // Финал — последний по order обычный (не служебный)
+                        // раунд дивизиона (тот же признак, что и
+                        // isFinalStageInTx на сервере, advancement.ts).
+                        const isFinalRound = round.type === null && !d.rounds.some((r) => r.type === null && r.order > round.order);
+                        const tieGroupConfig = round.config as { finalTieGroupKey?: string } | null;
+                        const isFinalTieBreak = round.type === "TIE_BREAK" && !!tieGroupConfig?.finalTieGroupKey;
+                        return (
                         <div key={round.id} className="rounded-app-sm border border-line p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <span>
@@ -300,6 +343,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             </span>
                             <RoundStatusControls roundId={round.id} status={round.status} />
                           </div>
+
+                          {isFinalRound && round.status === "READY" && !round.finalSession && canManageFinal && (
+                            <StartFinalPanel roundId={round.id} />
+                          )}
 
                           {round.status === "SCORING" && round.type !== "TIE_BREAK" && (
                             <>
@@ -316,7 +363,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             </>
                           )}
 
-                          {round.status === "SCORING" && round.type === "TIE_BREAK" && canDecideTieBreak && (
+                          {round.status === "SCORING" && round.type === "TIE_BREAK" && isFinalTieBreak && canDecideTieBreak && (
+                            <FinalTieBreakDecisionForm
+                              tieBreakRoundId={round.id}
+                              candidates={(round.heats[0]?.draws[0]?.participants ?? [])
+                                .filter((p) => p.scored)
+                                .map((p) => ({
+                                  registrationId: p.registrationId,
+                                  bibNumber: p.registration.checkIn?.bibNumber ?? null,
+                                  displayName: p.registration.dancer.displayName,
+                                }))}
+                            />
+                          )}
+
+                          {round.status === "SCORING" && round.type === "TIE_BREAK" && !isFinalTieBreak && canDecideTieBreak && (
                             <TieBreakDecisionForm
                               tieBreakRoundId={round.id}
                               expectedCount={round.finalistsCount ?? 0}
@@ -331,7 +391,23 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             />
                           )}
 
-                          {round.status === "COMPLETED" && round.results.length > 0 && (
+                          {(round.status === "SCORING" || round.status === "COMPLETED") && round.finalSession && round.finalResults.length > 0 && (
+                            <FinalResultsTable
+                              criteria={round.finalSession!.criteriaSnapshot as unknown as { id: string; name: string; priority: number }[]}
+                              results={round.finalResults.map((r) => ({
+                                registrationId: r.registrationId,
+                                role: r.role,
+                                displayName: r.registration.dancer.displayName,
+                                bibNumber: r.registration.checkIn?.bibNumber ?? null,
+                                totalScore: r.totalScore,
+                                criteriaTotals: r.criteriaTotals as Record<string, number>,
+                                place: r.place,
+                                tieGroupKey: r.tieGroupKey,
+                              }))}
+                            />
+                          )}
+
+                          {round.status === "COMPLETED" && !round.finalSession && round.results.length > 0 && (
                             <div className="mt-2 grid grid-cols-2 gap-3">
                               {(["LEADER", "FOLLOWER"] as const).map((r) => (
                                 <div key={r}>
@@ -417,7 +493,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
                           {round.status === "READY" && <StartDrawingForm roundId={round.id} />}
                         </div>
-                      ))
+                        );
+                      })
                     )}
                     <div className="flex flex-wrap items-start gap-4">
                       <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} />

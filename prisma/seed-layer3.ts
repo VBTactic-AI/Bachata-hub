@@ -64,6 +64,9 @@ const PERMISSIONS = [
   ["result:unpublish", "Отмена публикации результатов"],
   ["tie_break:decide", "Внесение решения перетанцовки (кто прошёл дальше)"],
 
+  ["final:configure", "Настройка финала (формат, критерии оценки)"],
+  ["final:manage", "Управление ходом финала (старт, пары, стадии)"],
+
   ["penalty:create", "Назначение штрафа/нарушения"],
   ["disqualification:create", "Дисквалификация участника"],
 
@@ -112,6 +115,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "result:review",
     "result:publish",
     "tie_break:decide",
+    "final:configure",
+    "final:manage",
     "penalty:create",
     "disqualification:create",
     "audit:view",
@@ -136,6 +141,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "result:review",
     "result:publish",
     "tie_break:decide",
+    "final:configure",
+    "final:manage",
     "penalty:create",
     "disqualification:create",
     "audit:view",

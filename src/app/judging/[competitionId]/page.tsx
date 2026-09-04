@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getActor } from "@/server/rbac/actor";
 import { getJudgeQueue, type JudgeQueueItem } from "@/server/judging/scoring";
+import { listMyActiveFinalRounds } from "@/server/judging/final-scoring";
 import { JudgeScoreButtons } from "@/components/admin/JudgeScoreButtons";
 import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
 import { JudgingQueueBanner } from "@/components/admin/judging/JudgingQueueBanner";
@@ -32,7 +33,10 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const { items, skippedNotices, confirmedRoundIds } = await getJudgeQueue(competitionId);
+  const [{ items, skippedNotices, confirmedRoundIds }, myFinalRounds] = await Promise.all([
+    getJudgeQueue(competitionId),
+    listMyActiveFinalRounds(competitionId),
+  ]);
   const confirmedSet = new Set(confirmedRoundIds);
 
   const byRound = new Map<string, JudgeQueueItem[]>();
@@ -46,6 +50,15 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
     <div className="stack">
       <h1 className="page-title">Судейство</h1>
       <JudgingQueueBanner />
+      {myFinalRounds.length > 0 && (
+        <div className="stack gap-1">
+          {myFinalRounds.map((r) => (
+            <p key={r.roundId} className="hint-text rounded-app-sm border border-line p-2">
+              Идёт финал «{r.divisionName}» — <a href={`/judging/${competitionId}/final/${r.roundId}`}>открыть судейство финала →</a>
+            </p>
+          ))}
+        </div>
+      )}
       {skippedNotices.length > 0 && (
         <div className="stack gap-1">
           {skippedNotices.map((n) => (

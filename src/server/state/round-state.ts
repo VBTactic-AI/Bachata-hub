@@ -7,6 +7,7 @@ import type { Actor } from "../rbac/actor";
 import { ValidationFailedError } from "../errors";
 import { ROUND_TYPE_LABELS } from "@/lib/competition-labels";
 import { maybeCalculateOnEntryInTx } from "../judging/advancement";
+import { maybeCalculateFinalOnEntryInTx } from "../judging/final-advancement";
 import { writeAudit } from "../audit/audit";
 import { getRoundEligiblePool } from "../competition/draw-engine";
 
@@ -220,7 +221,7 @@ export async function transitionRound(
 // намеренно осталась: дешёвая страховка на случай прямой правки БД (как,
 // собственно, и обнаружился исходный баг), ничего не стоит и не мешает.
 export async function autoAdvanceRoundIfAllHeatsFinishedInTx(tx: PrismaTx, roundId: string, actor: Actor): Promise<void> {
-  const round = await tx.round.findUniqueOrThrow({ where: { id: roundId } });
+  const round = await tx.round.findUniqueOrThrow({ where: { id: roundId }, include: { finalSession: { select: { id: true } } } });
   if (round.status !== "RUNNING" && round.status !== "PAUSED") return;
 
   const unfinished = await tx.heat.count({ where: { roundId, status: { not: "FINISHED" } } });
@@ -255,5 +256,13 @@ export async function autoAdvanceRoundIfAllHeatsFinishedInTx(tx: PrismaTx, round
     reason: "Автоматический переход к подсчёту баллов.",
   });
 
-  await maybeCalculateOnEntryInTx(tx, roundId, actor);
+  // Финал (Этап 9) считается отдельным ranking engine (final-advancement.ts —
+  // сумма + лексикографический tie-break по критериям), если для этого
+  // раунда явно начат финал новой системы (FinalSession существует); иначе —
+  // обычный путь (advancement.ts), как и раньше, без изменений.
+  if (round.finalSession) {
+    await maybeCalculateFinalOnEntryInTx(tx, roundId, actor);
+  } else {
+    await maybeCalculateOnEntryInTx(tx, roundId, actor);
+  }
 }

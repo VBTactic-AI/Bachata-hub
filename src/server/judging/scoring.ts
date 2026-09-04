@@ -219,7 +219,10 @@ export async function getJudgeQueue(competitionId: string): Promise<JudgeQueue> 
   const heats = await prisma.heat.findMany({
     where: {
       status: { in: ["RUNNING", "PAUSED", "FINISHED"] },
-      round: { divisionId: { in: divisionIds }, status: { in: ["RUNNING", "PAUSED", "FINISHED", "SCORING"] } },
+      // finalSession: null — раунды, где уже начат финал новой критериальной
+      // системы (Этап 9), сюда не попадают: у них своя очередь
+      // (final-scoring.ts, getFinalJudgeQueue) и свой мобильный экран.
+      round: { divisionId: { in: divisionIds }, status: { in: ["RUNNING", "PAUSED", "FINISHED", "SCORING"] }, finalSession: null },
     },
     // relationLoadStrategy: "join" — судья опрашивает эту функцию при
     // каждом обновлении своей страницы, вложенность до 5 уровней иначе

@@ -48,6 +48,9 @@ export const PERMISSIONS = [
   "result:unpublish",
   "tie_break:decide",
 
+  "final:configure",
+  "final:manage",
+
   "penalty:create",
   "disqualification:create",
 

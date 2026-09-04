@@ -77,6 +77,7 @@ model User {
   drawsCreated               Draw[]               @relation("DrawCreatedBy")
   judgeAssignments           JudgeAssignment[]    @relation("JudgeAssignmentJudge")
   assignedJudgeAssignments   JudgeAssignment[]    @relation("JudgeAssignmentAssignedBy")
+  createdFinalPairs          FinalPair[]          @relation("FinalPairCreatedBy")
 
   @@index([role])
 }
@@ -716,6 +717,8 @@ model Division {
   registrations    Registration[]
   judgeAssignments JudgeAssignment[]
   stagePlan        DivisionStagePlan[]
+  finalCriteria    FinalCriterion[]
+  finalSettings    FinalSettings?
 
   @@unique([competitionId, categoryId])
 }
@@ -809,6 +812,8 @@ model Round {
   heats         Heat[]
   results       RoundResult[]
   confirmations JudgeRoundConfirmation[]
+  finalSession  FinalSession?
+  finalResults  FinalResult[]
 
   @@unique([divisionId, order])
   @@index([status])
@@ -824,8 +829,9 @@ model Heat {
   startedAt     DateTime?
   endedAt       DateTime?
 
-  draws    Draw[]
-  rotation HeatRotation?
+  draws     Draw[]
+  rotation  HeatRotation?
+  finalPair FinalPair?
 
   @@unique([roundId, number])
 }
@@ -927,7 +933,8 @@ model DrawParticipant {
   helperSource   DrawHelperSource?
   calledOrder    Int // порядок вызова на паркет в рамках этого Draw
 
-  judgeScores JudgeScore[]
+  judgeScores      JudgeScore[]
+  finalJudgeScores FinalJudgeScore[]
 
   @@unique([drawId, registrationId])
 }
@@ -956,6 +963,7 @@ model JudgeAssignment {
 
   scores        JudgeScore[]
   confirmations JudgeRoundConfirmation[]
+  finalScores   FinalJudgeScore[]
 
   @@unique([divisionId, judgeUserId, role])
 }
@@ -1033,6 +1041,156 @@ enum AdvancementStatus {
   ADVANCED
   ELIMINATED
   TIE_BREAK_REQUIRED
+}
+
+// ---------------------------------------------------------------------------
+// Финал (Этап 9, docs/00_DECISIONS.md, A21)
+// ---------------------------------------------------------------------------
+// Судейство финала — отдельная от обычной (JudgeScore) система: не одна
+// оценка 0..judgingMaxScore на участника, а несколько КРИТЕРИЕВ со своим
+// диапазоном каждый. "Приоритет" критерия — НЕ коэффициент: оценки не
+// умножаются и не нормализуются, общая сумма всегда простая арифметическая
+// сумма. priority используется ТОЛЬКО как порядок сравнения критериев при
+// полном равенстве общей суммы (лексикографический tie-break) — пользователь
+// подтвердил явно (2026-09-04), это НЕ Relative Placement и НЕ weighted
+// score. Переиспользует Round/Heat/Draw/DrawParticipant (вызов на паркет) и
+// JudgeAssignment (судья закреплён на роль, не пол — A6/A13) как есть.
+
+enum FinalFormat {
+  NORMAL // обычный J&J-финал — участники вызываются как в обычных раундах
+  JUDGES_DANCE // финалисты одной роли по очереди танцуют с судьями противоположной роли
+  RANDOM_COUPLES // случайные пары финалистов, каждая пара танцует отдельно
+}
+
+// Критерии оценки финала — на уровне Division (конкретная категория
+// конкретного соревнования), редактируются организатором до старта финала.
+// priority уникален и должен быть последователен (1..N) в рамках дивизиона —
+// проверяется в сервисе при старте финала, не в схеме.
+model FinalCriterion {
+  id         String   @id @default(cuid())
+  divisionId String
+  division   Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  name       String
+  priority   Int // 1 = сравнивается первым при разрешении полной ничьей по общей сумме
+  minScore   Int
+  maxScore   Int
+  step       Int      @default(1)
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  scores FinalJudgeScore[]
+
+  @@unique([divisionId, priority])
+}
+
+// Настройки формата финала для дивизиона — задаются один раз до старта,
+// после старта фиксируются снимком в FinalSession (CLAUDE.md §50-51).
+// config — доп. параметры конкретного формата (напр. scoring-matrix для
+// JUDGES_DANCE — какая роль судьи что оценивает на какой стадии), не
+// заменяет основные поля целиком JSON-ом.
+model FinalSettings {
+  id                   String      @id @default(cuid())
+  divisionId           String      @unique
+  division             Division    @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  format               FinalFormat @default(NORMAL)
+  tracksCount          Int         @default(1)
+  partnerChangeEnabled Boolean     @default(false)
+  config               Json        @default("{}")
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+}
+
+// Снимок правил финала на момент старта (1:1 к Round-финалу) — после этого
+// изменение FinalSettings/FinalCriterion этого дивизиона больше не влияет на
+// уже идущий/прошедший финал. currentStage — только для JUDGES_DANCE (1 —
+// первая по очереди роль танцует с судьями противоположной роли, 2 —
+// наоборот); null для остальных форматов.
+model FinalSession {
+  id               String      @id @default(cuid())
+  roundId          String      @unique
+  round            Round       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  format           FinalFormat
+  criteriaSnapshot Json // [{ id, name, priority, minScore, maxScore, step }]
+  config           Json        @default("{}") // снимок FinalSettings.config (scoring-matrix и т.п.)
+  currentStage     Int?
+  startedAt        DateTime    @default(now())
+  completedAt      DateTime?
+
+  pairs   FinalPair[]
+  results FinalResult[]
+}
+
+// Только формат RANDOM_COUPLES — одна случайно сформированная пара.
+// Жеребьёвка выполняется сервером и сохраняется сразу (CLAUDE.md §6) —
+// повторный вызов/обновление страницы не меняет ни пару, ни трек. Каждая
+// пара — свой Heat (переиспользует эксклюзивность паркета, A4 — пары и так
+// танцуют по одной). trackName — свободный текст, как уже принято для
+// HeatRotation.trackName; отдельного каталога треков в проекте нет.
+model FinalPair {
+  id                      String       @id @default(cuid())
+  finalSessionId          String
+  finalSession            FinalSession @relation(fields: [finalSessionId], references: [id], onDelete: Cascade)
+  heatId                  String       @unique
+  heat                    Heat         @relation(fields: [heatId], references: [id], onDelete: Cascade)
+  pairNumber              Int
+  leaderRegistrationId    String
+  leaderRegistration      Registration @relation("FinalPairLeader", fields: [leaderRegistrationId], references: [id])
+  followerRegistrationId  String
+  followerRegistration    Registration @relation("FinalPairFollower", fields: [followerRegistrationId], references: [id])
+  trackName               String?
+  seed                    String // сохранённый seed рандомизации (CLAUDE.md §6)
+  createdById             String
+  createdBy               User         @relation("FinalPairCreatedBy", fields: [createdById], references: [id])
+  createdAt               DateTime     @default(now())
+
+  @@unique([finalSessionId, pairNumber])
+}
+
+// Оценка одного судьи по одному критерию для одного вызванного участника
+// (DrawParticipant.scored=true) — параллельно обычному JudgeScore, но с
+// диапазоном/смыслом критерия вместо единой шкалы judgingMaxScore.
+// clientSubmissionId — тот же офлайн-паттерн идемпотентности, что и у
+// JudgeScore (CLAUDE.md §17).
+model FinalJudgeScore {
+  id                 String          @id @default(cuid())
+  drawParticipantId  String
+  drawParticipant    DrawParticipant @relation(fields: [drawParticipantId], references: [id], onDelete: Cascade)
+  judgeAssignmentId  String
+  judgeAssignment    JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id])
+  criterionId        String
+  criterion          FinalCriterion  @relation(fields: [criterionId], references: [id])
+  value              Int
+  clientSubmissionId String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@unique([drawParticipantId, judgeAssignmentId, criterionId])
+}
+
+// Итог финала на одного участника — ОТДЕЛЬНО от RoundResult/AdvancementStatus
+// (там "прошёл/не прошёл", здесь — место 1..N, раундов после финала не
+// бывает). criteriaTotals/totalScore — суммы по всем судьям (никаких весов/
+// нормализации). place — null, пока не разрешена полная ничья (тогда
+// tieGroupKey не null — участники одной группы делят один ключ и ждут
+// решения перетанцовки).
+model FinalResult {
+  id             String           @id @default(cuid())
+  roundId        String
+  round          Round            @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  registrationId String
+  registration   Registration     @relation(fields: [registrationId], references: [id])
+  finalSessionId String
+  finalSession   FinalSession     @relation(fields: [finalSessionId], references: [id], onDelete: Cascade)
+  role           RegistrationRole
+  totalScore     Int
+  criteriaTotals Json // { [criterionId]: number }
+  place          Int?
+  tieGroupKey    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([roundId, registrationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1149,9 +1307,12 @@ model Registration {
   roleOverrideReviewedBy   User?                           @relation("RegistrationRoleOverrideReviewer", fields: [roleOverrideReviewedById], references: [id])
   roleOverrideReviewedAt   DateTime?
 
-  checkIn            CheckIn?
-  drawParticipations DrawParticipant[]
-  roundResults       RoundResult[]
+  checkIn              CheckIn?
+  drawParticipations   DrawParticipant[]
+  roundResults         RoundResult[]
+  finalResults         FinalResult[]
+  finalPairsAsLeader   FinalPair[]       @relation("FinalPairLeader")
+  finalPairsAsFollower FinalPair[]       @relation("FinalPairFollower")
 
   // Одна роль на дивизион на человека — нельзя зарегистрироваться в одном
   // дивизионе одновременно и LEADER, и FOLLOWER (docs/00_DECISIONS.md, B6).

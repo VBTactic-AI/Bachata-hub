@@ -255,7 +255,7 @@ async function createTieBreakRoundInTx(
   });
 }
 
-async function parentRoundScoredRegistrationIds(tx: PrismaTx, roundId: string): Promise<Set<string>> {
+export async function parentRoundScoredRegistrationIds(tx: PrismaTx, roundId: string): Promise<Set<string>> {
   const heats = await tx.heat.findMany({
     where: { roundId },
     select: { draws: { orderBy: { version: "desc" }, take: 1, select: { participants: { where: { scored: true }, select: { registrationId: true } } } } },
