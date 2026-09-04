@@ -15,6 +15,7 @@
     "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "seed:layer3": "tsx prisma/seed-layer3.ts",
     "seed:judges": "tsx prisma/seed-judges.ts",
+    "reset:competition-history": "tsx prisma/reset-competition-history.ts",
     "test": "vitest run"
   },
   "dependencies": {
