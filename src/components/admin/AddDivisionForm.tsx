@@ -68,7 +68,7 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
         </Select>
       </Label>
       <Label>
-        Вместимость заезда (пар одновременно на паркете)
+        Вместимость захода (пар одновременно на паркете)
         <Input type="number" min={1} value={heatCapacity} onChange={(e) => setHeatCapacity(e.target.value)} />
       </Label>
       <Label>

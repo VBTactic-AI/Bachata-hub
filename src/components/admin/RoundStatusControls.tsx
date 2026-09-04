@@ -11,15 +11,21 @@ import { ROUND_STATUS_LABELS } from "@/lib/competition-labels";
 // READY -> DRAWING сюда намеренно не входит: сервер требует передать выбор
 // порядка вызова участников вместе с переходом (extraData), поэтому у него
 // отдельная форма — StartDrawingForm, не голая кнопка (CLAUDE.md §45).
+// FINISHED и SCORING/COMPLETED сюда тоже не входят — кнопок "Завершить"/
+// "Начать судейство"/"Завершить судейство" больше нет: раунд сам идёт
+// RUNNING -> FINISHED -> SCORING, как только оттанцевал последний заход, и
+// сам же завершается (COMPLETED), как только определены все проходящие —
+// по запросу пользователя, 2026-09-04 (round-state.ts/advancement.ts).
+// Когда кнопки нет, ниже показывается только статус — этого достаточно.
 const NEXT: Record<RoundStatus, RoundStatus[]> = {
   DRAFT: ["READY"],
   READY: [],
   DRAWING: ["DRAW_LOCKED"],
   DRAW_LOCKED: ["RUNNING"],
-  RUNNING: ["PAUSED", "FINISHED"],
+  RUNNING: ["PAUSED"],
   PAUSED: ["RUNNING"],
-  FINISHED: ["SCORING"],
-  SCORING: ["COMPLETED"],
+  FINISHED: [],
+  SCORING: [],
   COMPLETED: [],
 };
 
@@ -30,9 +36,9 @@ const ACTION_LABELS: Record<RoundStatus, string> = {
   DRAW_LOCKED: "Зафиксировать жеребьёвку",
   RUNNING: "Запустить",
   PAUSED: "Пауза",
-  FINISHED: "Завершить",
-  SCORING: "Начать судейство",
-  COMPLETED: "Завершить судейство",
+  FINISHED: "",
+  SCORING: "",
+  COMPLETED: "",
 };
 
 export function RoundStatusControls({ roundId, status }: { roundId: string; status: RoundStatus }) {

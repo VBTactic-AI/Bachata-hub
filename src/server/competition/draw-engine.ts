@@ -54,7 +54,18 @@ type RegistrationWithCheckIn = { id: string; checkIn: { bibNumber: string | null
 
 async function orderedEligiblePool(
   tx: PrismaTx,
-  params: { divisionId: string; role: RegistrationRole; excludeIds: Set<string>; callOrder: CallOrder; seed: string | null }
+  params: {
+    divisionId: string;
+    role: RegistrationRole;
+    excludeIds: Set<string>;
+    callOrder: CallOrder;
+    seed: string | null;
+    // Пул второго и следующих раундов дивизиона — только те, кто реально
+    // прошёл предыдущий раунд (docs/00_DECISIONS.md, A13/A9 — раньше это
+    // было неизбежным ограничением, Advancement Engine не существовал).
+    // null — раунд не ограничен (первый раунд дивизиона), берём весь дивизион.
+    onlyRegistrationIds: Set<string> | null;
+  }
 ): Promise<RegistrationWithCheckIn[]> {
   const regs = await tx.registration.findMany({
     where: {
@@ -65,11 +76,36 @@ async function orderedEligiblePool(
     },
     include: { checkIn: { select: { bibNumber: true } } },
   });
-  const eligible = regs.filter((r) => !params.excludeIds.has(r.id));
+  const eligible = regs.filter(
+    (r) => !params.excludeIds.has(r.id) && (params.onlyRegistrationIds === null || params.onlyRegistrationIds.has(r.id))
+  );
   if (params.callOrder === "SEQUENTIAL") {
     return eligible.sort((a, b) => Number(a.checkIn?.bibNumber ?? 0) - Number(b.checkIn?.bibNumber ?? 0));
   }
   return seededShuffle(eligible, params.seed!);
+}
+
+// Ближайший ПРЕДЫДУЩИЙ обычный (не служебный тай-брейк) раунд дивизиона —
+// именно на его RoundResult ссылаемся: recordTieBreakDecision обновляет
+// статус там же, на родительском раунде, поэтому финальный исход (после
+// разрешения возможной перетанцовки) виден именно тут, независимо от того,
+// нужна ли была перетанцовка (docs/00_DECISIONS.md, A13).
+async function advancedRegistrationIdsFromPreviousRound(
+  tx: PrismaTx,
+  divisionId: string,
+  currentRoundOrder: number
+): Promise<Set<string> | null> {
+  const previous = await tx.round.findFirst({
+    where: { divisionId, order: { lt: currentRoundOrder }, type: null },
+    orderBy: { order: "desc" },
+  });
+  if (!previous || previous.status !== "COMPLETED") return null;
+
+  const results = await tx.roundResult.findMany({
+    where: { roundId: previous.id, status: "ADVANCED" },
+    select: { registrationId: true },
+  });
+  return new Set(results.map((r) => r.registrationId));
 }
 
 // Кто уже вызывался и получил scored=true в ДРУГИХ заездах этого раунда —
@@ -169,7 +205,7 @@ type HelperPick = { registrationId: string; helperSource: HelperSource };
 //   сначала свои, только что освободившиеся из первого выхода (они уже
 //   физически рядом), потом каскад по категориям выше.
 // Категории НИЖЕ своей сюда не входят никогда — это только ручное решение.
-async function fillHelperShortage(
+export async function fillHelperShortage(
   tx: PrismaTx,
   params: {
     competitionId: string;
@@ -242,12 +278,14 @@ export async function formDrawInTx(
 
   const seed = callOrder === "RANDOM" ? generateSeed() : null;
   const excludeIds = await alreadyScoredElsewhereInRound(tx, roundId, heatId);
+  const { order: roundOrder } = await tx.round.findUniqueOrThrow({ where: { id: roundId }, select: { order: true } });
+  const onlyRegistrationIds = await advancedRegistrationIdsFromPreviousRound(tx, divisionId, roundOrder);
 
   const leaders = (
-    await orderedEligiblePool(tx, { divisionId, role: "LEADER", excludeIds, callOrder, seed })
+    await orderedEligiblePool(tx, { divisionId, role: "LEADER", excludeIds, callOrder, seed, onlyRegistrationIds })
   ).slice(0, heatCapacity);
   const followers = (
-    await orderedEligiblePool(tx, { divisionId, role: "FOLLOWER", excludeIds, callOrder, seed })
+    await orderedEligiblePool(tx, { divisionId, role: "FOLLOWER", excludeIds, callOrder, seed, onlyRegistrationIds })
   ).slice(0, heatCapacity);
 
   const draw = await tx.draw.create({
@@ -350,7 +388,7 @@ export async function rerollHeatDraw(
     throw new ValidationFailedError('Пересобрать жеребьёвку можно только пока раунд в статусе "Жеребьёвка".');
   }
   if (heat.status !== "PENDING") {
-    throw new ValidationFailedError("Пересобрать жеребьёвку можно только для ещё не запущенного заезда.");
+    throw new ValidationFailedError("Пересобрать жеребьёвку можно только для ещё не запущенного захода.");
   }
   const callOrder = getDrawCallOrder(heat.round.config) ?? "RANDOM";
   const heatCapacity = heat.round.heatCapacity ?? heat.round.division.heatCapacity;
@@ -391,10 +429,10 @@ export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: st
   const actor = await requirePermission("draw:override", competitionId);
 
   if (heat.round.status !== "DRAWING") {
-    throw new ValidationFailedError('Разбить заезд можно только пока раунд в статусе "Жеребьёвка".');
+    throw new ValidationFailedError('Разбить заход можно только пока раунд в статусе "Жеребьёвка".');
   }
   if (heat.status !== "PENDING") {
-    throw new ValidationFailedError("Заезд уже запущен — список нельзя менять.");
+    throw new ValidationFailedError("Заход уже запущен — список нельзя менять.");
   }
 
   const draw = await prisma.draw.findFirst({
@@ -403,7 +441,7 @@ export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: st
     include: { participants: true },
   });
   if (!draw) {
-    throw new ValidationFailedError("Для этого заезда ещё не сформирован список — сначала запустите жеребьёвку раунда.");
+    throw new ValidationFailedError("Для этого захода ещё не сформирован список — сначала запустите жеребьёвку раунда.");
   }
 
   const real = draw.participants.filter((p) => p.scored);
@@ -412,7 +450,7 @@ export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: st
   const followers = real.filter((p) => p.role === "FOLLOWER").sort((a, b) => a.calledOrder - b.calledOrder);
 
   if (leaders.length === followers.length) {
-    throw new ValidationFailedError("Заезд уже сбалансирован — разбивать нечего.");
+    throw new ValidationFailedError("Заход уже сбалансирован — разбивать нечего.");
   }
 
   const balancedCount = Math.min(leaders.length, followers.length);

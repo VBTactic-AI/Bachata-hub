@@ -22,7 +22,12 @@ import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
 import { SplitHeatButton } from "@/components/admin/SplitHeatButton";
 import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
 import { RotationPanel } from "@/components/admin/RotationPanel";
+import { AssignJudgeForm } from "@/components/admin/AssignJudgeForm";
+import { RemoveJudgeButton } from "@/components/admin/RemoveJudgeButton";
+import { ScoringProgress } from "@/components/admin/ScoringProgress";
+import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
+import { getRoundScoringProgress } from "@/server/judging/advancement";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -61,9 +66,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   orderBy: { number: "asc" },
                 },
                 stage: true,
+                results: {
+                  include: { registration: { include: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } } },
+                  orderBy: { rank: "asc" },
+                },
               },
               orderBy: { order: "asc" },
             },
+            judgeAssignments: { include: { judge: { select: { email: true } } }, orderBy: { createdAt: "asc" } },
           },
           orderBy: { category: { order: "asc" } },
         },
@@ -89,6 +99,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canReviewRoleOverride = can(actor, "registration:role_override_review", competition.id);
   const canChangeDivision = can(actor, "registration:change_division", competition.id);
   const canManageRounds = can(actor, "round:create", competition.id);
+  const canAssignJudges = can(actor, "judge:assign", competition.id);
+  const canDecideTieBreak = can(actor, "tie_break:decide", competition.id);
+  const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
   // должен видеть чужие регистрации — только свою собственную, ниже.
@@ -122,6 +135,16 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     : [[], []];
   const countFor = (rows: { divisionId: string; role: string; _count: { _all: number } }[], divisionId: string, role: string) =>
     rows.find((r) => r.divisionId === divisionId && r.role === role)?._count._all ?? 0;
+
+  // Прогресс подсчёта баллов считается заранее (не внутри .map()) — реальные
+  // цифры "сколько оценок собрано / сколько нужно", не выдуманный прогресс.
+  const scoringRoundIds = competition.divisions
+    .flatMap((d) => d.rounds)
+    .filter((r) => r.status === "SCORING" && r.type !== "TIE_BREAK")
+    .map((r) => r.id);
+  const scoringProgressByRoundId = new Map(
+    await Promise.all(scoringRoundIds.map(async (id) => [id, await getRoundScoringProgress(id)] as const))
+  );
 
   const registrations = canViewAllRegistrations
     ? await prisma.registration.findMany({
@@ -161,6 +184,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       </div>
 
       {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
+      {isJudge && (
+        <p>
+          <a href={`/judging/${competition.id}`}>Моё судейство →</a>
+        </p>
+      )}
 
       <div>
         <h2 className="page-title">Дивизионы</h2>
@@ -180,6 +208,27 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   </p>
                 )}
 
+                {canAssignJudges && (
+                  <div className="stack gap-1.5 mt-2">
+                    <p className="hint-text">
+                      Судьи: {d.judgeAssignments.length === 0 ? "не назначены" : ""}
+                    </p>
+                    {d.judgeAssignments.length > 0 && (
+                      <ul className="stack gap-1">
+                        {d.judgeAssignments.map((ja) => (
+                          <li key={ja.id} className="flex items-center gap-2">
+                            <span>
+                              {ja.judge.email} · {ROLE_LABELS[ja.role] ?? ja.role}
+                            </span>
+                            <RemoveJudgeButton assignmentId={ja.id} />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <AssignJudgeForm divisionId={d.id} />
+                  </div>
+                )}
+
                 {canManageRounds && (
                   <div className="stack gap-2 mt-3">
                     {d.rounds.length === 0 ? (
@@ -194,6 +243,45 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             </span>
                             <RoundStatusControls roundId={round.id} status={round.status} />
                           </div>
+
+                          {round.status === "SCORING" && round.type !== "TIE_BREAK" && (
+                            <ScoringProgress {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />
+                          )}
+
+                          {round.status === "SCORING" && round.type === "TIE_BREAK" && canDecideTieBreak && (
+                            <TieBreakDecisionForm
+                              tieBreakRoundId={round.id}
+                              expectedCount={round.finalistsCount ?? 0}
+                              candidates={(round.heats[0]?.draws[0]?.participants ?? [])
+                                .filter((p) => p.scored)
+                                .map((p) => ({
+                                  registrationId: p.registrationId,
+                                  bibNumber: p.registration.checkIn?.bibNumber ?? null,
+                                  displayName: p.registration.dancer.displayName,
+                                  role: p.role,
+                                }))}
+                            />
+                          )}
+
+                          {round.status === "COMPLETED" && round.results.length > 0 && (
+                            <div className="mt-2 grid grid-cols-2 gap-3">
+                              {(["LEADER", "FOLLOWER"] as const).map((r) => (
+                                <div key={r}>
+                                  <p className="hint-text">{r === "LEADER" ? "Ведущие" : "Ведомые"}</p>
+                                  <ul className="stack gap-0.5">
+                                    {round.results
+                                      .filter((res) => res.registration.role === r)
+                                      .map((res) => (
+                                        <li key={res.id} className={res.status === "ADVANCED" ? "" : "hint-text line-through"}>
+                                          №{res.registration.checkIn?.bibNumber ?? "—"} {res.registration.dancer.displayName} —{" "}
+                                          {res.status === "ADVANCED" ? "прошёл" : "не прошёл"} ({res.scoreSum})
+                                        </li>
+                                      ))}
+                                  </ul>
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           <div className="stack gap-1.5 mt-2">
                             {round.heats.map((heat) => {
@@ -221,7 +309,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                 <div key={heat.id} className="pl-3">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <span>
-                                      Заезд {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                                      Заход {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
                                     </span>
                                     <HeatStatusControls heatId={heat.id} status={heat.status} roundStatus={round.status} />
                                   </div>
@@ -243,9 +331,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                                 </div>
                               );
                             })}
-                            <div className="pl-3">
-                              <AddHeatButton roundId={round.id} />
-                            </div>
+                            {/* После DRAW_LOCKED у каждого захода уже обязана быть жеребьёвка
+                                (round-state.ts) — новый заход без списка нарушил бы это, поэтому
+                                кнопку прячем, как только жеребьёвка зафиксирована. */}
+                            {(round.status === "DRAFT" || round.status === "READY" || round.status === "DRAWING") && (
+                              <div className="pl-3">
+                                <AddHeatButton roundId={round.id} />
+                              </div>
+                            )}
                           </div>
 
                           {round.status === "READY" && <StartDrawingForm roundId={round.id} />}

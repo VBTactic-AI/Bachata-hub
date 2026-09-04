@@ -19,7 +19,7 @@ export async function startRoundDrawing(roundId: string, callOrder: CallOrder): 
 
   const heats = await prisma.heat.findMany({ where: { roundId }, orderBy: { number: "asc" } });
   if (heats.length === 0) {
-    throw new ValidationFailedError("В раунде нет ни одного заезда — сначала создайте заезды.");
+    throw new ValidationFailedError("В раунде нет ни одного захода — сначала создайте заходы.");
   }
 
   const heatCapacity = round.heatCapacity ?? round.division.heatCapacity;

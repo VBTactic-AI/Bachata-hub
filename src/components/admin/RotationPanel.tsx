@@ -244,7 +244,7 @@ export function RotationPanel({ heatId }: { heatId: string }) {
         </>
       )}
 
-      {r && r.status === "FINISHED" && <p className="hint-text m-0">Ротация партнёров завершена вместе с заездом.</p>}
+      {r && r.status === "FINISHED" && <p className="hint-text m-0">Ротация партнёров завершена вместе с заходом.</p>}
     </div>
   );
 }

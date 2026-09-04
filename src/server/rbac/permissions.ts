@@ -34,6 +34,7 @@ export const PERMISSIONS = [
   "timer:control",
   "rotation:control",
 
+  "judge:assign",
   "score:submit",
   "score:correct",
   "score:view_own",
@@ -45,6 +46,7 @@ export const PERMISSIONS = [
   "result:review",
   "result:publish",
   "result:unpublish",
+  "tie_break:decide",
 
   "penalty:create",
   "disqualification:create",

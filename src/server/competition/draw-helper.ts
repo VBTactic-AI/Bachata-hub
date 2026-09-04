@@ -115,7 +115,7 @@ async function resolveHelperSource(
     throw new ValidationFailedError("Помощник должен пройти check-in.");
   }
   if (helperReg.role !== role) {
-    throw new ValidationFailedError("Роль помощника в заезде должна совпадать с его собственной ролью регистрации.");
+    throw new ValidationFailedError("Роль помощника в заходе должна совпадать с его собственной ролью регистрации.");
   }
 
   if (helperReg.divisionId === heat.divisionId) {
@@ -124,7 +124,7 @@ async function resolveHelperSource(
     });
     if (!alreadyScored) {
       throw new ValidationFailedError(
-        "Участник своего дивизиона может помогать только после того, как уже станцевал (получил оценку) в другом заезде этого раунда."
+        "Участник своего дивизиона может помогать только после того, как уже станцевал (получил оценку) в другом заходе этого раунда."
       );
     }
     return "REUSED_ALREADY_SCORED";
@@ -151,11 +151,11 @@ export async function addDrawHelper(
     throw new ValidationFailedError('Добавлять помощников можно только пока раунд в статусе "Жеребьёвка".');
   }
   if (heat.status !== "PENDING") {
-    throw new ValidationFailedError("Заезд уже запущен — список нельзя менять.");
+    throw new ValidationFailedError("Заход уже запущен — список нельзя менять.");
   }
   const draw = heat.draws[0];
   if (!draw) {
-    throw new ValidationFailedError("Для этого заезда ещё не сформирован список — сначала запустите жеребьёвку раунда.");
+    throw new ValidationFailedError("Для этого захода ещё не сформирован список — сначала запустите жеребьёвку раунда.");
   }
 
   const helperSource = await resolveHelperSource(
@@ -169,7 +169,7 @@ export async function addDrawHelper(
     where: { drawId_registrationId: { drawId: draw.id, registrationId } },
   });
   if (existing) {
-    throw new ValidationFailedError("Этот участник уже в списке этого заезда.");
+    throw new ValidationFailedError("Этот участник уже в списке этого захода.");
   }
 
   const maxOrder = await prisma.drawParticipant.aggregate({ where: { drawId: draw.id }, _max: { calledOrder: true } });
@@ -204,11 +204,11 @@ export async function removeDrawHelper(drawParticipantId: string): Promise<void>
 
   if (!participant.helperSource) {
     throw new ValidationFailedError(
-      "Можно убрать только помощника, не основного участника жеребьёвки — для этого используйте пересборку заезда."
+      "Можно убрать только помощника, не основного участника жеребьёвки — для этого используйте пересборку захода."
     );
   }
   if (participant.draw.heat.status !== "PENDING") {
-    throw new ValidationFailedError("Заезд уже запущен — список нельзя менять.");
+    throw new ValidationFailedError("Заход уже запущен — список нельзя менять.");
   }
 
   await prisma.$transaction(async (tx) => {
@@ -245,14 +245,14 @@ export async function replaceDrawHelper(
 
   if (!participant.helperSource) {
     throw new ValidationFailedError(
-      "Заменить можно только помощника, не основного участника жеребьёвки — для этого используйте пересборку заезда."
+      "Заменить можно только помощника, не основного участника жеребьёвки — для этого используйте пересборку захода."
     );
   }
   if (heat.round.status !== "DRAWING") {
     throw new ValidationFailedError('Менять список можно только пока раунд в статусе "Жеребьёвка".');
   }
   if (heat.status !== "PENDING") {
-    throw new ValidationFailedError("Заезд уже запущен — список нельзя менять.");
+    throw new ValidationFailedError("Заход уже запущен — список нельзя менять.");
   }
   if (newRegistrationId === participant.registrationId) {
     throw new ValidationFailedError("Это тот же самый участник.");
@@ -269,7 +269,7 @@ export async function replaceDrawHelper(
     where: { drawId_registrationId: { drawId: participant.drawId, registrationId: newRegistrationId } },
   });
   if (existing) {
-    throw new ValidationFailedError("Этот участник уже в списке этого заезда.");
+    throw new ValidationFailedError("Этот участник уже в списке этого захода.");
   }
 
   const created = await prisma.$transaction(async (tx) => {

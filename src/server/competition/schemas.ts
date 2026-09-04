@@ -175,3 +175,21 @@ export const chooseShiftSchema = z
     path: ["n"],
   });
 export type ChooseShiftInput = z.infer<typeof chooseShiftSchema>;
+
+// --- Судейство и определение проходящих (Этапы 7-8) ---
+
+export const assignJudgeSchema = z.object({
+  judgeEmail: z.string().email(),
+  role: registrationRoleSchema,
+});
+export type AssignJudgeInput = z.infer<typeof assignJudgeSchema>;
+
+export const submitJudgeScoreSchema = z.object({
+  value: z.coerce.number().int().min(0),
+});
+export type SubmitJudgeScoreInput = z.infer<typeof submitJudgeScoreSchema>;
+
+export const recordTieBreakDecisionSchema = z.object({
+  advancingRegistrationIds: z.array(z.string().min(1)).min(1),
+});
+export type RecordTieBreakDecisionInput = z.infer<typeof recordTieBreakDecisionSchema>;

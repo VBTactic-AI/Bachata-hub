@@ -6,6 +6,7 @@ import type { Permission } from "../rbac/permissions";
 import { ValidationFailedError } from "../errors";
 import { ROUND_TYPE_LABELS } from "@/lib/competition-labels";
 import { finishRotationInTx } from "../rotation/rotation-engine";
+import { autoAdvanceRoundIfAllHeatsFinishedInTx } from "./round-state";
 
 const TABLE: TransitionTable<HeatStatus> = {
   PENDING: ["RUNNING"],
@@ -53,7 +54,20 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
       // единого вызванного участника (обнаружено на реальном тесте).
       if (heat.round.status !== "RUNNING") {
         throw new ValidationFailedError(
-          `Нельзя запустить этот заезд: раунд ещё не переведён в статус "Идёт" (сначала жеребьёвка, потом запуск раунда).`
+          `Нельзя запустить этот заход: раунд ещё не переведён в статус "Идёт" (сначала жеребьёвка, потом запуск раунда).`
+        );
+      }
+      // Заходы одного раунда идут строго по номеру — нельзя запустить заход
+      // №3, пока заход №1 или №2 ещё не завершён (даже если они ещё не
+      // запускались вовсе, PENDING). По духу то же самое, что A8 для
+      // раундов внутри дивизиона, только уровнем ниже — заходы внутри раунда.
+      const earlierUnfinished = await tx.heat.findFirst({
+        where: { roundId: heat.roundId, number: { lt: heat.number }, status: { not: "FINISHED" } },
+        orderBy: { number: "asc" },
+      });
+      if (earlierUnfinished) {
+        throw new ValidationFailedError(
+          `Нельзя запустить этот заход: заход №${earlierUnfinished.number} этого раунда ещё не завершён — сначала завершите его.`
         );
       }
       const activeElsewhere = await tx.heat.findFirst({
@@ -69,7 +83,7 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
           activeElsewhere.round.stage?.name ??
           (activeElsewhere.round.type ? (ROUND_TYPE_LABELS[activeElsewhere.round.type] ?? activeElsewhere.round.type) : "раунда");
         throw new ValidationFailedError(
-          `Нельзя запустить этот заезд: сейчас уже идёт (или на паузе) заезд №${activeElsewhere.number} раунда «${roundName}» — сначала завершите его.`
+          `Нельзя запустить этот заход: сейчас уже идёт (или на паузе) заход №${activeElsewhere.number} раунда «${roundName}» — сначала завершите его.`
         );
       }
     },
@@ -82,6 +96,10 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
       // транзакцией (Этап 6) — не отдельной кнопкой "Завершить ротацию".
       if (result.count > 0 && to === "FINISHED") {
         await finishRotationInTx(tx, heatId, actor);
+        // Если это был последний незавершённый заход раунда — раунд сам
+        // идёт RUNNING -> FINISHED -> SCORING в этой же транзакции (по
+        // запросу пользователя, 2026-09-04): кнопка не нужна.
+        await autoAdvanceRoundIfAllHeatsFinishedInTx(tx, heat.roundId, actor);
       }
       return {
         before: { status: heat.status, statusVersion: expectedVersion },

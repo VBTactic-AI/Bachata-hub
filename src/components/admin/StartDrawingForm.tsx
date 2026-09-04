@@ -39,7 +39,7 @@ export function StartDrawingForm({ roundId }: { roundId: string }) {
         </Select>
       </Label>
       <p className="hint-text m-0">
-        Один выбор на весь раунд — сразу сформирует списки для всех заездов раунда по очереди.
+        Один выбор на весь раунд — сразу сформирует списки для всех заходов раунда по очереди.
       </p>
       {error && <p className="error-text">{error}</p>}
       <Button type="submit" size="sm" disabled={loading}>

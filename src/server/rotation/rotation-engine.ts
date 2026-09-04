@@ -170,7 +170,7 @@ export async function startRotation(heatId: string): Promise<void> {
   const actor = await requirePermission("timer:control", competitionId);
 
   if (heat.status !== "RUNNING") {
-    throw new ValidationFailedError("Нельзя начать ротацию партнёров: сначала запустите сам заезд.");
+    throw new ValidationFailedError("Нельзя начать ротацию партнёров: сначала запустите сам заход.");
   }
 
   let rotation = heat.rotation;
@@ -188,7 +188,7 @@ export async function startRotation(heatId: string): Promise<void> {
     }
   }
   if (rotation.status !== "IDLE") {
-    throw new ValidationFailedError("Ротация партнёров для этого заезда уже была начата.");
+    throw new ValidationFailedError("Ротация партнёров для этого захода уже была начата.");
   }
 
   const config: ResolvedRotationConfig = {
@@ -232,7 +232,7 @@ export async function startRotation(heatId: string): Promise<void> {
 async function loadRotationOrThrow(heatId: string): Promise<{ heat: HeatForRotation; rotation: RotationRow }> {
   const heat = await loadHeatForRotation(heatId);
   if (!heat.rotation) {
-    throw new ValidationFailedError("Ротация партнёров для этого заезда ещё не начата.");
+    throw new ValidationFailedError("Ротация партнёров для этого захода ещё не начата.");
   }
   return { heat, rotation: heat.rotation };
 }

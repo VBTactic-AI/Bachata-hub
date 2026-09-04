@@ -21,12 +21,21 @@ const drawCreate = vi.fn();
 const drawParticipantCreate = vi.fn();
 const drawParticipantDeleteMany = vi.fn();
 const auditCreate = vi.fn();
+// Этап 7/8 (A13): formDrawInTx теперь проверяет, есть ли завершённый
+// предыдущий раунд дивизиона, чтобы ограничить пул только прошедшими —
+// по умолчанию в этих тестах "предыдущего раунда нет" (findFirst -> null),
+// сохраняя прежнее поведение "берём весь дивизион" без изменений.
+const roundFindUniqueOrThrowTx = vi.fn();
+const roundFindFirstTx = vi.fn();
+const roundResultFindMany = vi.fn();
 
 const fakeTx = {
   draw: { findFirst: drawFindFirst, create: drawCreate },
   heat: { findMany: heatFindMany, findFirst: heatFindFirstTx, create: heatCreateTx },
   registration: { findMany: registrationFindMany },
   division: { findUniqueOrThrow: divisionFindUniqueOrThrow, findMany: divisionFindMany },
+  round: { findUniqueOrThrow: roundFindUniqueOrThrowTx, findFirst: roundFindFirstTx },
+  roundResult: { findMany: roundResultFindMany },
   drawParticipant: { create: drawParticipantCreate, deleteMany: drawParticipantDeleteMany },
   auditLog: { create: auditCreate },
 };
@@ -57,6 +66,9 @@ beforeEach(() => {
   drawFindFirst.mockReset().mockResolvedValue(null);
   heatFindMany.mockReset().mockResolvedValue([]); // нет других заездов с уже станцевавшими
   heatFindFirstTx.mockReset().mockResolvedValue(null);
+  roundFindUniqueOrThrowTx.mockReset().mockResolvedValue({ order: 1 });
+  roundFindFirstTx.mockReset().mockResolvedValue(null); // нет предыдущего раунда — пул не ограничен
+  roundResultFindMany.mockReset().mockResolvedValue([]);
   heatCreateTx.mockReset().mockImplementation(({ data }: { data: { number: number } }) =>
     Promise.resolve({ id: "new-heat1", ...data })
   );
@@ -169,6 +181,67 @@ describe("formDrawInTx() — базовое формирование списк�
       actor,
     });
     expect(drawCreate.mock.calls[0][0].data.seed).toBeNull();
+  });
+});
+
+// Этап 7/8 (A13, закрывает известное ограничение A9): пул второго и
+// следующих раундов дивизиона должен состоять только из тех, кто реально
+// ADVANCED в предыдущем (обычном, не тай-брейк) раунде — не из всего
+// дивизиона, как раньше.
+describe("formDrawInTx() — пул ограничен прошедшими предыдущий раунд", () => {
+  it("первый раунд дивизиона (предыдущего нет) — берёт весь дивизион, как раньше", async () => {
+    roundFindFirstTx.mockResolvedValue(null);
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(result.leaderCount).toBe(3);
+    expect(result.followerCount).toBe(2);
+  });
+
+  it("предыдущий раунд есть, но ещё не COMPLETED — не ограничивает пул (безопасный fallback)", async () => {
+    roundFindFirstTx.mockResolvedValue({ id: "prevRound1", status: "SCORING" });
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(result.leaderCount).toBe(3);
+    expect(roundResultFindMany).not.toHaveBeenCalled();
+  });
+
+  it("предыдущий раунд COMPLETED — зовёт только тех, кто ADVANCED там", async () => {
+    roundFindUniqueOrThrowTx.mockResolvedValue({ order: 2 });
+    roundFindFirstTx.mockResolvedValue({ id: "prevRound1", status: "COMPLETED" });
+    roundResultFindMany.mockResolvedValue([{ registrationId: "l1" }, { registrationId: "f2" }]);
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round2",
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(roundFindFirstTx).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { divisionId: "div1", order: { lt: 2 }, type: null } })
+    );
+    expect(result.leaderCount).toBe(1); // только l1, не l2/l3
+    expect(result.followerCount).toBe(1); // только f2, не f1
+    const calledIds = drawParticipantCreate.mock.calls.map((c) => c[0].data.registrationId);
+    expect(calledIds.sort()).toEqual(["f2", "l1"]);
   });
 });
 

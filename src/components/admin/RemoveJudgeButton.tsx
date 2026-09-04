@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
-export function AddHeatButton({ roundId }: { roundId: string }) {
+export function RemoveJudgeButton({ assignmentId }: { assignmentId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -12,15 +12,11 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
   async function onClick() {
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/rounds/${roundId}/heats`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const res = await fetch(`/api/judge-assignments/${assignmentId}`, { method: "DELETE" });
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Не удалось добавить заход.");
+      setError(data.error || "Не удалось убрать судью.");
       return;
     }
     router.refresh();
@@ -28,8 +24,8 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <Button type="button" size="sm" variant="outline" disabled={loading} onClick={onClick}>
-        + Заход
+      <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={onClick}>
+        убрать
       </Button>
       {error && <span className="error-text">{error}</span>}
     </span>

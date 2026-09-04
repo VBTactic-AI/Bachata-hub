@@ -67,6 +67,8 @@ model User {
   checkInsPerformed          CheckIn[]            @relation("CheckInCheckedInBy")
   roleOverridesReviewed      Registration[]       @relation("RegistrationRoleOverrideReviewer")
   drawsCreated               Draw[]               @relation("DrawCreatedBy")
+  judgeAssignments           JudgeAssignment[]    @relation("JudgeAssignmentJudge")
+  assignedJudgeAssignments   JudgeAssignment[]    @relation("JudgeAssignmentAssignedBy")
 
   @@index([role])
 }
@@ -678,32 +680,33 @@ model DivisionCategory {
 }
 
 model Division {
-  id              String           @id @default(cuid())
-  competitionId   String
-  competition     Competition      @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  categoryId      String
-  category        DivisionCategory @relation(fields: [categoryId], references: [id])
-  minAge          Int?
-  maxAge          Int?
-  maxParticipants Int?
+  id                  String           @id @default(cuid())
+  competitionId       String
+  competition         Competition      @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  categoryId          String
+  category            DivisionCategory @relation(fields: [categoryId], references: [id])
+  minAge              Int?
+  maxAge              Int?
+  maxParticipants     Int?
   // Сколько пар помещается на паркет одновременно — используется при
   // авто-генерации раундов/заездов (docs/00_DECISIONS.md, A7), чтобы
   // посчитать, на сколько заездов делить раунд. Можно переопределить для
   // конкретного раунда через Round.heatCapacity.
-  heatCapacity    Int              @default(10)
+  heatCapacity        Int              @default(10)
   // Настройки ротации партнёров по умолчанию для раундов этого дивизиона
   // (Этап 6, A12) — можно переопределить на уровне конкретного Round, как и
   // heatCapacity (A7). rotationShiftMin/Max используются только в режиме
   // SEGMENT_MANUAL_SHIFT — диапазон, из которого выбирается N.
-  rotationMode        RotationMode @default(TRACK_AUTO_SHIFT)
-  rotationIntervalSec Int          @default(30)
-  rotationShiftMin    Int          @default(1)
-  rotationShiftMax    Int          @default(3)
-  rules           Json
-  createdAt       DateTime         @default(now())
+  rotationMode        RotationMode     @default(TRACK_AUTO_SHIFT)
+  rotationIntervalSec Int              @default(30)
+  rotationShiftMin    Int              @default(1)
+  rotationShiftMax    Int              @default(3)
+  rules               Json
+  createdAt           DateTime         @default(now())
 
-  rounds        Round[]
-  registrations Registration[]
+  rounds           Round[]
+  registrations    Registration[]
+  judgeAssignments JudgeAssignment[]
 
   @@unique([competitionId, categoryId])
 }
@@ -729,40 +732,53 @@ model RoundStageCatalog {
 // ---------------------------------------------------------------------------
 
 model Round {
-  id             String             @id @default(cuid())
-  divisionId     String
-  division       Division           @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(cuid())
+  divisionId          String
+  division            Division           @relation(fields: [divisionId], references: [id], onDelete: Cascade)
   // Ровно одно из двух: stageId — обычный раунд организатора, выбранный из
   // общего справочника этапов (имя берётся из stage.name, свободного текста
   // больше нет); type — служебный раунд, который заводит сам движок
   // (TIE_BREAK/DANCE_OFF, Этап 8), в справочник не входит. Обеспечено CHECK
   // constraint в миграции (docs/00_DECISIONS.md, A7).
-  stageId        String?
-  stage          RoundStageCatalog? @relation(fields: [stageId], references: [id])
-  type           RoundType?
-  order          Int
-  status         RoundStatus        @default(DRAFT)
-  statusVersion  Int                @default(1)
+  stageId             String?
+  stage               RoundStageCatalog? @relation(fields: [stageId], references: [id])
+  type                RoundType?
+  order               Int
+  status              RoundStatus        @default(DRAFT)
+  statusVersion       Int                @default(1)
   // Обязателен для stageId-раундов (проверяется в сервисе, не в схеме — тай-брейк
   // без справочника может создаваться и без этого числа сразу).
-  finalistsCount Int?
+  finalistsCount      Int?
   // Переопределяет Division.heatCapacity для этого конкретного раунда (напр.
   // финал часто идёт одним заездом независимо от общего правила).
-  heatCapacity   Int?
+  heatCapacity        Int?
   // Переопределяют настройки ротации партнёров дивизиона для этого раунда
   // (Этап 6, A12) — напр. у финала обычно другие правила, чем у отборочных.
   rotationMode        RotationMode?
   rotationIntervalSec Int?
   rotationShiftMin    Int?
   rotationShiftMax    Int?
-  config         Json               @default("{}")
-  rulesId        String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
-  rules          CompetitionRules   @relation(fields: [rulesId], references: [id])
-  startedAt      DateTime?
-  endedAt        DateTime?
-  createdAt      DateTime           @default(now())
+  config              Json               @default("{}")
+  rulesId             String // версия CompetitionRules, действовавшая на момент создания раунда (02 §4)
+  rules               CompetitionRules   @relation(fields: [rulesId], references: [id])
+  // Шкала судейской оценки в этом раунде: 1 = 0/1 (проходит/не проходит),
+  // 2 = 0/1/2 (Этап 7, реже перетанцовки при бОльшем разбросе). Снимок этого
+  // значения кладётся в каждый JudgeScore.maxValue — смена шкалы позже не
+  // должна задним числом менять смысл уже выставленных оценок (CLAUDE.md §51).
+  judgingMaxScore     Int                @default(1)
+  // Заполнено только для служебных раундов TIE_BREAK/DANCE_OFF (Этап 8) —
+  // какой обычный раунд эту перетанцовку породил. Перетанцовка перетанцовки
+  // не бывает (подтверждено пользователем) — эта ссылка всегда указывает на
+  // НЕ-служебный раунд.
+  tieBreakOfRoundId   String?
+  tieBreakOfRound     Round?             @relation("RoundTieBreakOf", fields: [tieBreakOfRoundId], references: [id])
+  tieBreakRounds      Round[]            @relation("RoundTieBreakOf")
+  startedAt           DateTime?
+  endedAt             DateTime?
+  createdAt           DateTime           @default(now())
 
-  heats Heat[]
+  heats   Heat[]
+  results RoundResult[]
 
   @@unique([divisionId, order])
   @@index([status])
@@ -805,8 +821,8 @@ model HeatRotation {
   shiftMin    Int
   shiftMax    Int
 
-  trackNumber Int     @default(0)
-  trackName   String?
+  trackNumber      Int       @default(0)
+  trackName        String?
   // Начало текущего трека/отрезка с точки зрения сервера — единственный
   // источник истины для отсчёта, клиент только отрисовывает обратный
   // отсчёт по этому времени (CLAUDE.md §12). При паузе не меняется, при
@@ -881,7 +897,81 @@ model DrawParticipant {
   helperSource   DrawHelperSource?
   calledOrder    Int // порядок вызова на паркет в рамках этого Draw
 
+  judgeScores JudgeScore[]
+
   @@unique([drawId, registrationId])
+}
+
+// ---------------------------------------------------------------------------
+// Судейство (Этап 7) и определение проходящих / перетанцовка (Этап 8)
+// ---------------------------------------------------------------------------
+
+// Судья закреплён на дивизион и роль, которую судит (LEADER/FOLLOWER) — не на
+// пол участника: пол судьи по умолчанию совпадает с ролью, которую он судит,
+// но это подсказка при назначении, не правило (уточнено пользователем
+// 2026-09-04, заменяет прежнюю формулировку A6 — см. docs/00_DECISIONS.md).
+// Один судья может быть закреплён на несколько дивизионов (в т.ч. на обе
+// роли одного дивизиона при нехватке судей) — @@unique держит только пару
+// "дивизион+роль" уникальной на одного судью.
+model JudgeAssignment {
+  id           String           @id @default(cuid())
+  divisionId   String
+  division     Division         @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  judgeUserId  String
+  judge        User             @relation("JudgeAssignmentJudge", fields: [judgeUserId], references: [id])
+  role         RegistrationRole
+  assignedById String
+  assignedBy   User             @relation("JudgeAssignmentAssignedBy", fields: [assignedById], references: [id])
+  createdAt    DateTime         @default(now())
+
+  scores JudgeScore[]
+
+  @@unique([divisionId, judgeUserId, role])
+}
+
+// Оценка одного судьи по одному вызванному участнику (scored=true) в
+// конкретном заходе — CLAUDE.md §16: judge оценивает competitor, не пару.
+// value — 0..maxValue (снимок Round.judgingMaxScore на момент отправки).
+model JudgeScore {
+  id                String          @id @default(cuid())
+  drawParticipantId String
+  drawParticipant   DrawParticipant @relation(fields: [drawParticipantId], references: [id], onDelete: Cascade)
+  judgeAssignmentId String
+  judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id])
+  value             Int
+  maxValue          Int
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([drawParticipantId, judgeAssignmentId])
+}
+
+// Итог Advancement Engine по раунду на одного участника (CLAUDE.md §23).
+// TIE_BREAK_REQUIRED — только для тех, кого затронула ничья на границе
+// cutoff; остальные однозначно ADVANCED/ELIMINATED уже на этом раунде.
+// Решение перетанцовки (Этап 8) обновляет статус этих же строк на
+// ADVANCED/ELIMINATED — новых строк на родительском раунде не создаётся,
+// но сама перетанцовка ведётся отдельным служебным Round (tieBreakOfRoundId)
+// со своими RoundResult, чтобы решение было видно и в аудите отдельно.
+model RoundResult {
+  id             String            @id @default(cuid())
+  roundId        String
+  round          Round             @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  registrationId String
+  registration   Registration      @relation(fields: [registrationId], references: [id])
+  scoreSum       Int
+  rank           Int
+  status         AdvancementStatus
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([roundId, registrationId])
+}
+
+enum AdvancementStatus {
+  ADVANCED
+  ELIMINATED
+  TIE_BREAK_REQUIRED
 }
 
 // ---------------------------------------------------------------------------
@@ -1000,6 +1090,7 @@ model Registration {
 
   checkIn            CheckIn?
   drawParticipations DrawParticipant[]
+  roundResults       RoundResult[]
 
   // Одна роль на дивизион на человека — нельзя зарегистрироваться в одном
   // дивизионе одновременно и LEADER, и FOLLOWER (docs/00_DECISIONS.md, B6).

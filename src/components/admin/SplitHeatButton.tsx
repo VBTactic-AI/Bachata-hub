@@ -21,7 +21,7 @@ export function SplitHeatButton({ heatId }: { heatId: string }) {
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Не удалось разбить заезд.");
+      setError(data.error || "Не удалось разбить заход.");
       return;
     }
     router.refresh();

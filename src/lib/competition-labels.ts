@@ -27,7 +27,7 @@ export const ROUND_TYPE_LABELS: Record<string, string> = {
   QUARTERFINAL: "Четвертьфинал",
   SEMIFINAL: "Полуфинал",
   FINAL: "Финал",
-  TIE_BREAK: "Тай-брейк",
+  TIE_BREAK: "Перетанцовка",
   DANCE_OFF: "Dance-off",
 };
 
@@ -39,7 +39,7 @@ export const ROUND_STATUS_LABELS: Record<string, string> = {
   RUNNING: "Идёт",
   PAUSED: "Пауза",
   FINISHED: "Завершён",
-  SCORING: "Судейство",
+  SCORING: "Подсчёт баллов",
   COMPLETED: "Готово",
 };
 

@@ -6,20 +6,31 @@ import type { Permission } from "../rbac/permissions";
 import type { Actor } from "../rbac/actor";
 import { ValidationFailedError } from "../errors";
 import { ROUND_TYPE_LABELS } from "@/lib/competition-labels";
+import { maybeCalculateOnEntryInTx } from "../judging/advancement";
+import { writeAudit } from "../audit/audit";
 
 type PrismaTx = Prisma.TransactionClient;
 
 // Без RESUMED — это переход (PAUSED -> RUNNING), а не отдельное состояние
 // (docs/00_DECISIONS.md, A2).
+// FINISHED и SCORING достижимы только автоматически, из
+// autoAdvanceRoundIfAllHeatsFinishedInTx (по запросу пользователя,
+// 2026-09-04: когда все заходы раунда оттанцевали, кнопка не нужна) —
+// поэтому здесь у RUNNING/FINISHED нет этих целей: обычный
+// /api/rounds/[id]/transition их применить не может, только сам этот
+// сервис изнутри транзакции завершения захода. COMPLETED так же достижим
+// только из advancement.ts (calculateRoundResultsInTx/recordTieBreakDecision)
+// — иначе раунд мог бы "завершиться" без единой строки RoundResult
+// (CLAUDE.md §45 — не голый PATCH статуса для операции с бизнес-смыслом).
 const TABLE: TransitionTable<RoundStatus> = {
   DRAFT: ["READY"],
   READY: ["DRAWING"],
   DRAWING: ["DRAW_LOCKED"],
   DRAW_LOCKED: ["RUNNING"],
-  RUNNING: ["PAUSED", "FINISHED"],
+  RUNNING: ["PAUSED"],
   PAUSED: ["RUNNING"],
-  FINISHED: ["SCORING"],
-  SCORING: ["COMPLETED"],
+  FINISHED: [],
+  SCORING: [],
   COMPLETED: [],
 };
 
@@ -95,15 +106,19 @@ export async function transitionRound(
         });
         if (heatWithoutDraw) {
           throw new ValidationFailedError(
-            `Нельзя зафиксировать жеребьёвку: для заезда №${heatWithoutDraw.number} ещё не сформирован список вызванных.`
+            `Нельзя зафиксировать жеребьёвку: для захода №${heatWithoutDraw.number} ещё не сформирован список вызванных.`
           );
         }
       }
       // Раунды дивизиона запускаются строго по очереди — нельзя начать
       // финал, не проведя отборочный (docs/00_DECISIONS.md, A8): более
       // ранний по order раунд обязан быть COMPLETED прежде, чем этот
-      // сможет перейти в RUNNING.
-      if (to === "RUNNING") {
+      // сможет перейти в RUNNING. Распространено и на DRAWING (2026-09-04,
+      // A13, по запросу пользователя): нельзя начать жеребьёвку следующего
+      // раунда, пока предыдущий не завершён — иначе жеребьёвка легко
+      // сформируется ДО того, как Advancement Engine определит, кто прошёл
+      // (пул тогда пришлось бы тянуть из ещё не посчитанного раунда).
+      if (to === "RUNNING" || to === "DRAWING") {
         const earlierUnfinished = await tx.round.findFirst({
           where: { divisionId: round.division.id, order: { lt: round.order }, status: { not: "COMPLETED" } },
           orderBy: { order: "asc" },
@@ -113,8 +128,9 @@ export async function transitionRound(
           const stageName =
             earlierUnfinished.stage?.name ??
             (earlierUnfinished.type ? (ROUND_TYPE_LABELS[earlierUnfinished.type] ?? earlierUnfinished.type) : "раунда");
+          const verb = to === "RUNNING" ? "запустить" : "начать жеребьёвку";
           throw new ValidationFailedError(
-            `Нельзя запустить этот раунд: раунд «${stageName}» ещё не завершён (не в статусе "Готово") — раунды проводятся по очереди.`
+            `Нельзя ${verb} этот раунд: раунд «${stageName}» ещё не завершён (не в статусе "Готово") — раунды проводятся по очереди.`
           );
         }
       }
@@ -134,4 +150,50 @@ export async function transitionRound(
       };
     },
   });
+}
+
+// Вызывается из heat-state.ts сразу после того, как заход перешёл в
+// FINISHED (в той же транзакции) — по запросу пользователя (2026-09-04):
+// когда все заходы раунда оттанцевали, статус меняется сам, кнопка
+// "Завершить"/"Начать судейство" не нужна. RUNNING -> FINISHED -> SCORING
+// одной транзакцией, с audit на каждый шаг (CLAUDE.md §9), актёром
+// остаётся тот, кто завершил последний заход. Тихо ничего не делает, если
+// раунд не RUNNING или ещё не все заходы завершены — не ошибка, а "рано".
+export async function autoAdvanceRoundIfAllHeatsFinishedInTx(tx: PrismaTx, roundId: string, actor: Actor): Promise<void> {
+  const round = await tx.round.findUniqueOrThrow({ where: { id: roundId } });
+  if (round.status !== "RUNNING") return;
+
+  const unfinished = await tx.heat.count({ where: { roundId, status: { not: "FINISHED" } } });
+  if (unfinished > 0) return;
+
+  const toFinished = await tx.round.updateMany({
+    where: { id: roundId, statusVersion: round.statusVersion },
+    data: { status: "FINISHED", statusVersion: { increment: 1 }, endedAt: new Date() },
+  });
+  if (toFinished.count === 0) return; // гонка — кто-то другой уже сделал этот переход
+  await writeAudit(tx, {
+    actor,
+    action: "round.transition",
+    entityType: "Round",
+    entityId: roundId,
+    before: { status: "RUNNING" },
+    after: { status: "FINISHED" },
+    reason: "Все заходы раунда завершены — переведено автоматически.",
+  });
+
+  await tx.round.updateMany({
+    where: { id: roundId, statusVersion: round.statusVersion + 1 },
+    data: { status: "SCORING", statusVersion: { increment: 1 } },
+  });
+  await writeAudit(tx, {
+    actor,
+    action: "round.transition",
+    entityType: "Round",
+    entityId: roundId,
+    before: { status: "FINISHED" },
+    after: { status: "SCORING" },
+    reason: "Автоматический переход к подсчёту баллов.",
+  });
+
+  await maybeCalculateOnEntryInTx(tx, roundId, actor);
 }
