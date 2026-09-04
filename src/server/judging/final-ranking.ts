@@ -1,6 +1,6 @@
 import type { RegistrationRole } from "@prisma/client";
 
-// Чистый ranking engine финала (Этап 9, docs/00_DECISIONS.md, A21).
+// Чистый ranking engine финала (Этап 9, docs/00_DECISIONS.md, A22).
 //
 // КРИТИЧЕСКИ ВАЖНО (по прямому требованию пользователя, 2026-09-04):
 // "приоритет" критерия — НЕ коэффициент. Оценки НЕ умножаются на вес и НЕ

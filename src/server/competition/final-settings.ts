@@ -6,7 +6,7 @@ import { ValidationFailedError } from "../errors";
 import type { SetFinalCriteriaInput, SetFinalSettingsInput } from "./schemas";
 
 // Настройки формата финала и критерии оценки — на уровне Division (Этап 9,
-// docs/00_DECISIONS.md A21). До старта финала (FinalSession ещё не создана)
+// docs/00_DECISIONS.md A22). До старта финала (FinalSession ещё не создана)
 // организатор может менять их сколько угодно; после старта — заблокированы
 // (снимок уже лежит в FinalSession, CLAUDE.md §50-51).
 async function assertNotLocked(divisionId: string): Promise<void> {

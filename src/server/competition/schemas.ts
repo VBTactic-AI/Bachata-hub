@@ -228,7 +228,7 @@ export const recordTieBreakDecisionSchema = z.object({
 });
 export type RecordTieBreakDecisionInput = z.infer<typeof recordTieBreakDecisionSchema>;
 
-// --- Финал (Этап 9, docs/00_DECISIONS.md A21) ---
+// --- Финал (Этап 9, docs/00_DECISIONS.md A22) ---
 
 export const finalFormatSchema = z.enum(["NORMAL", "JUDGES_DANCE", "RANDOM_COUPLES"]);
 
