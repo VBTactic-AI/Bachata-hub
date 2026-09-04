@@ -6,11 +6,26 @@ import { Button } from "@/components/ui/button";
 import { FormRoot, Label, Select, Input } from "@/components/ui/field";
 
 type Category = { id: string; name: string };
+type Stage = { id: string; name: string; defaultAdvanceCount: number };
 
-export function AddDivisionForm({ competitionId, categories }: { competitionId: string; categories: Category[] }) {
+export function AddDivisionForm({
+  competitionId,
+  categories,
+  stages,
+}: {
+  competitionId: string;
+  categories: Category[];
+  stages: Stage[];
+}) {
   const router = useRouter();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [heatCapacity, setHeatCapacity] = useState("10");
+  // Сколько пар участвует в каждом этапе (docs/00_DECISIONS.md, A14) —
+  // задаётся здесь один раз, до начала соревнования, дальше не меняется:
+  // на этом строится расчёт cutoff в Advancement Engine. Пустая строка —
+  // этот этап не входит в план ЭТОГО дивизиона (можно пропустить, напр.
+  // "Отборочный", если дивизион маленький).
+  const [stagePlan, setStagePlan] = useState<Record<string, string>>({});
   // Ротация партнёров (Этап 6, docs/00_DECISIONS.md, A12) — настройки по
   // умолчанию для раундов этого дивизиона, можно переопределить позже на
   // уровне конкретного раунда.
@@ -33,6 +48,9 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
     e.preventDefault();
     setError(null);
     setLoading(true);
+    const stagePlanEntries = stages
+      .filter((s) => stagePlan[s.id]?.trim())
+      .map((s) => ({ stageId: s.id, participantCount: Number(stagePlan[s.id]) }));
     const res = await fetch(`/api/competitions/${competitionId}/divisions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -43,6 +61,7 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
         rotationIntervalSec: Number(rotationIntervalSec),
         rotationShiftMin: Number(rotationShiftMin),
         rotationShiftMax: Number(rotationShiftMax),
+        stagePlan: stagePlanEntries,
         rules: {},
       }),
     });
@@ -98,6 +117,26 @@ export function AddDivisionForm({ competitionId, categories }: { competitionId: 
             Макс. число партнёров
             <Input type="number" min={1} value={rotationShiftMax} onChange={(e) => setRotationShiftMax(e.target.value)} />
           </Label>
+        </div>
+      )}
+      {stages.length > 0 && (
+        <div className="stack gap-2">
+          <p className="hint-text">
+            Сколько пар участвует в каждом раунде — навсегда, задаётся сейчас (можно оставить этап пустым, если он
+            дивизиону не нужен).
+          </p>
+          {stages.map((s) => (
+            <Label key={s.id} className="flex-row items-center gap-2">
+              <span className="min-w-[140px]">{s.name}</span>
+              <Input
+                type="number"
+                min={1}
+                placeholder="—"
+                value={stagePlan[s.id] ?? ""}
+                onChange={(e) => setStagePlan((prev) => ({ ...prev, [s.id]: e.target.value }))}
+              />
+            </Label>
+          ))}
         </div>
       )}
       {error && <p className="error-text">{error}</p>}

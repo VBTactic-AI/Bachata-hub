@@ -5,13 +5,14 @@ import { can } from "@/server/rbac/authorize";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AddDivisionForm } from "@/components/admin/AddDivisionForm";
+import { DivisionSettingsPanel } from "@/components/admin/DivisionSettingsPanel";
+import { DeleteDivisionButton } from "@/components/admin/DeleteDivisionButton";
 import { CompetitionStatusControls } from "@/components/admin/CompetitionStatusControls";
 import { RegisterSelfForm } from "@/components/admin/RegisterSelfForm";
 import { AdminRegisterForm } from "@/components/admin/AdminRegisterForm";
 import { CheckInButton } from "@/components/admin/CheckInButton";
 import { RoleOverrideReview } from "@/components/admin/RoleOverrideReview";
 import { ChangeDivisionControl } from "@/components/admin/ChangeDivisionControl";
-import { AddRoundForm } from "@/components/admin/AddRoundForm";
 import { GenerateRoundsButton } from "@/components/admin/GenerateRoundsButton";
 import { RoundStatusControls } from "@/components/admin/RoundStatusControls";
 import { AddHeatButton } from "@/components/admin/AddHeatButton";
@@ -74,6 +75,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               orderBy: { order: "asc" },
             },
             judgeAssignments: { include: { judge: { select: { email: true } } }, orderBy: { createdAt: "asc" } },
+            stagePlan: { include: { stage: { select: { name: true } } }, orderBy: { stage: { order: "asc" } } },
+            _count: { select: { registrations: true } },
           },
           orderBy: { category: { order: "asc" } },
         },
@@ -198,13 +201,36 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           <div className="stack gap-3">
             {competition.divisions.map((d) => (
               <Card key={d.id}>
-                <strong>{d.category.name}</strong>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong>{d.category.name}</strong>
+                  {canManage && <DeleteDivisionButton divisionId={d.id} hasRegistrations={d._count.registrations > 0} />}
+                </div>
+                {canManage && (
+                  <DivisionSettingsPanel
+                    divisionId={d.id}
+                    settings={{
+                      heatCapacity: d.heatCapacity,
+                      rotationMode: d.rotationMode,
+                      rotationIntervalSec: d.rotationIntervalSec,
+                      rotationShiftMin: d.rotationShiftMin,
+                      rotationShiftMax: d.rotationShiftMax,
+                    }}
+                  />
+                )}
                 {canManageRounds && (
                   <p className="hint-text mt-1">
                     Ведущих: {countFor(registeredCounts, d.id, "LEADER")} (
                     {countFor(checkedInCounts, d.id, "LEADER")} прошли check-in) · Ведомых:{" "}
                     {countFor(registeredCounts, d.id, "FOLLOWER")} ({countFor(checkedInCounts, d.id, "FOLLOWER")} прошли
                     check-in)
+                  </p>
+                )}
+                {canManageRounds && (
+                  <p className="hint-text">
+                    План по этапам:{" "}
+                    {d.stagePlan.length === 0
+                      ? "не задан"
+                      : d.stagePlan.map((p) => `${p.stage.name} ${p.participantCount}`).join(" · ")}
                   </p>
                 )}
 
@@ -347,7 +373,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                     )}
                     <div className="flex flex-wrap items-start gap-4">
                       <GenerateRoundsButton divisionId={d.id} />
-                      <AddRoundForm divisionId={d.id} stages={activeStages} />
                     </div>
                   </div>
                 )}
@@ -355,7 +380,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             ))}
           </div>
         )}
-        {canManage && <AddDivisionForm competitionId={competition.id} categories={activeCategories} />}
+        {canManage && <AddDivisionForm competitionId={competition.id} categories={activeCategories} stages={activeStages} />}
       </div>
 
       {isRegistrationOpen && !alreadyRegistered && divisionOptions.length > 0 && (

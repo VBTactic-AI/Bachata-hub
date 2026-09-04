@@ -1,16 +1,17 @@
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { getOrCreateLatestRulesVersion } from "./rules-version";
 
-// Авто-раскладка сетки раундов+заездов дивизиона по справочнику этапов
-// (docs/00_DECISIONS.md, A7). Явное действие организатора (кнопка
-// "Сгенерировать раунды"), не происходит само по себе. После генерации
-// обычные "добавить раунд"/"добавить заезд" остаются доступны для ручной
-// правки — это не единственный способ управления сеткой, только стартовая
-// раскладка.
+// Авто-раскладка сетки раундов+заездов дивизиона по ПЛАНУ этого дивизиона
+// (docs/00_DECISIONS.md, A14) — план "сколько пар участвует в каждом этапе"
+// задаётся один раз при создании дивизиона (DivisionStagePlan) и дальше не
+// меняется; раньше (A7) раунды раскладывались сравнением живых чисел
+// регистраций с общим RoundStageCatalog.defaultAdvanceCount — теперь
+// используется явный план организатора, живые числа не участвуют в расчёте
+// (только показываются рядом для сверки, до генерации). Явное действие
+// организатора (кнопка "Сгенерировать раунды"), не происходит само по себе.
 export async function generateRounds(divisionId: string): Promise<{ createdRoundIds: string[] }> {
   const division = await prisma.division.findUniqueOrThrow({
     where: { id: divisionId },
@@ -18,48 +19,37 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
   });
   const actor = await requirePermission("round:create", division.competitionId);
 
-  const eligibleWhere: Prisma.RegistrationWhereInput = {
-    divisionId,
-    status: "REGISTERED",
-    checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
-  };
-  const [leaderCount, followerCount, stages, existingRoundsCount] = await Promise.all([
-    prisma.registration.count({ where: { ...eligibleWhere, role: "LEADER" } }),
-    prisma.registration.count({ where: { ...eligibleWhere, role: "FOLLOWER" } }),
-    prisma.roundStageCatalog.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
+  const [plan, existingRoundsCount] = await Promise.all([
+    prisma.divisionStagePlan.findMany({
+      where: { divisionId },
+      include: { stage: true },
+      orderBy: { stage: { order: "asc" } },
+    }),
     prisma.round.count({ where: { divisionId } }),
   ]);
 
-  if (stages.length === 0) {
+  if (plan.length === 0) {
     throw new ValidationFailedError(
-      "В справочнике этапов отбора нет ни одного активного этапа — сначала настройте справочник."
-    );
-  }
-  const pool = Math.max(leaderCount, followerCount);
-  if (pool === 0) {
-    throw new ValidationFailedError(
-      "В дивизионе нет ни одного участника, прошедшего check-in — генерировать сетку пока не из чего."
+      "Для этого дивизиона не задан план по этапам («сколько пар участвует в каждом раунде») — он настраивается один раз при создании дивизиона."
     );
   }
 
-  // Этап пропускаем, если в него и так проходит не меньше, чем сейчас
-  // осталось (создавать такой раунд бессмысленно) — кроме последнего этапа
-  // в справочнике (обычно "Финал"), он создаётся всегда, что бы ни осталось.
-  type Plan = { stageId: string; stageName: string; finalistsCount: number; poolAtStart: number };
-  const plan: Plan[] = [];
-  let remaining = pool;
-  stages.forEach((stage, i) => {
-    const isLast = i === stages.length - 1;
-    if (!isLast && remaining <= stage.defaultAdvanceCount) return;
-    plan.push({ stageId: stage.id, stageName: stage.name, finalistsCount: stage.defaultAdvanceCount, poolAtStart: remaining });
-    remaining = stage.defaultAdvanceCount;
-  });
+  // finalistsCount раунда этапа X = participantCount СЛЕДУЮЩЕГО по порядку
+  // этапа плана (сколько проходит из X в X+1); у последнего этапа плана
+  // следующего нет — число идёт как есть (сколько мест/победителей).
+  type Step = { stageId: string; stageName: string; participantCount: number; finalistsCount: number };
+  const steps: Step[] = plan.map((p, i) => ({
+    stageId: p.stageId,
+    stageName: p.stage.name,
+    participantCount: p.participantCount,
+    finalistsCount: i < plan.length - 1 ? plan[i + 1].participantCount : p.participantCount,
+  }));
 
   const createdRoundIds = await prisma.$transaction(async (tx) => {
     const rules = await getOrCreateLatestRulesVersion(tx, division.competitionId, actor);
     const ids: string[] = [];
 
-    for (const [i, step] of plan.entries()) {
+    for (const [i, step] of steps.entries()) {
       const order = existingRoundsCount + i + 1;
       const round = await tx.round.create({
         data: {
@@ -82,13 +72,14 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
           stageId: step.stageId,
           stageName: step.stageName,
           order,
+          participantCount: step.participantCount,
           finalistsCount: step.finalistsCount,
           rulesId: rules.id,
           autoGenerated: true,
         },
       });
 
-      const heatCount = Math.ceil(step.poolAtStart / division.heatCapacity);
+      const heatCount = Math.ceil(step.participantCount / division.heatCapacity);
       for (let number = 1; number <= heatCount; number++) {
         const heat = await tx.heat.create({ data: { roundId: round.id, number } });
         await writeAudit(tx, {
@@ -106,7 +97,7 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
       action: "division.generate_rounds",
       entityType: "Division",
       entityId: divisionId,
-      after: { leaderCount, followerCount, createdRoundIds: ids, stagesUsed: plan.map((p) => p.stageName) },
+      after: { createdRoundIds: ids, stagesUsed: steps.map((s) => s.stageName) },
     });
 
     return ids;

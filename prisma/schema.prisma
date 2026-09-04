@@ -707,6 +707,7 @@ model Division {
   rounds           Round[]
   registrations    Registration[]
   judgeAssignments JudgeAssignment[]
+  stagePlan        DivisionStagePlan[]
 
   @@unique([competitionId, categoryId])
 }
@@ -724,7 +725,27 @@ model RoundStageCatalog {
   isActive            Boolean @default(true)
   defaultAdvanceCount Int
 
-  rounds Round[]
+  rounds        Round[]
+  divisionPlans DivisionStagePlan[]
+}
+
+// План "сколько пар участвует в каждом этапе" для КОНКРЕТНОГО дивизиона —
+// задаётся один раз при создании дивизиона (до начала соревнования) и
+// дальше не меняется, т.к. на него опирается расчёт cutoff (Advancement
+// Engine, A13): finalistsCount раунда этапа X = participantCount СЛЕДУЮЩЕГО
+// по порядку сконфигурированного этапа (пользователь подтвердил
+// 2026-09-04). Заменяет прежний способ ("Сколько проходит дальше" при
+// ручном добавлении раунда) — см. docs/00_DECISIONS.md, A14.
+model DivisionStagePlan {
+  id               String            @id @default(cuid())
+  divisionId       String
+  division         Division          @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  stageId          String
+  stage            RoundStageCatalog @relation(fields: [stageId], references: [id])
+  participantCount Int
+  createdAt        DateTime          @default(now())
+
+  @@unique([divisionId, stageId])
 }
 
 // ---------------------------------------------------------------------------

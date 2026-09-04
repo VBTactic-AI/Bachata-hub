@@ -20,6 +20,14 @@ export type CreateCompetitionInput = z.infer<typeof createCompetitionSchema>;
 // останавливает отрезок, затем выбирается число партнёров для перехода).
 export const rotationModeSchema = z.enum(["TRACK_AUTO_SHIFT", "SEGMENT_MANUAL_SHIFT"]);
 
+// Сколько пар участвует в каждом этапе — задаётся ОДИН РАЗ при создании
+// дивизиона, до начала соревнования, дальше не меняется (docs/00_DECISIONS.md,
+// A14): это исходные данные для расчёта cutoff в Advancement Engine.
+export const divisionStagePlanEntrySchema = z.object({
+  stageId: z.string().min(1),
+  participantCount: z.coerce.number().int().positive(),
+});
+
 export const addDivisionSchema = z.object({
   categoryId: z.string().min(1),
   minAge: z.coerce.number().int().positive().optional(),
@@ -33,9 +41,23 @@ export const addDivisionSchema = z.object({
   rotationIntervalSec: z.coerce.number().int().positive().optional(),
   rotationShiftMin: z.coerce.number().int().positive().optional(),
   rotationShiftMax: z.coerce.number().int().positive().optional(),
+  stagePlan: z.array(divisionStagePlanEntrySchema).default([]),
   rules: z.record(z.unknown()).default({}),
 });
 export type AddDivisionInput = z.infer<typeof addDivisionSchema>;
+
+// Изменение вместимости/ротации уже созданного дивизиона — отдельно от
+// создания (по запросу пользователя, 2026-09-04): категория не меняется
+// здесь (для этого — смена дивизиона у конкретной регистрации,
+// change-registration-division.ts, другой смысл).
+export const updateDivisionSettingsSchema = z.object({
+  heatCapacity: z.coerce.number().int().positive(),
+  rotationMode: rotationModeSchema,
+  rotationIntervalSec: z.coerce.number().int().positive(),
+  rotationShiftMin: z.coerce.number().int().positive(),
+  rotationShiftMax: z.coerce.number().int().positive(),
+});
+export type UpdateDivisionSettingsInput = z.infer<typeof updateDivisionSettingsSchema>;
 
 export const createDivisionCategorySchema = z.object({
   name: z.string().min(1).max(100),
@@ -90,17 +112,6 @@ export const transitionCompetitionSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 export type TransitionCompetitionInput = z.infer<typeof transitionCompetitionSchema>;
-
-// Раунд теперь всегда ссылается на этап из общего справочника
-// (RoundStageCatalog) — свободного названия/типа больше нет
-// (docs/00_DECISIONS.md, A7). TIE_BREAK/DANCE_OFF создаёт сам Advancement
-// Engine (Этап 8), через этот эндпоинт недоступны.
-export const createRoundSchema = z.object({
-  stageId: z.string().min(1),
-  finalistsCount: z.coerce.number().int().positive(),
-  heatCapacity: z.coerce.number().int().positive().optional(),
-});
-export type CreateRoundInput = z.infer<typeof createRoundSchema>;
 
 export const generateRoundsSchema = z.object({}).default({});
 export type GenerateRoundsInput = z.infer<typeof generateRoundsSchema>;
