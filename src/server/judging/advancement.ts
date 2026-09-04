@@ -277,15 +277,60 @@ export async function maybeCalculateOnEntryInTx(tx: PrismaTx, roundId: string, a
 
 export type RoundScoringProgress = { required: number; submitted: number; complete: boolean };
 
+// Считает, сколько РЕАЛЬНО стоит на паркете последним (по order, среди
+// обычных раундов — TIE_BREAK не в счёт) раундом этого дивизиона — то есть
+// это финал. "Проходят N" в финале — не отсев, а призовые места, поэтому
+// финал НИКОГДА не пропускает судейство, даже если участников роли меньше N
+// (по прямому решению пользователя, 2026-09-04, дополняет A13).
+export async function isFinalStageInTx(tx: PrismaTx | typeof prisma, divisionId: string, order: number): Promise<boolean> {
+  const laterCount = await tx.round.count({ where: { divisionId, type: null, order: { gt: order } } });
+  return laterCount === 0;
+}
+
+// Роли, которых в ЭТОМ раунде не нужно оценивать судьям, потому что
+// реальных (не-помощников) участников этой роли не больше, чем мест —
+// все и так проходят дальше независимо от баллов (по запросу пользователя,
+// 2026-09-04). Финал и служебные TIE_BREAK-раунды исключены намеренно:
+// в финале "проходят N" — места, а не отсев (см. isFinalStageInTx); в
+// TIE_BREAK кандидатов по построению всегда больше свободных мест (иначе
+// перетанцовки не было бы), так что это условие для него и так никогда не
+// сработало бы — но явная проверка яснее, чем полагаться на совпадение.
+// Чистая функция (без обращения к БД) — переиспользуется и здесь, и в
+// getJudgeQueue (scoring.ts), и на странице организатора, каждый раз со
+// своими уже загруженными данными, без дублирования самого правила.
+export function rolesNotNeedingJudging(
+  roleCounts: Record<RegistrationRole, number>,
+  finalistsCount: number,
+  isFinalStage: boolean,
+  roundType: string | null
+): Set<RegistrationRole> {
+  const skipped = new Set<RegistrationRole>();
+  if (roundType === "TIE_BREAK" || isFinalStage) return skipped;
+  for (const role of ["LEADER", "FOLLOWER"] as const) {
+    if (roleCounts[role] > 0 && roleCounts[role] <= finalistsCount) skipped.add(role);
+  }
+  return skipped;
+}
+
 async function getRoundScoringProgressInTx(tx: PrismaTx | typeof prisma, roundId: string): Promise<RoundScoringProgress> {
-  const round = await tx.round.findUniqueOrThrow({ where: { id: roundId }, select: { divisionId: true } });
+  const round = await tx.round.findUniqueOrThrow({
+    where: { id: roundId },
+    select: { divisionId: true, finalistsCount: true, order: true, type: true },
+  });
   const heats = await tx.heat.findMany({
     where: { roundId },
     select: {
       draws: { orderBy: { version: "desc" }, take: 1, select: { participants: { where: { scored: true }, select: { id: true, role: true } } } },
     },
   });
-  const participants = heats.flatMap((h) => h.draws[0]?.participants ?? []);
+  const allParticipants = heats.flatMap((h) => h.draws[0]?.participants ?? []);
+  if (allParticipants.length === 0) return { required: 0, submitted: 0, complete: true };
+
+  const roleCounts: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
+  for (const p of allParticipants) roleCounts[p.role]++;
+  const isFinal = await isFinalStageInTx(tx, round.divisionId, round.order);
+  const skippedRoles = rolesNotNeedingJudging(roleCounts, round.finalistsCount ?? 0, isFinal, round.type);
+  const participants = allParticipants.filter((p) => !skippedRoles.has(p.role));
   if (participants.length === 0) return { required: 0, submitted: 0, complete: true };
 
   const assignments = await tx.judgeAssignment.findMany({ where: { divisionId: round.divisionId }, select: { role: true } });

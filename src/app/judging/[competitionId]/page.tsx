@@ -3,6 +3,7 @@ import { getActor } from "@/server/rbac/actor";
 import { getJudgeQueue } from "@/server/judging/scoring";
 import { JudgeScoreButtons } from "@/components/admin/JudgeScoreButtons";
 import { JudgingQueueBanner } from "@/components/admin/judging/JudgingQueueBanner";
+import { REGISTRATION_ROLE_LABELS as ROLE_LABELS } from "@/lib/competition-labels";
 
 // Отдельный мобильный экран для судьи (CLAUDE.md §40) — не часть большой
 // admin-страницы соревнования, чтобы не перегружать судью админскими
@@ -13,7 +14,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const items = await getJudgeQueue(competitionId);
+  const { items, skippedNotices } = await getJudgeQueue(competitionId);
   const byHeat = new Map<string, typeof items>();
   for (const item of items) {
     const list = byHeat.get(item.heatId) ?? [];
@@ -25,7 +26,17 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
     <div className="stack">
       <h1 className="page-title">Судейство</h1>
       <JudgingQueueBanner />
-      {items.length === 0 ? (
+      {skippedNotices.length > 0 && (
+        <div className="stack gap-1">
+          {skippedNotices.map((n) => (
+            <p key={`${n.roundId}:${n.role}`} className="hint-text rounded-app-sm border border-line p-2">
+              {n.divisionName} · {ROLE_LABELS[n.role] ?? n.role} не оценивается в этом раунде — участников не больше, чем мест, все проходят
+              автоматически.
+            </p>
+          ))}
+        </div>
+      )}
+      {items.length === 0 && skippedNotices.length === 0 ? (
         <p className="hint-text">Пока нет заходов, которые нужно оценить — вы не назначены судьёй ни на один дивизион, или заходы ещё не начались.</p>
       ) : (
         [...byHeat.entries()].map(([heatId, list]) => (

@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
@@ -27,7 +28,7 @@ import { DivisionJudgesPanel, type PoolJudge } from "@/components/admin/Division
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
-import { getRoundScoringProgress } from "@/server/judging/advancement";
+import { getRoundScoringProgress, rolesNotNeedingJudging } from "@/server/judging/advancement";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -169,6 +170,26 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     await Promise.all(scoringRoundIds.map(async (id) => [id, await getRoundScoringProgress(id)] as const))
   );
 
+  // Роли, которых в раунде не нужно оценивать (участников не больше, чем
+  // мест — все проходят автоматически, по запросу пользователя,
+  // 2026-09-04) — из уже загруженного дерева, без доп. запросов; "финал" —
+  // раунд, после которого в этом же дивизионе нет другого обычного раунда.
+  const skippedRolesByRoundId = new Map<string, RegistrationRole[]>();
+  for (const d of competition.divisions) {
+    for (const round of d.rounds) {
+      if (round.status !== "SCORING" || round.type === "TIE_BREAK") continue;
+      const roleCounts: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
+      for (const heat of round.heats) {
+        for (const p of heat.draws[0]?.participants ?? []) {
+          if (p.scored) roleCounts[p.role]++;
+        }
+      }
+      const isFinal = !d.rounds.some((r) => r.type === null && r.order > round.order);
+      const skipped = rolesNotNeedingJudging(roleCounts, round.finalistsCount ?? 0, isFinal, round.type);
+      if (skipped.size > 0) skippedRolesByRoundId.set(round.id, [...skipped]);
+    }
+  }
+
   const registrations = canViewAllRegistrations
     ? await prisma.registration.findMany({
         where: { competitionId: competition.id },
@@ -281,7 +302,18 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                           </div>
 
                           {round.status === "SCORING" && round.type !== "TIE_BREAK" && (
-                            <ScoringProgress {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />
+                            <>
+                              {skippedRolesByRoundId.has(round.id) && (
+                                <p className="hint-text">
+                                  {skippedRolesByRoundId
+                                    .get(round.id)!
+                                    .map((r) => ROLE_LABELS[r] ?? r)
+                                    .join(", ")}{" "}
+                                  не оценивается — участников не больше, чем мест, проходят автоматически.
+                                </p>
+                              )}
+                              <ScoringProgress {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />
+                            </>
                           )}
 
                           {round.status === "SCORING" && round.type === "TIE_BREAK" && canDecideTieBreak && (

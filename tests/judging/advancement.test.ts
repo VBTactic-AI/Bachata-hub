@@ -64,8 +64,14 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { calculateRoundResultsInTx, maybeCalculateOnEntryInTx, maybeFinalizeAfterScoreInTx, getRoundScoringProgress, recordTieBreakDecision } =
-  await import("@/server/judging/advancement");
+const {
+  calculateRoundResultsInTx,
+  maybeCalculateOnEntryInTx,
+  maybeFinalizeAfterScoreInTx,
+  getRoundScoringProgress,
+  recordTieBreakDecision,
+  rolesNotNeedingJudging,
+} = await import("@/server/judging/advancement");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -239,6 +245,92 @@ describe("calculateRoundResultsInTx() — вставка перетанцовк�
     // от последнего к первому — round3 (order 3->4) раньше round2 (order 2->3)
     expect(txRoundUpdate).toHaveBeenNthCalledWith(1, { where: { id: "round3" }, data: { order: 4 } });
     expect(txRoundUpdate).toHaveBeenNthCalledWith(2, { where: { id: "round2" }, data: { order: 3 } });
+  });
+});
+
+// По запросу пользователя (2026-09-04): если участников роли не больше,
+// чем мест на следующий раунд, отсеивать некого — судьи эту роль не
+// оценивают, в финале же "проходят N" — призовые места, а не отсев, поэтому
+// финал оценивает всегда.
+describe("rolesNotNeedingJudging() — чистая функция", () => {
+  it("пропускает роль, где участников не больше мест, вне финала", () => {
+    const skipped = rolesNotNeedingJudging({ LEADER: 5, FOLLOWER: 9 }, 6, false, null);
+    expect(skipped.has("LEADER")).toBe(true);
+    expect(skipped.has("FOLLOWER")).toBe(false);
+  });
+
+  it("не пропускает ничего в финале, даже если участников <= мест", () => {
+    const skipped = rolesNotNeedingJudging({ LEADER: 5, FOLLOWER: 9 }, 6, true, null);
+    expect(skipped.size).toBe(0);
+  });
+
+  it("не пропускает ничего в служебном раунде-перетанцовке", () => {
+    const skipped = rolesNotNeedingJudging({ LEADER: 3, FOLLOWER: 0 }, 2, false, "TIE_BREAK");
+    expect(skipped.size).toBe(0);
+  });
+
+  it("не пропускает роль, в которой участников вообще нет (нечего пропускать)", () => {
+    const skipped = rolesNotNeedingJudging({ LEADER: 0, FOLLOWER: 9 }, 6, false, null);
+    expect(skipped.has("LEADER")).toBe(false);
+  });
+
+  it("ровное равенство (участников столько же, сколько мест) тоже пропускается", () => {
+    const skipped = rolesNotNeedingJudging({ LEADER: 6, FOLLOWER: 9 }, 6, false, null);
+    expect(skipped.has("LEADER")).toBe(true);
+  });
+});
+
+describe("maybeCalculateOnEntryInTx() — роль без отсева не требует оценок судей", () => {
+  it("считает required только по ведомым, если ведущих не больше мест (раунд не финал)", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue(baseRound); // finalistsCount: 10
+    txRoundCount.mockResolvedValue(1); // есть более поздний раунд дивизиона — это не финал
+    const leaders = Array.from({ length: 3 }, (_, i) => ({ id: `l${i}`, role: "LEADER" as const }));
+    const followers = Array.from({ length: 12 }, (_, i) => ({ id: `f${i}`, role: "FOLLOWER" as const }));
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: [...leaders, ...followers] }] }]);
+    txJudgeAssignmentFindMany.mockResolvedValue([{ role: "LEADER" }, { role: "FOLLOWER" }]);
+    txJudgeScoreCount.mockResolvedValue(0);
+
+    await maybeCalculateOnEntryInTx(fakeTx as never, "round1", actor);
+
+    // required > 0 (ведомые) — раунд не завершается сразу же.
+    expect(txRoundResultCreateMany).not.toHaveBeenCalled();
+    const countArgs = txJudgeScoreCount.mock.calls.at(-1)![0] as { where: { drawParticipantId: { in: string[] } } };
+    const ids = countArgs.where.drawParticipantId.in;
+    expect(ids).toHaveLength(12);
+    expect(ids.every((id) => id.startsWith("f"))).toBe(true);
+  });
+
+  it("завершает раунд автоматически (все ADVANCED), если оценивать вообще нечего — все роли <= мест", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue(baseRound); // finalistsCount: 10
+    txRoundCount.mockResolvedValue(1); // не финал
+    txRoundResultCount.mockResolvedValue(0);
+    const leaders = Array.from({ length: 3 }, (_, i) => participant(`L${i}`, "LEADER", []));
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: leaders }] }]);
+    txJudgeAssignmentFindMany.mockResolvedValue([{ role: "LEADER" }]);
+
+    await maybeCalculateOnEntryInTx(fakeTx as never, "round1", actor);
+
+    expect(txRoundResultCreateMany).toHaveBeenCalled();
+    const rows = txRoundResultCreateMany.mock.calls[0][0].data as { status: string }[];
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.status === "ADVANCED")).toBe(true);
+  });
+
+  it("НЕ пропускает роль в финале — судьи оценивают, даже если участников <= мест", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue(baseRound);
+    txRoundCount.mockResolvedValue(0); // нет более поздних раундов дивизиона — это финал
+    const leaders = [
+      { id: "l0", role: "LEADER" as const },
+      { id: "l1", role: "LEADER" as const },
+    ];
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: leaders }] }]);
+    txJudgeAssignmentFindMany.mockResolvedValue([{ role: "LEADER" }]);
+    txJudgeScoreCount.mockResolvedValue(0);
+
+    await maybeCalculateOnEntryInTx(fakeTx as never, "round1", actor);
+
+    // required = 2 (не 0) — раунд ждёт реальных оценок судьи, а не проходит автоматически.
+    expect(txRoundResultCreateMany).not.toHaveBeenCalled();
   });
 });
 
