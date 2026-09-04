@@ -7,6 +7,8 @@ import Link from "next/link";
 import { DancerProfileView } from "@/components/DancerProfileView";
 import { ProfileEditForm } from "@/components/ProfileEditForm";
 import { AchievementForm } from "@/components/AchievementForm";
+import { CompetitorStatisticsCard } from "@/components/CompetitorStatisticsCard";
+import { getCompetitorStatistics } from "@/server/statistics/competitor-statistics";
 import { Card } from "@/components/ui/card";
 import {
   COMPETITION_STATUS_LABELS,
@@ -45,15 +47,18 @@ export default async function ProfilePage() {
 
   // "Мои соревнования" (слой 3) — данные были готовы с этапа 3, здесь
   // впервые выводятся в интерфейсе участника, а не только организатора.
-  const registrations = await prisma.registration.findMany({
-    where: { dancerId: dancer.id },
-    include: {
-      competition: { select: { id: true, name: true, status: true } },
-      division: { include: { category: true } },
-      checkIn: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const [registrations, statistics] = await Promise.all([
+    prisma.registration.findMany({
+      where: { dancerId: dancer.id },
+      include: {
+        competition: { select: { id: true, name: true, status: true } },
+        division: { include: { category: true } },
+        checkIn: true,
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    getCompetitorStatistics(dancer.id),
+  ]);
 
   return (
     <div className="stack">
@@ -61,6 +66,8 @@ export default async function ProfilePage() {
         <ProfileEditForm dancer={dancer} cities={cities} />
       </div>
       <DancerProfileView dancer={dancer} editable />
+
+      <CompetitorStatisticsCard statistics={statistics} />
 
       <div>
         <h2 className="page-title">Мои соревнования</h2>

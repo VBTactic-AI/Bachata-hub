@@ -55,6 +55,7 @@ export const PERMISSIONS = [
   "disqualification:create",
 
   "audit:view",
+  "statistics:view",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

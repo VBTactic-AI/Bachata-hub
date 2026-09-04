@@ -40,6 +40,10 @@ import { DivisionResultsPanel } from "@/components/admin/DivisionResultsPanel";
 import { CompetitionResultsPanel } from "@/components/admin/CompetitionResultsPanel";
 import { RoundAdvancementPublish } from "@/components/admin/RoundAdvancementPublish";
 import { getCurrentDivisionResults } from "@/server/results/results";
+import { CompetitionStatisticsPanel } from "@/components/admin/CompetitionStatisticsPanel";
+import { JudgeStatisticsPanel } from "@/components/admin/JudgeStatisticsPanel";
+import { getCompetitionStatistics } from "@/server/statistics/competition-statistics";
+import { getJudgeStatisticsForCompetition } from "@/server/statistics/judge-statistics";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -154,6 +158,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canCalculateResults = can(actor, "result:calculate", competition.id);
   const canReviewResults = can(actor, "result:review", competition.id);
   const canPublishResults = can(actor, "result:publish", competition.id);
+  const canViewStatistics = can(actor, "statistics:view", competition.id);
   const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
@@ -250,6 +255,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       )
     : new Map();
 
+  const [competitionStatistics, judgeStatistics] = canViewStatistics
+    ? await Promise.all([getCompetitionStatistics(competition.id), getJudgeStatisticsForCompetition(competition.id)])
+    : [null, []];
+
   const registrations = canViewAllRegistrations
     ? await prisma.registration.findMany({
         where: { competitionId: competition.id },
@@ -291,6 +300,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
       {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
+      {competitionStatistics && <CompetitionStatisticsPanel statistics={competitionStatistics} />}
+      {judgeStatistics.length > 0 && <JudgeStatisticsPanel judges={judgeStatistics} />}
       {isJudge && (
         <p>
           <a href={`/judging/${competition.id}`}>Моё судейство →</a>

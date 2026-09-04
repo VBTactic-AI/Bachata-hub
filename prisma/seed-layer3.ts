@@ -71,6 +71,7 @@ const PERMISSIONS = [
   ["disqualification:create", "Дисквалификация участника"],
 
   ["audit:view", "Просмотр audit log"],
+  ["statistics:view", "Просмотр статистики соревнования и судей"],
 ] as const;
 
 // scope: GLOBAL — роль назначается пользователю целиком на движок
@@ -121,6 +122,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "penalty:create",
     "disqualification:create",
     "audit:view",
+    "statistics:view",
   ],
   HEAD_JUDGE: [
     "competition:publish",
@@ -148,6 +150,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "penalty:create",
     "disqualification:create",
     "audit:view",
+    "statistics:view",
   ],
   JUDGE: ["score:submit", "score:view_own", "judge:ranking_submit", "judge:conflict_declare"],
   SCORER: ["score:view_all", "result:calculate"],
