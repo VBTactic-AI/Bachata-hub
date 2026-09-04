@@ -64,6 +64,21 @@ export const createDivisionCategorySchema = z.object({
 });
 export type CreateDivisionCategoryInput = z.infer<typeof createDivisionCategorySchema>;
 
+// Все поля необязательны по отдельности (можно поменять только порядок,
+// только название, или только видимость) — но хотя бы одно обязано
+// присутствовать. До этого порядок вообще нельзя было поменять после
+// создания (2026-09-04).
+export const updateDivisionCategorySchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    order: z.coerce.number().int().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((v) => v.name !== undefined || v.order !== undefined || v.isActive !== undefined, {
+    message: "Нужно указать хотя бы одно поле для изменения.",
+  });
+export type UpdateDivisionCategoryInput = z.infer<typeof updateDivisionCategorySchema>;
+
 export const createRoundStageSchema = z.object({
   name: z.string().min(1).max(100),
   defaultAdvanceCount: z.coerce.number().int().positive(),

@@ -6,10 +6,11 @@ vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[])
 
 const divisionFindUniqueOrThrow = vi.fn();
 const stagePlanFindMany = vi.fn();
-const roundCount = vi.fn();
+const roundFindMany = vi.fn();
 const rulesFindFirst = vi.fn();
 const rulesCreate = vi.fn();
 const roundCreate = vi.fn();
+const roundDeleteMany = vi.fn();
 const heatCreate = vi.fn();
 const auditCreate = vi.fn();
 
@@ -18,7 +19,7 @@ let heatCreateSeq = 0;
 
 const fakeTx = {
   competitionRules: { findFirst: rulesFindFirst, create: rulesCreate },
-  round: { create: (...a: unknown[]) => roundCreate(...a) },
+  round: { create: (...a: unknown[]) => roundCreate(...a), deleteMany: (...a: unknown[]) => roundDeleteMany(...a) },
   heat: { create: (...a: unknown[]) => heatCreate(...a) },
   auditLog: { create: auditCreate },
 };
@@ -27,7 +28,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
     divisionStagePlan: { findMany: (...a: unknown[]) => stagePlanFindMany(...a) },
-    round: { count: (...a: unknown[]) => roundCount(...a) },
+    round: { findMany: (...a: unknown[]) => roundFindMany(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
@@ -49,11 +50,12 @@ beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
   divisionFindUniqueOrThrow.mockReset().mockResolvedValue({ id: "div1", competitionId: "comp1", heatCapacity: 10 });
   stagePlanFindMany.mockReset().mockResolvedValue(FULL_PLAN);
-  roundCount.mockReset().mockResolvedValue(0);
+  roundFindMany.mockReset().mockResolvedValue([]);
   rulesFindFirst.mockReset().mockResolvedValue({ id: "rules-existing", version: 1 });
   rulesCreate.mockReset();
   roundCreateSeq = 0;
   roundCreate.mockReset().mockImplementation(() => Promise.resolve({ id: `round${++roundCreateSeq}` }));
+  roundDeleteMany.mockReset().mockResolvedValue({ count: 0 });
   heatCreateSeq = 0;
   heatCreate.mockReset().mockImplementation(() => Promise.resolve({ id: `heat${++heatCreateSeq}` }));
   auditCreate.mockReset();
@@ -101,14 +103,6 @@ describe("generateRounds()", () => {
     expect(heatCreate).toHaveBeenCalledTimes(3);
   });
 
-  it("новые раунды продолжают order с уже существующих", async () => {
-    roundCount.mockResolvedValue(3);
-
-    await generateRounds("div1");
-
-    expect(roundCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ order: 4 }) }));
-  });
-
   it("переиспользует вместимость заезда дивизиона для расчёта числа заездов", async () => {
     divisionFindUniqueOrThrow.mockResolvedValue({ id: "div1", competitionId: "comp1", heatCapacity: 3 });
 
@@ -116,5 +110,38 @@ describe("generateRounds()", () => {
 
     // Четвертьфинал: ceil(8/3)=3, Полуфинал: ceil(4/3)=2, Финал: ceil(2/3)=1.
     expect(heatCreate).toHaveBeenCalledTimes(3 + 2 + 1);
+  });
+});
+
+// Пересборка (docs/00_DECISIONS.md, A14, 2026-09-04): если у дивизиона уже
+// есть раунды, кнопка их заменяет, а не добавляет новые поверх.
+describe("generateRounds() — пересборка существующих раундов", () => {
+  it("если раундов ещё не было — order начинается с 1, deleteMany не вызывается", async () => {
+    await generateRounds("div1");
+
+    expect(roundDeleteMany).not.toHaveBeenCalled();
+    expect(roundCreate).toHaveBeenNthCalledWith(1, expect.objectContaining({ data: expect.objectContaining({ order: 1 }) }));
+  });
+
+  it("если все существующие раунды ещё DRAFT/READY — удаляет их и строит заново с order=1", async () => {
+    roundFindMany.mockResolvedValue([
+      { id: "old1", status: "DRAFT", stage: { name: "Четвертьфинал" } },
+      { id: "old2", status: "READY", stage: { name: "Полуфинал" } },
+    ]);
+
+    await generateRounds("div1");
+
+    expect(roundDeleteMany).toHaveBeenCalledWith({ where: { divisionId: "div1" } });
+    expect(roundCreate).toHaveBeenNthCalledWith(1, expect.objectContaining({ data: expect.objectContaining({ order: 1 }) }));
+    const auditActions = auditCreate.mock.calls.map((c) => c[0].data.action);
+    expect(auditActions).toContain("division.regenerate_rounds");
+  });
+
+  it("отклоняет пересборку, если хотя бы один раунд уже начат (не DRAFT/READY)", async () => {
+    roundFindMany.mockResolvedValue([{ id: "old1", status: "RUNNING", stage: { name: "Четвертьфинал" } }]);
+
+    await expect(generateRounds("div1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(roundDeleteMany).not.toHaveBeenCalled();
+    expect(roundCreate).not.toHaveBeenCalled();
   });
 });

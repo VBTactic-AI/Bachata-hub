@@ -306,6 +306,7 @@ describe("listHelperCandidates()", () => {
     heatFindUniqueOrThrow.mockResolvedValue({
       id: "heat1",
       roundId: "round1",
+      draws: [],
       round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
     });
     divisionFindMany.mockResolvedValue([
@@ -332,6 +333,7 @@ describe("listHelperCandidates()", () => {
     heatFindUniqueOrThrow.mockResolvedValue({
       id: "heat1",
       roundId: "round1",
+      draws: [],
       round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 3 } } },
     });
     divisionFindMany.mockResolvedValue([
@@ -353,6 +355,7 @@ describe("listHelperCandidates()", () => {
     heatFindUniqueOrThrow.mockResolvedValue({
       id: "heat1",
       roundId: "round1",
+      draws: [],
       round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
     });
     divisionFindMany.mockResolvedValue([{ id: "div1", category: { name: "Любители", order: 2 } }]);
@@ -374,6 +377,7 @@ describe("listHelperCandidates()", () => {
     heatFindUniqueOrThrow.mockResolvedValue({
       id: "heat1",
       roundId: "round1",
+      draws: [],
       round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 3 } } },
     });
     divisionFindMany.mockResolvedValue([
@@ -396,5 +400,99 @@ describe("listHelperCandidates()", () => {
     const result = await listHelperCandidates("heat1", "LEADER");
 
     expect(result.suggestedRegistrationId).toBe("reg-own-scored");
+  });
+
+  // По запросу пользователя (2026-09-04): список не должен предлагать
+  // повторно того, кто уже в этом заходе (реальный участник или уже
+  // позванный помощник) — раньше сервер бы это отклонил, но список всё
+  // равно его показывал.
+  it("не показывает того, кто уже в списке ЭТОГО захода", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      draws: [{ id: "draw1" }],
+      round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
+    });
+    divisionFindMany.mockResolvedValue([{ id: "div-higher", category: { name: "Продвинутые", order: 3 } }]);
+    registrationFindMany.mockResolvedValue([
+      { id: "reg-a", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
+      { id: "reg-b", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
+    ]);
+    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
+      Promise.resolve(where.drawId ? [{ registrationId: "reg-b" }] : [])
+    );
+
+    const result = await listHelperCandidates("heat1", "LEADER");
+
+    const group = result.divisions.find((d) => d.divisionId === "div-higher");
+    expect(group?.registrations.map((r) => r.id)).toEqual(["reg-a"]);
+  });
+
+  it("исключает группу целиком, если после фильтра в ней 0 кандидатов (естественный каскад к следующей)", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      draws: [{ id: "draw1" }],
+      round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
+    });
+    divisionFindMany.mockResolvedValue([
+      { id: "div-higher", category: { name: "Продвинутые", order: 3 } },
+      { id: "div-higher2", category: { name: "Профи", order: 4 } },
+    ]);
+    registrationFindMany.mockImplementation(({ where }: { where: { divisionId: string } }) =>
+      where.divisionId === "div-higher"
+        ? Promise.resolve([{ id: "reg-a", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } }])
+        : Promise.resolve([{ id: "reg-c", dancer: { displayName: "C" }, checkIn: { bibNumber: "3" } }])
+    );
+    // div-higher единственный кандидат уже в заходе -> группа пустеет,
+    // предложение должно перейти на div-higher2 без ручного действия.
+    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
+      Promise.resolve(where.drawId ? [{ registrationId: "reg-a" }] : [])
+    );
+
+    const result = await listHelperCandidates("heat1", "LEADER");
+
+    expect(result.divisions.map((d) => d.divisionId)).toEqual(["div-higher2"]);
+    expect(result.suggestedRegistrationId).toBe("reg-c");
+  });
+
+  // Сколько реально не хватает — чтобы UI не давал выбрать больше помощников,
+  // чем нужно (2026-09-04).
+  it("neededCount = разница между противоположной ролью и этой ролью в текущем заходе", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      draws: [{ id: "draw1" }],
+      round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
+    });
+    divisionFindMany.mockResolvedValue([]);
+    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
+      Promise.resolve(
+        where.drawId
+          ? [{ registrationId: "l1", role: "LEADER" }, { registrationId: "l2", role: "LEADER" }, { registrationId: "l3", role: "LEADER" }, { registrationId: "f1", role: "FOLLOWER" }]
+          : []
+      )
+    );
+
+    const result = await listHelperCandidates("heat1", "FOLLOWER");
+
+    expect(result.neededCount).toBe(2); // 3 ведущих - 1 ведомый
+  });
+
+  it("neededCount никогда не меньше 1, даже если стороны формально уже не в дефиците", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      draws: [{ id: "draw1" }],
+      round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
+    });
+    divisionFindMany.mockResolvedValue([]);
+    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
+      Promise.resolve(where.drawId ? [{ registrationId: "l1", role: "LEADER" }, { registrationId: "f1", role: "FOLLOWER" }] : [])
+    );
+
+    const result = await listHelperCandidates("heat1", "FOLLOWER");
+
+    expect(result.neededCount).toBe(1);
   });
 });

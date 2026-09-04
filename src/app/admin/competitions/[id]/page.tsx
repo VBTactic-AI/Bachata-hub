@@ -372,7 +372,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       ))
                     )}
                     <div className="flex flex-wrap items-start gap-4">
-                      <GenerateRoundsButton divisionId={d.id} />
+                      <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} />
                     </div>
                   </div>
                 )}

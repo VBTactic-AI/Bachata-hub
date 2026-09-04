@@ -11,7 +11,16 @@ import { getOrCreateLatestRulesVersion } from "./rules-version";
 // регистраций с общим RoundStageCatalog.defaultAdvanceCount — теперь
 // используется явный план организатора, живые числа не участвуют в расчёте
 // (только показываются рядом для сверки, до генерации). Явное действие
-// организатора (кнопка "Сгенерировать раунды"), не происходит само по себе.
+// организатора (кнопка "Перегенерировать раунды"), не происходит само по
+// себе.
+//
+// Пересборка (2026-09-04, по запросу пользователя): если у дивизиона уже
+// есть раунды, они не ДОБАВЛЯЮТСЯ к существующим, а заменяют их — старые
+// удаляются (каскадом снимает Heat/Draw/DrawParticipant/HeatRotation/
+// RoundResult), новые создаются заново с order=1. Разрешено только пока ни
+// один раунд ещё не сдвинулся дальше READY (жеребьёвка/заезды/оценки не
+// начинались) — иначе это будет не пересборка черновика, а тихое удаление
+// реальных результатов соревнования (CLAUDE.md §18/§39).
 export async function generateRounds(divisionId: string): Promise<{ createdRoundIds: string[] }> {
   const division = await prisma.division.findUniqueOrThrow({
     where: { id: divisionId },
@@ -19,18 +28,28 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
   });
   const actor = await requirePermission("round:create", division.competitionId);
 
-  const [plan, existingRoundsCount] = await Promise.all([
+  const [plan, existingRounds] = await Promise.all([
     prisma.divisionStagePlan.findMany({
       where: { divisionId },
       include: { stage: true },
       orderBy: { stage: { order: "asc" } },
     }),
-    prisma.round.count({ where: { divisionId } }),
+    prisma.round.findMany({
+      where: { divisionId },
+      select: { id: true, status: true, stage: { select: { name: true } } },
+    }),
   ]);
 
   if (plan.length === 0) {
     throw new ValidationFailedError(
       "Для этого дивизиона не задан план по этапам («сколько пар участвует в каждом раунде») — он настраивается один раз при создании дивизиона."
+    );
+  }
+
+  const startedRound = existingRounds.find((r) => r.status !== "DRAFT" && r.status !== "READY");
+  if (startedRound) {
+    throw new ValidationFailedError(
+      `Нельзя перегенерировать раунды: раунд «${startedRound.stage?.name ?? "—"}» уже начат (жеребьёвка/заезды/судейство) — пересборка удалила бы реальные результаты.`
     );
   }
 
@@ -46,11 +65,26 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
   }));
 
   const createdRoundIds = await prisma.$transaction(async (tx) => {
+    if (existingRounds.length > 0) {
+      await writeAudit(tx, {
+        actor,
+        action: "division.regenerate_rounds",
+        entityType: "Division",
+        entityId: divisionId,
+        before: { deletedRoundIds: existingRounds.map((r) => r.id) },
+        reason: "Пересборка: ни один раунд ещё не начат, старые раунды заменяются планом дивизиона.",
+      });
+      // Каскадом снимает Heat/Draw/DrawParticipant/HeatRotation/RoundResult —
+      // безопасно, т.к. все существующие раунды ещё DRAFT/READY (проверено
+      // выше), реальных результатов там нет.
+      await tx.round.deleteMany({ where: { divisionId } });
+    }
+
     const rules = await getOrCreateLatestRulesVersion(tx, division.competitionId, actor);
     const ids: string[] = [];
 
     for (const [i, step] of steps.entries()) {
-      const order = existingRoundsCount + i + 1;
+      const order = i + 1;
       const round = await tx.round.create({
         data: {
           divisionId,

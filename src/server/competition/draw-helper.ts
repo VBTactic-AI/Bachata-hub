@@ -18,6 +18,9 @@ export async function listHelperCandidates(
   role: RegistrationRole
 ): Promise<{
   suggestedRegistrationId: string | null;
+  // Сколько реально не хватает этой роли ПРЯМО СЕЙЧАС — чтобы UI не давал
+  // выбрать больше помощников, чем нужно (2026-09-04).
+  neededCount: number;
   divisions: {
     divisionId: string;
     categoryName: string;
@@ -28,22 +31,39 @@ export async function listHelperCandidates(
 }> {
   const heat = await prisma.heat.findUniqueOrThrow({
     where: { id: heatId },
-    include: { round: { include: { division: { include: { category: true } } } } },
+    include: {
+      round: { include: { division: { include: { category: true } } } },
+      draws: { orderBy: { version: "desc" }, take: 1, select: { id: true } },
+    },
   });
   const competitionId = heat.round.division.competitionId;
   await requirePermission("draw:override", competitionId);
 
   const ownDivisionId = heat.round.divisionId;
   const ownOrder = heat.round.division.category.order;
+  const currentDrawId = heat.draws[0]?.id ?? null;
 
-  const [divisions, alreadyScored] = await Promise.all([
+  const [divisions, alreadyScored, inThisHeat] = await Promise.all([
     prisma.division.findMany({ where: { competitionId }, include: { category: true } }),
     prisma.drawParticipant.findMany({
       where: { scored: true, draw: { heat: { roundId: heat.roundId, id: { not: heatId } } } },
       select: { registrationId: true },
     }),
+    // Кто уже в списке ЭТОГО захода, в ПОСЛЕДНЕЙ версии жеребьёвки (реальный
+    // участник или уже позванный помощник) — не показываем повторно, по
+    // запросу пользователя (2026-09-04): повторный выбор того же человека
+    // всё равно отклонился бы на сервере, но не должен даже предлагаться.
+    currentDrawId
+      ? prisma.drawParticipant.findMany({ where: { drawId: currentDrawId }, select: { registrationId: true, role: true } })
+      : Promise.resolve([]),
   ]);
   const alreadyScoredIds = new Set(alreadyScored.map((p) => p.registrationId));
+  const alreadyInHeatIds = new Set(inThisHeat.map((p) => p.registrationId));
+  const opposingRole: RegistrationRole = role === "LEADER" ? "FOLLOWER" : "LEADER";
+  const neededCount = Math.max(
+    1,
+    inThisHeat.filter((p) => p.role === opposingRole).length - inThisHeat.filter((p) => p.role === role).length
+  );
 
   const result: {
     divisionId: string;
@@ -67,7 +87,10 @@ export async function listHelperCandidates(
     // станцевал (получил scored=true) в другом заезде этого раунда — иначе
     // это была бы попытка тайком добавить лишнего "настоящего" участника
     // мимо обычной жеребьёвки.
-    const eligible = division.id === ownDivisionId ? regs.filter((r) => alreadyScoredIds.has(r.id)) : regs;
+    const roleEligible = division.id === ownDivisionId ? regs.filter((r) => alreadyScoredIds.has(r.id)) : regs;
+    // Кто уже в списке этого захода (реальный участник или уже позванный
+    // помощник) — не предлагаем повторно (2026-09-04).
+    const eligible = roleEligible.filter((r) => !alreadyInHeatIds.has(r.id));
     if (eligible.length === 0) continue;
     result.push({
       divisionId: division.id,
@@ -87,7 +110,7 @@ export async function listHelperCandidates(
     .sort((a, b) => b.categoryOrder - a.categoryOrder);
   const suggestedDivision = higher[0] ?? own ?? lower[0] ?? null;
 
-  return { suggestedRegistrationId: suggestedDivision?.registrations[0]?.id ?? null, divisions: result };
+  return { suggestedRegistrationId: suggestedDivision?.registrations[0]?.id ?? null, neededCount, divisions: result };
 }
 
 type HelperSource = "GUEST_HIGHER_CATEGORY" | "REUSED_ALREADY_SCORED";

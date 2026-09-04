@@ -5,6 +5,7 @@ import { can } from "@/server/rbac/authorize";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CreateDivisionCategoryForm } from "@/components/admin/CreateDivisionCategoryForm";
+import { EditDivisionCategoryForm } from "@/components/admin/EditDivisionCategoryForm";
 import { ToggleCategoryActiveButton } from "@/components/admin/ToggleCategoryActiveButton";
 
 export default async function DivisionCategoriesPage() {
@@ -21,20 +22,18 @@ export default async function DivisionCategoriesPage() {
         <p className="page-subtitle">
           Общий справочник для всех соревнований. Организаторы выбирают дивизионы из этого списка — сами названия не
           придумывают. «Скрыть» не удаляет категорию, а просто убирает её из выбора для новых дивизионов; уже
-          созданные дивизионы и регистрации не меняются.
+          созданные дивизионы и регистрации не меняются. Порядок определяет иерархию уровней (по нему движок ищет
+          "категорию выше" для помощников при жеребьёвке) — чем больше число, тем "выше" категория; можно поправить
+          в любой момент.
         </p>
       </div>
 
       <div className="stack gap-3">
         {categories.map((c) => (
           <Card key={c.id} className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <strong>{c.name}</strong>
-              {!c.isActive && (
-                <span className="ml-2">
-                  <Badge variant="pending">скрыта</Badge>
-                </span>
-              )}
+            <div className="flex flex-wrap items-center gap-2">
+              <EditDivisionCategoryForm categoryId={c.id} name={c.name} order={c.order} />
+              {!c.isActive && <Badge variant="pending">скрыта</Badge>}
             </div>
             <ToggleCategoryActiveButton categoryId={c.id} isActive={c.isActive} />
           </Card>
