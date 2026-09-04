@@ -47,25 +47,6 @@ export async function assignJudge(
   });
 }
 
-export async function removeJudgeAssignment(assignmentId: string): Promise<void> {
-  const assignment = await prisma.judgeAssignment.findUniqueOrThrow({
-    where: { id: assignmentId },
-    include: { division: { select: { competitionId: true } } },
-  });
-  const actor = await requirePermission("judge:assign", assignment.division.competitionId);
-
-  await prisma.$transaction(async (tx) => {
-    await tx.judgeAssignment.delete({ where: { id: assignmentId } });
-    await writeAudit(tx, {
-      actor,
-      action: "judge.unassign",
-      entityType: "JudgeAssignment",
-      entityId: assignmentId,
-      before: { divisionId: assignment.divisionId, judgeUserId: assignment.judgeUserId, role: assignment.role },
-    });
-  });
-}
-
 export type DivisionJudge = {
   id: string;
   role: RegistrationRole;
@@ -84,3 +65,58 @@ export async function listDivisionJudges(divisionId: string): Promise<DivisionJu
   });
   return rows.map((r) => ({ id: r.id, role: r.role, judgeUserId: r.judgeUserId, judgeEmail: r.judge.email }));
 }
+
+// Устанавливает СЕТКУ судей дивизиона одним "Сохранить" (две таблички —
+// ведущих/ведомых судят галочками из общего пула судей соревнования, по
+// запросу пользователя, 2026-09-04) — реконсиляция диффом (создать
+// недостающих, убрать снятых), а не добавление по одному. `judgeUserId` в
+// обоих списках — из пула судей ЭТОГО соревнования (см. listCompetitionJudgePool);
+// новый (ещё не судивший это соревнование) человек добавляется отдельным
+// действием (assignJudge) — здесь только переключение уже известных.
+export async function setDivisionJudges(
+  divisionId: string,
+  leaderJudgeUserIds: string[],
+  followerJudgeUserIds: string[]
+): Promise<void> {
+  const division = await prisma.division.findUniqueOrThrow({ where: { id: divisionId }, select: { competitionId: true } });
+  const actor = await requirePermission("judge:assign", division.competitionId);
+
+  const desired: { role: RegistrationRole; judgeUserId: string }[] = [
+    ...[...new Set(leaderJudgeUserIds)].map((judgeUserId) => ({ role: "LEADER" as const, judgeUserId })),
+    ...[...new Set(followerJudgeUserIds)].map((judgeUserId) => ({ role: "FOLLOWER" as const, judgeUserId })),
+  ];
+
+  const existing = await prisma.judgeAssignment.findMany({ where: { divisionId } });
+  const desiredKeys = new Set(desired.map((d) => `${d.role}:${d.judgeUserId}`));
+  const existingKeys = new Set(existing.map((e) => `${e.role}:${e.judgeUserId}`));
+
+  const toRemove = existing.filter((e) => !desiredKeys.has(`${e.role}:${e.judgeUserId}`));
+  const toAdd = desired.filter((d) => !existingKeys.has(`${d.role}:${d.judgeUserId}`));
+  if (toRemove.length === 0 && toAdd.length === 0) return;
+
+  await prisma.$transaction(async (tx) => {
+    for (const e of toRemove) {
+      await tx.judgeAssignment.delete({ where: { id: e.id } });
+      await writeAudit(tx, {
+        actor,
+        action: "judge.unassign",
+        entityType: "JudgeAssignment",
+        entityId: e.id,
+        before: { divisionId, judgeUserId: e.judgeUserId, role: e.role },
+      });
+    }
+    for (const d of toAdd) {
+      const created = await tx.judgeAssignment.create({
+        data: { divisionId, judgeUserId: d.judgeUserId, role: d.role, assignedById: actor.userId },
+      });
+      await writeAudit(tx, {
+        actor,
+        action: "judge.assign",
+        entityType: "JudgeAssignment",
+        entityId: created.id,
+        after: { divisionId, judgeUserId: d.judgeUserId, role: d.role },
+      });
+    }
+  });
+}
+

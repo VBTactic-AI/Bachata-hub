@@ -17,13 +17,18 @@ import { ROUND_STATUS_LABELS } from "@/lib/competition-labels";
 // сам же завершается (COMPLETED), как только определены все проходящие —
 // по запросу пользователя, 2026-09-04 (round-state.ts/advancement.ts).
 // Когда кнопки нет, ниже показывается только статус — этого достаточно.
+// У RUNNING тоже больше нет кнопки — своя "Пауза" раунда убрана (по запросу
+// пользователя, 2026-09-04): путалась с паузой захода/ротации и вызывала
+// реальный баг застревания раунда (docs/00_DECISIONS.md, A17). Пауза
+// осталась только у самого захода (HeatStatusControls) и у ротации партнёров
+// (RotationPanel) — это другие, независимые кнопки.
 const NEXT: Record<RoundStatus, RoundStatus[]> = {
   DRAFT: ["READY"],
   READY: [],
   DRAWING: ["DRAW_LOCKED"],
   DRAW_LOCKED: ["RUNNING"],
-  RUNNING: ["PAUSED"],
-  PAUSED: ["RUNNING"],
+  RUNNING: [],
+  PAUSED: [],
   FINISHED: [],
   SCORING: [],
   COMPLETED: [],
@@ -35,7 +40,7 @@ const ACTION_LABELS: Record<RoundStatus, string> = {
   DRAWING: "Начать жеребьёвку",
   DRAW_LOCKED: "Зафиксировать жеребьёвку",
   RUNNING: "Запустить",
-  PAUSED: "Пауза",
+  PAUSED: "",
   FINISHED: "",
   SCORING: "",
   COMPLETED: "",

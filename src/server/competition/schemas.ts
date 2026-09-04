@@ -131,17 +131,13 @@ export type TransitionCompetitionInput = z.infer<typeof transitionCompetitionSch
 export const generateRoundsSchema = z.object({}).default({});
 export type GenerateRoundsInput = z.infer<typeof generateRoundsSchema>;
 
-export const roundStatusSchema = z.enum([
-  "DRAFT",
-  "READY",
-  "DRAWING",
-  "DRAW_LOCKED",
-  "RUNNING",
-  "PAUSED",
-  "FINISHED",
-  "SCORING",
-  "COMPLETED",
-]);
+// PAUSED намеренно отсутствует — пауза раунда как отдельная кнопка убрана
+// (по запросу пользователя, 2026-09-04): она путалась с паузой захода и
+// вызвала реальный баг (раунд застревал, docs/00_DECISIONS.md A17), а
+// единственный её эффект (не дать стартовать следующий заход) и так
+// достигается тем, что "Запустить" просто не нажимают. Пауза остаётся у
+// захода и у ротации партнёров — это разные, самостоятельные вещи.
+export const roundStatusSchema = z.enum(["DRAFT", "READY", "DRAWING", "DRAW_LOCKED", "RUNNING", "FINISHED", "SCORING", "COMPLETED"]);
 
 export const transitionRoundSchema = z.object({
   to: roundStatusSchema,
@@ -209,6 +205,15 @@ export const assignJudgeSchema = z.object({
   role: registrationRoleSchema,
 });
 export type AssignJudgeInput = z.infer<typeof assignJudgeSchema>;
+
+// Судейская сетка дивизиона одним "Сохранить" (две таблички — кто судит
+// ведущих/ведомых, галочки из общего пула судей соревнования) — по запросу
+// пользователя, 2026-09-04, заменяет добавление судей по одному.
+export const setDivisionJudgesSchema = z.object({
+  leaderJudgeUserIds: z.array(z.string().min(1)),
+  followerJudgeUserIds: z.array(z.string().min(1)),
+});
+export type SetDivisionJudgesInput = z.infer<typeof setDivisionJudgesSchema>;
 
 export const submitJudgeScoreSchema = z.object({
   value: z.coerce.number().int().min(0),

@@ -255,16 +255,16 @@ describe("transitionRound() — раунды дивизиона по очере�
     expect(txRoundUpdateMany).not.toHaveBeenCalled();
   });
 
-  it("не проверяет очередь для переходов, отличных от RUNNING", async () => {
+  it("не проверяет очередь для переходов, отличных от RUNNING/DRAWING", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({
       id: "round2",
       order: 2,
-      status: "RUNNING",
+      status: "DRAFT",
       statusVersion: 1,
       division: { id: "div1", competitionId: "comp1" },
     });
 
-    await transitionRound("round2", "PAUSED");
+    await transitionRound("round2", "READY");
 
     expect(txRoundFindFirst).not.toHaveBeenCalled();
     expect(txRoundUpdateMany).toHaveBeenCalledOnce();

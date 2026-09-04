@@ -37,7 +37,6 @@ export const ROUND_STATUS_LABELS: Record<string, string> = {
   DRAWING: "Жеребьёвка",
   DRAW_LOCKED: "Жеребьёвка зафиксирована",
   RUNNING: "Идёт",
-  PAUSED: "Пауза",
   FINISHED: "Завершён",
   SCORING: "Подсчёт баллов",
   COMPLETED: "Готово",

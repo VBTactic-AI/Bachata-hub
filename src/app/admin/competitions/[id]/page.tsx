@@ -23,8 +23,7 @@ import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
 import { SplitHeatButton } from "@/components/admin/SplitHeatButton";
 import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
 import { RotationPanel } from "@/components/admin/RotationPanel";
-import { AssignJudgeForm } from "@/components/admin/AssignJudgeForm";
-import { RemoveJudgeButton } from "@/components/admin/RemoveJudgeButton";
+import { DivisionJudgesPanel, type PoolJudge } from "@/components/admin/DivisionJudgesPanel";
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
@@ -63,7 +62,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       take: 1,
                       include: {
                         participants: {
-                          include: { registration: { include: { dancer: true, checkIn: true } } },
+                          include: {
+                            registration: {
+                              include: { dancer: true, checkIn: true, division: { select: { category: { select: { name: true } } } } },
+                            },
+                          },
                           orderBy: { calledOrder: "asc" },
                         },
                       },
@@ -143,6 +146,18 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     : [[], []];
   const countFor = (rows: { divisionId: string; role: string; _count: { _all: number } }[], divisionId: string, role: string) =>
     rows.find((r) => r.divisionId === divisionId && r.role === role)?._count._all ?? 0;
+
+  // Общий пул судей всего соревнования (по всем дивизионам) — источник
+  // галочек в DivisionJudgesPanel; уже загружен вместе с деревом
+  // соревнования выше, отдельным запросом не тянем (docs/00_DECISIONS.md,
+  // A13 — один судья может судить несколько дивизионов).
+  const competitionJudgePoolMap = new Map<string, PoolJudge>();
+  for (const d of competition.divisions) {
+    for (const ja of d.judgeAssignments) {
+      competitionJudgePoolMap.set(ja.judgeUserId, { judgeUserId: ja.judgeUserId, judgeEmail: ja.judge.email });
+    }
+  }
+  const competitionJudgePool = [...competitionJudgePoolMap.values()].sort((a, b) => a.judgeEmail.localeCompare(b.judgeEmail));
 
   // Прогресс подсчёта баллов считается заранее (не внутри .map()) — реальные
   // цифры "сколько оценок собрано / сколько нужно", не выдуманный прогресс.
@@ -242,24 +257,12 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 )}
 
                 {canAssignJudges && (
-                  <div className="stack gap-1.5 mt-2">
-                    <p className="hint-text">
-                      Судьи: {d.judgeAssignments.length === 0 ? "не назначены" : ""}
-                    </p>
-                    {d.judgeAssignments.length > 0 && (
-                      <ul className="stack gap-1">
-                        {d.judgeAssignments.map((ja) => (
-                          <li key={ja.id} className="flex items-center gap-2">
-                            <span>
-                              {ja.judge.email} · {ROLE_LABELS[ja.role] ?? ja.role}
-                            </span>
-                            <RemoveJudgeButton assignmentId={ja.id} />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <AssignJudgeForm divisionId={d.id} />
-                  </div>
+                  <DivisionJudgesPanel
+                    divisionId={d.id}
+                    pool={competitionJudgePool}
+                    leaderJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ja.judgeUserId)}
+                    followerJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ja.judgeUserId)}
+                  />
                 )}
 
                 {canManageRounds && (

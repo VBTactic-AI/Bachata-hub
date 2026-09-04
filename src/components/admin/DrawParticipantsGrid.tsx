@@ -6,7 +6,11 @@ type Participant = {
   id: string;
   role: "LEADER" | "FOLLOWER";
   scored: boolean;
-  registration: { dancer: { displayName: string }; checkIn: { bibNumber: string | null } | null };
+  registration: {
+    dancer: { displayName: string };
+    checkIn: { bibNumber: string | null } | null;
+    division: { category: { name: string } };
+  };
 };
 
 function Column({
@@ -33,6 +37,11 @@ function Column({
             <span>
               {p.registration.dancer.displayName}
               {p.registration.checkIn?.bibNumber ? ` №${p.registration.checkIn.bibNumber}` : ""}
+              {/* Помощник обычно из другого дивизиона — категория нужна,
+                  чтобы сразу было видно, кого именно позвали (по запросу
+                  пользователя, 2026-09-04). У реальных участников заезда
+                  категория и так известна из самого дивизиона — не дублируем. */}
+              {!p.scored ? ` · ${p.registration.division.category.name}` : ""}
             </span>
             {!p.scored && <Badge variant="pending">помощник</Badge>}
             {!p.scored && canEditDraw && (

@@ -12,8 +12,18 @@ import { getRoundEligiblePool } from "../competition/draw-engine";
 
 type PrismaTx = Prisma.TransactionClient;
 
-// Без RESUMED — это переход (PAUSED -> RUNNING), а не отдельное состояние
-// (docs/00_DECISIONS.md, A2).
+// Без RESUMED (docs/00_DECISIONS.md, A2).
+// У раунда больше нет своей собственной кнопки "Пауза" (RUNNING -> PAUSED
+// как ручной переход убран, по запросу пользователя 2026-09-04) — она
+// путалась с паузой конкретного захода/ротации партнёров (разные, никак не
+// связанные вещи) и вызвала реальный баг: раунд, поставленный на паузу,
+// застревал, если его последний заход в этот момент завершался (заход эту
+// паузу раунда не проверяет и не блокируется ей) — docs/00_DECISIONS.md, A17.
+// Единственный реальный эффект паузы раунда — не дать стартовать следующий
+// заход — и так достигается тем, что кнопку "Запустить" у захода просто не
+// нажимают; отдельная кнопка была не нужна. RoundStatus.PAUSED остаётся в
+// схеме БД (не мигрируем ради ещё не встречавшегося в проде значения), но
+// эта таблица переходов в него больше не ведёт — недостижим через обычный UI.
 // FINISHED и SCORING достижимы только автоматически, из
 // autoAdvanceRoundIfAllHeatsFinishedInTx (по запросу пользователя,
 // 2026-09-04: когда все заходы раунда оттанцевали, кнопка не нужна) —
@@ -28,8 +38,8 @@ const TABLE: TransitionTable<RoundStatus> = {
   READY: ["DRAWING"],
   DRAWING: ["DRAW_LOCKED"],
   DRAW_LOCKED: ["RUNNING"],
-  RUNNING: ["PAUSED"],
-  PAUSED: ["RUNNING"],
+  RUNNING: [],
+  PAUSED: [],
   FINISHED: [],
   SCORING: [],
   COMPLETED: [],
@@ -46,8 +56,6 @@ function permissionFor(to: RoundStatus): Permission {
       return "draw:generate";
     case "DRAW_LOCKED":
       return "draw:lock";
-    case "PAUSED":
-      return "round:pause";
     case "FINISHED":
     case "COMPLETED":
       return "round:end";
@@ -203,14 +211,14 @@ export async function transitionRound(
 // остаётся тот, кто завершил последний заход. Тихо ничего не делает, если
 // раунд ещё не все заходы завершены — не ошибка, а "рано".
 //
-// RUNNING и PAUSED — оба валидны здесь (найдено на живом баге 2026-09-04):
-// у раунда своя отдельная кнопка "Пауза" (RoundStatusControls), не
-// связанная с паузой конкретного захода/ротации. Если организатор ставит
-// раунд на паузу, а последний заход при этом всё равно завершается (заход
-// такую паузу сейчас не блокирует), раунд не должен застревать в PAUSED
-// навсегда — до этой правки именно так и происходило: heat.status уже
-// FINISHED, а Round.status оставался PAUSED без единого способа сдвинуться
-// дальше через обычный UI.
+// RUNNING и PAUSED — оба валидны здесь. Раньше у раунда была своя отдельная
+// кнопка "Пауза" (RoundStatusControls) — она приводила ровно к этому: заход
+// эту паузу не проверял и завершался всё равно, а раунд молча оставался в
+// PAUSED навсегда, без единого способа сдвинуться дальше через обычный UI
+// (docs/00_DECISIONS.md, A17). Кнопку убрали (2026-09-04) — RoundStatus
+// PAUSED теперь недостижим через обычный UI, но проверка на него здесь
+// намеренно осталась: дешёвая страховка на случай прямой правки БД (как,
+// собственно, и обнаружился исходный баг), ничего не стоит и не мешает.
 export async function autoAdvanceRoundIfAllHeatsFinishedInTx(tx: PrismaTx, roundId: string, actor: Actor): Promise<void> {
   const round = await tx.round.findUniqueOrThrow({ where: { id: roundId } });
   if (round.status !== "RUNNING" && round.status !== "PAUSED") return;
