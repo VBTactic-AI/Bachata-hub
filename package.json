@@ -14,6 +14,7 @@
     "seed": "tsx prisma/seed.ts",
     "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "seed:layer3": "tsx prisma/seed-layer3.ts",
+    "seed:judges": "tsx prisma/seed-judges.ts",
     "test": "vitest run"
   },
   "dependencies": {
