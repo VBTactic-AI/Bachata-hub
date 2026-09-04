@@ -74,16 +74,30 @@ export async function listHelperCandidates(
     registrations: { id: string; displayName: string; bibNumber: string | null }[];
   }[] = [];
 
+  // Один запрос по всем дивизионам соревнования сразу (divisionId IN [...])
+  // вместо цикла с отдельным findMany на каждый дивизион — на удалённой БД
+  // (Supabase pooler, ~150мс round-trip) цикл по N дивизионам стоил бы N
+  // отдельных запросов ради списка, который тут же режется в JS.
+  const allRegs = divisions.length
+    ? await prisma.registration.findMany({
+        where: {
+          divisionId: { in: divisions.map((d) => d.id) },
+          role,
+          status: "REGISTERED",
+          checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
+        },
+        include: { dancer: true, checkIn: { select: { bibNumber: true } } },
+      })
+    : [];
+  const regsByDivision = new Map<string, typeof allRegs>();
+  for (const r of allRegs) {
+    const arr = regsByDivision.get(r.divisionId);
+    if (arr) arr.push(r);
+    else regsByDivision.set(r.divisionId, [r]);
+  }
+
   for (const division of divisions) {
-    const regs = await prisma.registration.findMany({
-      where: {
-        divisionId: division.id,
-        role,
-        status: "REGISTERED",
-        checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
-      },
-      include: { dancer: true, checkIn: { select: { bibNumber: true } } },
-    });
+    const regs = regsByDivision.get(division.id) ?? [];
     // В своём дивизионе помощником может быть только тот, кто уже
     // станцевал (получил scored=true) в другом заезде этого раунда — иначе
     // это была бы попытка тайком добавить лишнего "настоящего" участника

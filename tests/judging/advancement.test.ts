@@ -17,6 +17,7 @@ const txHeatFindMany = vi.fn();
 const txHeatCreate = vi.fn();
 const txDrawCreate = vi.fn();
 const txDrawParticipantCreate = vi.fn();
+const txDrawParticipantCreateMany = vi.fn();
 const txRoundResultCount = vi.fn();
 const txRoundResultCreateMany = vi.fn();
 const txRoundResultUpsert = vi.fn();
@@ -36,7 +37,7 @@ const fakeTx = {
   },
   heat: { findMany: txHeatFindMany, create: txHeatCreate },
   draw: { create: txDrawCreate },
-  drawParticipant: { create: txDrawParticipantCreate },
+  drawParticipant: { create: txDrawParticipantCreate, createMany: txDrawParticipantCreateMany },
   roundResult: {
     count: txRoundResultCount,
     createMany: txRoundResultCreateMany,
@@ -93,6 +94,7 @@ beforeEach(() => {
   txHeatCreate.mockReset().mockResolvedValue({ id: "tbHeat1" });
   txDrawCreate.mockReset().mockResolvedValue({ id: "tbDraw1" });
   txDrawParticipantCreate.mockReset();
+  txDrawParticipantCreateMany.mockReset();
   txRoundResultCount.mockReset().mockResolvedValue(0);
   txRoundResultCreateMany.mockReset();
   txRoundResultUpsert.mockReset();
@@ -182,7 +184,8 @@ describe("calculateRoundResultsInTx() — классический сценар�
     expect(txRoundFindMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { divisionId: "div1", order: { gte: 2 } } })
     );
-    expect(txDrawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === true)).toHaveLength(3);
+    const created: { scored: boolean }[] = txDrawParticipantCreateMany.mock.calls[0][0].data;
+    expect(created.filter((p) => p.scored === true)).toHaveLength(3);
     // сам Round создаётся через tx.round.create — но в этих тестах round.create
     // не замокан отдельным полем; заменим на прямую проверку audit-события ниже.
   });

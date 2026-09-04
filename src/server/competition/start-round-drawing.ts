@@ -33,6 +33,7 @@ export async function startRoundDrawing(roundId: string, callOrder: CallOrder): 
         await formDrawInTx(tx, {
           heatId: heat.id,
           roundId,
+          roundOrder: round.order,
           divisionId: round.divisionId,
           heatCapacity,
           callOrder,

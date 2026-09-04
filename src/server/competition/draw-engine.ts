@@ -283,6 +283,11 @@ export async function formDrawInTx(
   params: {
     heatId: string;
     roundId: string;
+    // Порядок раунда в дивизионе — вызывающий код (startRoundDrawing,
+    // rerollHeatDraw) уже загрузил Round целиком до вызова, повторный
+    // round.findUniqueOrThrow тут был бы лишним round-trip'ом на КАЖДЫЙ heat
+    // раунда (замерено: ~150мс каждый, см. schema.prisma).
+    roundOrder: number;
     divisionId: string;
     heatCapacity: number;
     callOrder: CallOrder;
@@ -290,7 +295,7 @@ export async function formDrawInTx(
     reason?: string;
   }
 ): Promise<{ id: string; leaderCount: number; followerCount: number }> {
-  const { heatId, roundId, divisionId, heatCapacity, callOrder, actor, reason } = params;
+  const { heatId, roundId, roundOrder, divisionId, heatCapacity, callOrder, actor, reason } = params;
 
   const lastDraw = await tx.draw.findFirst({ where: { heatId }, orderBy: { version: "desc" } });
   const version = (lastDraw?.version ?? 0) + 1;
@@ -301,7 +306,6 @@ export async function formDrawInTx(
 
   const seed = callOrder === "RANDOM" ? generateSeed() : null;
   const excludeIds = await alreadyScoredElsewhereInRound(tx, roundId, heatId);
-  const { order: roundOrder } = await tx.round.findUniqueOrThrow({ where: { id: roundId }, select: { order: true } });
   const onlyRegistrationIds = await advancedRegistrationIdsFromPreviousRound(tx, divisionId, roundOrder);
 
   const leaders = (
@@ -315,17 +319,28 @@ export async function formDrawInTx(
     data: { heatId, version, seed, algorithmVersion: DRAW_ALGORITHM_VERSION, createdById: actor.userId, reason },
   });
 
-  let calledOrder = 1;
-  for (const reg of leaders) {
-    await tx.drawParticipant.create({
-      data: { drawId: draw.id, registrationId: reg.id, role: "LEADER", scored: true, calledOrder: calledOrder++ },
-    });
-  }
-  for (const reg of followers) {
-    await tx.drawParticipant.create({
-      data: { drawId: draw.id, registrationId: reg.id, role: "FOLLOWER", scored: true, calledOrder: calledOrder++ },
-    });
-  }
+  // Список вызванных вставляется ОДНИМ batch-запросом (createMany), а не по
+  // одному create() на человека — на удалённой БД (Supabase pooler, ~150мс
+  // round-trip) заезд на 10-16 человек иначе стоил бы 10-16 отдельных
+  // round-trip'ов только на этот шаг (подтверждено pg_stat_statements:
+  // единичные INSERT INTO DrawParticipant выполняются на Postgres <1мс —
+  // время целиком уходит на сетевые round-trip'ы, не на саму вставку).
+  // calledOrder сохраняет тот же порядок, что и раньше: сначала ведущие,
+  // потом ведомые.
+  const leaderRows = leaders.map((reg, i) => ({
+    drawId: draw.id,
+    registrationId: reg.id,
+    role: "LEADER" as const,
+    scored: true,
+    calledOrder: i + 1,
+  }));
+  const followerRows = followers.map((reg, i) => ({
+    drawId: draw.id,
+    registrationId: reg.id,
+    role: "FOLLOWER" as const,
+    scored: true,
+    calledOrder: leaders.length + i + 1,
+  }));
 
   // Авто-добор помощников сразу при жеребьёвке, без подтверждения — по
   // явному запросу пользователя (2026-09-04, уточнено там же). Каскад:
@@ -337,6 +352,7 @@ export async function formDrawInTx(
   //    которое организатор подтверждает вручную через "+ Помощник" (там
   //    подсказка сама предложит ближайшую ниже, если выше и правда нет).
   let autoHelpers: HelperPick[] = [];
+  let helperRows: { drawId: string; registrationId: string; role: RegistrationRole; scored: boolean; helperSource: HelperSource; calledOrder: number }[] = [];
   if (leaders.length !== followers.length) {
     const needyRole: RegistrationRole = leaders.length < followers.length ? "LEADER" : "FOLLOWER";
     const shortage = Math.abs(leaders.length - followers.length);
@@ -355,20 +371,20 @@ export async function formDrawInTx(
       preferOwnFirst: false,
     });
 
-    for (const helper of autoHelpers) {
-      await tx.drawParticipant.create({
-        data: {
-          drawId: draw.id,
-          registrationId: helper.registrationId,
-          role: needyRole,
-          scored: false,
-          helperSource: helper.helperSource,
-          calledOrder: calledOrder++,
-        },
-      });
-    }
+    helperRows = autoHelpers.map((helper, i) => ({
+      drawId: draw.id,
+      registrationId: helper.registrationId,
+      role: needyRole,
+      scored: false,
+      helperSource: helper.helperSource,
+      calledOrder: leaderRows.length + followerRows.length + i + 1,
+    }));
   }
   const autoHelperIds = autoHelpers.map((h) => h.registrationId);
+
+  // Один batch-insert на весь список заезда (основные + помощники) — см.
+  // комментарий выше про round-trip'ы.
+  await tx.drawParticipant.createMany({ data: [...leaderRows, ...followerRows, ...helperRows] });
 
   await writeAudit(tx, {
     actor,
@@ -421,6 +437,7 @@ export async function rerollHeatDraw(
     formDrawInTx(tx, {
       heatId,
       roundId: heat.roundId,
+      roundOrder: heat.round.order,
       divisionId: heat.round.division.id,
       heatCapacity,
       callOrder,
@@ -526,12 +543,13 @@ export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: st
     const newDraw = await tx.draw.create({
       data: { heatId: newHeat.id, version: 1, seed: null, algorithmVersion: DRAW_ALGORITHM_VERSION, createdById: actor.userId },
     });
-    let calledOrder = 1;
-    for (const p of moved) {
-      await tx.drawParticipant.create({
-        data: { drawId: newDraw.id, registrationId: p.registrationId, role: p.role, scored: true, calledOrder: calledOrder++ },
-      });
-    }
+    const movedRows = moved.map((p, i) => ({
+      drawId: newDraw.id,
+      registrationId: p.registrationId,
+      role: p.role,
+      scored: true,
+      calledOrder: i + 1,
+    }));
 
     // 4. авто-добор недостающей стороны нового заезда — приоритет ОБРАТНЫЙ
     // обычному (сначала свои, потом каскад выше), см. fillHelperShortage.
@@ -545,18 +563,17 @@ export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: st
       alreadyScoredIds,
       preferOwnFirst: true,
     });
-    for (const helper of autoHelpers) {
-      await tx.drawParticipant.create({
-        data: {
-          drawId: newDraw.id,
-          registrationId: helper.registrationId,
-          role: needyRole,
-          scored: false,
-          helperSource: helper.helperSource,
-          calledOrder: calledOrder++,
-        },
-      });
-    }
+    const helperRows = autoHelpers.map((helper, i) => ({
+      drawId: newDraw.id,
+      registrationId: helper.registrationId,
+      role: needyRole,
+      scored: false,
+      helperSource: helper.helperSource,
+      calledOrder: movedRows.length + i + 1,
+    }));
+    // Один batch-insert вместо create() по одному на человека (см. тот же
+    // комментарий в formDrawInTx).
+    await tx.drawParticipant.createMany({ data: [...movedRows, ...helperRows] });
 
     await writeAudit(tx, {
       actor,

@@ -199,12 +199,13 @@ async function createTieBreakRoundInTx(
     },
   });
 
-  let calledOrder = 1;
-  for (const p of tie.group) {
-    await tx.drawParticipant.create({
-      data: { drawId: draw.id, registrationId: p.registrationId, role: tie.role, scored: true, calledOrder: calledOrder++ },
-    });
-  }
+  const tieRows = tie.group.map((p, i) => ({
+    drawId: draw.id,
+    registrationId: p.registrationId,
+    role: tie.role,
+    scored: true,
+    calledOrder: i + 1,
+  }));
 
   // Не хватает пары — добираем помощников противоположной роли, сначала
   // свои уже станцевавшие В РОДИТЕЛЬСКОМ раунде (они уже свободны — либо
@@ -224,18 +225,19 @@ async function createTieBreakRoundInTx(
     alreadyScoredIds: parentScoredIds,
     preferOwnFirst: true,
   });
-  for (const helper of helpers) {
-    await tx.drawParticipant.create({
-      data: {
-        drawId: draw.id,
-        registrationId: helper.registrationId,
-        role: opposingRole,
-        scored: false,
-        helperSource: helper.helperSource,
-        calledOrder: calledOrder++,
-      },
-    });
-  }
+  const helperRows = helpers.map((helper, i) => ({
+    drawId: draw.id,
+    registrationId: helper.registrationId,
+    role: opposingRole,
+    scored: false,
+    helperSource: helper.helperSource,
+    calledOrder: tieRows.length + i + 1,
+  }));
+  // Один batch-insert на весь состав перетанцовки (тай-группа + помощники) —
+  // тот же приём, что и в draw-engine.ts formDrawInTx: на удалённой БД
+  // каждый round-trip стоит ~150мс, отдельный create() на человека умножал
+  // бы задержку на размер тай-группы без всякой пользы.
+  await tx.drawParticipant.createMany({ data: [...tieRows, ...helperRows] });
 
   await writeAudit(tx, {
     actor,

@@ -314,15 +314,10 @@ describe("listHelperCandidates()", () => {
       { id: "div-higher", category: { name: "Продвинутые", order: 3 } },
       { id: "div-lower", category: { name: "Начинающие", order: 1 } },
     ]);
-    registrationFindMany.mockImplementation(({ where }: { where: { divisionId: string } }) => {
-      if (where.divisionId === "div-higher") {
-        return Promise.resolve([{ id: "reg-higher", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } }]);
-      }
-      if (where.divisionId === "div-lower") {
-        return Promise.resolve([{ id: "reg-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } }]);
-      }
-      return Promise.resolve([]);
-    });
+    registrationFindMany.mockResolvedValue([
+      { id: "reg-higher", divisionId: "div-higher", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
+      { id: "reg-lower", divisionId: "div-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
+    ]);
 
     const result = await listHelperCandidates("heat1", "LEADER");
 
@@ -340,11 +335,9 @@ describe("listHelperCandidates()", () => {
       { id: "div1", category: { name: "Профи", order: 3 } },
       { id: "div-lower", category: { name: "Начинающие", order: 1 } },
     ]);
-    registrationFindMany.mockImplementation(({ where }: { where: { divisionId: string } }) =>
-      where.divisionId === "div-lower"
-        ? Promise.resolve([{ id: "reg-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } }])
-        : Promise.resolve([])
-    );
+    registrationFindMany.mockResolvedValue([
+      { id: "reg-lower", divisionId: "div-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
+    ]);
 
     const result = await listHelperCandidates("heat1", "LEADER");
 
@@ -360,8 +353,8 @@ describe("listHelperCandidates()", () => {
     });
     divisionFindMany.mockResolvedValue([{ id: "div1", category: { name: "Любители", order: 2 } }]);
     registrationFindMany.mockResolvedValue([
-      { id: "reg-not-scored", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
-      { id: "reg-scored", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
+      { id: "reg-not-scored", divisionId: "div1", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
+      { id: "reg-scored", divisionId: "div1", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
     ]);
     drawParticipantFindMany.mockResolvedValue([{ registrationId: "reg-scored" }]);
 
@@ -384,17 +377,10 @@ describe("listHelperCandidates()", () => {
       { id: "div1", category: { name: "Профи", order: 3 } },
       { id: "div-lower", category: { name: "Начинающие", order: 1 } },
     ]);
-    registrationFindMany.mockImplementation(({ where }: { where: { divisionId: string } }) => {
-      if (where.divisionId === "div1") {
-        return Promise.resolve([
-          { id: "reg-own-scored", dancer: { displayName: "Свой" }, checkIn: { bibNumber: "9" } },
-        ]);
-      }
-      if (where.divisionId === "div-lower") {
-        return Promise.resolve([{ id: "reg-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } }]);
-      }
-      return Promise.resolve([]);
-    });
+    registrationFindMany.mockResolvedValue([
+      { id: "reg-own-scored", divisionId: "div1", dancer: { displayName: "Свой" }, checkIn: { bibNumber: "9" } },
+      { id: "reg-lower", divisionId: "div-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
+    ]);
     drawParticipantFindMany.mockResolvedValue([{ registrationId: "reg-own-scored" }]);
 
     const result = await listHelperCandidates("heat1", "LEADER");
@@ -415,8 +401,8 @@ describe("listHelperCandidates()", () => {
     });
     divisionFindMany.mockResolvedValue([{ id: "div-higher", category: { name: "Продвинутые", order: 3 } }]);
     registrationFindMany.mockResolvedValue([
-      { id: "reg-a", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
-      { id: "reg-b", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
+      { id: "reg-a", divisionId: "div-higher", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
+      { id: "reg-b", divisionId: "div-higher", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
     ]);
     drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
       Promise.resolve(where.drawId ? [{ registrationId: "reg-b" }] : [])
@@ -439,11 +425,10 @@ describe("listHelperCandidates()", () => {
       { id: "div-higher", category: { name: "Продвинутые", order: 3 } },
       { id: "div-higher2", category: { name: "Профи", order: 4 } },
     ]);
-    registrationFindMany.mockImplementation(({ where }: { where: { divisionId: string } }) =>
-      where.divisionId === "div-higher"
-        ? Promise.resolve([{ id: "reg-a", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } }])
-        : Promise.resolve([{ id: "reg-c", dancer: { displayName: "C" }, checkIn: { bibNumber: "3" } }])
-    );
+    registrationFindMany.mockResolvedValue([
+      { id: "reg-a", divisionId: "div-higher", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
+      { id: "reg-c", divisionId: "div-higher2", dancer: { displayName: "C" }, checkIn: { bibNumber: "3" } },
+    ]);
     // div-higher единственный кандидат уже в заходе -> группа пустеет,
     // предложение должно перейти на div-higher2 без ручного действия.
     drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>

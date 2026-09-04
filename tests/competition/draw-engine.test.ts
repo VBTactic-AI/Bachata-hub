@@ -19,13 +19,13 @@ const divisionFindUniqueOrThrow = vi.fn();
 const divisionFindMany = vi.fn();
 const drawCreate = vi.fn();
 const drawParticipantCreate = vi.fn();
+const drawParticipantCreateMany = vi.fn();
 const drawParticipantDeleteMany = vi.fn();
 const auditCreate = vi.fn();
 // Этап 7/8 (A13): formDrawInTx теперь проверяет, есть ли завершённый
 // предыдущий раунд дивизиона, чтобы ограничить пул только прошедшими —
 // по умолчанию в этих тестах "предыдущего раунда нет" (findFirst -> null),
 // сохраняя прежнее поведение "берём весь дивизион" без изменений.
-const roundFindUniqueOrThrowTx = vi.fn();
 const roundFindFirstTx = vi.fn();
 const roundResultFindMany = vi.fn();
 
@@ -34,9 +34,9 @@ const fakeTx = {
   heat: { findMany: heatFindMany, findFirst: heatFindFirstTx, create: heatCreateTx },
   registration: { findMany: registrationFindMany },
   division: { findUniqueOrThrow: divisionFindUniqueOrThrow, findMany: divisionFindMany },
-  round: { findUniqueOrThrow: roundFindUniqueOrThrowTx, findFirst: roundFindFirstTx },
+  round: { findFirst: roundFindFirstTx },
   roundResult: { findMany: roundResultFindMany },
-  drawParticipant: { create: drawParticipantCreate, deleteMany: drawParticipantDeleteMany },
+  drawParticipant: { create: drawParticipantCreate, createMany: drawParticipantCreateMany, deleteMany: drawParticipantDeleteMany },
   auditLog: { create: auditCreate },
 };
 
@@ -59,6 +59,17 @@ function reg(id: string, bibNumber: string) {
   return { id, checkIn: { bibNumber } };
 }
 
+// formDrawInTx/splitHeatOverflow теперь вставляют список заезда ОДНИМ
+// createMany() вместо create() по одному человеку (перф.-фикс: на удалённой
+// БД каждый round-trip стоит ~150мс, см. комментарий в draw-engine.ts) —
+// этот хелпер разворачивает все createMany-вызовы обратно в плоский список
+// строк, чтобы тесты ниже могли проверять состав так же, как раньше.
+function createdParticipants(): { registrationId: string; role: string; scored: boolean; helperSource?: string }[] {
+  return drawParticipantCreateMany.mock.calls.flatMap(
+    (c) => (c[0] as { data: { registrationId: string; role: string; scored: boolean; helperSource?: string }[] }).data
+  );
+}
+
 beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
   heatFindUniqueOrThrow.mockReset();
@@ -66,7 +77,6 @@ beforeEach(() => {
   drawFindFirst.mockReset().mockResolvedValue(null);
   heatFindMany.mockReset().mockResolvedValue([]); // нет других заездов с уже станцевавшими
   heatFindFirstTx.mockReset().mockResolvedValue(null);
-  roundFindUniqueOrThrowTx.mockReset().mockResolvedValue({ order: 1 });
   roundFindFirstTx.mockReset().mockResolvedValue(null); // нет предыдущего раунда — пул не ограничен
   roundResultFindMany.mockReset().mockResolvedValue([]);
   heatCreateTx.mockReset().mockImplementation(({ data }: { data: { number: number } }) =>
@@ -85,6 +95,7 @@ beforeEach(() => {
     Promise.resolve({ id: `draw-v${data.version}`, ...data })
   );
   drawParticipantCreate.mockReset().mockResolvedValue({});
+  drawParticipantCreateMany.mockReset().mockResolvedValue({ count: 0 });
   auditCreate.mockReset();
 });
 
@@ -93,6 +104,7 @@ describe("formDrawInTx() — базовое формирование списк�
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -101,7 +113,8 @@ describe("formDrawInTx() — базовое формирование списк�
 
     expect(result.leaderCount).toBe(3);
     expect(result.followerCount).toBe(2);
-    expect(drawParticipantCreate).toHaveBeenCalledTimes(5);
+    expect(drawParticipantCreateMany).toHaveBeenCalledTimes(1);
+    expect(drawParticipantCreateMany.mock.calls[0][0].data).toHaveLength(5);
     expect(auditCreate).toHaveBeenCalledOnce();
     expect(auditCreate.mock.calls[0][0].data.action).toBe("draw.create");
   });
@@ -110,14 +123,15 @@ describe("formDrawInTx() — базовое формирование списк�
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
     });
 
-    const leaderCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.role === "LEADER");
-    expect(leaderCalls.map((c) => c[0].data.registrationId)).toEqual(["l2", "l3", "l1"]); // бибы 1,2,3
+    const leaderCalls = createdParticipants().filter((p) => p.role === "LEADER");
+    expect(leaderCalls.map((p) => p.registrationId)).toEqual(["l2", "l3", "l1"]); // бибы 1,2,3
   });
 
   it("ограничивает список вместимостью заезда", async () => {
@@ -132,6 +146,7 @@ describe("formDrawInTx() — базовое формирование списк�
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -147,6 +162,7 @@ describe("formDrawInTx() — базовое формирование списк�
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -154,9 +170,9 @@ describe("formDrawInTx() — базовое формирование списк�
     });
 
     expect(result.leaderCount).toBe(2); // l1 исключён
-    const leaderIds = drawParticipantCreate.mock.calls
-      .filter((c) => c[0].data.role === "LEADER")
-      .map((c) => c[0].data.registrationId);
+    const leaderIds = createdParticipants()
+      .filter((p) => p.role === "LEADER")
+      .map((p) => p.registrationId);
     expect(leaderIds).not.toContain("l1");
   });
 
@@ -164,6 +180,7 @@ describe("formDrawInTx() — базовое формирование списк�
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "RANDOM",
@@ -175,6 +192,7 @@ describe("formDrawInTx() — базовое формирование списк�
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -195,6 +213,7 @@ describe("formDrawInTx() — пул ограничен прошедшими пр
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -211,6 +230,7 @@ describe("formDrawInTx() — пул ограничен прошедшими пр
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -222,13 +242,13 @@ describe("formDrawInTx() — пул ограничен прошедшими пр
   });
 
   it("предыдущий раунд COMPLETED — зовёт только тех, кто ADVANCED там", async () => {
-    roundFindUniqueOrThrowTx.mockResolvedValue({ order: 2 });
     roundFindFirstTx.mockResolvedValue({ id: "prevRound1", status: "COMPLETED" });
     roundResultFindMany.mockResolvedValue([{ registrationId: "l1" }, { registrationId: "f2" }]);
 
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round2",
+      roundOrder: 2,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -240,7 +260,7 @@ describe("formDrawInTx() — пул ограничен прошедшими пр
     );
     expect(result.leaderCount).toBe(1); // только l1, не l2/l3
     expect(result.followerCount).toBe(1); // только f2, не f1
-    const calledIds = drawParticipantCreate.mock.calls.map((c) => c[0].data.registrationId);
+    const calledIds = createdParticipants().map((p) => p.registrationId);
     expect(calledIds.sort()).toEqual(["f2", "l1"]);
   });
 });
@@ -252,6 +272,7 @@ describe("formDrawInTx() — версии и reroll", () => {
       formDrawInTx(fakeTx as never, {
         heatId: "heat1",
         roundId: "round1",
+        roundOrder: 1,
         divisionId: "div1",
         heatCapacity: 10,
         callOrder: "SEQUENTIAL",
@@ -267,6 +288,7 @@ describe("formDrawInTx() — версии и reroll", () => {
       formDrawInTx(fakeTx as never, {
         heatId: "heat1",
         roundId: "round1",
+        roundOrder: 1,
         divisionId: "div1",
         heatCapacity: 10,
         callOrder: "SEQUENTIAL",
@@ -281,6 +303,7 @@ describe("formDrawInTx() — версии и reroll", () => {
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -304,6 +327,7 @@ describe("formDrawInTx() — авто-добор помощников при д�
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
@@ -311,7 +335,7 @@ describe("formDrawInTx() — авто-добор помощников при д�
     });
 
     expect(divisionFindUniqueOrThrow).not.toHaveBeenCalled();
-    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
     expect(helperCalls).toHaveLength(0);
   });
 
@@ -332,15 +356,16 @@ describe("formDrawInTx() — авто-добор помощников при д�
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
     });
 
-    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
     expect(helperCalls).toHaveLength(1);
-    expect(helperCalls[0][0].data).toMatchObject({
+    expect(helperCalls[0]).toMatchObject({
       registrationId: "guest-f1",
       role: "FOLLOWER",
       scored: false,
@@ -363,13 +388,14 @@ describe("formDrawInTx() — авто-добор помощников при д�
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
     });
 
-    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
     expect(helperCalls).toHaveLength(0);
     expect(result.leaderCount).toBe(5);
     expect(result.followerCount).toBe(1);
@@ -397,15 +423,16 @@ describe("formDrawInTx() — каскад: все категории выше, �
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
     });
 
-    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
     expect(helperCalls).toHaveLength(1);
-    expect(helperCalls[0][0].data).toMatchObject({ registrationId: "guest-higher2", helperSource: "GUEST_HIGHER_CATEGORY" });
+    expect(helperCalls[0]).toMatchObject({ registrationId: "guest-higher2", helperSource: "GUEST_HIGHER_CATEGORY" });
   });
 
   it("если категорий выше совсем нет (или там пусто) — переиспользует своих уже станцевавших", async () => {
@@ -420,15 +447,16 @@ describe("formDrawInTx() — каскад: все категории выше, �
     await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
     });
 
-    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
     expect(helperCalls).toHaveLength(1);
-    expect(helperCalls[0][0].data).toMatchObject({
+    expect(helperCalls[0]).toMatchObject({
       registrationId: "reused-f1",
       role: "FOLLOWER",
       helperSource: "REUSED_ALREADY_SCORED",
@@ -446,13 +474,14 @@ describe("formDrawInTx() — каскад: все категории выше, �
     const result = await formDrawInTx(fakeTx as never, {
       heatId: "heat1",
       roundId: "round1",
+      roundOrder: 1,
       divisionId: "div1",
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
     });
 
-    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
     expect(helperCalls).toHaveLength(0);
     expect(result.leaderCount).toBe(3);
     expect(result.followerCount).toBe(1);
@@ -559,9 +588,9 @@ describe("splitHeatOverflow() — «Способ Б»: перенос избыт
 
   it("переносит именно излишек по порядку вызова — l1 остаётся, l2/l3 уходят", async () => {
     await splitHeatOverflow("heat1");
-    const movedCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === true);
-    expect(movedCalls.map((c) => c[0].data.registrationId)).toEqual(["l2", "l3"]);
-    expect(movedCalls.every((c) => c[0].data.role === "LEADER")).toBe(true);
+    const movedCalls = createdParticipants().filter((p) => p.scored === true);
+    expect(movedCalls.map((p) => p.registrationId)).toEqual(["l2", "l3"]);
+    expect(movedCalls.every((p) => p.role === "LEADER")).toBe(true);
   });
 
   it("создаёт новый заезд со следующим номером в том же раунде", async () => {
@@ -583,10 +612,10 @@ describe("splitHeatOverflow() — «Способ Б»: перенос избыт
 
     await splitHeatOverflow("heat1");
 
-    const helperCalls = drawParticipantCreate.mock.calls.filter((c) => c[0].data.scored === false);
-    expect(helperCalls.map((c) => c[0].data.registrationId)).toEqual(["reused-f1", "guest-f1"]);
-    expect(helperCalls[0][0].data.helperSource).toBe("REUSED_ALREADY_SCORED");
-    expect(helperCalls[1][0].data.helperSource).toBe("GUEST_HIGHER_CATEGORY");
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
+    expect(helperCalls.map((p) => p.registrationId)).toEqual(["reused-f1", "guest-f1"]);
+    expect(helperCalls[0].helperSource).toBe("REUSED_ALREADY_SCORED");
+    expect(helperCalls[1].helperSource).toBe("GUEST_HIGHER_CATEGORY");
   });
 });
 
@@ -597,6 +626,7 @@ describe("rerollHeatDraw()", () => {
       roundId: "round1",
       status: "PENDING",
       round: {
+        order: 1,
         status: "DRAWING",
         divisionId: "div1",
         heatCapacity: null,
@@ -617,7 +647,7 @@ describe("rerollHeatDraw()", () => {
       id: "heat1",
       roundId: "round1",
       status: "PENDING",
-      round: { status: "DRAW_LOCKED", divisionId: "div1", heatCapacity: null, config: {}, division: { id: "div1", competitionId: "comp1", heatCapacity: 8 } },
+      round: { order: 1, status: "DRAW_LOCKED", divisionId: "div1", heatCapacity: null, config: {}, division: { id: "div1", competitionId: "comp1", heatCapacity: 8 } },
     });
     await expect(rerollHeatDraw("heat1", "причина")).rejects.toBeInstanceOf(ValidationFailedError);
   });
@@ -627,7 +657,7 @@ describe("rerollHeatDraw()", () => {
       id: "heat1",
       roundId: "round1",
       status: "RUNNING",
-      round: { status: "DRAWING", divisionId: "div1", heatCapacity: null, config: {}, division: { id: "div1", competitionId: "comp1", heatCapacity: 8 } },
+      round: { order: 1, status: "DRAWING", divisionId: "div1", heatCapacity: null, config: {}, division: { id: "div1", competitionId: "comp1", heatCapacity: 8 } },
     });
     await expect(rerollHeatDraw("heat1", "причина")).rejects.toBeInstanceOf(ValidationFailedError);
   });
@@ -637,7 +667,7 @@ describe("rerollHeatDraw()", () => {
       id: "heat1",
       roundId: "round1",
       status: "PENDING",
-      round: { status: "DRAWING", divisionId: "div1", heatCapacity: 2, config: { drawCallOrder: "SEQUENTIAL" }, division: { id: "div1", competitionId: "comp1", heatCapacity: 8 } },
+      round: { order: 1, status: "DRAWING", divisionId: "div1", heatCapacity: 2, config: { drawCallOrder: "SEQUENTIAL" }, division: { id: "div1", competitionId: "comp1", heatCapacity: 8 } },
     });
     const result = await rerollHeatDraw("heat1", "причина");
     expect(result.leaderCount).toBe(2); // heatCapacity раунда (2) переопределяет дивизион (8), доступно 3 лидера

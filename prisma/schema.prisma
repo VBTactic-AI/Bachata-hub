@@ -1132,6 +1132,14 @@ model Registration {
   @@unique([competitionId, divisionId, dancerId])
   @@index([competitionId, divisionId])
   @@index([dancerId])
+  // Пул жеребьёвки/добора помощников фильтрует именно так — divisionId+
+  // role+status, БЕЗ competitionId в WHERE (draw-engine.ts, draw-helper.ts,
+  // и groupBy на странице соревнования) — существующий составной индекс
+  // (competitionId, divisionId, ...) для такого запроса бесполезен, т.к.
+  // competitionId не задан. При текущем размере таблиц эффекта не даёт
+  // (Postgres и так выбирает seq scan на маленькой таблице), но так и
+  // должно быть проиндексировано по мере роста числа участников.
+  @@index([divisionId, role, status])
 }
 
 model CheckIn {

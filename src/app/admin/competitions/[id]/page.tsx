@@ -42,7 +42,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const [competition, activeCategories, activeStages] = await Promise.all([
+  // myDancer зависит только от actor.userId (не от competition) — грузится
+  // в том же Promise.all, что и всё остальное на этой странице, а не
+  // отдельным await после него (лишний round-trip к Supabase pooler,
+  // ~150мс, без всякой причины ждать).
+  const [competition, activeCategories, activeStages, myDancer] = await Promise.all([
     prisma.competition.findUnique({
       where: { id },
       // relationLoadStrategy: "join" — глубоко вложенный include (5 уровней)
@@ -94,6 +98,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     }),
     prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
     prisma.roundStageCatalog.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
+    prisma.dancer.findUnique({ where: { userId: actor.userId }, select: { id: true, gender: true } }),
   ]);
   if (!competition) notFound();
 
@@ -118,11 +123,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
   // должен видеть чужие регистрации — только свою собственную, ниже.
   const canViewAllRegistrations = can(actor, "registration:view", competition.id);
-
-  const myDancer = await prisma.dancer.findUnique({
-    where: { userId: actor.userId },
-    select: { id: true, gender: true },
-  });
 
   // Сколько ведущих/ведомых в каждом дивизионе — нужно организатору ДО
   // генерации сетки раундов (та же логика, что использует generateRounds()),
