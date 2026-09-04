@@ -201,10 +201,19 @@ export async function transitionRound(
 // "Завершить"/"Начать судейство" не нужна. RUNNING -> FINISHED -> SCORING
 // одной транзакцией, с audit на каждый шаг (CLAUDE.md §9), актёром
 // остаётся тот, кто завершил последний заход. Тихо ничего не делает, если
-// раунд не RUNNING или ещё не все заходы завершены — не ошибка, а "рано".
+// раунд ещё не все заходы завершены — не ошибка, а "рано".
+//
+// RUNNING и PAUSED — оба валидны здесь (найдено на живом баге 2026-09-04):
+// у раунда своя отдельная кнопка "Пауза" (RoundStatusControls), не
+// связанная с паузой конкретного захода/ротации. Если организатор ставит
+// раунд на паузу, а последний заход при этом всё равно завершается (заход
+// такую паузу сейчас не блокирует), раунд не должен застревать в PAUSED
+// навсегда — до этой правки именно так и происходило: heat.status уже
+// FINISHED, а Round.status оставался PAUSED без единого способа сдвинуться
+// дальше через обычный UI.
 export async function autoAdvanceRoundIfAllHeatsFinishedInTx(tx: PrismaTx, roundId: string, actor: Actor): Promise<void> {
   const round = await tx.round.findUniqueOrThrow({ where: { id: roundId } });
-  if (round.status !== "RUNNING") return;
+  if (round.status !== "RUNNING" && round.status !== "PAUSED") return;
 
   const unfinished = await tx.heat.count({ where: { roundId, status: { not: "FINISHED" } } });
   if (unfinished > 0) return;
@@ -219,7 +228,7 @@ export async function autoAdvanceRoundIfAllHeatsFinishedInTx(tx: PrismaTx, round
     action: "round.transition",
     entityType: "Round",
     entityId: roundId,
-    before: { status: "RUNNING" },
+    before: { status: round.status },
     after: { status: "FINISHED" },
     reason: "Все заходы раунда завершены — переведено автоматически.",
   });

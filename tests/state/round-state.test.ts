@@ -317,13 +317,31 @@ describe("transitionRound() — жеребьёвку следующего рау
 // 2026-09-04). Вызывается из heat-state.ts внутри транзакции завершения
 // захода, поэтому здесь тестируется напрямую как отдельная функция.
 describe("autoAdvanceRoundIfAllHeatsFinishedInTx()", () => {
-  it("ничего не делает, если раунд не в статусе RUNNING", async () => {
-    txRoundFindUniqueOrThrow.mockResolvedValue({ id: "round1", status: "PAUSED", statusVersion: 1 });
+  it("ничего не делает, если раунд не в статусе RUNNING/PAUSED", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue({ id: "round1", status: "DRAW_LOCKED", statusVersion: 1 });
 
     await autoAdvanceRoundIfAllHeatsFinishedInTx(fakeTx as never, "round1", actor);
 
     expect(txHeatCount).not.toHaveBeenCalled();
     expect(txRoundUpdateMany).not.toHaveBeenCalled();
+  });
+
+  // Найдено на живом баге (2026-09-04): у раунда своя кнопка "Пауза"
+  // (независимая от паузы захода/ротации), и заход мог завершиться, пока
+  // раунд стоит на паузе — раунд должен всё равно досчитать результат, а
+  // не застрять в PAUSED навсегда.
+  it("переводит раунд PAUSED -> FINISHED -> SCORING, когда все заходы завершены во время паузы раунда", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue({ id: "round1", status: "PAUSED", statusVersion: 1 });
+    txHeatCount.mockResolvedValue(0);
+    txRoundUpdateMany.mockResolvedValue({ count: 1 });
+
+    await autoAdvanceRoundIfAllHeatsFinishedInTx(fakeTx as never, "round1", actor);
+
+    expect(txRoundUpdateMany).toHaveBeenCalledTimes(2);
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ before: { status: "PAUSED" } }) })
+    );
+    expect(maybeCalculateOnEntryMock).toHaveBeenCalledWith(fakeTx, "round1", actor);
   });
 
   it("ничего не делает, если остались незавершённые заходы", async () => {
