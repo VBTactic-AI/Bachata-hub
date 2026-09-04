@@ -11,7 +11,7 @@ export type FinalCriterionRow = { id?: string; name: string; minScore: number; m
 const FORMAT_LABELS: Record<FinalFormatValue, string> = {
   NORMAL: "Обычный J&J",
   JUDGES_DANCE: "Танец с судьями",
-  RANDOM_COUPLES: "Случайные пары (пока не поддерживается запуск)",
+  RANDOM_COUPLES: "Случайные пары",
 };
 
 // Настройки финала дивизиона (Этап 9) — формат/критерии до старта финала

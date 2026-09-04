@@ -21,7 +21,9 @@ type PrismaTx = Prisma.TransactionClient;
 const STAGE_ROLE: Record<1 | 2, RegistrationRole> = { 1: "LEADER", 2: "FOLLOWER" };
 const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Ведущие", FOLLOWER: "Ведомые" };
 
-async function assertNoOtherHeatActive(tx: PrismaTx, competitionId: string): Promise<void> {
+// Переиспользуется и final-random-couples.ts — та же эксклюзивность
+// паркета нужна там для первой пары.
+export async function assertNoOtherHeatActive(tx: PrismaTx, competitionId: string): Promise<void> {
   // Та же эксклюзивность паркета, что и transitionHeat() для обычных
   // заходов (docs/00_DECISIONS.md, A4) — здесь заход создаётся сразу
   // RUNNING в обход обычного PENDING->RUNNING перехода, поэтому проверка

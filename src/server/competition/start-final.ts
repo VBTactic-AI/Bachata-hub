@@ -30,11 +30,6 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
 
   const settings = await prisma.finalSettings.findUnique({ where: { divisionId: round.division.id } });
   const format = settings?.format ?? "NORMAL";
-  // RANDOM_COUPLES ещё не реализован — честно сообщаем об этом ограничении,
-  // а не притворяемся, что формат работает (NORMAL и JUDGES_DANCE — готовы).
-  if (format === "RANDOM_COUPLES") {
-    issues.push(`Формат «${format}» ещё не реализован в этой версии`);
-  }
 
   const criteria = await prisma.finalCriterion.findMany({ where: { divisionId: round.division.id, isActive: true } });
   if (criteria.length === 0) {
@@ -73,6 +68,17 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
   });
   if (pools.leaders.size === 0 && pools.followers.size === 0) {
     issues.push("Нет ни одного финалиста, прошедшего check-in");
+  }
+  // RANDOM_COUPLES — пары формируются 1:1 (промт пользователя, п.25-26), не
+  // делит на "своя роль проходит без пары"/добор помощников, как Draw
+  // Engine обычных раундов (A5) — значит числа обязаны совпасть заранее,
+  // иначе кто-то останется без партнёра. НЕ угадываем правило "что делать
+  // при разном числе" (CLAUDE.md §25) — просто не даём начать, пока
+  // организатор не выровняет регистрацию/check-in.
+  if (format === "RANDOM_COUPLES" && pools.leaders.size !== pools.followers.size) {
+    issues.push(
+      `Для формата "Случайные пары" число ведущих и ведомых должно совпадать — сейчас ${pools.leaders.size} ведущих и ${pools.followers.size} ведомых`
+    );
   }
 
   const assignments = await prisma.judgeAssignment.findMany({ where: { divisionId: round.division.id } });
@@ -159,15 +165,18 @@ export async function startFinal(roundId: string): Promise<{ id: string }> {
     return created;
   });
 
-  // JUDGES_DANCE не проходит через обычный Draw Engine (READY -> DRAWING ->
-  // DRAW_LOCKED -> RUNNING) — там нет ни выбора порядка вызова, ни парной
-  // жеребьёвки (партнёр участника — судья, не другой финалист), а стадии
-  // формируются по одной через advanceJudgesDanceStage (final-judges-dance.ts).
-  // Переводим раунд сразу READY -> RUNNING отдельным разрешённым переходом
-  // (не трогая общую таблицу переходов round-state.ts — она остаётся
-  // прежней для NORMAL/RANDOM_COUPLES), через тот же transition()-примитив,
-  // что и обычные переходы (та же блокировка/аудит, CLAUDE.md §9/§27).
-  if (format === "JUDGES_DANCE") {
+  // JUDGES_DANCE и RANDOM_COUPLES не проходят через обычный Draw Engine
+  // (READY -> DRAWING -> DRAW_LOCKED -> RUNNING) — там нет ни выбора порядка
+  // вызова, ни парной жеребьёвки по образцу обычных раундов (A5): в
+  // JUDGES_DANCE партнёр участника — судья, не другой финалист; в
+  // RANDOM_COUPLES пары формируются случайно по одной через явное действие
+  // организатора, а не все разом. Заходы формируются по одному через
+  // advanceJudgesDanceStage / advanceRandomCouples. Переводим раунд сразу
+  // READY -> RUNNING отдельным разрешённым переходом (не трогая общую
+  // таблицу переходов round-state.ts — она остаётся прежней для NORMAL),
+  // через тот же transition()-примитив, что и обычные переходы (та же
+  // блокировка/аудит, CLAUDE.md §9/§27).
+  if (format === "JUDGES_DANCE" || format === "RANDOM_COUPLES") {
     const table: Partial<Record<RoundStatus, readonly RoundStatus[]>> = { READY: ["RUNNING"] };
     await transition({
       entityType: "Round",
@@ -177,7 +186,7 @@ export async function startFinal(roundId: string): Promise<{ id: string }> {
       statusVersion: round.statusVersion,
       to: "RUNNING",
       actor,
-      reason: "Начало финала формата «Танец с судьями» — минует обычную жеребьёвку.",
+      reason: `Начало финала формата «${format === "JUDGES_DANCE" ? "Танец с судьями" : "Случайные пары"}» — минует обычную жеребьёвку.`,
       applyUpdate: async (tx, { to, expectedVersion }) => {
         const result = await tx.round.updateMany({
           where: { id: roundId, statusVersion: expectedVersion },
@@ -186,12 +195,11 @@ export async function startFinal(roundId: string): Promise<{ id: string }> {
         if (result.count > 0) {
           // generateRounds() создаёт по умолчанию заход №1 сразу вместе с
           // раундом (по образцу NORMAL-формата, до того как организатор мог
-          // выбрать формат финала) — JUDGES_DANCE его не использует вовсе
-          // (advanceJudgesDanceStage создаёт свои заходы стадий сам, с теми
-          // же номерами 1/2) и без этой уборки столкнулся бы с @@unique
-          // ([roundId, number]). Безопасно удалять: раунд только что был
-          // READY, значит ни один заход ещё не мог запуститься/получить
-          // жеребьёвку.
+          // выбрать формат финала) — эти форматы его не используют вовсе
+          // (свои заходы создаются по одному, с теми же номерами 1/2/...) и
+          // без этой уборки столкнулись бы с @@unique([roundId, number]).
+          // Безопасно удалять: раунд только что был READY, значит ни один
+          // заход ещё не мог запуститься/получить жеребьёвку.
           await tx.heat.deleteMany({ where: { roundId, draws: { none: {} } } });
         }
         return {

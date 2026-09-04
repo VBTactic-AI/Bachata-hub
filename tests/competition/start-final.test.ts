@@ -67,10 +67,20 @@ describe("checkFinalReadiness()", () => {
     expect(issues[0]).toMatch(/не финальный/);
   });
 
-  it("сообщает о неподдержанном формате", async () => {
+  it("RANDOM_COUPLES с равным числом ведущих и ведомых — не создаёт лишних проблем", async () => {
     finalSettingsFindUnique.mockResolvedValue({ format: "RANDOM_COUPLES", config: {} });
+    getRoundEligiblePoolMock.mockResolvedValue(new Set(["reg1", "reg2"]));
     const issues = await checkFinalReadiness("final1");
-    expect(issues.some((i) => i.includes("RANDOM_COUPLES"))).toBe(true);
+    expect(issues).toEqual([]);
+  });
+
+  it("RANDOM_COUPLES с разным числом ведущих и ведомых — сообщает о несовпадении", async () => {
+    finalSettingsFindUnique.mockResolvedValue({ format: "RANDOM_COUPLES", config: {} });
+    getRoundEligiblePoolMock.mockImplementation(async (_tx: unknown, params: { role: string }) =>
+      params.role === "LEADER" ? new Set(["reg1", "reg2", "reg3"]) : new Set(["reg4"])
+    );
+    const issues = await checkFinalReadiness("final1");
+    expect(issues.some((i) => i.includes("Случайные пары") || i.includes("совпадать"))).toBe(true);
   });
 
   it("сообщает об отсутствии критериев", async () => {

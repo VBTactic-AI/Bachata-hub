@@ -35,6 +35,7 @@ import { StartFinalPanel } from "@/components/admin/StartFinalPanel";
 import { FinalResultsTable } from "@/components/admin/FinalResultsTable";
 import { FinalTieBreakDecisionForm } from "@/components/admin/FinalTieBreakDecisionForm";
 import { JudgesDanceStagePanel } from "@/components/admin/JudgesDanceStagePanel";
+import { RandomCouplesPanel } from "@/components/admin/RandomCouplesPanel";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -90,7 +91,21 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   include: { registration: { include: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } } },
                   orderBy: { rank: "asc" },
                 },
-                finalSession: { select: { id: true, format: true, currentStage: true, criteriaSnapshot: true } },
+                finalSession: {
+                  select: {
+                    id: true,
+                    format: true,
+                    currentStage: true,
+                    criteriaSnapshot: true,
+                    pairs: {
+                      orderBy: { pairNumber: "asc" },
+                      include: {
+                        leaderRegistration: { include: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } },
+                        followerRegistration: { include: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } },
+                      },
+                    },
+                  },
+                },
                 finalResults: {
                   include: { registration: { include: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } } },
                 },
@@ -337,6 +352,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                         const tieGroupConfig = round.config as { finalTieGroupKey?: string } | null;
                         const isFinalTieBreak = round.type === "TIE_BREAK" && !!tieGroupConfig?.finalTieGroupKey;
                         const isJudgesDance = round.finalSession?.format === "JUDGES_DANCE";
+                        const isRandomCouples = round.finalSession?.format === "RANDOM_COUPLES";
+                        const usesCustomFinalFlow = isJudgesDance || isRandomCouples;
                         return (
                         <div key={round.id} className="rounded-app-sm border border-line p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -353,6 +370,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
                           {isJudgesDance && round.status !== "COMPLETED" && canManageFinal && (
                             <JudgesDanceStagePanel roundId={round.id} currentStage={round.finalSession!.currentStage} />
+                          )}
+
+                          {isRandomCouples && round.status !== "COMPLETED" && canManageFinal && (
+                            <RandomCouplesPanel
+                              roundId={round.id}
+                              pairs={(round.finalSession!.pairs ?? []).map((p) => ({
+                                pairNumber: p.pairNumber,
+                                leaderName: p.leaderRegistration.dancer.displayName,
+                                leaderBib: p.leaderRegistration.checkIn?.bibNumber ?? null,
+                                followerName: p.followerRegistration.dancer.displayName,
+                                followerBib: p.followerRegistration.checkIn?.bibNumber ?? null,
+                                trackName: p.trackName,
+                              }))}
+                            />
                           )}
 
                           {round.status === "SCORING" && round.type !== "TIE_BREAK" && (
@@ -457,7 +488,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             </div>
                           )}
 
-                          {!isJudgesDance && (
+                          {isRandomCouples && (
+                            // Список пар уже виден в RandomCouplesPanel выше
+                            // (с именами/треком) — здесь только статус захода
+                            // каждой пары, для контроля "кто сейчас танцует".
+                            <div className="stack gap-1.5 mt-2">
+                              {round.heats.map((heat) => (
+                                <p key={heat.id} className="hint-text m-0 pl-3">
+                                  Пара {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+
+                          {!usesCustomFinalFlow && (
                           <div className="stack gap-1.5 mt-2">
                             {round.heats.map((heat) => {
                               const draw = heat.draws[0];
@@ -523,7 +567,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                           </div>
                           )}
 
-                          {!isJudgesDance && round.status === "READY" && <StartDrawingForm roundId={round.id} />}
+                          {!usesCustomFinalFlow && round.status === "READY" && <StartDrawingForm roundId={round.id} />}
                         </div>
                         );
                       })
