@@ -12,7 +12,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    await submitJudgeScore(id, parsed.data.value);
+    await submitJudgeScore(id, parsed.data.value, parsed.data.clientSubmissionId);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return respondToDomainError(e);

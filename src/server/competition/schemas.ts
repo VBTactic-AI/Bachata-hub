@@ -212,6 +212,9 @@ export type AssignJudgeInput = z.infer<typeof assignJudgeSchema>;
 
 export const submitJudgeScoreSchema = z.object({
   value: z.coerce.number().int().min(0),
+  // Ключ идемпотентности офлайн-очереди клиента (CLAUDE.md §17) — судья
+  // должен успеть отправить оценку, даже если связи не было.
+  clientSubmissionId: z.string().min(1),
 });
 export type SubmitJudgeScoreInput = z.infer<typeof submitJudgeScoreSchema>;
 

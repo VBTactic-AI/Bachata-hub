@@ -10,7 +10,16 @@ import { maybeFinalizeAfterScoreInTx } from "./advancement";
 // CLAUDE.md §16, judge оценивает competitor, не пару, и помощник не в
 // зачёте. Missing score НЕ превращается в 0 сам по себе (CLAUDE.md §16) —
 // пока судья не отправил оценку, строки JudgeScore просто нет.
-export async function submitJudgeScore(drawParticipantId: string, value: number): Promise<void> {
+//
+// clientSubmissionId — ключ идемпотентности офлайн-очереди клиента
+// (CLAUDE.md §17): судейский телефон мог временно потерять связь и
+// повторить отправку той же самой оценки после восстановления. Если это
+// ТА ЖЕ отправка (совпадает clientSubmissionId с уже сохранённым) — молча
+// не переписываем строку и не пишем новый audit (иначе повторные ретраи
+// засоряли бы историю "score.correct" записями без реального изменения).
+// Новое значение от судьи (реальное ручное исправление) всегда приходит с
+// новым clientSubmissionId и обрабатывается как обычно.
+export async function submitJudgeScore(drawParticipantId: string, value: number, clientSubmissionId: string): Promise<void> {
   const participant = await prisma.drawParticipant.findUniqueOrThrow({
     where: { id: drawParticipantId },
     include: {
@@ -52,10 +61,15 @@ export async function submitJudgeScore(drawParticipantId: string, value: number)
     const existing = await tx.judgeScore.findUnique({
       where: { drawParticipantId_judgeAssignmentId: { drawParticipantId, judgeAssignmentId: assignment.id } },
     });
+    if (existing && existing.clientSubmissionId === clientSubmissionId) {
+      // Повтор той же самой офлайн-отправки (ретрай после потери связи) —
+      // уже применена, ничего менять/аудировать не нужно.
+      return;
+    }
     await tx.judgeScore.upsert({
       where: { drawParticipantId_judgeAssignmentId: { drawParticipantId, judgeAssignmentId: assignment.id } },
-      create: { drawParticipantId, judgeAssignmentId: assignment.id, value, maxValue: round.judgingMaxScore },
-      update: { value, maxValue: round.judgingMaxScore },
+      create: { drawParticipantId, judgeAssignmentId: assignment.id, value, maxValue: round.judgingMaxScore, clientSubmissionId },
+      update: { value, maxValue: round.judgingMaxScore, clientSubmissionId },
     });
     await writeAudit(tx, {
       actor,

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getActor } from "@/server/rbac/actor";
 import { getJudgeQueue } from "@/server/judging/scoring";
 import { JudgeScoreButtons } from "@/components/admin/JudgeScoreButtons";
+import { JudgingQueueBanner } from "@/components/admin/judging/JudgingQueueBanner";
 
 // Отдельный мобильный экран для судьи (CLAUDE.md §40) — не часть большой
 // admin-страницы соревнования, чтобы не перегружать судью админскими
@@ -23,6 +24,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
   return (
     <div className="stack">
       <h1 className="page-title">Судейство</h1>
+      <JudgingQueueBanner />
       {items.length === 0 ? (
         <p className="hint-text">Пока нет заходов, которые нужно оценить — вы не назначены судьёй ни на один дивизион, или заходы ещё не начались.</p>
       ) : (

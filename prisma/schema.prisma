@@ -954,15 +954,21 @@ model JudgeAssignment {
 // конкретном заходе — CLAUDE.md §16: judge оценивает competitor, не пару.
 // value — 0..maxValue (снимок Round.judgingMaxScore на момент отправки).
 model JudgeScore {
-  id                String          @id @default(cuid())
-  drawParticipantId String
-  drawParticipant   DrawParticipant @relation(fields: [drawParticipantId], references: [id], onDelete: Cascade)
-  judgeAssignmentId String
-  judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id])
-  value             Int
-  maxValue          Int
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id                 String          @id @default(cuid())
+  drawParticipantId  String
+  drawParticipant    DrawParticipant @relation(fields: [drawParticipantId], references: [id], onDelete: Cascade)
+  judgeAssignmentId  String
+  judgeAssignment    JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id])
+  value              Int
+  maxValue           Int
+  // Ключ идемпотентности офлайн-очереди клиента (CLAUDE.md §17) — если
+  // повторная отправка приходит с тем же clientSubmissionId, что уже
+  // сохранён, сервер её не применяет повторно (сеть могла потерять только
+  // ответ, а не сам запрос). Новое значение от судьи (ручное изменение)
+  // всегда несёт новый clientSubmissionId и обрабатывается как обычно.
+  clientSubmissionId String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   @@unique([drawParticipantId, judgeAssignmentId])
 }
