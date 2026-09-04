@@ -3,6 +3,7 @@ import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { maybeFinalizeFinalAfterScoreInTx } from "./final-advancement";
+import { allowedJudgeRole } from "./final-scoring-matrix";
 
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
 
@@ -65,11 +66,12 @@ export async function submitFinalJudgeScore(
     throw new ValidationFailedError(`Оценка «${criterion.name}» должна быть целым числом от ${criterion.minScore} до ${criterion.maxScore}.`);
   }
 
+  const requiredRole = allowedJudgeRole(criterionId, participant.role, round.finalSession.format, round.finalSession.config);
   const assignment = await prisma.judgeAssignment.findUnique({
-    where: { divisionId_judgeUserId_role: { divisionId: round.division.id, judgeUserId: actor.userId, role: participant.role } },
+    where: { divisionId_judgeUserId_role: { divisionId: round.division.id, judgeUserId: actor.userId, role: requiredRole } },
   });
   if (!assignment) {
-    throw new ValidationFailedError("Вы не назначены судить эту роль в этом дивизионе.");
+    throw new ValidationFailedError("Вы не назначены оценивать этот критерий у этого участника в этом дивизионе.");
   }
 
   await prisma.$transaction(async (tx) => {
@@ -102,6 +104,11 @@ export type FinalJudgeQueueItem = {
   bibNumber: string | null;
   displayName: string;
   scores: Record<string, number | null>; // criterionId -> моя оценка или null
+  // Какие критерии ИМЕННО ЭТОТ судья вправе оценивать у этого участника —
+  // в NORMAL/RANDOM_COUPLES всегда все критерии (своя роль = участнику), в
+  // JUDGES_DANCE — подмножество: "танцующие" судьи видят только критерии
+  // партнёрства, судьи со стороны — только остальные (allowedJudgeRole).
+  criteriaIds: string[];
 };
 
 export type FinalJudgeQueue = {
@@ -150,20 +157,31 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
   }
   if (!round.finalSession) return null;
 
-  const assignment = await prisma.judgeAssignment.findFirst({ where: { divisionId: round.division.id, judgeUserId: actor.userId } });
-  if (!assignment) return null;
+  const myAssignments = await prisma.judgeAssignment.findMany({ where: { divisionId: round.division.id, judgeUserId: actor.userId } });
+  if (myAssignments.length === 0) return null;
+  const myRoles = new Set(myAssignments.map((a) => a.role));
+  const assignmentByRole = new Map(myAssignments.map((a) => [a.role, a]));
 
   const criteria = [...(round.finalSession.criteriaSnapshot as unknown as CriterionSnapshot[])].sort((a, b) => a.priority - b.priority);
+  const format = round.finalSession.format;
+  const config = round.finalSession.config;
 
   const items: FinalJudgeQueueItem[] = [];
   for (const heat of round.heats) {
     const draw = heat.draws[0];
     if (!draw) continue;
     for (const p of draw.participants) {
-      if (p.role !== assignment.role) continue;
+      // В NORMAL/RANDOM_COUPLES видна только своя роль (allowedJudgeRole
+      // всегда возвращает participant.role); в JUDGES_DANCE участник может
+      // быть виден СРАЗУ обеим ролям судей — просто разные критерии
+      // редактируемы у каждой (см. allowedJudgeRole).
+      const visibleCriteria = criteria.filter((c) => myRoles.has(allowedJudgeRole(c.id, p.role, format, config)));
+      if (visibleCriteria.length === 0) continue;
+
       const scores: Record<string, number | null> = {};
-      for (const c of criteria) {
-        const s = p.finalJudgeScores.find((fs) => fs.criterionId === c.id && fs.judgeAssignmentId === assignment.id);
+      for (const c of visibleCriteria) {
+        const myAssignment = assignmentByRole.get(allowedJudgeRole(c.id, p.role, format, config));
+        const s = p.finalJudgeScores.find((fs) => fs.criterionId === c.id && fs.judgeAssignmentId === myAssignment?.id);
         scores[c.id] = s?.value ?? null;
       }
       items.push({
@@ -172,12 +190,13 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
         bibNumber: p.registration.checkIn?.bibNumber ?? null,
         displayName: p.registration.dancer.displayName,
         scores,
+        criteriaIds: visibleCriteria.map((c) => c.id),
       });
     }
   }
   items.sort((a, b) => Number(a.bibNumber ?? 0) - Number(b.bibNumber ?? 0));
 
-  const scoredCount = items.filter((it) => criteria.every((c) => it.scores[c.id] !== null)).length;
+  const scoredCount = items.filter((it) => it.criteriaIds.every((id) => it.scores[id] !== null)).length;
 
   return {
     roundId,

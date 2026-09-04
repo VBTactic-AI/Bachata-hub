@@ -1,12 +1,15 @@
-import type { RegistrationRole } from "@prisma/client";
+import type { RegistrationRole, RoundStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { isFinalStageInTx } from "../judging/advancement";
 import { getRoundEligiblePool } from "./draw-engine";
+import { transition } from "../state/machine";
 
 const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
+
+type JudgesDanceConfig = { dancingJudgeCriteriaIds?: string[] };
 
 // Проверка готовности перед стартом финала (промт пользователя, п.50) — не
 // бросает исключение, возвращает список проблем, чтобы UI мог показать их
@@ -27,10 +30,10 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
 
   const settings = await prisma.finalSettings.findUnique({ where: { divisionId: round.division.id } });
   const format = settings?.format ?? "NORMAL";
-  // Пока реализован только формат NORMAL (Этап 9, шаг 2) — честно сообщаем
-  // об этом ограничении, а не притворяемся, что остальные форматы работают.
-  if (format !== "NORMAL") {
-    issues.push(`Формат «${format}» ещё не реализован в этой версии — пока доступен только обычный J&J-финал (NORMAL)`);
+  // RANDOM_COUPLES ещё не реализован — честно сообщаем об этом ограничении,
+  // а не притворяемся, что формат работает (NORMAL и JUDGES_DANCE — готовы).
+  if (format === "RANDOM_COUPLES") {
+    issues.push(`Формат «${format}» ещё не реализован в этой версии`);
   }
 
   const criteria = await prisma.finalCriterion.findMany({ where: { divisionId: round.division.id, isActive: true } });
@@ -45,6 +48,22 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
     for (const c of criteria) {
       if (c.maxScore <= c.minScore) issues.push(`Критерий «${c.name}»: некорректный диапазон оценок`);
     }
+
+    // JUDGES_DANCE — какие критерии оценивает танцующий (партнёрящий)
+    // судья, а не сторонний (промт пользователя, п.22-23: "scoring matrix").
+    // Настраивается в FinalSettings.config.dancingJudgeCriteriaIds.
+    if (format === "JUDGES_DANCE") {
+      const config = (settings?.config as JudgesDanceConfig | null) ?? {};
+      const dancingIds = config.dancingJudgeCriteriaIds ?? [];
+      if (dancingIds.length === 0) {
+        issues.push('Не выбрано ни одного критерия, который оценивает "танцующий" судья (настройки финала)');
+      } else {
+        const validIds = new Set(criteria.map((c) => c.id));
+        for (const id of dancingIds) {
+          if (!validIds.has(id)) issues.push("В настройках финала указан несуществующий критерий");
+        }
+      }
+    }
   }
 
   const pools = await prisma.$transaction(async (tx) => {
@@ -57,12 +76,25 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
   }
 
   const assignments = await prisma.judgeAssignment.findMany({ where: { divisionId: round.division.id } });
-  const rolesWithFinalists: RegistrationRole[] = [];
-  if (pools.leaders.size > 0) rolesWithFinalists.push("LEADER");
-  if (pools.followers.size > 0) rolesWithFinalists.push("FOLLOWER");
-  for (const role of rolesWithFinalists) {
-    if (!assignments.some((a) => a.role === role)) {
-      issues.push(`Не назначен ни один судья на роль «${ROLE_LABEL[role]}»`);
+  if (format === "JUDGES_DANCE") {
+    // В JUDGES_DANCE судьи оценивают ПРОТИВОПОЛОЖНУЮ роль по критерию
+    // "танцующего" судьи — значит, если есть хоть один финалист (любой
+    // роли), нужны судьи ОБЕИХ ролей, не только "своей".
+    if (pools.leaders.size > 0 || pools.followers.size > 0) {
+      for (const role of ["LEADER", "FOLLOWER"] as const) {
+        if (!assignments.some((a) => a.role === role)) {
+          issues.push(`Не назначен ни один судья на роль «${ROLE_LABEL[role]}»`);
+        }
+      }
+    }
+  } else {
+    const rolesWithFinalists: RegistrationRole[] = [];
+    if (pools.leaders.size > 0) rolesWithFinalists.push("LEADER");
+    if (pools.followers.size > 0) rolesWithFinalists.push("FOLLOWER");
+    for (const role of rolesWithFinalists) {
+      if (!assignments.some((a) => a.role === role)) {
+        issues.push(`Не назначен ни один судья на роль «${ROLE_LABEL[role]}»`);
+      }
     }
   }
 
@@ -126,6 +158,50 @@ export async function startFinal(roundId: string): Promise<{ id: string }> {
     });
     return created;
   });
+
+  // JUDGES_DANCE не проходит через обычный Draw Engine (READY -> DRAWING ->
+  // DRAW_LOCKED -> RUNNING) — там нет ни выбора порядка вызова, ни парной
+  // жеребьёвки (партнёр участника — судья, не другой финалист), а стадии
+  // формируются по одной через advanceJudgesDanceStage (final-judges-dance.ts).
+  // Переводим раунд сразу READY -> RUNNING отдельным разрешённым переходом
+  // (не трогая общую таблицу переходов round-state.ts — она остаётся
+  // прежней для NORMAL/RANDOM_COUPLES), через тот же transition()-примитив,
+  // что и обычные переходы (та же блокировка/аудит, CLAUDE.md §9/§27).
+  if (format === "JUDGES_DANCE") {
+    const table: Partial<Record<RoundStatus, readonly RoundStatus[]>> = { READY: ["RUNNING"] };
+    await transition({
+      entityType: "Round",
+      entityId: roundId,
+      table,
+      currentStatus: "READY",
+      statusVersion: round.statusVersion,
+      to: "RUNNING",
+      actor,
+      reason: "Начало финала формата «Танец с судьями» — минует обычную жеребьёвку.",
+      applyUpdate: async (tx, { to, expectedVersion }) => {
+        const result = await tx.round.updateMany({
+          where: { id: roundId, statusVersion: expectedVersion },
+          data: { status: to, statusVersion: { increment: 1 } },
+        });
+        if (result.count > 0) {
+          // generateRounds() создаёт по умолчанию заход №1 сразу вместе с
+          // раундом (по образцу NORMAL-формата, до того как организатор мог
+          // выбрать формат финала) — JUDGES_DANCE его не использует вовсе
+          // (advanceJudgesDanceStage создаёт свои заходы стадий сам, с теми
+          // же номерами 1/2) и без этой уборки столкнулся бы с @@unique
+          // ([roundId, number]). Безопасно удалять: раунд только что был
+          // READY, значит ни один заход ещё не мог запуститься/получить
+          // жеребьёвку.
+          await tx.heat.deleteMany({ where: { roundId, draws: { none: {} } } });
+        }
+        return {
+          before: { status: "READY" },
+          after: { status: to },
+          updatedCount: result.count,
+        };
+      },
+    });
+  }
 
   return { id: session.id };
 }

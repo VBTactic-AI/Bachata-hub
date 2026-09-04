@@ -74,6 +74,7 @@ const baseRound = {
   divisionId: "div1",
   rulesId: "rules1",
   statusVersion: 1,
+  status: "SCORING",
   type: null,
   finalSession: { id: "session1", criteriaSnapshot: CRITERIA },
   division: { id: "div1", competitionId: "comp1", category: { order: 3 } },
@@ -132,6 +133,18 @@ describe("calculateFinalResultsInTx() — базовые случаи", () => {
 
   it("ничего не делает, если у раунда ещё не начат финал (нет FinalSession)", async () => {
     txRoundFindUniqueOrThrow.mockResolvedValue({ ...baseRound, finalSession: null });
+    await calculateFinalResultsInTx(fakeTx as never, "final1", actor);
+    expect(txFinalResultCreateMany).not.toHaveBeenCalled();
+  });
+
+  // JUDGES_DANCE создаёт заходы стадий по одному — судьи могут полностью
+  // оценить стадию 1, пока раунд ещё RUNNING (стадия 2 ещё не создана).
+  // Без этой проверки был бы посчитан результат только по одной роли, а
+  // идемпотентная защита не дала бы пересчитать его правильно позже
+  // (найдено вживую, 2026-09-04).
+  it("НЕ считает результат, если раунд ещё не вошёл в SCORING (даже если все текущие заходы полностью оценены)", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue({ ...baseRound, status: "RUNNING" });
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: [participant("regA", "LEADER", 100, 150)] }] }]);
     await calculateFinalResultsInTx(fakeTx as never, "final1", actor);
     expect(txFinalResultCreateMany).not.toHaveBeenCalled();
   });

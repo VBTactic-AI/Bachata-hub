@@ -10,7 +10,7 @@ export type FinalCriterionRow = { id?: string; name: string; minScore: number; m
 
 const FORMAT_LABELS: Record<FinalFormatValue, string> = {
   NORMAL: "Обычный J&J",
-  JUDGES_DANCE: "Танец с судьями (пока не поддерживается запуск)",
+  JUDGES_DANCE: "Танец с судьями",
   RANDOM_COUPLES: "Случайные пары (пока не поддерживается запуск)",
 };
 
@@ -24,6 +24,7 @@ export function FinalSettingsPanel({
   format: initialFormat,
   tracksCount: initialTracksCount,
   partnerChangeEnabled: initialPartnerChangeEnabled,
+  config: initialConfig,
   criteria: initialCriteria,
   locked,
 }: {
@@ -31,6 +32,7 @@ export function FinalSettingsPanel({
   format: FinalFormatValue;
   tracksCount: number;
   partnerChangeEnabled: boolean;
+  config: unknown;
   criteria: (FinalCriterionRow & { priority: number })[];
   locked: boolean;
 }) {
@@ -40,6 +42,13 @@ export function FinalSettingsPanel({
   const [partnerChangeEnabled, setPartnerChangeEnabled] = useState(initialPartnerChangeEnabled);
   const [criteria, setCriteria] = useState<FinalCriterionRow[]>(() =>
     [...initialCriteria].sort((a, b) => a.priority - b.priority).map(({ id, name, minScore, maxScore, step }) => ({ id, name, minScore, maxScore, step }))
+  );
+  // JUDGES_DANCE — какие критерии оценивает "танцующий" (физически
+  // партнёрящий, противоположной роли) судья, остальные — судья со стороны
+  // (промт пользователя, п.22-23 "scoring matrix"). Ключ — id критерия,
+  // значит доступно только для уже сохранённых критериев (см. чекбокс ниже).
+  const [dancingIds, setDancingIds] = useState<Set<string>>(
+    () => new Set(((initialConfig as { dancingJudgeCriteriaIds?: string[] } | null)?.dancingJudgeCriteriaIds ?? []).filter(Boolean))
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,13 +83,23 @@ export function FinalSettingsPanel({
     });
   }
 
+  function toggleDancing(criterionId: string) {
+    setDancingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(criterionId)) next.delete(criterionId);
+      else next.add(criterionId);
+      return next;
+    });
+  }
+
   async function onSaveSettings() {
     setLoading(true);
     setError(null);
+    const config = format === "JUDGES_DANCE" ? { dancingJudgeCriteriaIds: [...dancingIds] } : {};
     const res = await fetch(`/api/divisions/${divisionId}/final-settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ format, tracksCount, partnerChangeEnabled, config: {} }),
+      body: JSON.stringify({ format, tracksCount, partnerChangeEnabled, config }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -137,6 +156,13 @@ export function FinalSettingsPanel({
         </Button>
       </div>
 
+      {format === "JUDGES_DANCE" && (
+        <p className="hint-text m-0">
+          Стадия 1: ведущие финалисты танцуют — судьи-Ведомые физически партнёрят и оценивают отмеченные ниже критерии,
+          судьи-Ведущие смотрят со стороны и оценивают остальные. Стадия 2 — наоборот.
+        </p>
+      )}
+
       <div>
         <p className="hint-text m-0">
           Критерии оценки — порядок в списке определяет приоритет: если у двух участников совпала общая сумма баллов, сначала
@@ -172,6 +198,12 @@ export function FinalSettingsPanel({
               <Button type="button" size="sm" variant="outline" onClick={() => removeCriterion(i)}>
                 Убрать
               </Button>
+              {format === "JUDGES_DANCE" && (
+                <label className={`flex items-center gap-1.5 text-sm ${c.id ? "" : "text-muted"}`}>
+                  <input type="checkbox" disabled={!c.id} checked={c.id ? dancingIds.has(c.id) : false} onChange={() => c.id && toggleDancing(c.id)} />
+                  Танцующий судья{!c.id && " (сначала сохраните критерии)"}
+                </label>
+              )}
             </div>
           ))}
         </div>

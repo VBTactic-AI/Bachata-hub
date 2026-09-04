@@ -7,6 +7,7 @@ import type { Actor } from "../rbac/actor";
 import { fillHelperShortage } from "../competition/draw-engine";
 import { parentRoundScoredRegistrationIds } from "./advancement";
 import { rankFinalParticipants, resolveTieGroupPlaces, type FinalParticipantScores, type FinalCriterionPriority, type FinalTieGroup } from "./final-ranking";
+import { allowedJudgeRole } from "./final-scoring-matrix";
 
 type PrismaTx = Prisma.TransactionClient;
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
@@ -23,7 +24,7 @@ export type FinalScoringProgress = { required: number; submitted: number; comple
 export async function getFinalScoringProgressInTx(tx: PrismaTx | typeof prisma, roundId: string): Promise<FinalScoringProgress> {
   const round = await tx.round.findUniqueOrThrow({
     where: { id: roundId },
-    select: { divisionId: true, finalSession: { select: { criteriaSnapshot: true } } },
+    select: { divisionId: true, finalSession: { select: { format: true, config: true, criteriaSnapshot: true } } },
   });
   if (!round.finalSession) return { required: 0, submitted: 0, complete: true };
   const criteria = round.finalSession.criteriaSnapshot as unknown as CriterionSnapshot[];
@@ -41,7 +42,17 @@ export async function getFinalScoringProgressInTx(tx: PrismaTx | typeof prisma, 
   const judgesByRole: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
   for (const a of assignments) judgesByRole[a.role]++;
 
-  const required = participants.reduce((sum, p) => sum + judgesByRole[p.role] * criteria.length, 0);
+  // Кто именно судит критерий — зависит от формата (allowedJudgeRole,
+  // final-scoring-matrix.ts): в JUDGES_DANCE это не всегда судья ТОЙ ЖЕ
+  // роли, что участник (там критерий "танцующего судьи" оценивает
+  // противоположная роль) — считаем по каждому критерию отдельно, а не
+  // просто "судьи роли участника × число критериев".
+  let required = 0;
+  for (const p of participants) {
+    for (const c of criteria) {
+      required += judgesByRole[allowedJudgeRole(c.id, p.role, round.finalSession.format, round.finalSession.config)];
+    }
+  }
   const participantIds = participants.map((p) => p.id);
   const submitted = participantIds.length === 0 ? 0 : await tx.finalJudgeScore.count({ where: { drawParticipantId: { in: participantIds } } });
 
@@ -52,9 +63,16 @@ export async function getFinalScoringProgress(roundId: string): Promise<FinalSco
   return getFinalScoringProgressInTx(prisma, roundId);
 }
 
+// Проверяет progress.complete целиком, а не только "нечего оценивать"
+// (required===0) — required===0 подразумевает complete=true, так что это
+// строго более точная проверка: если раунд ВОШЁЛ в SCORING уже полностью
+// оценённым (все судьи успели отправить оценки, пока заход ещё шёл —
+// найдено вживую 2026-09-04 при тестировании NORMAL: раунд иначе повисал в
+// SCORING без единого лишнего клика, который бы досчитал результат),
+// результат считается сразу, не дожидаясь следующей (несуществующей) заявки.
 export async function maybeCalculateFinalOnEntryInTx(tx: PrismaTx, roundId: string, actor: Actor): Promise<void> {
   const progress = await getFinalScoringProgressInTx(tx, roundId);
-  if (progress.required === 0) {
+  if (progress.complete) {
     await calculateFinalResultsInTx(tx, roundId, actor);
   }
 }
@@ -89,6 +107,17 @@ export async function calculateFinalResultsInTx(tx: PrismaTx, roundId: string, a
   });
   if (!round.finalSession) return; // не финал новой системы — считает обычный advancement.ts
   if (round.type === "TIE_BREAK") return; // решается только recordFinalTieBreakDecision, не автоматически
+  // Считать можно только когда раунд ДЕЙСТВИТЕЛЬНО вошёл в SCORING (все
+  // заходы завершены) — не раньше. Иначе для JUDGES_DANCE (заходы стадий
+  // создаются по одной, не все сразу) возможна гонка: судьи успевают
+  // полностью оценить стадию 1 ДО того, как стадия 2 вообще создана,
+  // maybeFinalizeFinalAfterScoreInTx (вызывается после КАЖДОЙ оценки, вне
+  // зависимости от статуса раунда) увидел бы "всё оценено" по неполному
+  // набору заходов и посчитал бы результат только по одной роли — а
+  // идемпотентная защита (already>0) выше не дала бы пересчитать его
+  // правильно позже, когда появится вторая стадия (найдено вживую,
+  // 2026-09-04).
+  if (round.status !== "SCORING") return;
 
   const criteria = round.finalSession.criteriaSnapshot as unknown as CriterionSnapshot[];
   const priorities: FinalCriterionPriority[] = criteria.map((c) => ({ id: c.id, priority: c.priority }));

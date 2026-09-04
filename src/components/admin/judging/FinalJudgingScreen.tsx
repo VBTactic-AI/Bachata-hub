@@ -16,6 +16,10 @@ export type FinalQueueItem = {
   bibNumber: string | null;
   displayName: string;
   scores: Record<string, number | null>;
+  // Какие критерии ЭТОТ судья вправе оценивать у ЭТОГО участника — в
+  // NORMAL/RANDOM_COUPLES всегда все критерии; в JUDGES_DANCE подмножество
+  // ("танцующий"/сторонний судья видят разные критерии, final-scoring-matrix.ts).
+  criteriaIds: string[];
 };
 
 // Судейский экран финала (CLAUDE.md §40 — быстро, без админских функций;
@@ -70,12 +74,17 @@ export function FinalJudgingScreen({
     return item.scores[criterionId] ?? null;
   }
 
+  function myCriteriaFor(item: FinalQueueItem): FinalCriterionInfo[] {
+    return sortedCriteria.filter((c) => item.criteriaIds.includes(c.id));
+  }
+
   function effectiveSum(item: FinalQueueItem): number {
-    return sortedCriteria.reduce((sum, c) => sum + (effectiveValue(item, c.id) ?? 0), 0);
+    return myCriteriaFor(item).reduce((sum, c) => sum + (effectiveValue(item, c.id) ?? 0), 0);
   }
 
   function isFullyScored(item: FinalQueueItem): boolean {
-    return sortedCriteria.every((c) => effectiveValue(item, c.id) !== null);
+    const mine = myCriteriaFor(item);
+    return mine.length > 0 && mine.every((c) => effectiveValue(item, c.id) !== null);
   }
 
   const scoredCount = items.filter(isFullyScored).length;
@@ -131,7 +140,7 @@ export function FinalJudgingScreen({
             <p className="m-0 text-lg font-semibold">{current.displayName}</p>
           </div>
 
-          {sortedCriteria.map((c) => {
+          {myCriteriaFor(current).map((c) => {
             const value = effectiveValue(current, c.id);
             const optionsCount = Math.floor((c.maxScore - c.minScore) / c.step) + 1;
             const useButtons = optionsCount <= 16;
