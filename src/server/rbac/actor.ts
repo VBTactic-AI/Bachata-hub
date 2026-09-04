@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Permission } from "./permissions";
@@ -14,19 +15,44 @@ export type Actor = {
 
 // null для гостя — вызывающий код сам решает, кидать AuthenticationRequiredError
 // или обрабатывать анонимный доступ (напр. публичные результаты).
-export async function getActor(): Promise<Actor | null> {
+//
+// React cache() — тот же приём, что и у getCurrentUser() (см. её комментарий):
+// на странице судьи, например, сама страница вызывает getActor() для
+// редиректа, а requirePermission() внутри getJudgeQueue() зовёт его снова —
+// без cache() это дублирующийся набор запросов к RBAC-таблицам за один и тот
+// же HTTP-запрос.
+export const getActor = cache(async (): Promise<Actor | null> => {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const [globalAssignments, memberships] = await Promise.all([
+  // Мост со слоем 1 (docs/00_DECISIONS.md, D2) запрошен той же волной
+  // запросов, а не отдельным await после неё — на удалённой БД (Supabase
+  // pooler) каждый дополнительный последовательный round-trip стоит
+  // ~150мс, а этот путь идёт демо-ADMIN'ом буквально на каждое действие.
+  const isSiteAdmin = user.role === "ADMIN";
+  // relationLoadStrategy: "join" — role -> permissions -> permission — без
+  // него каждая из трёх веток сама по себе стоила бы больше одного
+  // round-trip'а (Promise.all ограничивает общее время самой медленной
+  // веткой, а не суммой, но каждая лишняя вложенность всё равно добавляет
+  // задержку внутри своей ветки).
+  const [globalAssignments, memberships, superAdminRole] = await Promise.all([
     prisma.userRoleAssignment.findMany({
       where: { userId: user.id },
+      relationLoadStrategy: "join",
       include: { role: { include: { permissions: { include: { permission: true } } } } },
     }),
     prisma.competitionMember.findMany({
       where: { userId: user.id },
+      relationLoadStrategy: "join",
       include: { role: { include: { permissions: { include: { permission: true } } } } },
     }),
+    isSiteAdmin
+      ? prisma.role.findUnique({
+          where: { code: "SUPER_ADMIN" },
+          relationLoadStrategy: "join",
+          include: { permissions: { include: { permission: true } } },
+        })
+      : Promise.resolve(null),
   ]);
 
   const globalPermissions = new Set<Permission>();
@@ -35,17 +61,8 @@ export async function getActor(): Promise<Actor | null> {
       globalPermissions.add(rp.permission.code as Permission);
     }
   }
-
-  // Мост со слоем 1 (docs/00_DECISIONS.md, D2): ADMIN сайта получает полный
-  // доступ к движку соревнований без отдельного назначения SUPER_ADMIN.
-  if (user.role === "ADMIN") {
-    const superAdminRole = await prisma.role.findUnique({
-      where: { code: "SUPER_ADMIN" },
-      include: { permissions: { include: { permission: true } } },
-    });
-    for (const rp of superAdminRole?.permissions ?? []) {
-      globalPermissions.add(rp.permission.code as Permission);
-    }
+  for (const rp of superAdminRole?.permissions ?? []) {
+    globalPermissions.add(rp.permission.code as Permission);
   }
 
   const permissionsByCompetition = new Map<string, Set<Permission>>();
@@ -61,4 +78,4 @@ export async function getActor(): Promise<Actor | null> {
   }
 
   return { userId: user.id, email: user.email, globalPermissions, permissionsByCompetition };
-}
+});

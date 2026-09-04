@@ -22,6 +22,7 @@ import { maybeFinalizeAfterScoreInTx } from "./advancement";
 export async function submitJudgeScore(drawParticipantId: string, value: number, clientSubmissionId: string): Promise<void> {
   const participant = await prisma.drawParticipant.findUniqueOrThrow({
     where: { id: drawParticipantId },
+    relationLoadStrategy: "join",
     include: {
       draw: {
         include: {
@@ -115,6 +116,11 @@ export async function getJudgeQueue(competitionId: string): Promise<JudgeQueueIt
       status: { in: ["RUNNING", "PAUSED", "FINISHED"] },
       round: { divisionId: { in: divisionIds }, status: { in: ["RUNNING", "PAUSED", "FINISHED", "SCORING"] } },
     },
+    // relationLoadStrategy: "join" — судья опрашивает эту функцию при
+    // каждом обновлении своей страницы, вложенность до 5 уровней иначе
+    // стоила бы отдельного round-trip'а на каждый (см. комментарий на
+    // аналогичном запросе в admin/competitions/[id]/page.tsx).
+    relationLoadStrategy: "join",
     include: {
       round: { select: { id: true, divisionId: true, judgingMaxScore: true, division: { select: { category: { select: { name: true } } } } } },
       draws: {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label, Input, Select } from "@/components/ui/field";
 import { ROTATION_MODE_LABELS } from "@/lib/competition-labels";
@@ -20,8 +19,16 @@ export type DivisionSettings = {
 // через явный "режим редактирования" (по запросу пользователя, 2026-09-04):
 // обычно просто текст, форма для правки открывается кнопкой, чтобы не задеть
 // значение, которое уже используется в расчётах, случайным кликом.
+//
+// После сохранения обновляем только текст на этой карточке (`current`), а не
+// всю страницу соревнования через router.refresh() — сервер уже подтвердил,
+// что записал ИМЕННО те значения, что мы отправили (updateDivisionSettings
+// не пересчитывает и не отклоняет их частично), значит переспрашивать всю
+// карточку соревнования заново ради одной строки текста не нужно. Остальной
+// странице (расчёты раундов и т.п.) актуальное значение придёт при следующей
+// её собственной перезагрузке — здесь важна только эта надпись.
 export function DivisionSettingsPanel({ divisionId, settings }: { divisionId: string; settings: DivisionSettings }) {
-  const router = useRouter();
+  const [current, setCurrent] = useState(settings);
   const [editing, setEditing] = useState(false);
   const [heatCapacity, setHeatCapacity] = useState(String(settings.heatCapacity));
   const [rotationMode, setRotationMode] = useState<RotationMode>(settings.rotationMode);
@@ -32,27 +39,28 @@ export function DivisionSettingsPanel({ divisionId, settings }: { divisionId: st
   const [error, setError] = useState<string | null>(null);
 
   function resetToCurrent() {
-    setHeatCapacity(String(settings.heatCapacity));
-    setRotationMode(settings.rotationMode);
-    setRotationIntervalSec(String(settings.rotationIntervalSec));
-    setRotationShiftMin(String(settings.rotationShiftMin));
-    setRotationShiftMax(String(settings.rotationShiftMax));
+    setHeatCapacity(String(current.heatCapacity));
+    setRotationMode(current.rotationMode);
+    setRotationIntervalSec(String(current.rotationIntervalSec));
+    setRotationShiftMin(String(current.rotationShiftMin));
+    setRotationShiftMax(String(current.rotationShiftMax));
     setError(null);
   }
 
   async function onSave() {
     setLoading(true);
     setError(null);
+    const next: DivisionSettings = {
+      heatCapacity: Number(heatCapacity),
+      rotationMode,
+      rotationIntervalSec: Number(rotationIntervalSec),
+      rotationShiftMin: Number(rotationShiftMin),
+      rotationShiftMax: Number(rotationShiftMax),
+    };
     const res = await fetch(`/api/divisions/${divisionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        heatCapacity: Number(heatCapacity),
-        rotationMode,
-        rotationIntervalSec: Number(rotationIntervalSec),
-        rotationShiftMin: Number(rotationShiftMin),
-        rotationShiftMax: Number(rotationShiftMax),
-      }),
+      body: JSON.stringify(next),
     });
     setLoading(false);
     if (!res.ok) {
@@ -60,17 +68,17 @@ export function DivisionSettingsPanel({ divisionId, settings }: { divisionId: st
       setError(data.error || "Не удалось сохранить настройки.");
       return;
     }
+    setCurrent(next);
     setEditing(false);
-    router.refresh();
   }
 
   if (!editing) {
     return (
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <p className="hint-text">
-          Вместимость захода: {settings.heatCapacity} · Ротация: {ROTATION_MODE_LABELS[settings.rotationMode] ?? settings.rotationMode}
-          {settings.rotationMode === "SEGMENT_MANUAL_SHIFT" && ` (${settings.rotationShiftMin}–${settings.rotationShiftMax} партнёров)`}
-          {settings.rotationMode === "TRACK_AUTO_SHIFT" && ` (каждые ${settings.rotationIntervalSec} сек)`}
+          Вместимость захода: {current.heatCapacity} · Ротация: {ROTATION_MODE_LABELS[current.rotationMode] ?? current.rotationMode}
+          {current.rotationMode === "SEGMENT_MANUAL_SHIFT" && ` (${current.rotationShiftMin}–${current.rotationShiftMax} партнёров)`}
+          {current.rotationMode === "TRACK_AUTO_SHIFT" && ` (каждые ${current.rotationIntervalSec} сек)`}
         </p>
         <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(true)}>
           изменить настройки

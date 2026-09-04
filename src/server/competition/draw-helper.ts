@@ -31,6 +31,7 @@ export async function listHelperCandidates(
 }> {
   const heat = await prisma.heat.findUniqueOrThrow({
     where: { id: heatId },
+    relationLoadStrategy: "join",
     include: {
       round: { include: { division: { include: { category: true } } } },
       draws: { orderBy: { version: "desc" }, take: 1, select: { id: true } },
@@ -162,6 +163,7 @@ export async function addDrawHelper(
 ): Promise<{ id: string }> {
   const heat = await prisma.heat.findUniqueOrThrow({
     where: { id: heatId },
+    relationLoadStrategy: "join",
     include: {
       round: { include: { division: { select: { id: true, competitionId: true } } } },
       draws: { orderBy: { version: "desc" }, take: 1 },
@@ -218,6 +220,7 @@ export async function addDrawHelper(
 export async function removeDrawHelper(drawParticipantId: string): Promise<void> {
   const participant = await prisma.drawParticipant.findUniqueOrThrow({
     where: { id: drawParticipantId },
+    relationLoadStrategy: "join",
     include: {
       draw: { include: { heat: { include: { round: { include: { division: { select: { competitionId: true } } } } } } } },
     },
@@ -256,6 +259,7 @@ export async function replaceDrawHelper(
 ): Promise<{ id: string }> {
   const participant = await prisma.drawParticipant.findUniqueOrThrow({
     where: { id: drawParticipantId },
+    relationLoadStrategy: "join",
     include: {
       draw: {
         include: { heat: { include: { round: { include: { division: { select: { id: true, competitionId: true } } } } } } },

@@ -45,6 +45,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const [competition, activeCategories, activeStages] = await Promise.all([
     prisma.competition.findUnique({
       where: { id },
+      // relationLoadStrategy: "join" — глубоко вложенный include (5 уровней)
+      // без этого выполняется отдельным SQL-запросом на каждый уровень
+      // (замерено: 9 round-trip'ов, ~775мс на удалённой БД через Supabase
+      // pooler); с "join" — 4 round-trip'а, ~500мс.
+      relationLoadStrategy: "join",
       include: {
         divisions: {
           include: {
@@ -152,6 +157,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const registrations = canViewAllRegistrations
     ? await prisma.registration.findMany({
         where: { competitionId: competition.id },
+        relationLoadStrategy: "join",
         include: { dancer: true, checkIn: true, division: { include: { category: true } } },
         orderBy: { createdAt: "asc" },
       })
@@ -160,6 +166,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     !canViewAllRegistrations && myDancer
       ? await prisma.registration.findFirst({
           where: { competitionId: competition.id, dancerId: myDancer.id },
+          relationLoadStrategy: "join",
           include: { checkIn: true, division: { include: { category: true } } },
         })
       : null;

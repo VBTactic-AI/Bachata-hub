@@ -53,6 +53,7 @@ export async function calculateRoundResultsInTx(tx: PrismaTx, roundId: string, a
 
   const round = await tx.round.findUniqueOrThrow({
     where: { id: roundId },
+    relationLoadStrategy: "join",
     include: { division: { select: { id: true, competitionId: true, category: { select: { order: true } } } } },
   });
   if (round.type === "TIE_BREAK") return; // решается только recordTieBreakDecision, не автоматически

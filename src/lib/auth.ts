@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
@@ -47,7 +48,14 @@ export async function destroySession() {
 
 // Возвращает текущего пользователя (или null для гостя). Используется во всех
 // server-компонентах и route handlers, где важна роль/авторство.
-export async function getCurrentUser(): Promise<User | null> {
+//
+// Обёрнуто в React cache() (не связано с HTTP-кэшированием) — дедуплицирует
+// повторные вызовы В ПРЕДЕЛАХ ОДНОГО запроса: например, страница судьи сама
+// вызывает getActor() для проверки редиректа, а getJudgeQueue() внутри нужного
+// ей requirePermission() вызывает его снова — без cache() это два отдельных
+// сетевых похода к удалённой БД (Supabase pooler, ~150мс каждый round-trip)
+// за одними и теми же данными в рамках одного и того же запроса пользователя.
+export const getCurrentUser = cache(async (): Promise<User | null> => {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -62,7 +70,7 @@ export async function getCurrentUser(): Promise<User | null> {
   } catch {
     return null;
   }
-}
+});
 
 export function hasRole(user: User | null, ...roles: UserRole[]): boolean {
   if (!user) return false;

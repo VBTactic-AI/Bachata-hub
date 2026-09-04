@@ -27,6 +27,7 @@ function permissionFor(to: HeatStatus): Permission {
 export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { reason?: string }): Promise<void> {
   const heat = await prisma.heat.findUniqueOrThrow({
     where: { id: heatId },
+    relationLoadStrategy: "join",
     include: { round: { include: { division: { select: { competitionId: true } } } } },
   });
   const competitionId = heat.round.division.competitionId;
@@ -76,6 +77,7 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
           status: { in: ["RUNNING", "PAUSED"] },
           round: { division: { competitionId } },
         },
+        relationLoadStrategy: "join",
         include: { round: { select: { type: true, stage: { select: { name: true } } } } },
       });
       if (activeElsewhere) {

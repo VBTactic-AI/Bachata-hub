@@ -402,6 +402,7 @@ export async function rerollHeatDraw(
 ): Promise<{ id: string; leaderCount: number; followerCount: number }> {
   const heat = await prisma.heat.findUniqueOrThrow({
     where: { id: heatId },
+    relationLoadStrategy: "join",
     include: { round: { include: { division: { select: { id: true, competitionId: true, heatCapacity: true } } } } },
   });
   const competitionId = heat.round.division.competitionId;
@@ -440,6 +441,7 @@ export async function rerollHeatDraw(
 export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: string }> {
   const heat = await prisma.heat.findUniqueOrThrow({
     where: { id: heatId },
+    relationLoadStrategy: "join",
     include: {
       round: {
         include: {

@@ -118,6 +118,7 @@ export async function transitionRound(
         const heats = await tx.heat.findMany({
           where: { roundId },
           orderBy: { number: "asc" },
+          relationLoadStrategy: "join",
           include: { draws: { orderBy: { version: "desc" }, take: 1, include: { participants: true } } },
         });
         const placedLeaderIds = new Set<string>();
