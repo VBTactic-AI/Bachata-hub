@@ -32,6 +32,25 @@ export default {
           DEFAULT: "#c0392b",
           light: "#fbeae7",
         },
+        // "night" — отдельная тёмная палитра ТОЛЬКО для нового публичного
+        // раздела /compete (список конкурсов → карточка → регистрация),
+        // по образцу референса пользователя. Остальной сайт (включая
+        // /admin) продолжает жить на светлых токенах выше — это осознанно
+        // два визуальных языка в одном проекте, не ошибка (подтверждено
+        // пользователем, 2026-09-04): добавлено новым namespace в тот же
+        // конфиг, а не отдельным CSS-in-JS/дублирующей системой.
+        night: {
+          bg: "#0B0D16",
+          card: "#151725",
+          card2: "#1A1C2B",
+          border: "rgba(255,255,255,0.08)",
+          primary: "#7C3AED",
+          pink: "#EC4899",
+          success: "#22C55E",
+          text: "#FFFFFF",
+          muted: "#9CA3AF",
+          disabled: "#555866",
+        },
       },
       fontFamily: {
         body: [
@@ -63,6 +82,8 @@ export default {
       backgroundImage: {
         "gradient-primary": "linear-gradient(135deg, #a8296b 0%, #c9376f 100%)",
         "gradient-school": "linear-gradient(135deg, #f6d9e6, #fdf0e0)",
+        "gradient-night-cta": "linear-gradient(90deg, #6D3DF5, #F05AA6)",
+        "gradient-night-hero": "linear-gradient(135deg, #4C1D95 0%, #7C3AED 45%, #EC4899 100%)",
       },
       transitionTimingFunction: {
         brand: "cubic-bezier(0.16, 1, 0.3, 1)",

@@ -49,9 +49,12 @@ export async function Header() {
               {t.nav.admin}
             </Link>
           )}
+          <Link href="/compete" className="text-ink hover:text-primary hover:no-underline">
+            {t.nav.competitions}
+          </Link>
           {hasCompetitionAccess && (
             <Link href="/admin/competitions" className="text-ink hover:text-primary hover:no-underline">
-              {t.nav.competitions}
+              {t.nav.manageCompetitions}
             </Link>
           )}
           {isAdmin(user) && (
