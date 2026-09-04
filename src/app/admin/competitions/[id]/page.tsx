@@ -36,6 +36,10 @@ import { FinalResultsTable } from "@/components/admin/FinalResultsTable";
 import { FinalTieBreakDecisionForm } from "@/components/admin/FinalTieBreakDecisionForm";
 import { JudgesDanceStagePanel } from "@/components/admin/JudgesDanceStagePanel";
 import { RandomCouplesPanel } from "@/components/admin/RandomCouplesPanel";
+import { DivisionResultsPanel } from "@/components/admin/DivisionResultsPanel";
+import { CompetitionResultsPanel } from "@/components/admin/CompetitionResultsPanel";
+import { RoundAdvancementPublish } from "@/components/admin/RoundAdvancementPublish";
+import { getCurrentDivisionResults } from "@/server/results/results";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -147,6 +151,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canDecideTieBreak = can(actor, "tie_break:decide", competition.id);
   const canConfigureFinal = can(actor, "final:configure", competition.id);
   const canManageFinal = can(actor, "final:manage", competition.id);
+  const canCalculateResults = can(actor, "result:calculate", competition.id);
+  const canReviewResults = can(actor, "result:review", competition.id);
+  const canPublishResults = can(actor, "result:publish", competition.id);
   const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
@@ -224,6 +231,25 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     }
   }
 
+  // Официальный протокол результатов (Этап 10) — виден, только когда
+  // финальный раунд дивизиона (последний обычный по order) уже COMPLETED, и
+  // только тем, кто вообще может считать результаты (иначе лишний запрос
+  // впустую).
+  const finalRoundCompletedByDivisionId = new Map<string, boolean>();
+  for (const d of competition.divisions) {
+    const regularRounds = d.rounds.filter((r) => r.type === null).sort((a, b) => b.order - a.order);
+    finalRoundCompletedByDivisionId.set(d.id, regularRounds[0]?.status === "COMPLETED");
+  }
+  const divisionResultsById: Map<string, Awaited<ReturnType<typeof getCurrentDivisionResults>>> = canCalculateResults
+    ? new Map(
+        await Promise.all(
+          competition.divisions
+            .filter((d) => finalRoundCompletedByDivisionId.get(d.id))
+            .map(async (d) => [d.id, await getCurrentDivisionResults(d.id)] as const)
+        )
+      )
+    : new Map();
+
   const registrations = canViewAllRegistrations
     ? await prisma.registration.findMany({
         where: { competitionId: competition.id },
@@ -264,6 +290,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       </div>
 
       {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
+      {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
       {isJudge && (
         <p>
           <a href={`/judging/${competition.id}`}>Моё судейство →</a>
@@ -465,6 +492,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             </div>
                           )}
 
+                          {round.status === "COMPLETED" && round.type !== "TIE_BREAK" && !isFinalRound && canPublishResults && (
+                            <RoundAdvancementPublish
+                              roundId={round.id}
+                              publishedAt={round.advancementPublishedAt ? round.advancementPublishedAt.toISOString() : null}
+                            />
+                          )}
+
                           {isJudgesDance && (
                             // JUDGES_DANCE не использует Draw Engine (партнёр
                             // участника — судья, не другой финалист, A5) — заходы
@@ -576,6 +610,27 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} />
                     </div>
                   </div>
+                )}
+
+                {canCalculateResults && (
+                  <DivisionResultsPanel
+                    divisionId={d.id}
+                    finalRoundCompleted={finalRoundCompletedByDivisionId.get(d.id) ?? false}
+                    hasResults={(divisionResultsById.get(d.id)?.length ?? 0) > 0}
+                    reviewedAt={d.resultsReviewedAt ? d.resultsReviewedAt.toISOString() : null}
+                    canReview={canReviewResults}
+                    canCorrect={canPublishResults}
+                    rows={(divisionResultsById.get(d.id) ?? []).map((r) => ({
+                      id: r.id,
+                      registrationId: r.registrationId,
+                      role: r.role,
+                      displayName: r.displayName,
+                      bibNumber: r.bibNumber,
+                      status: r.status,
+                      placement: r.placement,
+                      publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
+                    }))}
+                  />
                 )}
               </Card>
             ))}

@@ -278,3 +278,24 @@ export const recordFinalTieBreakDecisionSchema = z.object({
   orderedRegistrationIds: z.array(z.string().min(1)).min(2),
 });
 export type RecordFinalTieBreakDecisionInput = z.infer<typeof recordFinalTieBreakDecisionSchema>;
+
+// --- Результаты и публикация (Этап 10, docs/00_DECISIONS.md) ---
+
+export const unpublishReasonSchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+export type UnpublishReasonInput = z.infer<typeof unpublishReasonSchema>;
+
+export const resultStatusSchema = z.enum(["FINALIST", "ELIMINATED"]);
+
+export const correctResultSchema = z
+  .object({
+    status: resultStatusSchema,
+    placement: z.coerce.number().int().positive().nullable(),
+    reason: z.string().min(1).max(500),
+  })
+  .refine((v) => v.status === "FINALIST" || v.placement === null, {
+    message: "У выбывшего участника не может быть места.",
+    path: ["placement"],
+  });
+export type CorrectResultInput = z.infer<typeof correctResultSchema>;

@@ -78,6 +78,10 @@ model User {
   judgeAssignments           JudgeAssignment[]    @relation("JudgeAssignmentJudge")
   assignedJudgeAssignments   JudgeAssignment[]    @relation("JudgeAssignmentAssignedBy")
   createdFinalPairs          FinalPair[]          @relation("FinalPairCreatedBy")
+  reviewedDivisionResults    Division[]           @relation("DivisionResultsReviewedBy")
+  publishedRoundAdvancements Round[]              @relation("RoundAdvancementPublishedBy")
+  publishedResults           Result[]             @relation("ResultPublishedBy")
+  createdResults             Result[]             @relation("ResultCreatedBy")
 
   @@index([role])
 }
@@ -713,12 +717,21 @@ model Division {
   rules               Json
   createdAt           DateTime         @default(now())
 
+  // Отметка "результаты дивизиона проверены перед публикацией" (Этап 10,
+  // 03 §23 — result:review) — предпосылка для publishCompetitionResults().
+  // Не хранится отдельной таблицей: это состояние ровно одного дивизиона,
+  // как и heatCapacity/rotation* выше.
+  resultsReviewedAt   DateTime?
+  resultsReviewedById String?
+  resultsReviewedBy   User?            @relation("DivisionResultsReviewedBy", fields: [resultsReviewedById], references: [id])
+
   rounds           Round[]
   registrations    Registration[]
   judgeAssignments JudgeAssignment[]
   stagePlan        DivisionStagePlan[]
   finalCriteria    FinalCriterion[]
   finalSettings    FinalSettings?
+  results          Result[]
 
   @@unique([competitionId, categoryId])
 }
@@ -809,11 +822,22 @@ model Round {
   endedAt             DateTime?
   createdAt           DateTime           @default(now())
 
+  // Публикация списка "кто прошёл дальше" этого раунда (Этап 10) — отдельно
+  // и раньше, чем публикация финальных мест всего соревнования: организатор
+  // может показать промежуточные списки сразу после раунда, не дожидаясь
+  // конца всего конкурса (уточнено пользователем, 2026-09-04). Не
+  // применяется к финальному раунду дивизиона — там места публикуются вместе
+  // со всем соревнованием через publishCompetitionResults (Result).
+  advancementPublishedAt   DateTime?
+  advancementPublishedById String?
+  advancementPublishedBy   User?         @relation("RoundAdvancementPublishedBy", fields: [advancementPublishedById], references: [id])
+
   heats         Heat[]
   results       RoundResult[]
   confirmations JudgeRoundConfirmation[]
   finalSession  FinalSession?
   finalResults  FinalResult[]
+  officialResultsReached Result[] @relation("ResultRoundReached")
 
   @@unique([divisionId, order])
   @@index([status])
@@ -1194,6 +1218,53 @@ model FinalResult {
 }
 
 // ---------------------------------------------------------------------------
+// Официальный протокол результатов и публикация (Этап 10)
+// ---------------------------------------------------------------------------
+// Result агрегирует путь участника через дивизион (RoundResult обычных
+// раундов / FinalResult финала) в одну официальную запись протокола —
+// CLAUDE.md §10/§29/§39/§62 требуют, чтобы это не менялось незаметно.
+// Версионируется, как Draw/CompetitionRules (docs/00_DECISIONS.md, A1/A5):
+// calculateResults() создаёт version 1, correctResult() создаёт version N+1
+// с обязательной причиной — старая строка не удаляется и не переписывается
+// (CLAUDE.md §51). Текущая строка = последняя version на (divisionId,
+// registrationId). publishedAt/publishedById ставятся не по одному Result, а
+// разом на все Result соревнования через publishCompetitionResults (см.
+// docs/00_DECISIONS.md — публикация мест только по всему соревнованию сразу,
+// уточнено пользователем 2026-09-04) и НЕ переставляются автоматически более
+// поздней коррекцией — publishedAt хранит момент первой публикации.
+enum ResultStatus {
+  FINALIST // дошёл до финального раунда дивизиона — placement заполнен
+  ELIMINATED // выбыл раньше — placement всегда null (CLAUDE.md §16, не выдумываем место)
+}
+
+model Result {
+  id             String       @id @default(cuid())
+  divisionId     String
+  division       Division     @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  registrationId String
+  registration   Registration @relation(fields: [registrationId], references: [id])
+  version        Int
+  // Последний раунд дивизиона (обычный, не TIE_BREAK), в котором участник
+  // реально танцевал — либо финал (status=FINALIST), либо раунд, на котором
+  // выбыл (status=ELIMINATED).
+  roundReachedId String
+  roundReached   Round        @relation("ResultRoundReached", fields: [roundReachedId], references: [id])
+  status         ResultStatus
+  placement      Int? // место в финале (роль считается отдельно, как и везде в движке); null при ELIMINATED
+  calculationVersion String  @default("v1")
+  publishedAt    DateTime?
+  publishedById  String?
+  publishedBy    User?        @relation("ResultPublishedBy", fields: [publishedById], references: [id])
+  createdById    String
+  createdBy      User         @relation("ResultCreatedBy", fields: [createdById], references: [id])
+  reason         String? // обязателен при исправлении (version > 1) — не при первом расчёте
+  createdAt      DateTime     @default(now())
+
+  @@unique([divisionId, registrationId, version])
+  @@index([divisionId, registrationId])
+}
+
+// ---------------------------------------------------------------------------
 // Аудит / идемпотентность
 // ---------------------------------------------------------------------------
 
@@ -1313,6 +1384,7 @@ model Registration {
   finalResults         FinalResult[]
   finalPairsAsLeader   FinalPair[]       @relation("FinalPairLeader")
   finalPairsAsFollower FinalPair[]       @relation("FinalPairFollower")
+  officialResults      Result[]
 
   // Одна роль на дивизион на человека — нельзя зарегистрироваться в одном
   // дивизионе одновременно и LEADER, и FOLLOWER (docs/00_DECISIONS.md, B6).

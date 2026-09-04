@@ -60,3 +60,8 @@ export const ROTATION_STATUS_LABELS: Record<string, string> = {
   PAUSED: "Пауза",
   FINISHED: "Завершена",
 };
+
+export const RESULT_STATUS_LABELS: Record<string, string> = {
+  FINALIST: "Финалист",
+  ELIMINATED: "Выбыл",
+};

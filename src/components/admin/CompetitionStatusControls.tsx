@@ -9,7 +9,8 @@ import type { CompetitionStatus } from "@prisma/client";
 // здесь только для отображения доступных кнопок. Реальная проверка
 // допустимости перехода и прав выполняется на сервере (CLAUDE.md §53) —
 // если пользователь как-то вызовет недопустимый переход в обход UI, API
-// его всё равно отклонит.
+// его всё равно отклонит. REVIEW -> PUBLISHED убран (Этап 10) — публикация
+// результатов теперь отдельная проверенная операция, см. CompetitionResultsPanel.
 const NEXT: Record<CompetitionStatus, CompetitionStatus[]> = {
   DRAFT: ["REGISTRATION_OPEN"],
   REGISTRATION_OPEN: ["REGISTRATION_CLOSED"],
@@ -18,7 +19,7 @@ const NEXT: Record<CompetitionStatus, CompetitionStatus[]> = {
   READY: ["LIVE"],
   LIVE: ["SCORING"],
   SCORING: ["REVIEW"],
-  REVIEW: ["PUBLISHED"],
+  REVIEW: [],
   PUBLISHED: ["ARCHIVED"],
   ARCHIVED: [],
 };

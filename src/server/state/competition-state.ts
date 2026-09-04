@@ -6,6 +6,17 @@ import type { Permission } from "../rbac/permissions";
 
 // CLAUDE.md §9. Публикация — отдельное, более чувствительное право
 // (competition:publish), чем остальные переходы (competition:update, 03 §4).
+//
+// REVIEW -> PUBLISHED убран из этой таблицы (Этап 10, docs/00_DECISIONS.md):
+// голый флип статуса не проверял вообще ничего (все обязательные оценки
+// собраны, все дивизионы досчитаны, ничьи разрешены — CLAUDE.md §36) и не
+// включал реальную публичную видимость (Competition.publicResults) — те же
+// причины, по которым A9 убрал прямой переход в DRAWING/FINISHED/SCORING/
+// COMPLETED у Round (CLAUDE.md §45: нельзя обходить бизнес-операцию голым
+// PATCH статуса). Публикация теперь — только через
+// publishCompetitionResults()/unpublishCompetitionResults()
+// (src/server/results/results.ts), которые проверяют готовность каждого
+// дивизиона и явно включают/выключают publicResults.
 const TABLE: TransitionTable<CompetitionStatus> = {
   DRAFT: ["REGISTRATION_OPEN"],
   REGISTRATION_OPEN: ["REGISTRATION_CLOSED"],
@@ -14,7 +25,7 @@ const TABLE: TransitionTable<CompetitionStatus> = {
   READY: ["LIVE"],
   LIVE: ["SCORING"],
   SCORING: ["REVIEW"],
-  REVIEW: ["PUBLISHED"],
+  REVIEW: [],
   PUBLISHED: ["ARCHIVED"],
   ARCHIVED: [],
 };
