@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
@@ -57,6 +57,22 @@ export function DivisionJudgesPanel({
   const [followers, setFollowers] = useState<Set<string>>(() => new Set(followerJudgeUserIds));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Ре-синхронизация с сервером после router.refresh() (после "+ Судья",
+  // после "Сохранить" самой этой панели, а также после ЛЮБОГО другого
+  // router.refresh() на странице, например после check-in) — useState с
+  // ленивым инициализатором выше запускается только при первом монтировании
+  // и НЕ обновляется, когда родитель передаёт новые props после серверного
+  // ре-рендера. Без этого эффекта "+ Судья" молча не отражался в чекбоксах,
+  // и последующий клик "Сохранить" удалял только что назначенного судью,
+  // считая присланный набор checked ПОЛНЫМ желаемым состоянием
+  // (setDivisionJudges udаляет всех, кого нет в списке).
+  useEffect(() => {
+    setLeaders(new Set(leaderJudgeUserIds));
+  }, [leaderJudgeUserIds]);
+  useEffect(() => {
+    setFollowers(new Set(followerJudgeUserIds));
+  }, [followerJudgeUserIds]);
 
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<"LEADER" | "FOLLOWER">("LEADER");
