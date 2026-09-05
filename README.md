@@ -21,7 +21,14 @@ email/пароль на httpOnly-JWT-сессии; `docker-compose.yml` с дв�
 Нужен установленный [Docker](https://www.docker.com/) (Docker Desktop на
 Windows/macOS, или Docker Engine + Compose plugin на Linux).
 
+Перед первым запуском скопируйте `.env.example` в `.env` рядом с
+`docker-compose.yml` и замените `NEXTAUTH_SECRET`/`SESSION_SECRET` на свои
+случайные значения (`openssl rand -base64 32`) — без них контейнер откажется
+стартовать. Это ключ подписи сессий: если оставить его предсказуемым, любой,
+кто узнает секрет, сможет подделать сессию от имени любого пользователя.
+
 ```bash
+cp .env.example .env   # и замените секреты внутри
 docker compose up
 ```
 
@@ -36,15 +43,14 @@ docker compose up
    добавили через сайт;
 5. сайт открывается на **http://localhost:3000**.
 
-Если порт 3000 занят или нужны другие секреты сессии — скопируйте
-`.env.example` в `.env` и поменяйте значения; `docker-compose.yml` подхватит
-их автоматически (`NEXTAUTH_SECRET`, `SESSION_SECRET`, `NEXT_PUBLIC_SITE_URL`).
+Если порт 3000 занят или нужен другой `NEXT_PUBLIC_SITE_URL` — поменяйте его
+в том же `.env`; `docker-compose.yml` подхватит значения автоматически.
 
 Локальная разработка без Docker (нужен свой Postgres):
 
 ```bash
 npm install
-cp .env.example .env   # укажите DATABASE_URL на свой Postgres
+cp .env.example .env   # укажите DATABASE_URL на свой Postgres и замените секреты (openssl rand -base64 32)
 npx prisma migrate deploy
 npm run seed            # наполнить демо-данными (можно повторять — upsert)
 npm run dev
