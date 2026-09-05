@@ -74,7 +74,7 @@ export default async function HomePage() {
   ]);
 
   return (
-    <div className="-mx-4 -my-6 min-h-[100dvh] bg-night-bg font-night text-night-text sm:mx-0 sm:my-0 sm:min-h-[70vh]">
+    <div className="mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-night-bg font-night text-night-text sm:min-h-[70vh]">
       <DarkTopNav />
       <div className="flex flex-col gap-6 px-4 pb-24 pt-4 sm:mx-auto sm:max-w-[1240px] sm:px-8 sm:pb-12 sm:pt-8">
         <section className="relative flex min-h-[240px] flex-col justify-end overflow-hidden rounded-app bg-gradient-night-hero p-6 sm:min-h-[320px] sm:p-10">
