@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
+import { CategoryList } from "@/components/admin/CategoryList";
 import { CategoryRow } from "@/components/admin/CategoryRow";
 import { AddButton } from "@/components/admin/AddButton";
 import { CreateDivisionCategoryForm } from "@/components/admin/CreateDivisionCategoryForm";
@@ -33,21 +34,21 @@ export default async function DivisionCategoriesPage() {
           <span>Название</span>
           <span className="text-right">Видимость</span>
         </div>
-        <div className="flex flex-col gap-0.5">
-          {active.map((c) => (
-            <CategoryRow key={c.id} categoryId={c.id} name={c.name} order={c.order} isActive />
-          ))}
-          {hidden.map((c) => (
-            <CategoryRow key={c.id} categoryId={c.id} name={c.name} order={c.order} isActive={false} />
-          ))}
-        </div>
+        <CategoryList categories={active.map((c) => ({ id: c.id, name: c.name, order: c.order }))} />
+        {hidden.length > 0 && (
+          <div className="mt-1 flex flex-col gap-0.5 border-t border-night-border pt-1">
+            {hidden.map((c) => (
+              <CategoryRow key={c.id} categoryId={c.id} name={c.name} />
+            ))}
+          </div>
+        )}
       </div>
 
       <p className="m-0 text-xs leading-relaxed text-night-muted">
         Организаторы выбирают дивизионы из этого списка — сами названия не придумывают. «Скрыть» не удаляет
         категорию, а просто убирает её из выбора для новых дивизионов; уже созданные дивизионы и регистрации не
         меняются. Порядок определяет иерархию уровней (по нему движок ищет «категорию выше» для помощников при
-        жеребьёвке) — чем больше число, тем «выше» категория.
+        жеребьёвке) — перетащите строку за ⠿, чтобы изменить порядок.
       </p>
     </div>
   );
