@@ -2,7 +2,7 @@ import type { Prisma, RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
-import { ValidationFailedError } from "../errors";
+import { ConcurrentModificationError, ValidationFailedError } from "../errors";
 import type { Actor } from "../rbac/actor";
 import { fillHelperShortage } from "../competition/draw-engine";
 import { parentRoundScoredRegistrationIds } from "./advancement";
@@ -391,7 +391,16 @@ export async function recordFinalTieBreakDecision(tieBreakRoundId: string, order
       });
     }
 
-    await tx.round.update({ where: { id: tieBreakRoundId }, data: { status: "COMPLETED", statusVersion: { increment: 1 }, endedAt: new Date() } });
+    // DB-001: как и в advancement.ts (обычная перетанцовка) — без проверки
+    // statusVersion второе/гоночное решение по той же перетанцовке молча
+    // перезаписало бы первое без обнаруженного конфликта.
+    const completedTieBreak = await tx.round.updateMany({
+      where: { id: tieBreakRoundId, status: "SCORING", statusVersion: tieBreakRound.statusVersion },
+      data: { status: "COMPLETED", statusVersion: { increment: 1 }, endedAt: new Date() },
+    });
+    if (completedTieBreak.count === 0) {
+      throw new ConcurrentModificationError("Round");
+    }
     await writeAudit(tx, {
       actor,
       action: "final_tie_break.decide",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { enqueueJudgeScore, getQueuedScore, subscribeJudgeScoreQueue } from "@/components/admin/judging/judge-score-queue";
@@ -27,11 +27,21 @@ export function JudgeScoreButtons({
   const router = useRouter();
   const [pending, setPending] = useState(() => getQueuedScore(drawParticipantId));
   const [error, setError] = useState<string | null>(null);
+  // UX-001: раньше "wasPending" читался из состояния React, захваченного в
+  // замыкание эффекта ОДИН раз при монтировании (зависимость эффекта —
+  // только drawParticipantId) — эффект никогда не пересоздавался при смене
+  // pending, поэтому "было ли это в очереди только что" почти всегда было
+  // равно самому первому значению (обычно undefined), и условие ниже
+  // фактически никогда не срабатывало по-настоящему. Ref не участвует в
+  // зависимостях эффекта и всегда читает актуальное значение — тот же
+  // приём, что и pendingKeysRef в FinalJudgingScreen.tsx.
+  const wasPendingRef = useRef(pending !== undefined);
 
   useEffect(() => {
     return subscribeJudgeScoreQueue((state) => {
       const item = state.queue.find((q) => q.drawParticipantId === drawParticipantId);
-      const wasPending = pending !== undefined;
+      const wasPending = wasPendingRef.current;
+      wasPendingRef.current = item !== undefined;
       setPending(item);
       setError(state.errors[drawParticipantId] ?? null);
       if (wasPending && !item && !state.errors[drawParticipantId]) {

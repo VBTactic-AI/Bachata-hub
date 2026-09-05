@@ -399,8 +399,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                         // раунд дивизиона (тот же признак, что и
                         // isFinalStageInTx на сервере, advancement.ts).
                         const isFinalRound = round.type === null && !d.rounds.some((r) => r.type === null && r.order > round.order);
-                        const tieGroupConfig = round.config as { finalTieGroupKey?: string } | null;
+                        const tieGroupConfig = round.config as { finalTieGroupKey?: string; tieBreakKind?: string } | null;
                         const isFinalTieBreak = round.type === "TIE_BREAK" && !!tieGroupConfig?.finalTieGroupKey;
+                        // TIEBREAK-001: перетанцовка "за место" в финале без критериальной
+                        // системы (никого не отсеивают, нужен только порядок внутри группы).
+                        const isFullRankTieBreak = round.type === "TIE_BREAK" && tieGroupConfig?.tieBreakKind === "FULL_RANK";
                         const isJudgesDance = round.finalSession?.format === "JUDGES_DANCE";
                         const isRandomCouples = round.finalSession?.format === "RANDOM_COUPLES";
                         const usesCustomFinalFlow = isJudgesDance || isRandomCouples;
@@ -468,6 +471,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             <TieBreakDecisionForm
                               tieBreakRoundId={round.id}
                               expectedCount={round.finalistsCount ?? 0}
+                              fullRank={isFullRankTieBreak}
                               candidates={(round.heats[0]?.draws[0]?.participants ?? [])
                                 .filter((p) => p.scored)
                                 .map((p) => ({

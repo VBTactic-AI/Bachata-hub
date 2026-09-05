@@ -49,6 +49,17 @@ export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { re
     // разошлись, следующий заезд запускать рано.
     guard: async (tx) => {
       if (to !== "RUNNING") return;
+      // FLOW-002: без этой блокировки проверка "ничего активного?" ниже —
+      // check-then-act без синхронизации между двумя РАЗНЫМИ заездами.
+      // Postgres READ COMMITTED позволяет двум одновременным транзакциям
+      // обеим увидеть "паркет свободен" до того, как любая из них
+      // закоммитится (они трогают разные строки Heat, поэтому optimistic
+      // lock по statusVersion их не сталкивает) — именно так уже один раз
+      // воспроизводился реальный баг "два заезда RUNNING одновременно" (A4).
+      // pg_advisory_xact_lock сериализует конкурентов по competitionId и
+      // сам снимается в конце транзакции (commit/rollback) — доп. таблиц не
+      // нужно.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${competitionId})::bigint)`;
       // Заезд не может стартовать раньше собственного раунда — раунд обязан
       // быть в RUNNING (значит жеребьёвка для него уже зафиксирована,
       // DRAW_LOCKED -> RUNNING), иначе заезд запустился бы "пустым", без

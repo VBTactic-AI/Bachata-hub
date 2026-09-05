@@ -2,13 +2,18 @@ import type { Prisma, RegistrationRole, Round } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
-import { ValidationFailedError } from "../errors";
+import { ConcurrentModificationError, ValidationFailedError } from "../errors";
 import type { Actor } from "../rbac/actor";
 import { fillHelperShortage } from "../competition/draw-engine";
 
 type PrismaTx = Prisma.TransactionClient;
 
 type ScoredParticipant = { id: string; registrationId: string; role: RegistrationRole; scoreSum: number };
+
+// Хранится в Round.config служебного TIE_BREAK-раунда — recordTieBreakDecision
+// по нему отличает обычную (SELECT_N) перетанцовку от FULL_RANK (см.
+// PendingTieBreak выше, TIEBREAK-001).
+type TieBreakRoundConfig = { tieBreakKind?: "FULL_RANK"; startRank?: number };
 
 // Разбивает участников одной роли на "чисто прошли" / "спорная граница
 // (ничья)" / "чисто не прошли" — сравнение только по одной роли: N (сколько
@@ -38,7 +43,36 @@ function splitByCutoff(
   return { advanced, tieGroup, eliminated };
 }
 
-type PendingTieBreak = { role: RegistrationRole; group: ScoredParticipant[]; remainingSpots: number };
+type PendingTieBreak = {
+  role: RegistrationRole;
+  group: ScoredParticipant[];
+  remainingSpots: number;
+  // SELECT_N — обычная ничья на границе отсева (какие-то N из группы
+  // проходят, остальные нет). FULL_RANK — ничья ВНУТРИ уже проходящих
+  // (никого не отсеиваем, нужно только решить порядок мест внутри группы) —
+  // возникает только в финале, где место имеет значение само по себе
+  // (TIEBREAK-001, см. findTiedRuns ниже). startRank — с какого места
+  // (1-based, в рамках своей роли) начинается эта группа.
+  mode: "SELECT_N" | "FULL_RANK";
+  startRank?: number;
+};
+
+// Ищет "пробеги" из 2+ подряд идущих участников с одинаковой суммой баллов
+// в уже отсортированном по убыванию списке — используется, чтобы найти
+// ничью ВНУТРИ группы "точно проходящих" (никого не отсеивают, но точный
+// порядок мест внутри — реальная неоднозначность, которую splitByCutoff не
+// видит, так как её проверка ничьей срабатывает только на границе отсева).
+function findTiedRuns(sortedDesc: ScoredParticipant[]): { members: ScoredParticipant[]; startRank: number }[] {
+  const runs: { members: ScoredParticipant[]; startRank: number }[] = [];
+  let i = 0;
+  while (i < sortedDesc.length) {
+    let j = i + 1;
+    while (j < sortedDesc.length && sortedDesc[j].scoreSum === sortedDesc[i].scoreSum) j++;
+    if (j - i >= 2) runs.push({ members: sortedDesc.slice(i, j), startRank: i + 1 });
+    i = j;
+  }
+  return runs;
+}
 
 // Считает результат раунда: суммирует оценки судей по каждому вызванному
 // (scored=true) участнику, определяет проходящих отдельно по каждой роли,
@@ -91,11 +125,41 @@ export async function calculateRoundResultsInTx(tx: PrismaTx, roundId: string, a
     finalistsCount
   );
 
+  // TIEBREAK-001: в финале место (rank) становится официальным Result.placement
+  // (results.ts) — splitByCutoff сам по себе видит только ничью НА ГРАНИЦЕ
+  // отсева, но в финале обычно никого не отсеивают (finalistsCount >=
+  // числа участников), и тогда splitByCutoff молча возвращает всех в
+  // advanced без всякой проверки на равенство сумм — реальная ничья за
+  // место досталась бы по порядку элементов массива/БД (CLAUDE.md §19-20/§60
+  // это прямо запрещают). Для финала дополнительно ищем такие ничьи внутри
+  // уже "точно проходящих" и переводим их в TIE_BREAK_REQUIRED вместо того,
+  // чтобы молча присвоить разные места.
+  const isFinal = await isFinalStageInTx(tx, round.division.id, round.order);
+  const fullRankPending: PendingTieBreak[] = [];
+  const fullRankMemberIds = new Set<string>();
+  if (isFinal) {
+    for (const [role, side] of [
+      ["LEADER", leaders],
+      ["FOLLOWER", followers],
+    ] as const) {
+      for (const run of findTiedRuns(side.advanced)) {
+        fullRankPending.push({ role, group: run.members, remainingSpots: run.members.length, mode: "FULL_RANK", startRank: run.startRank });
+        for (const m of run.members) fullRankMemberIds.add(m.id);
+      }
+    }
+  }
+
   const resultRows: { registrationId: string; scoreSum: number; rank: number; status: "ADVANCED" | "ELIMINATED" | "TIE_BREAK_REQUIRED" }[] = [];
   for (const side of [leaders, followers]) {
     const sortedAll = [...side.advanced, ...side.tieGroup, ...side.eliminated].sort((a, b) => b.scoreSum - a.scoreSum);
     sortedAll.forEach((p, idx) => {
-      const status = side.advanced.includes(p) ? "ADVANCED" : side.tieGroup.includes(p) ? "TIE_BREAK_REQUIRED" : "ELIMINATED";
+      const status = fullRankMemberIds.has(p.id)
+        ? "TIE_BREAK_REQUIRED"
+        : side.advanced.includes(p)
+          ? "ADVANCED"
+          : side.tieGroup.includes(p)
+            ? "TIE_BREAK_REQUIRED"
+            : "ELIMINATED";
       resultRows.push({ registrationId: p.registrationId, scoreSum: p.scoreSum, rank: idx + 1, status });
     });
   }
@@ -118,10 +182,11 @@ export async function calculateRoundResultsInTx(tx: PrismaTx, roundId: string, a
     },
   });
 
-  const pending: PendingTieBreak[] = [];
-  if (leaders.tieGroup.length > 0) pending.push({ role: "LEADER", group: leaders.tieGroup, remainingSpots: finalistsCount - leaders.advanced.length });
+  const pending: PendingTieBreak[] = [...fullRankPending];
+  if (leaders.tieGroup.length > 0)
+    pending.push({ role: "LEADER", group: leaders.tieGroup, remainingSpots: finalistsCount - leaders.advanced.length, mode: "SELECT_N" });
   if (followers.tieGroup.length > 0)
-    pending.push({ role: "FOLLOWER", group: followers.tieGroup, remainingSpots: finalistsCount - followers.advanced.length });
+    pending.push({ role: "FOLLOWER", group: followers.tieGroup, remainingSpots: finalistsCount - followers.advanced.length, mode: "SELECT_N" });
 
   if (pending.length === 0) {
     // Ничьей не было — раунд полностью завершён прямо сейчас.
@@ -175,6 +240,8 @@ async function createTieBreakRoundInTx(
     await tx.round.update({ where: { id: r.id }, data: { order: r.order + 1 } });
   }
 
+  const config: TieBreakRoundConfig =
+    tie.mode === "FULL_RANK" ? { tieBreakKind: "FULL_RANK", startRank: tie.startRank ?? 1 } : {};
   const tieBreakRound = await tx.round.create({
     data: {
       divisionId: parentRound.divisionId,
@@ -185,6 +252,7 @@ async function createTieBreakRoundInTx(
       heatCapacity: Math.max(tie.group.length, 2),
       rulesId: parentRound.rulesId,
       tieBreakOfRoundId: parentRound.id,
+      config: config as unknown as Prisma.InputJsonValue,
     },
   });
   const heat = await tx.heat.create({ data: { roundId: tieBreakRound.id, number: 1 } });
@@ -195,7 +263,10 @@ async function createTieBreakRoundInTx(
       seed: null,
       algorithmVersion: "v1",
       createdById: actor.userId,
-      reason: `Автоматически сформировано: ничья на границе прохода (роль ${tie.role === "LEADER" ? "Ведущий" : "Ведомый"}).`,
+      reason:
+        tie.mode === "FULL_RANK"
+          ? `Автоматически сформировано: ничья за места ${tie.startRank}-${(tie.startRank ?? 1) + tie.group.length - 1} в финале (роль ${tie.role === "LEADER" ? "Ведущий" : "Ведомый"}) — никого не отсеиваем, нужно решить порядок мест.`
+          : `Автоматически сформировано: ничья на границе прохода (роль ${tie.role === "LEADER" ? "Ведущий" : "Ведомый"}).`,
     },
   });
 
@@ -388,12 +459,20 @@ export async function maybeFinalizeAfterScoreInTx(tx: PrismaTx, roundId: string,
 }
 
 // Перетанцовка — судьи (в жизни) обсуждают вслух, HEAD_JUDGE/EVENT_ADMIN
-// вносит итог: ровно remainingSpots человек из tie-группы отмечаются
-// ADVANCED, остальные ELIMINATED (SELECT_N, CLAUDE.md §22). Обновляет и
-// строку RoundResult родительского раунда (снимает TIE_BREAK_REQUIRED), и
-// пишет собственные RoundResult перетанцовки — TieBreakRound должен иметь
-// полноценные данные (CLAUDE.md §21).
-export async function recordTieBreakDecision(tieBreakRoundId: string, advancingRegistrationIds: string[]): Promise<void> {
+// вносит итог. Два режима (см. TieBreakRoundConfig/PendingTieBreak выше):
+// SELECT_N (обычная ничья на границе отсева, CLAUDE.md §22) — ровно
+// remainingSpots человек из tie-группы отмечаются ADVANCED, остальные
+// ELIMINATED, registrationIds — НЕупорядоченный набор проходящих; FULL_RANK
+// (TIEBREAK-001, только в финале, никого не отсеивают) — registrationIds
+// обязаны содержать ВСЕХ участников группы, порядок значим (0-й — лучшее
+// место внутри группы), каждому присваивается итоговое место
+// startRank+индекс. Обновляет и строку RoundResult родительского раунда
+// (снимает TIE_BREAK_REQUIRED, а для FULL_RANK — ещё и её rank, который
+// иначе остался бы тем произвольным значением, что присвоил
+// calculateRoundResultsInTx при обнаружении ничьи), и пишет собственные
+// RoundResult перетанцовки — TieBreakRound должен иметь полноценные данные
+// (CLAUDE.md §21).
+export async function recordTieBreakDecision(tieBreakRoundId: string, registrationIds: string[]): Promise<void> {
   const tieBreakRound = await prisma.round.findUniqueOrThrow({
     where: { id: tieBreakRoundId },
     include: { division: { select: { competitionId: true } }, tieBreakOfRound: true },
@@ -408,42 +487,78 @@ export async function recordTieBreakDecision(tieBreakRoundId: string, advancingR
     throw new ValidationFailedError('Решение перетанцовки можно внести только после того, как заход оттанцевал (статус "Подсчёт баллов").');
   }
 
+  const config = (tieBreakRound.config as unknown as TieBreakRoundConfig) ?? {};
+  const isFullRank = config.tieBreakKind === "FULL_RANK";
+
   const heat = await prisma.heat.findFirstOrThrow({ where: { roundId: tieBreakRoundId } });
   const draw = await prisma.draw.findFirstOrThrow({ where: { heatId: heat.id }, orderBy: { version: "desc" }, include: { participants: true } });
   const real = draw.participants.filter((p) => p.scored);
   const realIds = new Set(real.map((p) => p.registrationId));
 
-  const advancingSet = new Set(advancingRegistrationIds);
-  for (const id of advancingSet) {
-    if (!realIds.has(id)) throw new ValidationFailedError("В списке прошедших есть человек, которого не было в перетанцовке.");
+  const providedSet = new Set(registrationIds);
+  for (const id of providedSet) {
+    if (!realIds.has(id)) throw new ValidationFailedError("В списке есть человек, которого не было в этой перетанцовке.");
   }
-  const expected = tieBreakRound.finalistsCount ?? 0;
-  if (advancingSet.size !== expected) {
-    throw new ValidationFailedError(`Нужно выбрать ровно ${expected} человек — выбрано ${advancingSet.size}.`);
+  if (isFullRank) {
+    if (registrationIds.length !== real.length || providedSet.size !== real.length) {
+      throw new ValidationFailedError(`Нужно расставить по порядку всех ${real.length} участников этой перетанцовки — без пропусков и повторов.`);
+    }
+  } else {
+    const expected = tieBreakRound.finalistsCount ?? 0;
+    if (providedSet.size !== expected) {
+      throw new ValidationFailedError(`Нужно выбрать ровно ${expected} человек — выбрано ${providedSet.size}.`);
+    }
   }
 
   await prisma.$transaction(async (tx) => {
-    let rank = 1;
-    for (const p of real) {
-      const status = advancingSet.has(p.registrationId) ? "ADVANCED" : "ELIMINATED";
-      await tx.roundResult.upsert({
-        where: { roundId_registrationId: { roundId: tieBreakRoundId, registrationId: p.registrationId } },
-        create: { roundId: tieBreakRoundId, registrationId: p.registrationId, scoreSum: status === "ADVANCED" ? 1 : 0, rank: rank++, status },
-        update: { status },
-      });
-      await tx.roundResult.update({
-        where: { roundId_registrationId: { roundId: tieBreakRound.tieBreakOfRoundId!, registrationId: p.registrationId } },
-        data: { status },
-      });
+    if (isFullRank) {
+      const startRank = config.startRank ?? 1;
+      for (let i = 0; i < registrationIds.length; i++) {
+        const registrationId = registrationIds[i];
+        await tx.roundResult.upsert({
+          where: { roundId_registrationId: { roundId: tieBreakRoundId, registrationId } },
+          create: { roundId: tieBreakRoundId, registrationId, scoreSum: 0, rank: i + 1, status: "ADVANCED" },
+          update: { status: "ADVANCED", rank: i + 1 },
+        });
+        await tx.roundResult.update({
+          where: { roundId_registrationId: { roundId: tieBreakRound.tieBreakOfRoundId!, registrationId } },
+          data: { status: "ADVANCED", rank: startRank + i },
+        });
+      }
+    } else {
+      let rank = 1;
+      for (const p of real) {
+        const status = providedSet.has(p.registrationId) ? "ADVANCED" : "ELIMINATED";
+        await tx.roundResult.upsert({
+          where: { roundId_registrationId: { roundId: tieBreakRoundId, registrationId: p.registrationId } },
+          create: { roundId: tieBreakRoundId, registrationId: p.registrationId, scoreSum: status === "ADVANCED" ? 1 : 0, rank: rank++, status },
+          update: { status },
+        });
+        await tx.roundResult.update({
+          where: { roundId_registrationId: { roundId: tieBreakRound.tieBreakOfRoundId!, registrationId: p.registrationId } },
+          data: { status },
+        });
+      }
     }
 
-    await tx.round.update({ where: { id: tieBreakRoundId }, data: { status: "COMPLETED", statusVersion: { increment: 1 }, endedAt: new Date() } });
+    // DB-001: в отличие от обычных переходов состояния, здесь раньше не было
+    // проверки statusVersion — второе (гоночное или повторное) решение по
+    // той же перетанцовке молча перезаписало бы уже принятое, без единого
+    // обнаруженного конфликта. updateMany + statusVersion делает это тем же
+    // способом, что и весь остальной движок (machine.ts, completeRoundInTx).
+    const completedTieBreak = await tx.round.updateMany({
+      where: { id: tieBreakRoundId, status: "SCORING", statusVersion: tieBreakRound.statusVersion },
+      data: { status: "COMPLETED", statusVersion: { increment: 1 }, endedAt: new Date() },
+    });
+    if (completedTieBreak.count === 0) {
+      throw new ConcurrentModificationError("Round");
+    }
     await writeAudit(tx, {
       actor,
       action: "tie_break.decide",
       entityType: "Round",
       entityId: tieBreakRoundId,
-      after: { advancedRegistrationIds: [...advancingSet] },
+      after: isFullRank ? { orderedRegistrationIds: registrationIds } : { advancedRegistrationIds: [...providedSet] },
     });
 
     // Если у родительского раунда не осталось других нерешённых

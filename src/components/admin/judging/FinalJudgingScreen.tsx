@@ -48,6 +48,11 @@ export function FinalJudgingScreen({
   // визуально обнулялась после отправки всех критериев, хотя в БД всё
   // сохранялось верно). Тот же приём, что и в JudgeScoreButtons.tsx.
   const pendingKeysRef = useRef<Set<string>>(new Set());
+  // UX-002: очередь и раньше отслеживала реальные (не сетевые) ошибки
+  // отправки — но этот экран нигде их не показывал, в отличие от
+  // JudgeScoreButtons.tsx (обычные раунды). Судья видел, что кнопка просто
+  // "откатилась" без единого объяснения, будто ничего и не нажимал.
+  const [errorsByKey, setErrorsByKey] = useState<Record<string, string>>({});
 
   useEffect(() => {
     return subscribeFinalJudgeScoreQueue((state) => {
@@ -60,6 +65,7 @@ export function FinalJudgingScreen({
         if (!currentKeys.has(k) && !state.errors[k]) delivered = true;
       }
       pendingKeysRef.current = currentKeys;
+      setErrorsByKey(Object.fromEntries(Object.entries(state.errors).filter(([k]) => relevantIds.has(k.split(":")[0]))));
       setTick((t) => t + 1);
       if (delivered) router.refresh();
     });
@@ -144,6 +150,7 @@ export function FinalJudgingScreen({
             const value = effectiveValue(current, c.id);
             const optionsCount = Math.floor((c.maxScore - c.minScore) / c.step) + 1;
             const useButtons = optionsCount <= 16;
+            const criterionError = errorsByKey[`${current.drawParticipantId}:${c.id}`];
             return (
               <div key={c.id}>
                 <p className="hint-text m-0">{c.name}</p>
@@ -177,6 +184,7 @@ export function FinalJudgingScreen({
                     className="mt-1 w-24 rounded-app-sm border border-line px-2 py-1"
                   />
                 )}
+                {criterionError && <p className="error-text m-0 mt-1">{criterionError}</p>}
               </div>
             );
           })}

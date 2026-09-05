@@ -6,20 +6,27 @@ import { Button } from "@/components/ui/button";
 
 export type TieBreakCandidate = { registrationId: string; bibNumber: string | null; displayName: string; role: "LEADER" | "FOLLOWER" };
 
-// SELECT_N (CLAUDE.md §22) — HEAD_JUDGE/EVENT_ADMIN выбирает ровно N
+// Два режима (TIEBREAK-001, docs/00_DECISIONS.md): SELECT_N (CLAUDE.md §22,
+// по умолчанию) — HEAD_JUDGE/EVENT_ADMIN выбирает ровно expectedCount
 // человек, которых судьи в жизни уже обсудили вслух и назвали ведущему;
-// программа только фиксирует итог и не выбирает сама (CLAUDE.md §19-20).
+// FULL_RANK (fullRank=true — ничья ЗА МЕСТО в финале без критериальной
+// системы, никого не отсеивают) — нужно расставить ВСЮ группу по порядку
+// (как FinalTieBreakDecisionForm для критериального финала). Программа в
+// обоих случаях только фиксирует итог и не выбирает сама (CLAUDE.md §19-20).
 export function TieBreakDecisionForm({
   tieBreakRoundId,
   expectedCount,
   candidates,
+  fullRank,
 }: {
   tieBreakRoundId: string;
   expectedCount: number;
   candidates: TieBreakCandidate[];
+  fullRank?: boolean;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [order, setOrder] = useState<TieBreakCandidate[]>(candidates);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,14 +39,23 @@ export function TieBreakDecisionForm({
     });
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function move(i: number, dir: -1 | 1) {
+    setOrder((prev) => {
+      const next = [...prev];
+      const j = i + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
+  async function submit(registrationIds: string[]) {
     setLoading(true);
     setError(null);
     const res = await fetch(`/api/tie-break-rounds/${tieBreakRoundId}/decide`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ advancingRegistrationIds: [...selected] }),
+      body: JSON.stringify({ advancingRegistrationIds: registrationIds }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -50,8 +66,44 @@ export function TieBreakDecisionForm({
     router.refresh();
   }
 
+  if (fullRank) {
+    return (
+      <div className="stack gap-2 mt-2">
+        <p className="hint-text m-0">
+          ⚠ Ничья за место — никого не отсеиваем, нужно решить порядок мест внутри группы. Судьи коллегиально определяют
+          порядок (обсуждают вслух); отметьте его кнопками ↑/↓ ниже — от лучшего к худшему.
+        </p>
+        <ol className="stack gap-1 m-0 pl-4">
+          {order.map((c, i) => (
+            <li key={c.registrationId} className="flex items-center gap-2">
+              <span>
+                {c.role === "LEADER" ? "Ведущий" : "Ведомый"} {c.displayName} №{c.bibNumber ?? "—"}
+              </span>
+              <Button type="button" size="sm" variant="outline" disabled={i === 0} onClick={() => move(i, -1)}>
+                ↑
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={i === order.length - 1} onClick={() => move(i, 1)}>
+                ↓
+              </Button>
+            </li>
+          ))}
+        </ol>
+        <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={() => submit(order.map((c) => c.registrationId))}>
+          Зафиксировать порядок
+        </Button>
+        {error && <span className="error-text">{error}</span>}
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={onSubmit} className="stack gap-2 mt-2">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit([...selected]);
+      }}
+      className="stack gap-2 mt-2"
+    >
       <p className="hint-text">
         Перетанцовка: выберите ровно {expectedCount} прошедших дальше (выбрано {selected.size}).
       </p>

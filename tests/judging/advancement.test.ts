@@ -75,7 +75,7 @@ const {
   recordTieBreakDecision,
   rolesNotNeedingJudging,
 } = await import("@/server/judging/advancement");
-const { ValidationFailedError } = await import("@/server/errors");
+const { ValidationFailedError, ConcurrentModificationError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
 
@@ -142,6 +142,11 @@ describe("calculateRoundResultsInTx() — идемпотентность", () =>
 
 describe("calculateRoundResultsInTx() — классический сценарий (docs §20): нужно провести 10, 3 человека tied за 2 места", () => {
   beforeEach(() => {
+    // Не финал — сценарий про обычный отсев на границе (следующий раунд
+    // есть); иначе TIEBREAK-001 (ничья ЗА МЕСТО, findTiedRuns) заодно нашёл
+    // бы ничью среди 5 одинаково набравших ведомых ниже, что не относится к
+    // тому, что здесь проверяется. Финальный случай — отдельный describe.
+    txRoundCount.mockResolvedValue(1);
     txRoundFindUniqueOrThrow.mockResolvedValue(baseRound);
     // 8 лидеров с чёткими более высокими баллами (проходят чисто),
     // 3 лидера с одинаковым баллом 12 на границе (9-10-11 место),
@@ -216,6 +221,10 @@ describe("calculateRoundResultsInTx() — классический сценар�
 
 describe("calculateRoundResultsInTx() — ничья ровно закрывает свободные места (без перетанцовки)", () => {
   it("если tie-группа по размеру совпадает с оставшимися местами — все проходят чисто", async () => {
+    // Не финал (isFinalStageInTx -> laterCount>0) — эта проверка про обычный
+    // отсев на границе, TIEBREAK-001 (ничья ЗА МЕСТО в финале) здесь
+    // намеренно не участвует, см. отдельный describe ниже.
+    txRoundCount.mockResolvedValue(1);
     txRoundFindUniqueOrThrow.mockResolvedValue({ ...baseRound, finalistsCount: 10 });
     const clearlyAdvanced = Array.from({ length: 8 }, (_, i) => participant(`L${i + 1}`, "LEADER", [20 - i]));
     // Ровно 2 человека делят последние 2 места — неоднозначности нет.
@@ -230,6 +239,98 @@ describe("calculateRoundResultsInTx() — ничья ровно закрывае
     expect(txRoundUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
     );
+  });
+});
+
+// TIEBREAK-001 (P0): в финале (isFinalStageInTx=true — здесь нет более
+// поздних обычных раундов дивизиона) ничья ЗА МЕСТО среди тех, кого и так
+// никто не отсеивает (finalistsCount >= числа участников — обычный случай
+// финала), раньше проходила мимо splitByCutoff вообще (он видит только
+// ничью на границе отсева) и получала разные места по порядку массива/БД.
+describe("calculateRoundResultsInTx() — TIEBREAK-001: ничья за место в финале (никого не отсеивают)", () => {
+  it("2 лидера с одинаковой суммой в финале — TIE_BREAK_REQUIRED, а не молча разные места", async () => {
+    txRoundCount.mockResolvedValue(0); // нет более поздних раундов дивизиона — это финал
+    txRoundFindUniqueOrThrow.mockResolvedValue({ ...baseRound, finalistsCount: 3 });
+    // 3 места, все проходят: L1 и L2 честно делят сумму 20 (реальная ничья
+    // за 1-2 место), L3 явно ниже — 3-е место не спорно.
+    const tied = [participant("L1", "LEADER", [20]), participant("L2", "LEADER", [20])];
+    const clear = [participant("L3", "LEADER", [15])];
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: [...tied, ...clear] }] }]);
+
+    await calculateRoundResultsInTx(fakeTx as never, "round1", actor);
+
+    const rows: { registrationId: string; status: string }[] = txRoundResultCreateMany.mock.calls[0][0].data;
+    const byId = new Map(rows.map((r) => [r.registrationId, r.status]));
+    expect(byId.get("reg-L1")).toBe("TIE_BREAK_REQUIRED");
+    expect(byId.get("reg-L2")).toBe("TIE_BREAK_REQUIRED");
+    expect(byId.get("reg-L3")).toBe("ADVANCED");
+    // Раунд НЕ завершается, пока перетанцовка за место не решена.
+    expect(txRoundUpdateMany).not.toHaveBeenCalled();
+    // Служебный TIE_BREAK создан с FULL_RANK (никого не отсеивают — 2 места на 2 человек).
+    expect(txRoundCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "TIE_BREAK",
+          finalistsCount: 2,
+          config: expect.objectContaining({ tieBreakKind: "FULL_RANK", startRank: 1 }),
+        }),
+      })
+    );
+  });
+
+  it("та же ничья вне финала (есть следующий раунд) НЕ создаёт перетанцовку — место неважно, если оба и так проходят", async () => {
+    txRoundCount.mockResolvedValue(1); // есть более поздний раунд — не финал
+    txRoundFindUniqueOrThrow.mockResolvedValue({ ...baseRound, finalistsCount: 3 });
+    const tied = [participant("L1", "LEADER", [20]), participant("L2", "LEADER", [20])];
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: tied }] }]);
+
+    await calculateRoundResultsInTx(fakeTx as never, "round1", actor);
+
+    const rows: { registrationId: string; status: string }[] = txRoundResultCreateMany.mock.calls[0][0].data;
+    expect(rows.every((r) => r.status === "ADVANCED")).toBe(true);
+    expect(txRoundUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) }));
+  });
+});
+
+describe("recordTieBreakDecision() — FULL_RANK (TIEBREAK-001, ничья за место в финале)", () => {
+  const fullRankTieBreakRound = {
+    id: "tb2",
+    type: "TIE_BREAK",
+    status: "SCORING",
+    statusVersion: 1,
+    finalistsCount: 2,
+    tieBreakOfRoundId: "round1",
+    tieBreakOfRound: { id: "round1" },
+    division: { competitionId: "comp1" },
+    config: { tieBreakKind: "FULL_RANK", startRank: 1 },
+  };
+  const fullRankParticipants = [
+    { registrationId: "reg-L1", role: "LEADER", scored: true },
+    { registrationId: "reg-L2", role: "LEADER", scored: true },
+  ];
+
+  beforeEach(() => {
+    txRoundFindUniqueOrThrow.mockResolvedValue(fullRankTieBreakRound);
+    prismaHeatFindFirstOrThrow.mockResolvedValue({ id: "tbHeat2" });
+    prismaDrawFindFirstOrThrow.mockResolvedValue({ participants: fullRankParticipants });
+  });
+
+  it("требует ВСЕХ участников группы (не подмножество, как в SELECT_N)", async () => {
+    await expect(recordTieBreakDecision("tb2", ["reg-L1"])).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("порядок значим — присваивает ADVANCED и правильный итоговый rank родителю по месту в списке", async () => {
+    await recordTieBreakDecision("tb2", ["reg-L2", "reg-L1"]); // L2 объявлен лучшим
+
+    const parentUpdates = txRoundResultUpdate.mock.calls.map((c) => c[0]);
+    expect(parentUpdates).toContainEqual({
+      where: { roundId_registrationId: { roundId: "round1", registrationId: "reg-L2" } },
+      data: { status: "ADVANCED", rank: 1 },
+    });
+    expect(parentUpdates).toContainEqual({
+      where: { roundId_registrationId: { roundId: "round1", registrationId: "reg-L1" } },
+      data: { status: "ADVANCED", rank: 2 },
+    });
   });
 });
 
@@ -412,10 +513,12 @@ describe("recordTieBreakDecision()", () => {
     id: "tb1",
     type: "TIE_BREAK",
     status: "SCORING",
+    statusVersion: 5,
     finalistsCount: 2,
     tieBreakOfRoundId: "round1",
     tieBreakOfRound: { id: "round1" },
     division: { competitionId: "comp1" },
+    config: {},
   };
 
   const drawParticipants = [
@@ -456,12 +559,24 @@ describe("recordTieBreakDecision()", () => {
     expect(parentUpdates.some((u) => u.where.roundId_registrationId.registrationId === "reg-helper1")).toBe(false);
   });
 
-  it("переводит саму перетанцовку в COMPLETED", async () => {
+  it("переводит саму перетанцовку в COMPLETED (DB-001: с проверкой statusVersion, не голым update)", async () => {
     await recordTieBreakDecision("tb1", ["reg-L9", "reg-L10"]);
 
-    expect(txRoundUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "tb1" }, data: expect.objectContaining({ status: "COMPLETED" }) })
+    expect(txRoundUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "tb1", status: "SCORING", statusVersion: 5 },
+        data: expect.objectContaining({ status: "COMPLETED" }),
+      })
     );
+  });
+
+  // DB-001: второе (гоночное или повторное) решение по уже решённой
+  // перетанцовке не должно молча перезаписать первое — updateMany с
+  // statusVersion в WHERE вернёт count:0, и это обязано провалиться явно.
+  it("отклоняет решение, если перетанцовка уже была решена кем-то другим (statusVersion не совпал)", async () => {
+    txRoundUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(recordTieBreakDecision("tb1", ["reg-L9", "reg-L10"])).rejects.toBeInstanceOf(ConcurrentModificationError);
   });
 
   it("завершает родительский раунд, если других незавершённых перетанцовок не осталось", async () => {
@@ -482,6 +597,9 @@ describe("recordTieBreakDecision()", () => {
 
     await recordTieBreakDecision("tb1", ["reg-L9", "reg-L10"]);
 
-    expect(txRoundUpdateMany).not.toHaveBeenCalled();
+    // Сама перетанцовка (tb1) всё равно переходит в COMPLETED (DB-001) — не
+    // завершается только РОДИТЕЛЬСКИЙ раунд (round1).
+    expect(txRoundUpdateMany).toHaveBeenCalledTimes(1);
+    expect(txRoundUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "tb1" }) }));
   });
 });

@@ -26,6 +26,10 @@ const fakeTx = {
   heat: { findFirst: txHeatFindFirst, findMany: txHeatFindMany, count: txHeatCount },
   registration: { findMany: txRegistrationFindMany },
   auditLog: { create: auditCreate },
+  // FLOW-002: guard() теперь берёт pg_advisory_xact_lock перед проверкой
+  // "раунды по очереди" — мок не бьётся с реальной БД, просто должен
+  // существовать как функция.
+  $executeRaw: vi.fn(),
 };
 
 vi.mock("@/lib/prisma", () => ({

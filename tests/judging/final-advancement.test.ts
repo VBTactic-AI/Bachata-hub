@@ -58,7 +58,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const { calculateFinalResultsInTx, recordFinalTieBreakDecision } = await import("@/server/judging/final-advancement");
-const { ValidationFailedError } = await import("@/server/errors");
+const { ValidationFailedError, ConcurrentModificationError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
 
@@ -211,6 +211,7 @@ describe("recordFinalTieBreakDecision() — RANK_ALL, коллегиальное
     id: "tb1",
     type: "TIE_BREAK" as const,
     status: "SCORING" as const,
+    statusVersion: 7,
     config: { finalTieGroupKey: "tie-2-4", finalTieGroupRole: "LEADER" as const, finalTieGroupStartPlace: 2 },
     division: { competitionId: "comp1" },
     tieBreakOfRound: { ...baseRound, id: "final1" },
@@ -241,8 +242,19 @@ describe("recordFinalTieBreakDecision() — RANK_ALL, коллегиальное
     expect(txFinalResultUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ where: { roundId_registrationId: { roundId: "final1", registrationId: "regA" } }, data: expect.objectContaining({ place: 3 }) })
     );
-    // Сама перетанцовка завершена.
-    expect(txRoundUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "tb1" }, data: expect.objectContaining({ status: "COMPLETED" }) }));
+    // Сама перетанцовка завершена (DB-001: с проверкой statusVersion, не голым update).
+    expect(txRoundUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "tb1", status: "SCORING", statusVersion: 7 },
+        data: expect.objectContaining({ status: "COMPLETED" }),
+      })
+    );
+  });
+
+  it("отклоняет, если перетанцовка уже была решена кем-то другим (statusVersion не совпал)", async () => {
+    txRoundUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(recordFinalTieBreakDecision("tb1", ["regB", "regA"])).rejects.toBeInstanceOf(ConcurrentModificationError);
   });
 
   it("завершает родительский раунд, если это была последняя нерешённая tie-группа", async () => {
@@ -260,7 +272,10 @@ describe("recordFinalTieBreakDecision() — RANK_ALL, коллегиальное
 
     await recordFinalTieBreakDecision("tb1", ["regA", "regB"]);
 
-    expect(txRoundUpdateMany).not.toHaveBeenCalled();
+    // Сама перетанцовка (tb1) всё равно завершается (DB-001) — не завершается
+    // только РОДИТЕЛЬСКИЙ раунд (final1).
+    expect(txRoundUpdateMany).toHaveBeenCalledTimes(1);
+    expect(txRoundUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "tb1" }) }));
   });
 
   it("отклоняет решение с составом, не совпадающим с реальной tie-группой", async () => {

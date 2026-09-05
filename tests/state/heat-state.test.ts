@@ -27,6 +27,9 @@ const auditCreate = vi.fn();
 const fakeTx = {
   heat: { findFirst: txHeatFindFirst, updateMany: txHeatUpdateMany },
   auditLog: { create: auditCreate },
+  // FLOW-002: guard() теперь берёт pg_advisory_xact_lock перед проверкой
+  // "не занят ли паркет" — мок просто должен существовать как функция.
+  $executeRaw: vi.fn(),
 };
 
 vi.mock("@/lib/prisma", () => ({

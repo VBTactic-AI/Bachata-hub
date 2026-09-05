@@ -31,11 +31,15 @@ const txJudgeScoreUpsert = vi.fn();
 const txJudgeScoreCount = vi.fn();
 const txJudgeRoundConfirmationFindUnique = vi.fn();
 const txJudgeRoundConfirmationCreate = vi.fn();
+const txRoundResultFindUnique = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
   judgeScore: { findUnique: txJudgeScoreFindUnique, upsert: txJudgeScoreUpsert, count: txJudgeScoreCount },
   judgeRoundConfirmation: { findUnique: txJudgeRoundConfirmationFindUnique, create: txJudgeRoundConfirmationCreate },
+  // SCORE-001: submitJudgeScore теперь проверяет, не посчитан ли уже
+  // результат этого участника, ДО апдейта самой оценки.
+  roundResult: { findUnique: txRoundResultFindUnique },
   auditLog: { create: auditCreate },
 };
 
@@ -67,6 +71,7 @@ const participant = {
   id: "dp1",
   scored: true,
   role: "LEADER" as const,
+  registrationId: "reg1",
   draw: {
     heat: {
       status: "RUNNING",
@@ -95,6 +100,7 @@ beforeEach(() => {
   txJudgeScoreCount.mockReset();
   txJudgeRoundConfirmationFindUnique.mockReset();
   txJudgeRoundConfirmationCreate.mockReset();
+  txRoundResultFindUnique.mockReset().mockResolvedValue(null);
   auditCreate.mockReset();
 });
 
@@ -136,6 +142,19 @@ describe("submitJudgeScore() — идемпотентность офлайн-о�
     expect(auditCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ action: "score.correct", before: { value: 1 } }) }),
     );
+  });
+
+  // SCORE-001: раунд остаётся в SCORING сколь угодно долго, пока не решена
+  // перетанцовка ДРУГОЙ роли — round.status === "COMPLETED" эту ситуацию не
+  // ловит. Если для этого участника RoundResult уже посчитан, попытка
+  // изменить оценку должна отклоняться явно, а не молча ни на что не влиять.
+  it("отклоняет отправку, если RoundResult для этого участника уже посчитан (round всё ещё SCORING из-за другой роли)", async () => {
+    txRoundResultFindUnique.mockResolvedValue({ roundId: "round1", registrationId: "reg1", status: "ADVANCED" });
+
+    await expect(submitJudgeScore("dp1", 1, "sub-1")).rejects.toBeInstanceOf(ValidationFailedError);
+
+    expect(txJudgeScoreUpsert).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
   });
 });
 

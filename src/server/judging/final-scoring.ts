@@ -75,6 +75,15 @@ export async function submitFinalJudgeScore(
   }
 
   await prisma.$transaction(async (tx) => {
+    // SCORE-001: тот же случай, что и в scoring.ts — раунд остаётся в SCORING,
+    // пока не решена перетанцовка ДРУГОЙ роли, и правка оценки уже
+    // посчитанного участника молча ни на что не повлияет.
+    const existingResult = await tx.finalResult.findUnique({
+      where: { roundId_registrationId: { roundId: round.id, registrationId: participant.registrationId } },
+    });
+    if (existingResult) {
+      throw new ValidationFailedError("Результат по этому участнику уже посчитан — оценку больше нельзя изменить.");
+    }
     const existing = await tx.finalJudgeScore.findUnique({
       where: { drawParticipantId_judgeAssignmentId_criterionId: { drawParticipantId, judgeAssignmentId: assignment.id, criterionId } },
     });

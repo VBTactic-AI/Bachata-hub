@@ -68,6 +68,18 @@ export async function submitJudgeScore(drawParticipantId: string, value: number,
   }
 
   await prisma.$transaction(async (tx) => {
+    // SCORE-001: раунд может остаться в SCORING сколь угодно долго, пока не
+    // решена перетанцовка ДРУГОЙ роли (calculateRoundResultsInTx) — сама
+    // проверка выше (round.status === "COMPLETED") этого не ловит. Но если
+    // RoundResult для ЭТОГО участника уже посчитан, его правка ни на что не
+    // повлияет (calculateRoundResultsInTx идемпотентен), а audit получит
+    // ложную запись "score.correct" — явно отклоняем вместо тихого no-op.
+    const existingResult = await tx.roundResult.findUnique({
+      where: { roundId_registrationId: { roundId: round.id, registrationId: participant.registrationId } },
+    });
+    if (existingResult) {
+      throw new ValidationFailedError("Результат по этому участнику уже посчитан — оценку больше нельзя изменить.");
+    }
     const existing = await tx.judgeScore.findUnique({
       where: { drawParticipantId_judgeAssignmentId: { drawParticipantId, judgeAssignmentId: assignment.id } },
     });

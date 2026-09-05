@@ -22,12 +22,13 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const { createHeat } = await import("@/server/competition/create-heat");
+const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
 
 beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
-  roundFindUniqueOrThrow.mockReset().mockResolvedValue({ division: { competitionId: "comp1" } });
+  roundFindUniqueOrThrow.mockReset().mockResolvedValue({ status: "DRAFT", division: { competitionId: "comp1" } });
   heatFindFirst.mockReset().mockResolvedValue(null);
   heatCreate.mockReset().mockResolvedValue({ id: "heat1", number: 1 });
   auditCreate.mockReset();
@@ -55,5 +56,26 @@ describe("createHeat()", () => {
     await createHeat("round1");
 
     expect(heatCreate).toHaveBeenCalledWith(expect.objectContaining({ data: { roundId: "round1", number: 5 } }));
+  });
+
+  // FLOW-001: после DRAW_LOCKED у каждого захода уже обязана быть
+  // жеребьёвка — новый заезд без списка нарушил бы это молча, и раньше
+  // сервер это никак не проверял (только кнопка в UI была спрятана).
+  it.each(["DRAW_LOCKED", "RUNNING", "PAUSED", "FINISHED", "SCORING", "COMPLETED"] as const)(
+    "отклоняет создание заезда, если раунд уже в статусе %s",
+    async (status) => {
+      roundFindUniqueOrThrow.mockResolvedValue({ status, division: { competitionId: "comp1" } });
+
+      await expect(createHeat("round1")).rejects.toBeInstanceOf(ValidationFailedError);
+      expect(heatCreate).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(["DRAFT", "READY", "DRAWING"] as const)("разрешает создание заезда в статусе %s", async (status) => {
+    roundFindUniqueOrThrow.mockResolvedValue({ status, division: { competitionId: "comp1" } });
+
+    await createHeat("round1");
+
+    expect(heatCreate).toHaveBeenCalled();
   });
 });

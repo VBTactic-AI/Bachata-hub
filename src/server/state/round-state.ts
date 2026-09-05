@@ -97,6 +97,14 @@ export async function transitionRound(
     actor,
     reason: opts?.reason,
     guard: async (tx) => {
+      // FLOW-002: та же гонка, что и в heat-state.ts (A4) — здесь для
+      // "раунды дивизиона по очереди" (A8/A13, RUNNING и DRAWING). Без
+      // этой блокировки два РАЗНЫХ раунда одного дивизиона могли бы под
+      // READ COMMITTED синхронно увидеть "предыдущий ещё не завершён? нет"
+      // до коммита друг друга. Снимается сама в конце транзакции.
+      if (to === "RUNNING" || to === "DRAWING") {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${round.division.id})::bigint)`;
+      }
       // Жеребьёвка раунда обязана явно выбрать порядок вызова участников
       // (SEQUENTIAL/RANDOM) — это делает только start-round-drawing.ts,
       // передавая extraData; прямой переход в DRAWING без этого запрещён
