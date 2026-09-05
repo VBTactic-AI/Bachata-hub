@@ -5,8 +5,19 @@ import type { ActionStats, BottleneckClass, PerfRecord, PerfReport, QuerySample 
 // постоянную таблицу в Supabase только ради диагностики"). Живёт, пока жив
 // dev/staging-сервер; перезапуск сервера = чистая история. Кольцевой буфер,
 // чтобы не расти бесконечно за долгую тестовую сессию.
+//
+// globalThis, а не просто module-level массив — тот же приём, что и у
+// singleton'а Prisma (src/lib/prisma.ts) и AsyncLocalStorage
+// (server-context.ts). Next.js в dev-режиме перекомпилирует route handler'ы
+// по требованию отдельными бандлами; без globalThis каждый такой бандл видел
+// бы свой собственный пустой массив records — обнаружено вживую во время
+// реальной тестовой сессии: часть запросов из логов сервера (включая два
+// успешных generate_rounds) не попала в отчёт /api/perf-debug, потому что
+// записывалась в уже отброшенный экземпляр модуля.
 const MAX_RECORDS = 2000;
-const records: PerfRecord[] = [];
+const globalForPerfCollector = globalThis as unknown as { __perfDebugRecords?: PerfRecord[] };
+const records = globalForPerfCollector.__perfDebugRecords ?? [];
+globalForPerfCollector.__perfDebugRecords = records;
 
 // Порог "похоже на повторный клик/дублирующий запрос" — тот же метод+URL
 // дважды в пределах короткого окна (задача §13). Не идеально (не отличает
