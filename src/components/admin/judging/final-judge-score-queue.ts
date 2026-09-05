@@ -68,6 +68,10 @@ export function getQueuedFinalScore(drawParticipantId: string, criterionId: stri
 
 export function enqueueFinalJudgeScore(drawParticipantId: string, criterionId: string, value: number) {
   const k = key(drawParticipantId, criterionId);
+  // UX-003: то же значение уже в очереди/в полёте — см. judge-score-queue.ts.
+  const existing = loadQueue().find((q) => q.drawParticipantId === drawParticipantId && q.criterionId === criterionId);
+  if (existing && existing.value === value) return;
+
   delete errors[k];
   const next = loadQueue().filter((q) => !(q.drawParticipantId === drawParticipantId && q.criterionId === criterionId));
   next.push({ clientSubmissionId: crypto.randomUUID(), drawParticipantId, criterionId, value, queuedAt: Date.now() });

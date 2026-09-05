@@ -5,7 +5,13 @@ const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
 const getRoundEligiblePoolMock = vi.fn();
-vi.mock("@/server/competition/draw-engine", () => ({ getRoundEligiblePool: (...a: unknown[]) => getRoundEligiblePoolMock(...a) }));
+// FLOW-005: mulberry32 остаётся настоящим (не мокается) — иначе тест не
+// проверял бы то единственное, что здесь имеет значение: seed реально
+// воспроизводит выбор пары через тот же PRNG, что и Draw Engine.
+vi.mock("@/server/competition/draw-engine", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/competition/draw-engine")>();
+  return { ...actual, getRoundEligiblePool: (...a: unknown[]) => getRoundEligiblePoolMock(...a) };
+});
 
 const transitionHeatMock = vi.fn();
 vi.mock("@/server/state/heat-state", () => ({ transitionHeat: (...a: unknown[]) => transitionHeatMock(...a) }));
@@ -35,6 +41,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const { advanceRandomCouples } = await import("@/server/judging/final-random-couples");
+const { mulberry32 } = await import("@/server/competition/draw-engine");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "admin1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -106,6 +113,22 @@ describe("advanceRandomCouples()", () => {
     expect(typeof pairData.seed).toBe("string");
     expect(pairData.seed.length).toBeGreaterThan(0);
     expect(txHeatUpdateMany).not.toHaveBeenCalled(); // не было предыдущей пары для завершения
+  });
+
+  // FLOW-005: раньше seed сохранялся, но не влиял на сам выбор
+  // (crypto.randomInt отдельно) — реплей seed'а не воспроизводил бы пару.
+  // Теперь выбор идёт через mulberry32(seed) — тот же PRNG, что и Draw Engine.
+  it("сохранённый seed реально воспроизводит выбор пары (не декоративный)", async () => {
+    mockPools(["L1", "L2", "L3"], ["F1", "F2", "F3"]);
+
+    await advanceRandomCouples("final1");
+
+    const pairData = txFinalPairCreate.mock.calls[0][0].data;
+    const rng = mulberry32(parseInt((pairData.seed as string).slice(0, 8), 16));
+    const replayedLeader = ["L1", "L2", "L3"][Math.floor(rng() * 3)];
+    const replayedFollower = ["F1", "F2", "F3"][Math.floor(rng() * 3)];
+    expect(replayedLeader).toBe(pairData.leaderRegistrationId);
+    expect(replayedFollower).toBe(pairData.followerRegistrationId);
   });
 
   it("отклоняет первую пару, если на паркете уже идёт другой заход соревнования (A4)", async () => {

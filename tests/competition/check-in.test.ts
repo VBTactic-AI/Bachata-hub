@@ -24,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const { checkInRegistration } = await import("@/server/competition/check-in");
 const { ValidationFailedError } = await import("@/server/errors");
+const { Prisma } = await import("@prisma/client");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
 
@@ -78,5 +79,30 @@ describe("checkInRegistration()", () => {
     await checkInRegistration("reg1", { late: true });
 
     expect(checkInCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "LATE" }) }));
+  });
+
+  // FLOW-003: два по-настоящему одновременных check-in могут пройти
+  // предварительные findUnique-проверки (обе видят "свободно") и
+  // столкнуться только на самой записи — раньше это падало общим 500.
+  it("гонка на registrationId (P2002) даёт понятную ошибку, а не общий 500", async () => {
+    registrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", competitionId: "comp1", status: "REGISTERED" });
+    checkInCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.18.0", meta: { target: ["registrationId"] } })
+    );
+
+    await expect(checkInRegistration("reg1")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("гонка на номере участника (P2002) даёт понятную ошибку про номер", async () => {
+    registrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", competitionId: "comp1", status: "REGISTERED" });
+    checkInCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", {
+        code: "P2002",
+        clientVersion: "5.18.0",
+        meta: { target: ["competitionId", "bibNumber"] },
+      })
+    );
+
+    await expect(checkInRegistration("reg1")).rejects.toThrow("Не удалось выдать номер участника");
   });
 });

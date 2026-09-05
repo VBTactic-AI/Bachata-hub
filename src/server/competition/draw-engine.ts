@@ -20,7 +20,11 @@ function generateSeed(): string {
 // mulberry32 — маленький детерминированный PRNG: тот же seed всегда даёт ту
 // же последовательность (CLAUDE.md §6 — жеребьёвка обязана быть
 // воспроизводимой, "не просто Math.random() без сохранения результата").
-function mulberry32(seed: number): () => number {
+// Экспортируется отдельно (FLOW-005) — final-random-couples.ts переиспользует
+// этот же PRNG вместо своего одноразового crypto.randomInt, чтобы сохранённый
+// на FinalPair.seed реально позволял воспроизвести выбор пары, а не был
+// декоративным.
+export function mulberry32(seed: number): () => number {
   let a = seed;
   return function () {
     a |= 0;
@@ -135,7 +139,16 @@ export async function getRoundEligiblePool(
 // такие люди исключаются из пула (уже отработали свою попытку в этом
 // раунде). Считаем только ПОСЛЕДНЮЮ версию Draw каждого заезда — старые
 // (пересобранные) версии не должны влиять на текущее состояние.
-async function alreadyScoredElsewhereInRound(tx: PrismaTx, roundId: string, excludeHeatId: string): Promise<Set<string>> {
+// CODE-001: экспортирована, чтобы draw-helper.ts (listHelperCandidates,
+// resolveHelperSource) переиспользовала именно эту, версионно-корректную
+// реализацию вместо собственной без фильтра "только последняя версия Draw" —
+// без него ручной подбор помощника мог посчитать человека "уже станцевавшим"
+// по данным пересобранного (устаревшего) захода.
+export async function alreadyScoredElsewhereInRound(
+  tx: PrismaTx | typeof prisma,
+  roundId: string,
+  excludeHeatId: string
+): Promise<Set<string>> {
   const heats = await tx.heat.findMany({
     where: { roundId, id: { not: excludeHeatId } },
     select: {

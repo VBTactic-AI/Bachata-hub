@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
@@ -33,15 +34,33 @@ export async function checkInRegistration(registrationId: string, opts?: { late?
     }
     if (!bibNumber) throw new ValidationFailedError("Не удалось выдать номер участника, попробуйте ещё раз.");
 
-    const created = await tx.checkIn.create({
-      data: {
-        registrationId,
-        competitionId: registration.competitionId,
-        status: opts?.late ? "LATE" : "CHECKED_IN",
-        bibNumber,
-        checkedInById: actor.userId,
-      },
-    });
+    // FLOW-003: и "уже зачекинен" (registrationId), и "номер занят"
+    // (competitionId+bibNumber) защищены уникальными индексами на уровне БД —
+    // но проверки выше (findUnique) успевают проверить только ДО этой
+    // записи; два по-настоящему одновременных check-in могут пройти обе
+    // проверки и столкнуться только здесь. Без этого catch ошибка Prisma
+    // (P2002) падала в общий 500 вместо понятного сообщения.
+    let created;
+    try {
+      created = await tx.checkIn.create({
+        data: {
+          registrationId,
+          competitionId: registration.competitionId,
+          status: opts?.late ? "LATE" : "CHECKED_IN",
+          bibNumber,
+          checkedInById: actor.userId,
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        const target = Array.isArray(e.meta?.target) ? (e.meta.target as string[]) : [];
+        if (target.includes("registrationId")) {
+          throw new ValidationFailedError("Check-in для этого участника уже выполнен.");
+        }
+        throw new ValidationFailedError("Не удалось выдать номер участника, попробуйте ещё раз.");
+      }
+      throw e;
+    }
 
     await writeAudit(tx, {
       actor,

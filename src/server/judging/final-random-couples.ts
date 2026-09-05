@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
-import { getRoundEligiblePool } from "../competition/draw-engine";
+import { getRoundEligiblePool, mulberry32 } from "../competition/draw-engine";
 import { transitionHeat } from "../state/heat-state";
 import { assertNoOtherHeatActive } from "./final-judges-dance";
 
@@ -95,13 +95,14 @@ export async function advanceRandomCouples(roundId: string, trackName?: string):
       await assertNoOtherHeatActive(tx, round.division.competitionId);
     }
 
-    // Случайный выбор — сервер, не клиент (CLAUDE.md §6/A5). Seed
-    // сохраняется на FinalPair для истории, хотя сам выбор — одноразовый
-    // (не воспроизводится алгоритмически), а результат зафиксирован
-    // немедленно записью в БД, что и требуется правилом.
-    const leaderId = leaderPool[crypto.randomInt(leaderPool.length)];
-    const followerId = followerPool[crypto.randomInt(followerPool.length)];
+    // Случайный выбор — сервер, не клиент (CLAUDE.md §6/A5). FLOW-005: seed
+    // генерируется ДО выбора и прогоняется через тот же mulberry32, что и
+    // Draw Engine — тот же seed воспроизводит тот же выбор (leader, затем
+    // follower), а не только сохраняет решение фактом записи в БД.
     const seed = crypto.randomBytes(8).toString("hex");
+    const rng = mulberry32(parseInt(seed.slice(0, 8), 16));
+    const leaderId = leaderPool[Math.floor(rng() * leaderPool.length)];
+    const followerId = followerPool[Math.floor(rng() * followerPool.length)];
 
     const heat = await tx.heat.create({ data: { roundId, number: pairNumber, status: "RUNNING", startedAt: new Date() } });
     const draw = await tx.draw.create({

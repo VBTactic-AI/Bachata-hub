@@ -5,6 +5,11 @@ const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
 const heatFindUniqueOrThrow = vi.fn();
+// CODE-001: listHelperCandidates/resolveHelperSource теперь считают "уже
+// станцевал в другом заходе этого раунда" через alreadyScoredElsewhereInRound
+// (draw-engine.ts) — она читает tx.heat.findMany (последняя версия Draw
+// каждого захода), а не drawParticipant.findMany напрямую.
+const heatFindMany = vi.fn();
 const registrationFindUniqueOrThrow = vi.fn();
 const registrationFindMany = vi.fn();
 const divisionFindMany = vi.fn();
@@ -24,7 +29,7 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
+    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findMany: (...a: unknown[]) => heatFindMany(...a) },
     registration: { findUniqueOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a), findMany: (...a: unknown[]) => registrationFindMany(...a) },
     division: { findMany: (...a: unknown[]) => divisionFindMany(...a) },
     drawParticipant: {
@@ -83,6 +88,7 @@ beforeEach(() => {
   drawParticipantFindUniqueOrThrow.mockReset();
   drawParticipantAggregate.mockReset().mockResolvedValue({ _max: { calledOrder: 4 } });
   drawParticipantFindMany.mockReset().mockResolvedValue([]);
+  heatFindMany.mockReset().mockResolvedValue([]);
   txDrawParticipantCreate.mockReset().mockResolvedValue({ id: "participant1" });
   txDrawParticipantDelete.mockReset().mockResolvedValue({});
   auditCreate.mockReset();
@@ -133,13 +139,15 @@ describe("addDrawHelper()", () => {
 
   it("участник СВОЕГО дивизиона отклоняется, если ещё не станцевал (не scored) в этом раунде", async () => {
     registrationFindUniqueOrThrow.mockResolvedValue(baseHelperReg({ divisionId: "div1" }));
-    drawParticipantFindFirst.mockResolvedValue(null);
+    heatFindMany.mockResolvedValue([]);
     await expect(addDrawHelper("heat1", "reg-helper", "LEADER")).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
   it("участник своего дивизиона допускается, если уже scored в другом заезде — REUSED_ALREADY_SCORED", async () => {
     registrationFindUniqueOrThrow.mockResolvedValue(baseHelperReg({ divisionId: "div1" }));
-    drawParticipantFindFirst.mockResolvedValue({ id: "old-participant" });
+    // CODE-001: resolveHelperSource теперь проверяет через
+    // alreadyScoredElsewhereInRound (tx.heat.findMany), не drawParticipant.findFirst.
+    heatFindMany.mockResolvedValue([{ draws: [{ participants: [{ registrationId: "reg-helper" }] }] }]);
     await addDrawHelper("heat1", "reg-helper", "LEADER");
     expect(txDrawParticipantCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ helperSource: "REUSED_ALREADY_SCORED" }) })
@@ -356,7 +364,7 @@ describe("listHelperCandidates()", () => {
       { id: "reg-not-scored", divisionId: "div1", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
       { id: "reg-scored", divisionId: "div1", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
     ]);
-    drawParticipantFindMany.mockResolvedValue([{ registrationId: "reg-scored" }]);
+    heatFindMany.mockResolvedValue([{ draws: [{ participants: [{ registrationId: "reg-scored" }] }] }]);
 
     const result = await listHelperCandidates("heat1", "LEADER");
 
@@ -381,7 +389,7 @@ describe("listHelperCandidates()", () => {
       { id: "reg-own-scored", divisionId: "div1", dancer: { displayName: "Свой" }, checkIn: { bibNumber: "9" } },
       { id: "reg-lower", divisionId: "div-lower", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
     ]);
-    drawParticipantFindMany.mockResolvedValue([{ registrationId: "reg-own-scored" }]);
+    heatFindMany.mockResolvedValue([{ draws: [{ participants: [{ registrationId: "reg-own-scored" }] }] }]);
 
     const result = await listHelperCandidates("heat1", "LEADER");
 
@@ -404,9 +412,7 @@ describe("listHelperCandidates()", () => {
       { id: "reg-a", divisionId: "div-higher", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
       { id: "reg-b", divisionId: "div-higher", dancer: { displayName: "B" }, checkIn: { bibNumber: "2" } },
     ]);
-    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
-      Promise.resolve(where.drawId ? [{ registrationId: "reg-b" }] : [])
-    );
+    drawParticipantFindMany.mockResolvedValue([{ registrationId: "reg-b" }]);
 
     const result = await listHelperCandidates("heat1", "LEADER");
 
@@ -431,9 +437,7 @@ describe("listHelperCandidates()", () => {
     ]);
     // div-higher единственный кандидат уже в заходе -> группа пустеет,
     // предложение должно перейти на div-higher2 без ручного действия.
-    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
-      Promise.resolve(where.drawId ? [{ registrationId: "reg-a" }] : [])
-    );
+    drawParticipantFindMany.mockResolvedValue([{ registrationId: "reg-a" }]);
 
     const result = await listHelperCandidates("heat1", "LEADER");
 
@@ -451,13 +455,12 @@ describe("listHelperCandidates()", () => {
       round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
     });
     divisionFindMany.mockResolvedValue([]);
-    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
-      Promise.resolve(
-        where.drawId
-          ? [{ registrationId: "l1", role: "LEADER" }, { registrationId: "l2", role: "LEADER" }, { registrationId: "l3", role: "LEADER" }, { registrationId: "f1", role: "FOLLOWER" }]
-          : []
-      )
-    );
+    drawParticipantFindMany.mockResolvedValue([
+      { registrationId: "l1", role: "LEADER" },
+      { registrationId: "l2", role: "LEADER" },
+      { registrationId: "l3", role: "LEADER" },
+      { registrationId: "f1", role: "FOLLOWER" },
+    ]);
 
     const result = await listHelperCandidates("heat1", "FOLLOWER");
 
@@ -472,9 +475,10 @@ describe("listHelperCandidates()", () => {
       round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
     });
     divisionFindMany.mockResolvedValue([]);
-    drawParticipantFindMany.mockImplementation(({ where }: { where: { drawId?: string } }) =>
-      Promise.resolve(where.drawId ? [{ registrationId: "l1", role: "LEADER" }, { registrationId: "f1", role: "FOLLOWER" }] : [])
-    );
+    drawParticipantFindMany.mockResolvedValue([
+      { registrationId: "l1", role: "LEADER" },
+      { registrationId: "f1", role: "FOLLOWER" },
+    ]);
 
     const result = await listHelperCandidates("heat1", "FOLLOWER");
 

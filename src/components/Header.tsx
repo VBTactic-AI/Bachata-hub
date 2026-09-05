@@ -4,6 +4,7 @@ import { getCurrentUser, canCreateEvents, isModerator, isAdmin } from "@/lib/aut
 import { prisma } from "@/lib/prisma";
 import { getPreferredCity } from "@/lib/city-preference";
 import { CitySwitcher } from "./CitySwitcher";
+import { HeaderVisibility } from "./HeaderVisibility";
 
 export async function Header() {
   const user = await getCurrentUser();
@@ -21,6 +22,7 @@ export async function Header() {
   const hasCompetitionAccess = !!user;
 
   return (
+    <HeaderVisibility>
     <header className="sticky top-0 z-10 border-b border-line bg-white/90 backdrop-blur-md">
       <div className="container flex flex-wrap items-center justify-between gap-3 py-3">
         <Link
@@ -93,5 +95,6 @@ export async function Header() {
         </nav>
       </div>
     </header>
+    </HeaderVisibility>
   );
 }

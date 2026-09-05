@@ -27,6 +27,20 @@ export async function changeRegistrationDivision(
   }
   if (newDivision.id === registration.divisionId) return; // уже там — ничего делать не нужно
 
+  // FLOW-004: если в СТАРОМ дивизионе уже есть раунды, участник мог быть
+  // задействован в жеребьёвке/судействе — Round/RoundResult/Result ссылаются
+  // на дивизион раунда, а не участника, поэтому смена дивизиона молча
+  // рассинхронизировала бы его историю с тем дивизионом, где она реально
+  // произошла. До первого раунда (в т.ч. после check-in) — это обычная
+  // предсоревновательная корректировка ("заявился как Любители, оказался
+  // Профи"), ограничение только с появлением раундов.
+  const oldDivisionHasRounds = await prisma.round.count({ where: { divisionId: registration.divisionId } });
+  if (oldDivisionHasRounds > 0) {
+    throw new ValidationFailedError(
+      "Нельзя сменить дивизион: в текущем дивизионе уже есть раунды — участник мог попасть в жеребьёвку или судейство."
+    );
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
       const updated = await tx.registration.update({

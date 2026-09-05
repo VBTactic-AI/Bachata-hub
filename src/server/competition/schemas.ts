@@ -305,14 +305,18 @@ export type UnpublishReasonInput = z.infer<typeof unpublishReasonSchema>;
 
 export const resultStatusSchema = z.enum(["FINALIST", "ELIMINATED"]);
 
+// RESULT-001: раньше проверялось только ELIMINATED => placement===null, но не
+// обратное — FINALIST с placement:null проходил валидацию, хотя модель Result
+// (calculateResults) никогда не создаёт такую комбинацию сама. Биусловие
+// закрывает оба направления сразу.
 export const correctResultSchema = z
   .object({
     status: resultStatusSchema,
     placement: z.coerce.number().int().positive().nullable(),
     reason: z.string().min(1).max(500),
   })
-  .refine((v) => v.status === "FINALIST" || v.placement === null, {
-    message: "У выбывшего участника не может быть места.",
+  .refine((v) => (v.status === "FINALIST") === (v.placement !== null), {
+    message: "У финалиста обязано быть место, у выбывшего участника — не должно быть.",
     path: ["placement"],
   });
 export type CorrectResultInput = z.infer<typeof correctResultSchema>;

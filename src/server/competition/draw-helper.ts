@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
+import { alreadyScoredElsewhereInRound } from "./draw-engine";
 
 // Кандидаты в помощники для конкретного заезда/роли — список по дивизионам
 // этого же соревнования плюс подсказка "кого предложить по умолчанию", тот
@@ -44,12 +45,14 @@ export async function listHelperCandidates(
   const ownOrder = heat.round.division.category.order;
   const currentDrawId = heat.draws[0]?.id ?? null;
 
-  const [divisions, alreadyScored, inThisHeat] = await Promise.all([
+  const [divisions, alreadyScoredIds, inThisHeat] = await Promise.all([
     prisma.division.findMany({ where: { competitionId }, include: { category: true } }),
-    prisma.drawParticipant.findMany({
-      where: { scored: true, draw: { heat: { roundId: heat.roundId, id: { not: heatId } } } },
-      select: { registrationId: true },
-    }),
+    // CODE-001: та же функция, что и авто-добор в draw-engine.ts (учитывает
+    // ТОЛЬКО последнюю версию Draw каждого захода) — раньше здесь была своя
+    // независимая копия этого запроса без этого фильтра, и после reroll
+    // другого захода могла посчитать "уже станцевавшим" человека из
+    // пересобранной (устаревшей) версии жеребьёвки.
+    alreadyScoredElsewhereInRound(prisma, heat.roundId, heatId),
     // Кто уже в списке ЭТОГО захода, в ПОСЛЕДНЕЙ версии жеребьёвки (реальный
     // участник или уже позванный помощник) — не показываем повторно, по
     // запросу пользователя (2026-09-04): повторный выбор того же человека
@@ -58,7 +61,6 @@ export async function listHelperCandidates(
       ? prisma.drawParticipant.findMany({ where: { drawId: currentDrawId }, select: { registrationId: true, role: true } })
       : Promise.resolve([]),
   ]);
-  const alreadyScoredIds = new Set(alreadyScored.map((p) => p.registrationId));
   const alreadyInHeatIds = new Set(inThisHeat.map((p) => p.registrationId));
   const opposingRole: RegistrationRole = role === "LEADER" ? "FOLLOWER" : "LEADER";
   const neededCount = Math.max(
@@ -157,10 +159,12 @@ async function resolveHelperSource(
   }
 
   if (helperReg.divisionId === heat.divisionId) {
-    const alreadyScored = await prisma.drawParticipant.findFirst({
-      where: { registrationId, scored: true, draw: { heat: { roundId: heat.roundId, id: { not: heat.id } } } },
-    });
-    if (!alreadyScored) {
+    // CODE-001: та же версионно-корректная проверка, что и в
+    // listHelperCandidates — это авторизующая проверка перед фактической
+    // записью в БД (addDrawHelper/replaceDrawHelper), поэтому расхождение
+    // с draw-engine.ts здесь особенно важно закрыть.
+    const alreadyScoredIds = await alreadyScoredElsewhereInRound(prisma, heat.roundId, heat.id);
+    if (!alreadyScoredIds.has(registrationId)) {
       throw new ValidationFailedError(
         "Участник своего дивизиона может помогать только после того, как уже станцевал (получил оценку) в другом заходе этого раунда."
       );

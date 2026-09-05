@@ -249,6 +249,12 @@ export async function correctResult(
   if (!reason.trim()) {
     throw new ValidationFailedError("Нужно указать причину исправления.");
   }
+  // RESULT-001: та же проверка, что и в схеме API (correctResultSchema) —
+  // повторена здесь, потому что эта функция вызываема и напрямую из
+  // серверного кода, в обход HTTP-слоя валидации.
+  if ((data.status === "FINALIST") !== (data.placement !== null)) {
+    throw new ValidationFailedError("У финалиста обязано быть место, у выбывшего участника — не должно быть.");
+  }
   const target = await prisma.result.findUniqueOrThrow({
     where: { id: resultId },
     include: { division: { select: { competitionId: true } } },

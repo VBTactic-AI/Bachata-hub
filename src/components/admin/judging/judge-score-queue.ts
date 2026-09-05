@@ -72,6 +72,14 @@ export function getQueuedScore(drawParticipantId: string): QueuedScore | undefin
 // отправленную запись для этого же участника (в силе только последнее
 // нажатие), и сразу пробуем отправить.
 export function enqueueJudgeScore(drawParticipantId: string, value: number) {
+  // UX-003: то же самое значение уже в очереди (ещё не доставлено или
+  // прямо сейчас в полёте, sendOne успел прочитать его до этого клика, но
+  // ещё не удалил) — повторный тап того же варианта не должен плодить
+  // второй сетевой запрос с новым clientSubmissionId и лишнюю запись
+  // "score.correct" на сервере (before===after).
+  const existing = loadQueue().find((q) => q.drawParticipantId === drawParticipantId);
+  if (existing && existing.value === value) return;
+
   delete errors[drawParticipantId];
   const next = loadQueue().filter((q) => q.drawParticipantId !== drawParticipantId);
   next.push({ clientSubmissionId: crypto.randomUUID(), drawParticipantId, value, queuedAt: Date.now() });

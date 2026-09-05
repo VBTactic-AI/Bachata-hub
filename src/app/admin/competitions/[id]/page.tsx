@@ -261,14 +261,26 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     ? await Promise.all([getCompetitionStatistics(competition.id), getJudgeStatisticsForCompetition(competition.id)])
     : [null, []];
 
-  const registrations = canViewAllRegistrations
-    ? await prisma.registration.findMany({
-        where: { competitionId: competition.id },
-        relationLoadStrategy: "join",
-        include: { dancer: true, checkIn: true, division: { include: { category: true } } },
-        orderBy: { createdAt: "asc" },
-      })
-    : [];
+  // DB-002: раньше без `take` вообще — на маленьких тестовых соревнованиях
+  // (до ~30 регистраций) незаметно, но на реальном крупном турнире с
+  // несколькими сотнями участников этот запрос (плюс вложенные include)
+  // рос бы без ограничения на каждой загрузке страницы. Лимит — не полная
+  // пагинация (это отдельная UI-фича), а честная защита от неограниченного
+  // роста: организатор явно видит, если список обрезан, вместо того чтобы
+  // молча получать "первые N по порядку без предупреждения".
+  const REGISTRATIONS_DISPLAY_LIMIT = 300;
+  const [registrations, registrationsTotalCount] = canViewAllRegistrations
+    ? await Promise.all([
+        prisma.registration.findMany({
+          where: { competitionId: competition.id },
+          relationLoadStrategy: "join",
+          include: { dancer: true, checkIn: true, division: { include: { category: true } } },
+          orderBy: { createdAt: "asc" },
+          take: REGISTRATIONS_DISPLAY_LIMIT,
+        }),
+        prisma.registration.count({ where: { competitionId: competition.id } }),
+      ])
+    : [[], 0];
   const myRegistration =
     !canViewAllRegistrations && myDancer
       ? await prisma.registration.findFirst({
@@ -279,9 +291,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       : null;
 
   const isRegistrationOpen = competition.status === "REGISTRATION_OPEN";
+  // DB-002: точечный запрос, а не registrations.some(...) — тот список теперь
+  // может быть обрезан лимитом отображения, а эта проверка обязана быть
+  // верной независимо от того, попала ли конкретная регистрация в первые
+  // REGISTRATIONS_DISPLAY_LIMIT.
   const alreadyRegistered = canViewAllRegistrations
     ? myDancer
-      ? registrations.some((r) => r.dancerId === myDancer.id)
+      ? (await prisma.registration.count({ where: { competitionId: competition.id, dancerId: myDancer.id } })) > 0
       : false
     : myRegistration !== null;
 
@@ -688,6 +704,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {canViewAllRegistrations ? (
         <div>
           <h2 className="page-title">Участники</h2>
+          {registrationsTotalCount > registrations.length && (
+            <p className="hint-text text-accent">
+              Показаны первые {registrations.length} из {registrationsTotalCount} — список обрезан.
+            </p>
+          )}
           {registrations.length === 0 ? (
             <p className="hint-text">Пока никто не зарегистрирован.</p>
           ) : (
