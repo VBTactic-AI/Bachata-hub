@@ -30,21 +30,27 @@ export const getActor = cache(async (): Promise<Actor | null> => {
   // pooler) каждый дополнительный последовательный round-trip стоит
   // ~150мс, а этот путь идёт демо-ADMIN'ом буквально на каждое действие.
   const isSiteAdmin = user.role === "ADMIN";
-  // relationLoadStrategy: "join" — role -> permissions -> permission — без
-  // него каждая из трёх веток сама по себе стоила бы больше одного
-  // round-trip'а (Promise.all ограничивает общее время самой медленной
-  // веткой, а не суммой, но каждая лишняя вложенность всё равно добавляет
-  // задержку внутри своей ветки).
-  const [globalAssignments, memberships, superAdminRole] = await Promise.all([
-    prisma.userRoleAssignment.findMany({
-      where: { userId: user.id },
+  // UserRoleAssignment и CompetitionMember — обе связи объявлены прямо на
+  // User в схеме (competitionRoleAssignments/competitionMemberships), поэтому
+  // их можно получить ОДНИМ запросом через вложенный include вместо двух
+  // отдельных findMany — было 2 round-trip'а к Supabase pooler (~150мс
+  // каждый) сверх round-trip'а самого getCurrentUser(), обнаружено вживую в
+  // Performance Diagnostic Mode (docs/PROGRESS.md): RBAC-запросы повторялись
+  // одинаково на каждое судейское/админское действие. SUPER_ADMIN-мост
+  // остаётся отдельным запросом (Role не связана с User напрямую), но
+  // по-прежнему идёт параллельно.
+  const [userWithRbac, superAdminRole] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: user.id },
       relationLoadStrategy: "join",
-      include: { role: { include: { permissions: { include: { permission: true } } } } },
-    }),
-    prisma.competitionMember.findMany({
-      where: { userId: user.id },
-      relationLoadStrategy: "join",
-      include: { role: { include: { permissions: { include: { permission: true } } } } },
+      select: {
+        competitionRoleAssignments: {
+          include: { role: { include: { permissions: { include: { permission: true } } } } },
+        },
+        competitionMemberships: {
+          include: { role: { include: { permissions: { include: { permission: true } } } } },
+        },
+      },
     }),
     isSiteAdmin
       ? prisma.role.findUnique({
@@ -54,6 +60,8 @@ export const getActor = cache(async (): Promise<Actor | null> => {
         })
       : Promise.resolve(null),
   ]);
+  const globalAssignments = userWithRbac?.competitionRoleAssignments ?? [];
+  const memberships = userWithRbac?.competitionMemberships ?? [];
 
   const globalPermissions = new Set<Permission>();
   for (const assignment of globalAssignments) {
