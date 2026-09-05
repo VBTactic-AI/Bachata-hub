@@ -30,7 +30,13 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
 
   if (!open) {
     return (
-      <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
+      <Button
+        variant="secondary"
+        size="sm"
+        type="button"
+        onClick={() => setOpen(true)}
+        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+      >
         {t.dancer.editProfile}
       </Button>
     );
@@ -54,15 +60,17 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
     router.refresh();
   }
 
+  const selectClass = "border-night-border bg-night-card2 text-night-text focus:border-night-primary focus:ring-night-primary/20";
+
   return (
-    <FormRoot onSubmit={onSubmit} className="rounded-app border border-line bg-surface p-[18px] shadow-sm">
-      <Label>
+    <FormRoot onSubmit={onSubmit} className="max-w-none rounded-app border border-night-border bg-night-card p-[18px]">
+      <Label className="text-night-muted">
         {t.auth.displayName}
-        <Input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        <Input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={selectClass} />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         {t.city.choose}
-        <Select value={cityId} onChange={(e) => setCityId(e.target.value)}>
+        <Select value={cityId} onChange={(e) => setCityId(e.target.value)} className={selectClass}>
           <option value="">—</option>
           {cities.map((c) => (
             <option key={c.id} value={c.id}>
@@ -71,27 +79,27 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
           ))}
         </Select>
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         {t.dancer.genderLabel}
-        <Select value={gender} onChange={(e) => setGender(e.target.value as typeof gender)}>
+        <Select value={gender} onChange={(e) => setGender(e.target.value as typeof gender)} className={selectClass}>
           <option value="">—</option>
           <option value="MALE">{t.dancer.gender.MALE}</option>
           <option value="FEMALE">{t.dancer.gender.FEMALE}</option>
         </Select>
       </Label>
-      <p className="hint-text -mt-2">{t.dancer.genderHint}</p>
-      <Label>
+      <p className="-mt-2 text-sm text-night-muted">{t.dancer.genderHint}</p>
+      <Label className="text-night-muted">
         {t.dancer.roleLabel}
-        <Select value={danceRole} onChange={(e) => setDanceRole(e.target.value as typeof danceRole)}>
+        <Select value={danceRole} onChange={(e) => setDanceRole(e.target.value as typeof danceRole)} className={selectClass}>
           <option value="">—</option>
           <option value="LEADER">{t.dancer.role.LEADER}</option>
           <option value="FOLLOWER">{t.dancer.role.FOLLOWER}</option>
           <option value="BOTH">{t.dancer.role.BOTH}</option>
         </Select>
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         {t.dancer.selfLevel}
-        <Select value={selfLevel} onChange={(e) => setSelfLevel(e.target.value as typeof selfLevel)}>
+        <Select value={selfLevel} onChange={(e) => setSelfLevel(e.target.value as typeof selfLevel)} className={selectClass}>
           <option value="">—</option>
           {Object.entries(t.event.levels).map(([key, label]) => (
             <option key={key} value={key}>
@@ -100,16 +108,22 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
           ))}
         </Select>
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         {t.dancer.avatarUrlLabel}
-        <Input type="url" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} />
+        <Input type="url" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} className={selectClass} />
       </Label>
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
-        <Button size="sm" type="submit" disabled={loading}>
+        <Button size="sm" type="submit" disabled={loading} className="border-none bg-gradient-night-cta">
           {t.common.save}
         </Button>
-        <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(false)}>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          onClick={() => setOpen(false)}
+          className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+        >
           {t.common.cancel}
         </Button>
       </div>

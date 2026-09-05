@@ -116,7 +116,7 @@ export function FinalJudgingScreen({
   }, [items, sortedCriteria]);
 
   if (items.length === 0) {
-    return <p className="hint-text">Пока нет вызванных участников вашей роли для оценки.</p>;
+    return <p className="text-sm text-night-muted">Пока нет вызванных участников вашей роли для оценки.</p>;
   }
 
   const current = items[Math.min(index, items.length - 1)];
@@ -124,87 +124,97 @@ export function FinalJudgingScreen({
   const currentRank = ranked.findIndex((r) => r.drawParticipantId === current.drawParticipantId) + 1;
 
   return (
-    <div className="stack gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <strong>Оценено {scoredCount} / {items.length}</strong>
-        <div className="flex gap-1">
-          <Button type="button" size="sm" variant={tab === "score" ? "default" : "outline"} onClick={() => setTab("score")}>
-            Оценка
-          </Button>
-          <Button type="button" size="sm" variant={tab === "rating" ? "default" : "outline"} onClick={() => setTab("rating")}>
-            Мой рейтинг
-          </Button>
-        </div>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1 rounded-app bg-night-card p-4">
+        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-night-muted">
+          Пара {index + 1} из {items.length} · оценено {scoredCount}
+        </p>
+        <p className="m-0 text-lg font-bold text-night-text">
+          №{current.bibNumber ?? "—"} {current.displayName} · {current.role === "LEADER" ? "Ведущий" : "Ведомая"}
+        </p>
+      </div>
+
+      <div className="flex gap-2 rounded-full bg-night-card p-1">
+        <button
+          type="button"
+          onClick={() => setTab("score")}
+          className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "score" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
+        >
+          Оценка
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("rating")}
+          className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "rating" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
+        >
+          Мой рейтинг
+        </button>
       </div>
 
       {tab === "score" && (
-        <div className="rounded-app-md border border-line p-4 stack gap-3">
-          <div>
-            <p className="hint-text m-0">
-              Участник №{current.bibNumber ?? "—"} · {current.role === "LEADER" ? "Ведущий" : "Ведомая"}
-            </p>
-            <p className="m-0 text-lg font-semibold">{current.displayName}</p>
-          </div>
-
+        <div className="flex flex-col gap-3">
           {myCriteriaFor(current).map((c) => {
             const value = effectiveValue(current, c.id);
-            const optionsCount = Math.floor((c.maxScore - c.minScore) / c.step) + 1;
-            const useButtons = optionsCount <= 16;
             const criterionError = errorsByKey[`${current.drawParticipantId}:${c.id}`];
+            const canDec = value !== null && value - c.step >= c.minScore;
+            const canInc = value === null ? true : value + c.step <= c.maxScore;
             return (
-              <div key={c.id}>
-                <p className="hint-text m-0">{c.name}</p>
-                {useButtons ? (
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {Array.from({ length: optionsCount }, (_, i) => c.minScore + i * c.step).map((v) => (
-                      <Button
-                        key={v}
-                        type="button"
-                        size="touch"
-                        variant={value === v ? "default" : "outline"}
-                        onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, v)}
-                      >
-                        {v}
-                      </Button>
-                    ))}
-                  </div>
-                ) : (
-                  <input
-                    type="number"
-                    min={c.minScore}
-                    max={c.maxScore}
-                    step={c.step}
-                    value={value ?? ""}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      if (Number.isFinite(v) && v >= c.minScore && v <= c.maxScore) {
-                        enqueueFinalJudgeScore(current.drawParticipantId, c.id, v);
-                      }
-                    }}
-                    className="mt-1 w-24 rounded-app-sm border border-line px-2 py-1"
-                  />
-                )}
-                {criterionError && <p className="error-text m-0 mt-1">{criterionError}</p>}
+              <div key={c.id} className="flex items-center gap-3 rounded-app bg-night-card p-4">
+                <div className="min-w-0 flex-1">
+                  <p className="m-0 text-[0.95rem] font-semibold text-night-text">{c.name}</p>
+                  <p className="m-0 text-xs text-night-muted">
+                    {c.minScore}–{c.maxScore}
+                  </p>
+                  {criterionError && <p className="m-0 mt-1 text-xs text-red-400">{criterionError}</p>}
+                </div>
+                <button
+                  type="button"
+                  disabled={!canDec}
+                  onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.max(c.minScore, (value ?? c.minScore) - c.step))}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
+                >
+                  −
+                </button>
+                <span className="w-9 shrink-0 text-center text-xl font-bold text-night-text">{value ?? "–"}</span>
+                <button
+                  type="button"
+                  disabled={!canInc}
+                  onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.min(c.maxScore, (value ?? c.minScore) + c.step))}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
+                >
+                  +
+                </button>
               </div>
             );
           })}
 
-          <div className="flex items-center justify-between border-t border-line pt-2">
+          <div className="flex items-center justify-between px-1">
             <div>
-              <p className="hint-text m-0">МОЯ СУММА</p>
-              <p className="m-0 text-2xl font-bold">{currentSum}</p>
+              <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моя сумма</p>
+              <p className="m-0 text-2xl font-bold text-night-text">{currentSum}</p>
             </div>
             <div className="text-right">
-              <p className="hint-text m-0">МОЁ МЕСТО</p>
-              <p className="m-0 text-2xl font-bold">#{currentRank}</p>
+              <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моё место</p>
+              <p className="m-0 text-2xl font-bold text-night-primary">#{currentRank}</p>
             </div>
           </div>
 
           <div className="flex items-center justify-between gap-2">
-            <Button type="button" variant="outline" disabled={index === 0} onClick={() => setIndex((i) => Math.max(0, i - 1))}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={index === 0}
+              onClick={() => setIndex((i) => Math.max(0, i - 1))}
+              className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+            >
               ← Предыдущий
             </Button>
-            <Button type="button" variant="outline" disabled={index >= items.length - 1} onClick={() => setIndex((i) => Math.min(items.length - 1, i + 1))}>
+            <Button
+              type="button"
+              disabled={index >= items.length - 1}
+              onClick={() => setIndex((i) => Math.min(items.length - 1, i + 1))}
+              className="border-none bg-gradient-night-cta"
+            >
               Следующий →
             </Button>
           </div>
@@ -212,12 +222,15 @@ export function FinalJudgingScreen({
       )}
 
       {tab === "rating" && (
-        <div className="rounded-app-md border border-line p-3">
-          <p className="hint-text m-0 mb-2">Мой рейтинг — не является официальным результатом соревнования.</p>
-          <ol className="stack gap-1 m-0 pl-4">
-            {ranked.map((r) => (
-              <li key={r.drawParticipantId}>
-                №{r.bibNumber ?? "—"} {r.displayName} — {effectiveSum(r)}
+        <div className="rounded-app bg-night-card p-4">
+          <p className="m-0 mb-3 text-sm text-night-muted">Мой рейтинг — не является официальным результатом соревнования.</p>
+          <ol className="m-0 flex list-none flex-col gap-2 p-0">
+            {ranked.map((r, i) => (
+              <li key={r.drawParticipantId} className="flex items-center justify-between gap-2 rounded-app-sm bg-night-card2 px-3 py-2.5 text-sm">
+                <span className="text-night-text">
+                  #{i + 1} · №{r.bibNumber ?? "—"} {r.displayName}
+                </span>
+                <span className="font-bold text-night-primary">{effectiveSum(r)}</span>
               </li>
             ))}
           </ol>

@@ -19,7 +19,13 @@ export function AchievementForm({ attendedEvents }: { attendedEvents: AttendedEv
 
   if (!open) {
     return (
-      <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
+      <Button
+        variant="secondary"
+        size="sm"
+        type="button"
+        onClick={() => setOpen(true)}
+        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+      >
         {t.dancer.addAchievement}
       </Button>
     );
@@ -46,24 +52,27 @@ export function AchievementForm({ attendedEvents }: { attendedEvents: AttendedEv
     router.refresh();
   }
 
+  const selectClass = "border-night-border bg-night-card2 text-night-text focus:border-night-primary focus:ring-night-primary/20";
+
   return (
-    <FormRoot onSubmit={onSubmit} className="rounded-app border border-line bg-surface p-[18px] shadow-sm">
-      <Label>
+    <FormRoot onSubmit={onSubmit} className="max-w-none rounded-app border border-night-border bg-night-card p-[18px]">
+      <Label className="text-night-muted">
         {t.dancer.achievementDescription}
         <Input
           required
           placeholder={t.dancer.achievementPlaceholder}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          className={selectClass}
         />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         {t.dancer.achievementDate}
-        <Input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} />
+        <Input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} className={selectClass} />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         {t.dancer.achievementEventLabel}
-        <Select value={eventId} onChange={(e) => setEventId(e.target.value)}>
+        <Select value={eventId} onChange={(e) => setEventId(e.target.value)} className={selectClass}>
           <option value="">{t.dancer.achievementNoEvent}</option>
           {attendedEvents.map((ev) => (
             <option key={ev.id} value={ev.id}>
@@ -72,12 +81,18 @@ export function AchievementForm({ attendedEvents }: { attendedEvents: AttendedEv
           ))}
         </Select>
       </Label>
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
-        <Button size="sm" type="submit" disabled={loading}>
+        <Button size="sm" type="submit" disabled={loading} className="border-none bg-gradient-night-cta">
           {t.common.save}
         </Button>
-        <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(false)}>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          onClick={() => setOpen(false)}
+          className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+        >
           {t.common.cancel}
         </Button>
       </div>

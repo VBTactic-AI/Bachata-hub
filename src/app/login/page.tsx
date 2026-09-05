@@ -49,27 +49,42 @@ function LoginForm() {
   }
 
   return (
-    <div className="stack max-w-[480px]">
-      <h1 className="page-title">{t.auth.loginTitle}</h1>
-      <FormRoot onSubmit={onSubmit}>
-        <Label>
+    <div className="flex flex-col gap-5">
+      <div>
+        <h1 className="m-0 font-night text-2xl font-extrabold text-night-text">{t.auth.loginTitle}</h1>
+      </div>
+      <FormRoot onSubmit={onSubmit} className="max-w-none gap-3.5">
+        <Label className="text-[0.7rem] font-semibold uppercase tracking-wider text-night-muted">
           {t.auth.email}
-          <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20"
+          />
         </Label>
-        <Label>
+        <Label className="text-[0.7rem] font-semibold uppercase tracking-wider text-night-muted">
           {t.auth.password}
           <Input
             type="password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className="border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20"
           />
         </Label>
-        {error && <p className="error-text">{error}</p>}
-        <Button type="submit" disabled={loading}>
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        <Button type="submit" disabled={loading} className="mt-1 border-none bg-gradient-night-cta py-3.5">
           {t.nav.login}
         </Button>
       </FormRoot>
+      <p className="text-center text-sm text-night-muted">
+        Ещё нет аккаунта?{" "}
+        <a href="/register" className="font-semibold text-night-primary">
+          {t.nav.register}
+        </a>
+      </p>
     </div>
   );
 }

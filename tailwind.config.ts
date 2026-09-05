@@ -32,24 +32,26 @@ export default {
           DEFAULT: "#c0392b",
           light: "#fbeae7",
         },
-        // "night" — отдельная тёмная палитра ТОЛЬКО для нового публичного
-        // раздела /compete (список конкурсов → карточка → регистрация),
-        // по образцу референса пользователя. Остальной сайт (включая
-        // /admin) продолжает жить на светлых токенах выше — это осознанно
-        // два визуальных языка в одном проекте, не ошибка (подтверждено
-        // пользователем, 2026-09-04): добавлено новым namespace в тот же
-        // конфиг, а не отдельным CSS-in-JS/дублирующей системой.
+        // "night" — отдельная тёмная палитра для публичной части /compete,
+        // /schools, /login, /profile и судейского интерфейса /judging (по
+        // референсу пользователя, 05-06.09.2026). Остальной сайт (главная,
+        // /events, /moderation, /admin) продолжает жить на светлых токенах
+        // выше — осознанно два визуальных языка в одном проекте, не ошибка.
+        // Значения перенесены из прототипа Claude Design "JBJ Platform"
+        // (design/project/JBJ Platform.dc.html, 06.09.2026) — единая
+        // маджента вместо прежней фиолетово-розовой пары.
         night: {
-          bg: "#0B0D16",
-          card: "#151725",
-          card2: "#1A1C2B",
-          border: "rgba(255,255,255,0.08)",
-          primary: "#7C3AED",
-          pink: "#EC4899",
-          success: "#22C55E",
-          text: "#FFFFFF",
-          muted: "#9CA3AF",
-          disabled: "#555866",
+          bg: "#080508",
+          card: "#150d12",
+          card2: "#1d1219",
+          border: "#2a1a22",
+          primary: "#ff2d8a",
+          accent: "#ff2d8a",
+          pink: "#ff9ac9",
+          success: "#37d67a",
+          text: "#ffffff",
+          muted: "#8d7c85",
+          disabled: "#5f5158",
         },
       },
       fontFamily: {
@@ -70,6 +72,10 @@ export default {
           "Arial",
           "sans-serif",
         ],
+        // Montserrat — шрифт тёмного "night"-раздела (макет JBJ Platform),
+        // отдельно от --font-display (Unbounded), который остаётся
+        // заголовочным шрифтом светлого сайта.
+        night: ["var(--font-night)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Arial", "sans-serif"],
       },
       borderRadius: {
         app: "16px",
@@ -82,8 +88,9 @@ export default {
       backgroundImage: {
         "gradient-primary": "linear-gradient(135deg, #a8296b 0%, #c9376f 100%)",
         "gradient-school": "linear-gradient(135deg, #f6d9e6, #fdf0e0)",
-        "gradient-night-cta": "linear-gradient(90deg, #6D3DF5, #F05AA6)",
-        "gradient-night-hero": "linear-gradient(135deg, #4C1D95 0%, #7C3AED 45%, #EC4899 100%)",
+        "gradient-night-cta": "linear-gradient(100deg, #ff2d8a, #d6006c)",
+        "gradient-night-hero":
+          "radial-gradient(120% 90% at 25% 10%, rgba(255,45,138,0.4) 0%, transparent 58%), radial-gradient(100% 80% at 85% 95%, rgba(108,43,255,0.35) 0%, transparent 62%), linear-gradient(165deg, #331629, #120a12)",
       },
       transitionTimingFunction: {
         brand: "cubic-bezier(0.16, 1, 0.3, 1)",

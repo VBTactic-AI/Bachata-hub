@@ -52,7 +52,7 @@ export function CompetitionCard({ competition }: { competition: CompetitionCardD
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <p className="m-0 line-clamp-2 font-display text-[0.95rem] font-bold leading-snug text-night-text">{name}</p>
+        <p className="m-0 line-clamp-2 font-night text-[0.95rem] font-bold leading-snug text-night-text">{name}</p>
         {place && <p className="m-0 mt-0.5 truncate text-[0.8rem] text-night-muted">{place}</p>}
         {startAt && <p className="m-0 text-[0.8rem] text-night-muted">{DATE_FMT.format(startAt)}</p>}
       </div>

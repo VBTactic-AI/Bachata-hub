@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Unbounded } from "next/font/google";
+import { Unbounded, Montserrat } from "next/font/google";
 import { t } from "@/lib/i18n/dictionary";
 import { Header } from "@/components/Header";
 import { PerformanceDebugPanel } from "@/components/admin/PerformanceDebugPanel";
@@ -20,6 +20,18 @@ const displayFont = Unbounded({
   display: "swap",
 });
 
+// Montserrat — шрифт тёмного "night"-раздела (/compete, /schools, /login,
+// /profile, /judging), перенесён из макета Claude Design "JBJ Platform"
+// (design/README.md). Отдельная переменная, не трогает --font-display
+// светлого сайта.
+const nightFont = Montserrat({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-night",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: {
@@ -31,7 +43,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={displayFont.variable}>
+    <html lang="ru" className={`${displayFont.variable} ${nightFont.variable}`}>
       <body>
         <Header />
         <main className="container py-6">

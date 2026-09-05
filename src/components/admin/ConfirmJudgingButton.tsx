@@ -30,10 +30,10 @@ export function ConfirmJudgingButton({ roundId }: { roundId: string }) {
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <Button type="button" size="touch" disabled={loading} onClick={onClick}>
+      <Button type="button" size="touch" disabled={loading} onClick={onClick} className="border-none bg-gradient-night-cta">
         Готово
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </span>
   );
 }

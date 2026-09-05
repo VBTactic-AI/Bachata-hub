@@ -33,9 +33,9 @@ export default async function ProfilePage() {
   // переключать вручную не нужно.
   if (!dancer) {
     return (
-      <div className="stack">
-        <h1 className="page-title">{t.dancer.publicProfileOf}</h1>
-        <p className="hint-text">{t.dancer.noProfileForThisAccount}</p>
+      <div className="flex flex-col gap-3">
+        <h1 className="m-0 font-night text-xl font-extrabold text-night-text">{t.dancer.publicProfileOf}</h1>
+        <p className="text-sm text-night-muted">{t.dancer.noProfileForThisAccount}</p>
       </div>
     );
   }
@@ -62,7 +62,7 @@ export default async function ProfilePage() {
   ]);
 
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-5">
       <div className="flex justify-end gap-2">
         <ProfileEditForm dancer={dancer} cities={cities} />
       </div>
@@ -71,11 +71,11 @@ export default async function ProfilePage() {
       <CompetitorStatisticsCard statistics={statistics} />
 
       <div>
-        <h2 className="page-title">Мои соревнования</h2>
+        <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Мои соревнования</h2>
         {registrations.length === 0 ? (
-          <p className="hint-text">Вы пока не зарегистрированы ни на одно соревнование.</p>
+          <p className="text-sm text-night-muted">Вы пока не зарегистрированы ни на одно соревнование.</p>
         ) : (
-          <div className="stack gap-3">
+          <div className="flex flex-col gap-3">
             {registrations.map((r) => {
               const noShow = isNoShow({
                 registrationStatus: r.status,
@@ -84,15 +84,15 @@ export default async function ProfilePage() {
               });
               return (
                 <Link key={r.id} href={`/admin/competitions/${r.competition.id}`} className="block no-underline">
-                  <Card interactive>
-                    <strong className="text-ink">{r.competition.name}</strong>
-                    <p className="hint-text mt-1">
+                  <Card interactive className="border-night-border bg-night-card hover:border-night-primary/60">
+                    <strong className="text-night-text">{r.competition.name}</strong>
+                    <p className="mt-1 text-sm text-night-muted">
                       {r.division.category.name} · {REGISTRATION_ROLE_LABELS[r.role] ?? r.role} ·{" "}
                       {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
                       {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
                       {noShow && " · не явился"}
                     </p>
-                    <p className="hint-text mt-1">
+                    <p className="mt-1 text-sm text-night-muted">
                       {COMPETITION_STATUS_LABELS[r.competition.status] ?? r.competition.status}
                       {r.roleOverrideStatus === "PENDING" && " · роль ждёт подтверждения организатора"}
                     </p>
@@ -107,7 +107,7 @@ export default async function ProfilePage() {
       <div>
         <AchievementForm attendedEvents={attendedEvents} />
       </div>
-      <p className="hint-text">
+      <p className="text-sm text-night-muted">
         {t.auth.email}: {user.email}
       </p>
     </div>

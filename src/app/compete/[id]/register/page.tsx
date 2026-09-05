@@ -50,7 +50,7 @@ export default async function CompetitionRegisterPage({ params }: { params: Prom
       <Link href={`/compete/${id}`} className="inline-flex items-center gap-1 text-sm text-night-muted no-underline hover:text-night-text">
         ← Назад
       </Link>
-      <h1 className="m-0 font-display text-xl font-extrabold uppercase text-night-text">Регистрация</h1>
+      <h1 className="m-0 font-night text-xl font-extrabold uppercase text-night-text">Регистрация</h1>
       <RegistrationWizard
         competitionId={id}
         competitionName={competition.name}

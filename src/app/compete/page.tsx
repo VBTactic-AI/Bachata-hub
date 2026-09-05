@@ -47,7 +47,7 @@ export default async function CompeteListPage({ searchParams }: { searchParams: 
 
   return (
     <div className="stack gap-4">
-      <h1 className="font-display text-xl font-extrabold text-night-text">Соревнования</h1>
+      <h1 className="font-night text-xl font-extrabold text-night-text">Соревнования</h1>
       <Suspense fallback={null}>
         <FilterTabs />
       </Suspense>

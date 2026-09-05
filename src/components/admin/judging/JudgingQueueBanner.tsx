@@ -27,9 +27,9 @@ export function JudgingQueueBanner() {
   if (online && pendingCount === 0) return null;
 
   return (
-    <div className="rounded-app-sm border border-line bg-amber-50 p-2 text-sm text-amber-900">
-      {!online && <p>Нет связи — оценки сохраняются на телефоне и отправятся сами, когда связь вернётся.</p>}
-      {pendingCount > 0 && <p>Не отправлено оценок: {pendingCount}.</p>}
+    <div className="rounded-app-sm border border-amber-400/30 bg-amber-400/10 p-2.5 text-sm text-amber-300">
+      {!online && <p className="m-0">Нет связи — оценки сохраняются на телефоне и отправятся сами, когда связь вернётся.</p>}
+      {pendingCount > 0 && <p className="m-0">Не отправлено оценок: {pendingCount}.</p>}
     </div>
   );
 }

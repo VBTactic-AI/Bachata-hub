@@ -13,12 +13,18 @@ export function ClaimSchoolButton({ schoolSlug }: { schoolSlug: string }) {
   const [loading, setLoading] = useState(false);
 
   if (done) {
-    return <p className="hint-text">{t.school.claimSubmitted}</p>;
+    return <p className="text-sm text-night-muted">{t.school.claimSubmitted}</p>;
   }
 
   if (!open) {
     return (
-      <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
+      <Button
+        variant="secondary"
+        size="sm"
+        type="button"
+        onClick={() => setOpen(true)}
+        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+      >
         {t.school.claimSchool}
       </Button>
     );
@@ -36,10 +42,14 @@ export function ClaimSchoolButton({ schoolSlug }: { schoolSlug: string }) {
   }
 
   return (
-    <Card className="flex max-w-[420px] flex-col gap-3.5">
-      <p className="hint-text">{t.school.claimHint}</p>
-      <Textarea value={note} onChange={(e) => setNote(e.target.value)} />
-      <Button size="sm" type="button" disabled={loading} onClick={submit} className="self-start">
+    <Card className="flex max-w-[420px] flex-col gap-3.5 border-night-border bg-night-card">
+      <p className="text-sm text-night-muted">{t.school.claimHint}</p>
+      <Textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        className="border-night-border bg-night-card2 text-night-text focus:border-night-primary focus:ring-night-primary/20"
+      />
+      <Button size="sm" type="button" disabled={loading} onClick={submit} className="self-start border-none bg-gradient-night-cta">
         {t.common.submit}
       </Button>
     </Card>

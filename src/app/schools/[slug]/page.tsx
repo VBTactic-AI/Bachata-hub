@@ -82,41 +82,43 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
   const canClaim = user && user.role === "SCHOOL_REP" && school.ownerUserId !== user.id;
 
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-5 pb-4">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <div>
+      <div className="flex flex-col items-start gap-2">
         <VerificationBadge status={school.verificationStatus} />
-        <h1 className="page-title">{school.name}</h1>
-        <p className="page-subtitle">{school.city.nameRu}</p>
+        <h1 className="m-0 font-night text-2xl font-extrabold tracking-tight text-night-text">{school.name}</h1>
+        <p className="m-0 text-sm text-night-muted">{school.city.nameRu}</p>
         {canClaim && <ClaimSchoolButton schoolSlug={school.slug} />}
       </div>
 
-      {school.description && <p>{school.description}</p>}
+      {school.description && <p className="m-0 text-sm leading-relaxed text-night-muted">{school.description}</p>}
 
       {school.directions.length > 0 && (
         <div>
           {school.directions.map((d) => (
-            <Tag key={d}>{d}</Tag>
+            <Tag key={d} className="bg-night-card2 text-night-pink">
+              {d}
+            </Tag>
           ))}
         </div>
       )}
 
-      <Card>
-        <h2 className="mt-0">{t.school.contacts}</h2>
-        <p className="m-0">{school.contactPhone}</p>
-        <p className="m-0">{school.contactEmail}</p>
+      <Card className="border-night-border bg-night-card">
+        <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">{t.school.contacts}</h2>
+        <p className="m-0 text-sm text-night-muted">{school.contactPhone}</p>
+        <p className="m-0 text-sm text-night-muted">{school.contactEmail}</p>
       </Card>
 
       {school.branches.length > 0 && (
         <div>
-          <h2 className="page-title">{t.school.branches}</h2>
-          <ul>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">{t.school.branches}</h2>
+          <ul className="m-0 list-none p-0 text-sm text-night-muted">
             {school.branches.map((b) => (
-              <li key={b.id}>
+              <li key={b.id} className="border-b border-night-border py-2 first:pt-0 last:border-0">
                 {b.address}
                 {b.city ? ` (${b.city.nameRu})` : ""}
               </li>
@@ -127,10 +129,10 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
 
       {school.teachers.length > 0 && (
         <div>
-          <h2 className="page-title">{t.school.teachers}</h2>
-          <div className="card-grid">
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">{t.school.teachers}</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {school.teachers.map((teacher) => (
-              <Card key={teacher.id}>
+              <Card key={teacher.id} className="border-night-border bg-night-card">
                 {teacher.photoUrl && (
                   <img
                     src={teacher.photoUrl}
@@ -138,8 +140,8 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
                     className="mb-2 aspect-square rounded-lg object-cover"
                   />
                 )}
-                <strong>{teacher.name}</strong>
-                {teacher.bio && <p className="hint-text">{teacher.bio}</p>}
+                <strong className="text-night-text">{teacher.name}</strong>
+                {teacher.bio && <p className="mt-1 text-sm text-night-muted">{teacher.bio}</p>}
               </Card>
             ))}
           </div>
@@ -148,55 +150,57 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
 
       {school.schedules.length > 0 && (
         <div>
-          <h2 className="page-title">{t.school.schedule}</h2>
-          <table className="w-full border-collapse">
-            <tbody>
-              {school.schedules.map((s) => (
-                <tr key={s.id} className="border-b border-line">
-                  <td className="py-1.5">{t.school.weekdays[s.weekday]}</td>
-                  <td className="py-1.5">
-                    {s.startTime}
-                    {s.endTime ? `–${s.endTime}` : ""}
-                  </td>
-                  <td className="py-1.5">{t.event.levels[s.level]}</td>
-                  <td className="py-1.5">{s.teacher?.name ?? "—"}</td>
-                  <td className="py-1.5">{s.hall ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">{t.school.schedule}</h2>
+          <div className="overflow-x-auto rounded-app border border-night-border bg-night-card">
+            <table className="w-full border-collapse text-sm text-night-muted">
+              <tbody>
+                {school.schedules.map((s) => (
+                  <tr key={s.id} className="border-b border-night-border last:border-0">
+                    <td className="px-3 py-2.5 text-night-text">{t.school.weekdays[s.weekday]}</td>
+                    <td className="px-3 py-2.5">
+                      {s.startTime}
+                      {s.endTime ? `–${s.endTime}` : ""}
+                    </td>
+                    <td className="px-3 py-2.5">{t.event.levels[s.level]}</td>
+                    <td className="px-3 py-2.5">{s.teacher?.name ?? "—"}</td>
+                    <td className="px-3 py-2.5">{s.hall ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       <div>
-        <h2 className="page-title">
+        <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">
           {t.school.reviews}
           {avgRating && (
-            <span className="ml-2 tracking-wide text-accent">
+            <span className="ml-2 tracking-wide text-night-pink">
               {"★".repeat(Math.round(avgRating))} {avgRating.toFixed(1)}
             </span>
           )}
         </h2>
         {school.reviews.length === 0 ? (
-          <p className="hint-text">{t.school.noReviewsYet}</p>
+          <p className="text-sm text-night-muted">{t.school.noReviewsYet}</p>
         ) : (
-          <div className="stack gap-3">
+          <div className="flex flex-col gap-3">
             {school.reviews.map((r) => (
-              <Card key={r.id}>
-                <p className="m-0 tracking-wide text-accent">
+              <Card key={r.id} className="border-night-border bg-night-card">
+                <p className="m-0 tracking-wide text-night-pink">
                   {"★".repeat(r.rating)}
                   {"☆".repeat(5 - r.rating)}
                 </p>
-                <p className="mt-1.5">{r.text}</p>
-                <p className="hint-text mt-1.5">
+                <p className="mt-1.5 text-sm text-night-text">{r.text}</p>
+                <p className="mt-1.5 text-sm text-night-muted">
                   {r.author.dancer?.displayName ?? t.school.reviewAuthorFallback}
                 </p>
                 {/* Виден только автору — остальным такие отзывы не приходят с сервера вообще (см. getSchool) */}
                 {r.moderationStatus === "PENDING" && (
-                  <p className="hint-text mt-1 text-accent">{t.school.reviewPendingBadge}</p>
+                  <p className="mt-1 text-sm text-night-pink">{t.school.reviewPendingBadge}</p>
                 )}
                 {r.moderationStatus === "REJECTED" && (
-                  <p className="hint-text mt-1">{t.school.reviewRejectedBadge}</p>
+                  <p className="mt-1 text-sm text-night-muted">{t.school.reviewRejectedBadge}</p>
                 )}
               </Card>
             ))}

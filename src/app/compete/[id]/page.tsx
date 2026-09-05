@@ -54,7 +54,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       >
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
         <div className="relative">
-          <h1 className="m-0 font-display text-2xl font-extrabold uppercase tracking-tight text-white">{view.name}</h1>
+          <h1 className="m-0 font-night text-2xl font-extrabold uppercase tracking-tight text-white">{view.name}</h1>
           {(view.startAt || place) && (
             <p className="m-0 mt-1 text-sm font-medium text-white/85">
               {view.startAt ? DATE_FMT.format(view.startAt).toUpperCase() : ""}
@@ -107,7 +107,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {view.description && (
         <div>
-          <h2 className="m-0 mb-2 font-display text-base font-bold text-night-text">О событии</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">О событии</h2>
           <p className="m-0 whitespace-pre-line text-sm leading-relaxed text-night-muted">{view.description}</p>
         </div>
       )}
@@ -123,7 +123,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {(view.rulesText || view.rulesUrl) && (
         <div>
-          <h2 className="m-0 mb-2 font-display text-base font-bold text-night-text">Правила</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Правила</h2>
           {view.rulesText && <p className="m-0 mb-2 whitespace-pre-line text-sm leading-relaxed text-night-muted">{view.rulesText}</p>}
           {view.rulesUrl && (
             <a href={view.rulesUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-night-accent no-underline">
@@ -135,7 +135,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {view.divisions.length > 0 && (
         <div>
-          <h2 className="m-0 mb-2 font-display text-base font-bold text-night-text">Дивизионы</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Дивизионы</h2>
           <div className="stack gap-2">
             {view.divisions.map((d) => (
               <div key={d.id} className="flex items-center justify-between rounded-app border border-night-border bg-night-card p-3">
@@ -149,7 +149,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {view.finalistGroups.length > 0 && (
         <div>
-          <h2 className="m-0 mb-2 font-display text-base font-bold text-night-text">Финалисты</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Финалисты</h2>
           <div className="stack gap-3">
             {view.finalistGroups.map((g, idx) => (
               <div key={idx}>
@@ -182,7 +182,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {view.resultsPublished && view.results.length > 0 && (
         <div>
-          <h2 className="m-0 mb-2 font-display text-base font-bold text-night-text">Результаты</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Результаты</h2>
           <div className="stack gap-3">
             {[...new Set(view.results.map((r) => r.divisionCategoryName))].map((categoryName) => (
               <div key={categoryName}>

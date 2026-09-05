@@ -45,10 +45,20 @@ function UserIcon() {
   );
 }
 
+function SchoolIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M3 9.5 12 5l9 4.5-9 4.5-9-4.5Z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 11.5V16c0 1.1 2.2 2 5 2s5-.9 5-2v-4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const ITEMS: NavItem[] = [
   { href: "/", label: "Главная", icon: <HomeIcon />, match: (p) => p === "/" },
   { href: "/compete", label: "Конкурсы", icon: <TrophyIcon />, match: (p, tab) => p.startsWith("/compete") && tab !== "mine" },
   { href: "/compete?tab=mine", label: "Мои", icon: <HeartIcon />, match: (p, tab) => p.startsWith("/compete") && tab === "mine" },
+  { href: "/schools", label: "Школы", icon: <SchoolIcon />, match: (p) => p.startsWith("/schools") },
   { href: "/profile", label: "Профиль", icon: <UserIcon />, match: (p) => p.startsWith("/profile") },
 ];
 

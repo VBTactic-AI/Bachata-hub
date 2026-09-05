@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { enqueueJudgeScore, getQueuedScore, subscribeJudgeScoreQueue } from "@/components/admin/judging/judge-score-queue";
 
 // Мобильный судейский UI (CLAUDE.md §40) — быстро выбрать оценку и увидеть
@@ -67,24 +66,45 @@ export function JudgeScoreButtons({
   // Шкала 0/1/2 остаётся числовой — там это не бинарный выбор.
   const labelFor = (v: number) => (maxValue === 1 ? (v === 1 ? "Да" : "Нет") : String(v));
 
+  // Да/Нет — крупные кнопки на всю ширину карточки (по макету JBJ Platform,
+  // экран "СУДЬЯ: ОТБОР") — судья тапает по телефону в живом эфире, крупная
+  // цель важнее компактности (CLAUDE.md §40, UX-006).
+  const isYesNo = maxValue === 1;
+
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      {options.map((v) => (
-        <Button
-          key={v}
-          type="button"
-          size="touch"
-          variant={savedValue === v ? "default" : "outline"}
-          disabled={locked}
-          onClick={() => enqueueJudgeScore(drawParticipantId, v)}
-        >
-          {labelFor(v)}
-        </Button>
-      ))}
-      {locked && <span className="hint-text">зафиксировано</span>}
-      {!locked && pending && <span className="hint-text">ждёт отправки…</span>}
-      {!locked && !pending && savedValue !== null && !error && <span className="hint-text">сохранено</span>}
-      {!locked && error && <span className="error-text">{error}</span>}
-    </span>
+    <div className="flex flex-col gap-1.5">
+      <div className={isYesNo ? "grid grid-cols-2 gap-2.5" : "flex flex-wrap gap-1.5"}>
+        {options.map((v) => {
+          const active = savedValue === v;
+          const yesActive = isYesNo && v === 1 && active;
+          const noActive = isYesNo && v === 0 && active;
+          return (
+            <button
+              key={v}
+              type="button"
+              disabled={locked}
+              onClick={() => enqueueJudgeScore(drawParticipantId, v)}
+              className={`rounded-app-sm border font-night text-sm font-bold uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                isYesNo ? "min-h-[52px]" : "min-h-[44px] min-w-[52px] px-4"
+              } ${
+                yesActive
+                  ? "border-night-success bg-night-success/15 text-night-success"
+                  : noActive
+                    ? "border-red-400 bg-red-400/15 text-red-400"
+                    : active
+                      ? "border-night-primary bg-night-primary/15 text-night-primary"
+                      : "border-night-border bg-night-card2 text-night-muted hover:border-night-primary/60 hover:text-night-text"
+              }`}
+            >
+              {labelFor(v)}
+            </button>
+          );
+        })}
+      </div>
+      {locked && <span className="text-xs text-night-muted">зафиксировано</span>}
+      {!locked && pending && <span className="text-xs text-night-muted">ждёт отправки…</span>}
+      {!locked && !pending && savedValue !== null && !error && <span className="text-xs text-night-muted">сохранено</span>}
+      {!locked && error && <span className="text-xs text-red-400">{error}</span>}
+    </div>
   );
 }

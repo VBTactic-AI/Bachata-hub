@@ -9,15 +9,15 @@ function pct(value: number | null): string {
 
 function RoleStatsRow({ label, stats }: { label: string; stats: RoleStatistics }) {
   return (
-    <div className="stack gap-0.5">
-      <strong>{label}</strong>
-      <p className="hint-text m-0">
+    <div className="flex flex-col gap-0.5">
+      <strong className="text-night-text">{label}</strong>
+      <p className="m-0 text-sm text-night-muted">
         Конкурсов: {stats.competitionsCount} · Побед: {stats.winsCount} · Подиумов: {stats.podiumsCount} · Финалов: {stats.finalsCount}
       </p>
-      <p className="hint-text m-0">
+      <p className="m-0 text-sm text-night-muted">
         Лучшее место: {stats.bestPlacement ?? "—"} · Среднее место: {stats.averagePlacement ? stats.averagePlacement.toFixed(1) : "—"}
       </p>
-      <p className="hint-text m-0">
+      <p className="m-0 text-sm text-night-muted">
         Средний балл судей: {pct(stats.averageScore)} · Доля прохождения дальше: {pct(stats.qualificationRate)}
       </p>
     </div>
@@ -33,9 +33,9 @@ export function CompetitorStatisticsCard({ statistics }: { statistics: Competito
     return null;
   }
   return (
-    <Card>
-      <h2 className="page-title">Моя статистика</h2>
-      <div className="stack gap-3 mt-2">
+    <Card className="border-night-border bg-night-card">
+      <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Моя статистика</h2>
+      <div className="mt-2 flex flex-col gap-3">
         {statistics.overall.competitionsCount > 0 && <RoleStatsRow label="Всего" stats={statistics.overall} />}
         {(["LEADER", "FOLLOWER"] as const).map(
           (role) =>
@@ -44,7 +44,7 @@ export function CompetitorStatisticsCard({ statistics }: { statistics: Competito
             )
         )}
         {statistics.noShowsCount > 0 && (
-          <p className="hint-text m-0">Не явился на check-in: {statistics.noShowsCount}</p>
+          <p className="m-0 text-sm text-night-muted">Не явился на check-in: {statistics.noShowsCount}</p>
         )}
       </div>
     </Card>

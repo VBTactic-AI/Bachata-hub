@@ -60,23 +60,34 @@ export function AchievementItem({
 
     return (
       <li>
-        <FormRoot onSubmit={onSave} className="my-2 rounded-app border border-line bg-surface p-[18px] shadow-sm">
-          <Label>
+        <FormRoot onSubmit={onSave} className="my-2 max-w-none rounded-app border border-night-border bg-night-card p-[18px]">
+          <Label className="text-night-muted">
             {t.dancer.achievementDescription}
             <Input
               required
               placeholder={t.dancer.achievementPlaceholder}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              className="border-night-border bg-night-card2 text-night-text focus:border-night-primary focus:ring-night-primary/20"
             />
           </Label>
-          <Label>
+          <Label className="text-night-muted">
             {t.dancer.achievementDate}
-            <Input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} />
+            <Input
+              type="date"
+              required
+              value={achievedAt}
+              onChange={(e) => setAchievedAt(e.target.value)}
+              className="border-night-border bg-night-card2 text-night-text focus:border-night-primary focus:ring-night-primary/20"
+            />
           </Label>
-          <Label>
+          <Label className="text-night-muted">
             {t.dancer.achievementEventLabel}
-            <Select value={eventId} onChange={(e) => setEventId(e.target.value)}>
+            <Select
+              value={eventId}
+              onChange={(e) => setEventId(e.target.value)}
+              className="border-night-border bg-night-card2 text-night-text focus:border-night-primary focus:ring-night-primary/20"
+            >
               <option value="">{t.dancer.achievementNoEvent}</option>
               {attendedEvents.map((ev) => (
                 <option key={ev.id} value={ev.id}>
@@ -85,12 +96,18 @@ export function AchievementItem({
               ))}
             </Select>
           </Label>
-          {error && <p className="error-text">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
-            <Button size="sm" type="submit" disabled={loading}>
+            <Button size="sm" type="submit" disabled={loading} className="border-none bg-gradient-night-cta">
               {t.common.save}
             </Button>
-            <Button variant="secondary" size="sm" type="button" onClick={() => setEditing(false)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={() => setEditing(false)}
+              className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+            >
               {t.common.cancel}
             </Button>
           </div>
@@ -112,15 +129,17 @@ export function AchievementItem({
   }
 
   return (
-    <li>
+    <li className="rounded-app-sm bg-night-card p-3 text-sm text-night-text">
       {achievement.description}
       {achievement.event && (
         <>
           {" — "}
-          <Link href={`/events/${achievement.event.slug}`}>{achievement.event.title}</Link>
+          <Link href={`/events/${achievement.event.slug}`} className="text-night-primary">
+            {achievement.event.title}
+          </Link>
         </>
       )}
-      <span className="hint-text"> · {achievement.achievedAt.toLocaleDateString("ru-RU")}</span>
+      <span className="text-night-muted"> · {achievement.achievedAt.toLocaleDateString("ru-RU")}</span>
       {canManage && (
         <span className="ml-2 inline-flex gap-1.5">
           <Button
@@ -129,15 +148,23 @@ export function AchievementItem({
             type="button"
             disabled={loading}
             onClick={() => setEditing(true)}
+            className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
           >
             {t.common.edit}
           </Button>
-          <Button variant="secondary" size="sm" type="button" disabled={loading} onClick={onDelete}>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            disabled={loading}
+            onClick={onDelete}
+            className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+          >
             {t.common.delete}
           </Button>
         </span>
       )}
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
     </li>
   );
 }

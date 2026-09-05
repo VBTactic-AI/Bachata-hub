@@ -89,7 +89,7 @@ export function RegistrationWizard({
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-night-cta text-3xl text-white">✓</div>
-        <h1 className="m-0 font-display text-xl font-extrabold text-night-text">Вы успешно зарегистрированы!</h1>
+        <h1 className="m-0 font-night text-xl font-extrabold text-night-text">Вы успешно зарегистрированы!</h1>
         <p className="m-0 max-w-[320px] text-sm text-night-muted">
           Ждём вас на соревновании «{competitionName}».
           {anyPending && " По одной из категорий роль отличалась от подсказки по полу — организатор подтвердит её перед check-in."}
@@ -111,7 +111,7 @@ export function RegistrationWizard({
       {step === 0 && (
         <div className="stack gap-4">
           <div>
-            <h2 className="m-0 mb-2 font-display text-base font-bold text-night-text">Ваши данные</h2>
+            <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Ваши данные</h2>
             <div className="rounded-app border border-night-border bg-night-card p-3 text-sm">
               <p className="m-0 text-night-text">{profileName || "Профиль будет создан автоматически"}</p>
               {cityName && <p className="m-0 mt-0.5 text-night-muted">{cityName}</p>}
@@ -121,7 +121,7 @@ export function RegistrationWizard({
             </div>
           </div>
           <div>
-            <h2 className="m-0 mb-1 font-display text-base font-bold text-night-text">Ваша роль</h2>
+            <h2 className="m-0 mb-1 font-night text-base font-bold text-night-text">Ваша роль</h2>
             <p className="m-0 mb-2 text-xs text-night-muted">Роль в паре — обязательно для судейства</p>
             <div className="grid grid-cols-2 gap-2.5">
               {(["LEADER", "FOLLOWER"] as const).map((r) => (
@@ -154,7 +154,7 @@ export function RegistrationWizard({
       {step === 1 && (
         <div className="stack gap-3">
           <div>
-            <h2 className="m-0 mb-1 font-display text-base font-bold text-night-text">Выберите категории</h2>
+            <h2 className="m-0 mb-1 font-night text-base font-bold text-night-text">Выберите категории</h2>
             <p className="m-0 text-xs text-night-muted">Можно выбрать несколько</p>
           </div>
           {divisions.length === 0 ? (
@@ -204,7 +204,7 @@ export function RegistrationWizard({
 
       {step === 2 && (
         <div className="stack gap-4">
-          <h2 className="m-0 font-display text-base font-bold text-night-text">Подтверждение</h2>
+          <h2 className="m-0 font-night text-base font-bold text-night-text">Подтверждение</h2>
           <div className="rounded-app border border-night-border bg-night-card p-4 text-sm">
             <p className="m-0 font-semibold text-night-text">{competitionName}</p>
             {dateLabel && <p className="m-0 mt-1 text-night-muted">{dateLabel}</p>}

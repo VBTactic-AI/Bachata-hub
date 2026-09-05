@@ -16,13 +16,16 @@ export function ReviewForm({ schoolSlug, loggedIn }: { schoolSlug: string; logge
 
   if (!loggedIn) {
     return (
-      <p className="hint-text">
-        <a href="/login">{t.nav.login}</a>, чтобы оставить отзыв.
+      <p className="text-sm text-night-muted">
+        <a href="/login" className="text-night-primary">
+          {t.nav.login}
+        </a>
+        , чтобы оставить отзыв.
       </p>
     );
   }
 
-  if (done) return <p className="hint-text">{t.school.reviewThanks}</p>;
+  if (done) return <p className="text-sm text-night-muted">{t.school.reviewThanks}</p>;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,9 +47,13 @@ export function ReviewForm({ schoolSlug, loggedIn }: { schoolSlug: string; logge
 
   return (
     <FormRoot onSubmit={onSubmit}>
-      <Label>
+      <Label className="text-night-muted">
         {t.school.rating}
-        <Select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+        <Select
+          value={rating}
+          onChange={(e) => setRating(Number(e.target.value))}
+          className="border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20"
+        >
           {[5, 4, 3, 2, 1].map((n) => (
             <option key={n} value={n}>
               {"★".repeat(n)}
@@ -55,12 +62,18 @@ export function ReviewForm({ schoolSlug, loggedIn }: { schoolSlug: string; logge
           ))}
         </Select>
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         {t.school.reviewText}
-        <Textarea required minLength={3} value={text} onChange={(e) => setText(e.target.value)} />
+        <Textarea
+          required
+          minLength={3}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20"
+        />
       </Label>
-      {error && <p className="error-text">{error}</p>}
-      <Button type="submit" disabled={loading}>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <Button type="submit" disabled={loading} className="self-start border-none bg-gradient-night-cta">
         {t.school.addReview}
       </Button>
     </FormRoot>
