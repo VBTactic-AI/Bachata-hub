@@ -28,7 +28,11 @@ export default async function CompeteListPage({ searchParams }: { searchParams: 
       tab === "mine"
         ? { id: { in: [...myCompetitionIds] } }
         : { status: { not: "DRAFT" } },
-    include: { city: { select: { nameRu: true } }, event: { select: { photoUrl: true } } },
+    include: {
+      city: { select: { nameRu: true } },
+      event: { select: { photoUrl: true } },
+      divisions: { include: { category: { select: { name: true } } }, orderBy: { category: { order: "asc" } } },
+    },
     orderBy: tab === "soon" ? { startAt: "asc" } : { startAt: "desc" },
   });
 
@@ -43,11 +47,12 @@ export default async function CompeteListPage({ searchParams }: { searchParams: 
     status: c.status,
     coverUrl: c.event?.photoUrl ?? null,
     isRegistered: myCompetitionIds.has(c.id),
+    divisionNames: c.divisions.map((d) => d.category.name),
   }));
 
   return (
     <div className="stack gap-4">
-      <h1 className="font-night text-xl font-extrabold text-night-text">Соревнования</h1>
+      <h1 className="font-night text-xl font-extrabold tracking-tight text-night-text sm:text-4xl">Соревнования</h1>
       <Suspense fallback={null}>
         <FilterTabs />
       </Suspense>
@@ -57,7 +62,7 @@ export default async function CompeteListPage({ searchParams }: { searchParams: 
           hint={tab === "mine" ? "Загляните на вкладку «Все», чтобы найти открытую регистрацию." : undefined}
         />
       ) : (
-        <div className="stack gap-2.5">
+        <div className="flex flex-col gap-2.5 sm:grid sm:gap-4 sm:[grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
           {cards.map((c) => (
             <CompetitionCard key={c.id} competition={c} />
           ))}

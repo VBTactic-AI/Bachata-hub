@@ -25,7 +25,7 @@ export function SchoolCard({ school }: { school: SchoolWithCity }) {
       <div className="min-w-0 flex-1">
         <VerificationBadge status={school.verificationStatus} />
         <h3 className="m-0 mt-1.5 truncate font-night text-[0.95rem] font-semibold text-night-text">
-          <Link href={`/schools/${school.slug}`} className="text-night-text no-underline hover:no-underline">
+          <Link href={`/schools/${school.slug}`} className="text-night-text no-underline hover:text-night-text hover:no-underline">
             {school.name}
           </Link>
         </h3>
@@ -43,7 +43,7 @@ export function SchoolCard({ school }: { school: SchoolWithCity }) {
       <Link
         href={`/schools/${school.slug}`}
         aria-label={`${t.common.details} ${school.name}`}
-        className="shrink-0 self-center text-lg text-night-primary no-underline hover:no-underline"
+        className="shrink-0 self-center text-lg text-night-primary no-underline hover:text-night-primary hover:no-underline"
       >
         →
       </Link>

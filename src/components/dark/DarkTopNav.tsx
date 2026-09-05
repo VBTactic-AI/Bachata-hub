@@ -34,7 +34,7 @@ export async function DarkTopNav() {
           {dancer && (
             <Link
               href="/profile"
-              className="rounded-full border border-night-border px-5 py-2.5 font-medium text-night-text no-underline hover:border-night-primary hover:no-underline"
+              className="rounded-full border border-night-border px-5 py-2.5 font-medium text-night-text no-underline hover:border-night-primary hover:text-night-text hover:no-underline"
             >
               {t.nav.profile}
             </Link>
@@ -52,7 +52,7 @@ export async function DarkTopNav() {
         <div className="flex items-center gap-3 font-night text-sm">
           <Link
             href="/login"
-            className="rounded-full border border-night-border px-5 py-2.5 font-medium text-night-text no-underline hover:border-night-primary hover:no-underline"
+            className="rounded-full border border-night-border px-5 py-2.5 font-medium text-night-text no-underline hover:border-night-primary hover:text-night-text hover:no-underline"
           >
             {t.nav.login}
           </Link>
