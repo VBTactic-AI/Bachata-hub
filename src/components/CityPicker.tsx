@@ -16,7 +16,11 @@ export function CityPicker({ cities }: { cities: City[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {cities.map((c) => (
-        <TagButton key={c.id} onClick={() => pick(c.slug)}>
+        <TagButton
+          key={c.id}
+          onClick={() => pick(c.slug)}
+          className="bg-night-card2 text-night-pink hover:bg-night-card2"
+        >
           {c.nameRu}
         </TagButton>
       ))}

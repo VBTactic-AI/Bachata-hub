@@ -18,6 +18,8 @@ const HIDDEN_PREFIXES = ["/judging", "/compete", "/schools", "/login", "/profile
 
 export function HeaderVisibility({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
+  // "/" — точное совпадение, а не префикс: startsWith("/") иначе спрятал бы
+  // Header вообще на всех маршрутах сайта.
+  if (pathname === "/" || (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p)))) return null;
   return <>{children}</>;
 }

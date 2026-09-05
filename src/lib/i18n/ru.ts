@@ -43,10 +43,15 @@ export const ru = {
     switchHint: "Город можно сменить в любой момент вверху страницы.",
   },
   home: {
+    heroTitle: "Танцуй. Соревнуйся. Побеждай.",
+    heroSubtitle: "Единый календарь бачата-вечеринок и мастер-классов, каталог школ и соревнования Jack & Jill.",
+    heroCta: "Найти событие",
     today: "Сегодня",
     thisWeek: "На этой неделе",
     noEventsToday: "Сегодня событий не найдено",
     seeFullCalendar: "Смотреть весь календарь",
+    popularSchools: "Популярные школы",
+    seeAllSchools: "все",
   },
   meta: {
     homeDescription:
