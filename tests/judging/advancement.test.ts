@@ -595,7 +595,10 @@ describe("recordTieBreakDecision()", () => {
     await recordTieBreakDecision("tb1", ["reg-L9", "reg-L10"]);
 
     expect(txRoundUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "round1", status: "SCORING", statusVersion: 3 }, data: expect.objectContaining({ status: "COMPLETED" }) })
+      expect.objectContaining({
+        where: { id: "round1", status: { in: ["RUNNING", "FINISHED", "SCORING"] }, statusVersion: 3 },
+        data: expect.objectContaining({ status: "COMPLETED" }),
+      })
     );
   });
 
