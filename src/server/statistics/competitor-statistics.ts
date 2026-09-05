@@ -1,6 +1,7 @@
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { mean } from "./stats-math";
+import { isNoShow } from "../competition/no-show";
 
 // Личная статистика танцора (CLAUDE.md §37) — считается "на лету" из уже
 // существующих данных (Result — Этап 10, RoundResult, JudgeScore/
@@ -27,6 +28,10 @@ export type RoleStatistics = {
 export type CompetitorStatistics = {
   overall: RoleStatistics;
   byRole: Record<RegistrationRole, RoleStatistics>;
+  // Сколько раз зарегистрировался, но не прошёл check-in (docs/05_STATUS_REFERENCE.md,
+  // Часть Г, п.5) — отдельно от overall/byRole, т.к. те считаются по Result
+  // (только реально сыгранные соревнования), а неявка Result никогда не получает.
+  noShowsCount: number;
 };
 
 type CurrentResultRow = {
@@ -61,7 +66,7 @@ function buildRoleStatistics(
 }
 
 export async function getCompetitorStatistics(dancerId: string): Promise<CompetitorStatistics> {
-  const [resultRows, roundResults, judgeScores, finalJudgeScores] = await Promise.all([
+  const [resultRows, roundResults, judgeScores, finalJudgeScores, registrationsForNoShow] = await Promise.all([
     prisma.result.findMany({
       where: { registration: { dancerId } },
       orderBy: { version: "desc" },
@@ -89,6 +94,13 @@ export async function getCompetitorStatistics(dancerId: string): Promise<Competi
         criterion: { select: { minScore: true, maxScore: true } },
         drawParticipant: { select: { role: true } },
       },
+    }),
+    // Неявка не отдельный статус (docs/05_STATUS_REFERENCE.md, Часть Г, п.5) —
+    // считается на лету по тем же правилам, что и в статистике соревнования
+    // (src/server/competition/no-show.ts).
+    prisma.registration.findMany({
+      where: { dancerId },
+      select: { status: true, checkIn: { select: { id: true } }, competition: { select: { status: true } } },
     }),
   ]);
 
@@ -129,5 +141,9 @@ export async function getCompetitorStatistics(dancerId: string): Promise<Competi
     );
   }
 
-  return { overall: buildRoleStatistics(currentResults, advancement, normalizedScores), byRole };
+  const noShowsCount = registrationsForNoShow.filter((r) =>
+    isNoShow({ registrationStatus: r.status, hasCheckIn: r.checkIn !== null, competitionStatus: r.competition.status })
+  ).length;
+
+  return { overall: buildRoleStatistics(currentResults, advancement, normalizedScores), byRole, noShowsCount };
 }
