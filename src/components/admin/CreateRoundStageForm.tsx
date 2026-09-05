@@ -32,7 +32,7 @@ export function CreateRoundStageForm() {
     router.refresh();
   }
 
-  const fieldClass = "border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20";
+  const fieldClass = "border-night-border bg-night-card2 text-night-text focus:border-night-violet focus:ring-night-violet/20";
 
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[420px]">
@@ -53,7 +53,7 @@ export function CreateRoundStageForm() {
         />
       </Label>
       {error && <p className="text-sm text-red-400">{error}</p>}
-      <Button type="submit" size="sm" disabled={loading} className="border-none bg-gradient-night-cta">
+      <Button type="submit" size="sm" disabled={loading} className="border-none bg-gradient-night-violet">
         Добавить этап
       </Button>
     </FormRoot>
