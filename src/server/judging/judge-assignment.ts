@@ -1,4 +1,4 @@
-import type { RegistrationRole } from "@prisma/client";
+import type { Prisma, RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
@@ -36,6 +36,7 @@ export async function assignJudge(
     const assignment = await tx.judgeAssignment.create({
       data: { divisionId, judgeUserId: judge.id, role, assignedById: actor.userId },
     });
+    await grantJudgeCompetitionMembership(tx, division.competitionId, judge.id, actor.userId);
     await writeAudit(tx, {
       actor,
       action: "judge.assign",
@@ -44,6 +45,32 @@ export async function assignJudge(
       after: { divisionId, judgeUserId: judge.id, judgeEmail: judge.email, role },
     });
     return { id: assignment.id };
+  });
+}
+
+// JudgeAssignment сама по себе не даёт права судить (score:submit) — это
+// закреплённость за дивизионом/ролью, а не запись в RBAC. Право приходит
+// только через CompetitionMember с ролью JUDGE, ровно как создатель
+// соревнования автоматически получает EVENT_ADMIN (create-competition.ts), а
+// самостоятельно зарегистрировавшийся участник — COMPETITOR
+// (register-competitor.ts). Раньше этого шага здесь не было — судья успешно
+// назначался в админке, но при заходе на /judging/[competitionId] падал с
+// NotCompetitionMemberError, потому что состоял в JudgeAssignment, но не был
+// членом соревнования (найдено на живом тестировании, 2026-09-05). Не
+// снимаем это членство при unassignJudge/setDivisionJudges — судья мог быть
+// назначен ещё на другой дивизион этого же соревнования, а лишняя запись
+// CompetitionMember сама по себе прав сверх уже проверяемых не даёт.
+async function grantJudgeCompetitionMembership(
+  tx: Prisma.TransactionClient,
+  competitionId: string,
+  judgeUserId: string,
+  addedById: string
+): Promise<void> {
+  const judgeRole = await tx.role.findUniqueOrThrow({ where: { code: "JUDGE" } });
+  await tx.competitionMember.upsert({
+    where: { competitionId_userId_roleId: { competitionId, userId: judgeUserId, roleId: judgeRole.id } },
+    update: {},
+    create: { competitionId, userId: judgeUserId, roleId: judgeRole.id, addedById },
   });
 }
 
@@ -132,6 +159,7 @@ export async function setDivisionJudges(
       const created = await tx.judgeAssignment.create({
         data: { divisionId, judgeUserId: d.judgeUserId, role: d.role, assignedById: actor.userId },
       });
+      await grantJudgeCompetitionMembership(tx, division.competitionId, d.judgeUserId, actor.userId);
       await writeAudit(tx, {
         actor,
         action: "judge.assign",
