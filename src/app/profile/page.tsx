@@ -9,6 +9,7 @@ import { ProfileEditForm } from "@/components/ProfileEditForm";
 import { AchievementForm } from "@/components/AchievementForm";
 import { CompetitorStatisticsCard } from "@/components/CompetitorStatisticsCard";
 import { getCompetitorStatistics } from "@/server/statistics/competitor-statistics";
+import { isNoShow } from "@/server/competition/no-show";
 import { Card } from "@/components/ui/card";
 import {
   COMPETITION_STATUS_LABELS,
@@ -75,22 +76,30 @@ export default async function ProfilePage() {
           <p className="hint-text">Вы пока не зарегистрированы ни на одно соревнование.</p>
         ) : (
           <div className="stack gap-3">
-            {registrations.map((r) => (
-              <Link key={r.id} href={`/admin/competitions/${r.competition.id}`} className="block no-underline">
-                <Card interactive>
-                  <strong className="text-ink">{r.competition.name}</strong>
-                  <p className="hint-text mt-1">
-                    {r.division.category.name} · {REGISTRATION_ROLE_LABELS[r.role] ?? r.role} ·{" "}
-                    {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
-                    {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
-                  </p>
-                  <p className="hint-text mt-1">
-                    {COMPETITION_STATUS_LABELS[r.competition.status] ?? r.competition.status}
-                    {r.roleOverrideStatus === "PENDING" && " · роль ждёт подтверждения организатора"}
-                  </p>
-                </Card>
-              </Link>
-            ))}
+            {registrations.map((r) => {
+              const noShow = isNoShow({
+                registrationStatus: r.status,
+                hasCheckIn: r.checkIn !== null,
+                competitionStatus: r.competition.status,
+              });
+              return (
+                <Link key={r.id} href={`/admin/competitions/${r.competition.id}`} className="block no-underline">
+                  <Card interactive>
+                    <strong className="text-ink">{r.competition.name}</strong>
+                    <p className="hint-text mt-1">
+                      {r.division.category.name} · {REGISTRATION_ROLE_LABELS[r.role] ?? r.role} ·{" "}
+                      {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
+                      {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
+                      {noShow && " · не явился"}
+                    </p>
+                    <p className="hint-text mt-1">
+                      {COMPETITION_STATUS_LABELS[r.competition.status] ?? r.competition.status}
+                      {r.roleOverrideStatus === "PENDING" && " · роль ждёт подтверждения организатора"}
+                    </p>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
