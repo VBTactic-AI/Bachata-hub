@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { transitionRound } from "../state/round-state";
 import { formDrawInTx, type CallOrder } from "./draw-engine";
 import { ValidationFailedError } from "../errors";
+import { isFinalStageInTx } from "../judging/advancement";
 
 // Одна кнопка "Начать жеребьёвку" на весь раунд: организатор один раз
 // выбирает порядок вызова участников (SEQUENTIAL/RANDOM) — сохраняется в
@@ -14,8 +15,24 @@ import { ValidationFailedError } from "../errors";
 export async function startRoundDrawing(roundId: string, callOrder: CallOrder): Promise<void> {
   const round = await prisma.round.findUniqueOrThrow({
     where: { id: roundId },
-    include: { division: { select: { id: true, heatCapacity: true } } },
+    include: { division: { select: { id: true, heatCapacity: true } }, finalSession: { select: { id: true } } },
   });
+
+  // Финальный раунд дивизиона обязан пройти через "Начать финал" (startFinal,
+  // start-final.ts) ДО жеребьёвки — та фиксирует критерии в FinalSession, без
+  // которой судьи получат обычную схему Да/Нет вместо критериальной (баг,
+  // найденный на живом тестировании 2026-09-05: UI-кнопка "Начать жеребьёвку"
+  // была видна и для финала, ничего на сервере это не проверяло). CLAUDE.md
+  // §53 — бизнес-правило не должно держаться только на том, что кнопку в UI
+  // спрятали.
+  if (round.type === null && !round.finalSession) {
+    const isFinal = await isFinalStageInTx(prisma, round.divisionId, round.order);
+    if (isFinal) {
+      throw new ValidationFailedError(
+        'Это финальный раунд дивизиона — сначала нажмите "Начать финал" (фиксирует критерии оценки), а не "Начать жеребьёвку" напрямую.'
+      );
+    }
+  }
 
   const heats = await prisma.heat.findMany({ where: { roundId }, orderBy: { number: "asc" } });
   if (heats.length === 0) {
