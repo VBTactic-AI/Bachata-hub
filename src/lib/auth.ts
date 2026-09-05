@@ -8,10 +8,26 @@ import type { User, UserRole } from "@prisma/client";
 const SESSION_COOKIE = "bachata_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 дней
 
+// Заведомо слабые значения, которые исторически встречались в
+// .env.example/docker-compose.yml этого проекта — если секрет сессий равен
+// одному из них, JWT-подпись подделывается любым, кто читал этот репозиторий
+// (см. разбор уязвимости, 2026-09-05). Проверяем явно, а не полагаемся на то,
+// что каждый разворачивающий приложение не забудет их сменить.
+const KNOWN_WEAK_SECRETS = new Set(["dev-secret-change-me", "changeme", "secret", "password"]);
+const MIN_SECRET_LENGTH = 32;
+
 function getSecret() {
   const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
   if (!secret) {
     throw new Error("SESSION_SECRET не задан");
+  }
+  if (KNOWN_WEAK_SECRETS.has(secret.trim().toLowerCase())) {
+    throw new Error(
+      "SESSION_SECRET/NEXTAUTH_SECRET установлен в заведомо слабое значение-заглушку — сгенерируйте случайный секрет (см. .env.example) и задайте его в .env."
+    );
+  }
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(`SESSION_SECRET/NEXTAUTH_SECRET слишком короткий — нужно минимум ${MIN_SECRET_LENGTH} случайных символов.`);
   }
   return new TextEncoder().encode(secret);
 }
