@@ -7,6 +7,10 @@
 // Делает ровно два действия:
 //   1. Удаляет все Round — каскадом (onDelete: Cascade в schema.prisma)
 //      снимает Heat, Draw, DrawParticipant, HeatRotation, RoundResult.
+//      Result (официальные опубликованные результаты, Этап 10) появился
+//      позже этого скрипта и ссылается на Round БЕЗ каскада
+//      (Result.roundReachedId — обычный Restrict) — удаляется явно первым,
+//      иначе deleteMany(Round) падает на FK constraint (обнаружено вживую).
 //   2. Переводит статус ВСЕХ Competition на REGISTRATION_CLOSED — прямым
 //      UPDATE, в обход обычной машины состояний (src/server/state/
 //      competition-state.ts): та проверяет допустимость перехода из
@@ -28,19 +32,21 @@ async function main() {
   console.log("=== Очистить историю соревнований ===");
   console.log(dryRun ? "(режим предпросмотра — ничего не изменится)\n" : "");
 
-  const [rounds, heats, draws, drawParticipants, heatRotations, roundResults, competitions] = await Promise.all([
+  const [rounds, heats, draws, drawParticipants, heatRotations, roundResults, results, competitions] = await Promise.all([
     prisma.round.count(),
     prisma.heat.count(),
     prisma.draw.count(),
     prisma.drawParticipant.count(),
     prisma.heatRotation.count(),
     prisma.roundResult.count(),
+    prisma.result.count(),
     prisma.competition.findMany({ select: { id: true, name: true, status: true } }),
   ]);
 
   console.log(
     `Сейчас в базе: раундов — ${rounds}, заходов — ${heats}, жеребьёвок — ${draws}, ` +
-      `участников жеребьёвки — ${drawParticipants}, ротаций — ${heatRotations}, результатов — ${roundResults}.`
+      `участников жеребьёвки — ${drawParticipants}, ротаций — ${heatRotations}, промежуточных результатов раунда — ${roundResults}, ` +
+      `официальных опубликованных результатов — ${results}.`
   );
   const toClose = competitions.filter((c) => c.status !== "REGISTRATION_CLOSED");
   console.log(`Соревнований всего: ${competitions.length}, не в статусе "Регистрация закрыта": ${toClose.length}.`);
@@ -53,13 +59,16 @@ async function main() {
     return;
   }
 
+  // Result ссылается на Round без каскада (Restrict) — удаляется первым,
+  // иначе deleteMany(Round) падает на FK constraint.
+  await prisma.result.deleteMany({});
   await prisma.round.deleteMany({});
   const closed = await prisma.competition.updateMany({
     where: { status: { not: "REGISTRATION_CLOSED" } },
     data: { status: "REGISTRATION_CLOSED", statusVersion: { increment: 1 } },
   });
 
-  console.log(`\nГотово: удалено раундов — ${rounds} (каскадом ушли заходы/жеребьёвки/ротации/результаты).`);
+  console.log(`\nГотово: удалено официальных результатов — ${results}, раундов — ${rounds} (каскадом ушли заходы/жеребьёвки/ротации/промежуточные результаты раунда).`);
   console.log(`Переведено в "Регистрация закрыта": ${closed.count} соревнований.`);
   console.log("Division/Registration/CheckIn не тронуты.");
 }
