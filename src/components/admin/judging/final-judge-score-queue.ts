@@ -5,6 +5,8 @@
 // (drawParticipantId, criterionId), потому что у финала несколько критериев
 // на одного участника, а не одна оценка.
 
+import { perfFetch } from "@/lib/performance-debug/client";
+
 const QUEUE_KEY = "bachata:final-judge-score-queue:v1";
 
 type QueuedFinalScore = {
@@ -84,7 +86,7 @@ type SendResult = { status: "ok" } | { status: "retry" } | { status: "error"; me
 async function sendOne(item: QueuedFinalScore): Promise<SendResult> {
   let res: Response;
   try {
-    res = await fetch(`/api/draw-participants/${item.drawParticipantId}/final-score`, {
+    res = await perfFetch("judge.submit_final_score", `/api/draw-participants/${item.drawParticipantId}/final-score`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ criterionId: item.criterionId, value: item.value, clientSubmissionId: item.clientSubmissionId }),

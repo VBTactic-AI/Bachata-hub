@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Input, Label, Select } from "@/components/ui/field";
 import { DancerSearchBox } from "./DancerSearchBox";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 type Division = { id: string; name: string };
 
@@ -20,13 +21,19 @@ export function AdminRegisterForm({ competitionId, divisions }: { competitionId:
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const clickStartedAt = performance.now();
     setError(null);
     setLoading(true);
-    const res = await fetch(`/api/competitions/${competitionId}/registrations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ divisionId, role, email, displayName: displayName || undefined }),
-    });
+    const res = await perfFetch(
+      "admin.register_competitor",
+      `/api/competitions/${competitionId}/registrations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ divisionId, role, email, displayName: displayName || undefined }),
+      },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

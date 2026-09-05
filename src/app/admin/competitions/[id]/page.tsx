@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { measureServerOperation } from "@/lib/performance-debug/server";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
 import { Card } from "@/components/ui/card";
@@ -62,7 +63,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // в том же Promise.all, что и всё остальное на этой странице, а не
   // отдельным await после него (лишний round-trip к Supabase pooler,
   // ~150мс, без всякой причины ждать).
-  const [competition, activeCategories, activeStages, myDancer] = await Promise.all([
+  const [competition, activeCategories, activeStages, myDancer] = await measureServerOperation("admin.open_competition", () =>
+    Promise.all([
     prisma.competition.findUnique({
       where: { id },
       // relationLoadStrategy: "join" — глубоко вложенный include (5 уровней)
@@ -135,7 +137,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
     prisma.roundStageCatalog.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
     prisma.dancer.findUnique({ where: { userId: actor.userId }, select: { id: true, gender: true } }),
-  ]);
+    ])
+  );
   if (!competition) notFound();
 
   // Доступ к странице — глобальные права (SUPER_ADMIN), любое членство в

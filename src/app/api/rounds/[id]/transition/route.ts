@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { transitionRound } from "@/server/state/round-state";
 import { transitionRoundSchema } from "@/server/competition/schemas";
 import { respondToDomainError } from "@/server/http";
+import { measureServerOperationWithDuration, serverTimingHeader } from "@/lib/performance-debug/server";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -12,8 +13,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    await transitionRound(id, parsed.data.to, { reason: parsed.data.reason });
-    return NextResponse.json({ ok: true });
+    const [, serverMs] = await measureServerOperationWithDuration("admin.round_transition", () =>
+      transitionRound(id, parsed.data.to, { reason: parsed.data.reason })
+    );
+    return NextResponse.json({ ok: true }, { headers: serverTimingHeader(serverMs) });
   } catch (e) {
     return respondToDomainError(e);
   }

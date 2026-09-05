@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { transitionHeat } from "@/server/state/heat-state";
 import { transitionHeatSchema } from "@/server/competition/schemas";
 import { respondToDomainError } from "@/server/http";
+import { measureServerOperationWithDuration, serverTimingHeader } from "@/lib/performance-debug/server";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -12,8 +13,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    await transitionHeat(id, parsed.data.to, { reason: parsed.data.reason });
-    return NextResponse.json({ ok: true });
+    const [, serverMs] = await measureServerOperationWithDuration("admin.heat_transition", () =>
+      transitionHeat(id, parsed.data.to, { reason: parsed.data.reason })
+    );
+    return NextResponse.json({ ok: true }, { headers: serverTimingHeader(serverMs) });
   } catch (e) {
     return respondToDomainError(e);
   }

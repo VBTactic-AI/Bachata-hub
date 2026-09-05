@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import { Unbounded } from "next/font/google";
 import { t } from "@/lib/i18n/dictionary";
 import { Header } from "@/components/Header";
+import { PerformanceDebugPanel } from "@/components/admin/PerformanceDebugPanel";
 import "./globals.css";
+
+// Временная debug-панель Performance Diagnostic Mode (docs/PROGRESS.md) —
+// рендерится только при NEXT_PUBLIC_PERFORMANCE_DEBUG=true, иначе этой
+// строки в дереве компонентов вообще нет.
+const PERF_PANEL_ENABLED = process.env.NEXT_PUBLIC_PERFORMANCE_DEBUG === "true";
 
 // Заголовочный шрифт с характером (афиши танцевальных вечеринок) — next/font
 // сам скачивает и хостит его при сборке, без обращения к Google с браузера
@@ -36,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <p>{t.footer.about}</p>
           </div>
         </footer>
+        {PERF_PANEL_ENABLED && <PerformanceDebugPanel />}
       </body>
     </html>
   );

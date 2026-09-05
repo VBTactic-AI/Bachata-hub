@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rerollHeatDraw } from "@/server/competition/draw-engine";
 import { rerollDrawSchema } from "@/server/competition/schemas";
 import { respondToDomainError } from "@/server/http";
+import { measureServerOperationWithDuration, serverTimingHeader } from "@/lib/performance-debug/server";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -12,8 +13,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    const draw = await rerollHeatDraw(id, parsed.data.reason);
-    return NextResponse.json({ ok: true, draw });
+    const [draw, serverMs] = await measureServerOperationWithDuration("admin.reroll_draw", () =>
+      rerollHeatDraw(id, parsed.data.reason)
+    );
+    return NextResponse.json({ ok: true, draw }, { headers: serverTimingHeader(serverMs) });
   } catch (e) {
     return respondToDomainError(e);
   }

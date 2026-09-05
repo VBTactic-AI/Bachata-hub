@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 // "Готово" по раунду формата "Да/Нет" (2026-09-04) — судья явно фиксирует
 // свои оценки. Принимается только если "Да" ровно нужное число; иначе
@@ -14,9 +15,10 @@ export function ConfirmJudgingButton({ roundId }: { roundId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   async function onClick() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/rounds/${roundId}/confirm-judging`, { method: "POST" });
+    const res = await perfFetch("judge.confirm_round", `/api/rounds/${roundId}/confirm-judging`, { method: "POST" }, clickStartedAt);
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

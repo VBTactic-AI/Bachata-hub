@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Label, Select } from "@/components/ui/field";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 export function StartDrawingForm({ roundId }: { roundId: string }) {
   const router = useRouter();
@@ -13,13 +14,15 @@ export function StartDrawingForm({ roundId }: { roundId: string }) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const clickStartedAt = performance.now();
     setError(null);
     setLoading(true);
-    const res = await fetch(`/api/rounds/${roundId}/start-drawing`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callOrder }),
-    });
+    const res = await perfFetch(
+      "admin.start_drawing",
+      `/api/rounds/${roundId}/start-drawing`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ callOrder }) },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

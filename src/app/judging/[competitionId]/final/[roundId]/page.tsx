@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getActor } from "@/server/rbac/actor";
 import { getFinalJudgeQueue } from "@/server/judging/final-scoring";
 import { FinalJudgingScreen } from "@/components/admin/judging/FinalJudgingScreen";
+import { measureServerOperation } from "@/lib/performance-debug/server";
 
 // Отдельный мобильный экран для судьи финала (CLAUDE.md §40) — не смешан с
 // обычной /judging/[competitionId] (там другая модель оценки — один балл на
@@ -11,7 +12,7 @@ export default async function FinalJudgingPage({ params }: { params: Promise<{ c
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const queue = await getFinalJudgeQueue(competitionId, roundId);
+  const queue = await measureServerOperation("judge.open_final_page", () => getFinalJudgeQueue(competitionId, roundId));
   if (!queue) {
     return (
       <div className="stack">

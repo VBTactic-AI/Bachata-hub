@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 export type FinalTieBreakCandidate = { registrationId: string; bibNumber: string | null; displayName: string };
 
@@ -35,13 +36,15 @@ export function FinalTieBreakDecisionForm({
   }
 
   async function onSubmit() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/tie-break-rounds/${tieBreakRoundId}/decide-final`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderedRegistrationIds: order.map((c) => c.registrationId) }),
-    });
+    const res = await perfFetch(
+      "admin.tie_break_decide_final",
+      `/api/tie-break-rounds/${tieBreakRoundId}/decide-final`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderedRegistrationIds: order.map((c) => c.registrationId) }) },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

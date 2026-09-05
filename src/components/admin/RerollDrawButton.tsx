@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 export function RerollDrawButton({ heatId }: { heatId: string }) {
   const router = useRouter();
@@ -13,13 +14,15 @@ export function RerollDrawButton({ heatId }: { heatId: string }) {
   const [loading, setLoading] = useState(false);
 
   async function submit() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/heats/${heatId}/reroll-draw`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
-    });
+    const res = await perfFetch(
+      "admin.reroll_draw",
+      `/api/heats/${heatId}/reroll-draw`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

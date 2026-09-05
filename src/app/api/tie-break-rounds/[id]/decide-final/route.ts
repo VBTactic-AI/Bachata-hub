@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { recordFinalTieBreakDecision } from "@/server/judging/final-advancement";
 import { recordFinalTieBreakDecisionSchema } from "@/server/competition/schemas";
 import { respondToDomainError } from "@/server/http";
+import { measureServerOperationWithDuration, serverTimingHeader } from "@/lib/performance-debug/server";
 
 // RANK_ALL (CLAUDE.md §22) — коллегиальное решение перетанцовки ФИНАЛА:
 // судьи расставили всю tie-группу по местам. Отдельно от
@@ -15,8 +16,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    await recordFinalTieBreakDecision(id, parsed.data.orderedRegistrationIds);
-    return NextResponse.json({ ok: true });
+    const [, serverMs] = await measureServerOperationWithDuration("admin.tie_break_decide_final", () =>
+      recordFinalTieBreakDecision(id, parsed.data.orderedRegistrationIds)
+    );
+    return NextResponse.json({ ok: true }, { headers: serverTimingHeader(serverMs) });
   } catch (e) {
     return respondToDomainError(e);
   }

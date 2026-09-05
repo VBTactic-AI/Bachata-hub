@@ -9,6 +9,8 @@
 // ничего не решает сама. Общий модуль, а не состояние одной кнопки —
 // на странице судьи одновременно рендерится много кнопок оценки.
 
+import { perfFetch } from "@/lib/performance-debug/client";
+
 const QUEUE_KEY = "bachata:judge-score-queue:v1";
 
 type QueuedScore = {
@@ -92,7 +94,7 @@ type SendResult = { status: "ok" } | { status: "retry" } | { status: "error"; me
 async function sendOne(item: QueuedScore): Promise<SendResult> {
   let res: Response;
   try {
-    res = await fetch(`/api/draw-participants/${item.drawParticipantId}/score`, {
+    res = await perfFetch("judge.submit_score", `/api/draw-participants/${item.drawParticipantId}/score`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value: item.value, clientSubmissionId: item.clientSubmissionId }),

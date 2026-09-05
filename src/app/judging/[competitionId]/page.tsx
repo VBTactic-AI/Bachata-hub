@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getActor } from "@/server/rbac/actor";
 import { getJudgeQueue, type JudgeQueueItem } from "@/server/judging/scoring";
 import { listMyActiveFinalRounds } from "@/server/judging/final-scoring";
+import { measureServerOperation } from "@/lib/performance-debug/server";
 import { JudgeScoreButtons } from "@/components/admin/JudgeScoreButtons";
 import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
 import { JudgingQueueBanner } from "@/components/admin/judging/JudgingQueueBanner";
@@ -33,10 +34,9 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const [{ items, skippedNotices, confirmedRoundIds }, myFinalRounds] = await Promise.all([
-    getJudgeQueue(competitionId),
-    listMyActiveFinalRounds(competitionId),
-  ]);
+  const [{ items, skippedNotices, confirmedRoundIds }, myFinalRounds] = await measureServerOperation("judge.open_page", () =>
+    Promise.all([getJudgeQueue(competitionId), listMyActiveFinalRounds(competitionId)])
+  );
   const confirmedSet = new Set(confirmedRoundIds);
 
   const byRound = new Map<string, JudgeQueueItem[]>();

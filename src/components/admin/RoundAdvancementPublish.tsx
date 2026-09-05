@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label, Input } from "@/components/ui/field";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 // Публикация списка "кто прошёл дальше" ОДНОГО раунда — независимо от
 // публикации финальных мест всего соревнования (CompetitionResultsPanel).
@@ -17,9 +18,15 @@ export function RoundAdvancementPublish({ roundId, publishedAt }: { roundId: str
   const [reason, setReason] = useState("");
 
   async function publish() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/rounds/${roundId}/advancement/publish`, { method: "POST" });
+    const res = await perfFetch(
+      "admin.advancement_publish",
+      `/api/rounds/${roundId}/advancement/publish`,
+      { method: "POST" },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

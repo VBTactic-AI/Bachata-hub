@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 export function CheckInButton({ registrationId }: { registrationId: string }) {
   const router = useRouter();
@@ -10,13 +11,15 @@ export function CheckInButton({ registrationId }: { registrationId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   async function onClick() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/registrations/${registrationId}/checkin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const res = await perfFetch(
+      "admin.checkin",
+      `/api/registrations/${registrationId}/checkin`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

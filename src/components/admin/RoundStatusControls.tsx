@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { RoundStatus } from "@prisma/client";
 import { ROUND_STATUS_LABELS } from "@/lib/competition-labels";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 // Дублирует таблицу переходов src/server/state/round-state.ts только для
 // отображения кнопок — сервер проверяет допустимость сам (CLAUDE.md §53).
@@ -53,13 +54,15 @@ export function RoundStatusControls({ roundId, status }: { roundId: string; stat
   const nextOptions = NEXT[status] ?? [];
 
   async function go(to: RoundStatus) {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/rounds/${roundId}/transition`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to }),
-    });
+    const res = await perfFetch(
+      "admin.round_transition",
+      `/api/rounds/${roundId}/transition`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }) },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

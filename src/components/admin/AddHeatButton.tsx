@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 export function AddHeatButton({ roundId }: { roundId: string }) {
   const router = useRouter();
@@ -10,13 +11,15 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   async function onClick() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/rounds/${roundId}/heats`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const res = await perfFetch(
+      "admin.create_heat",
+      `/api/rounds/${roundId}/heats`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

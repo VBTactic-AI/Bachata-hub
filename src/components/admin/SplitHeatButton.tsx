@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 // "Способ Б" (в отличие от "+ Помощник" — помощь в рамках одного заезда):
 // избыток переносится в новый заезд этого же раунда, помощники текущего
@@ -15,9 +16,10 @@ export function SplitHeatButton({ heatId }: { heatId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/heats/${heatId}/split`, { method: "POST" });
+    const res = await perfFetch("admin.split_heat", `/api/heats/${heatId}/split`, { method: "POST" }, clickStartedAt);
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

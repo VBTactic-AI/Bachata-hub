@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label, Input } from "@/components/ui/field";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 // Публикация официальных мест ВСЕГО соревнования разом (Этап 10, уточнено
 // пользователем 2026-09-04 — не по дивизиону отдельно). Готовность
@@ -34,9 +35,15 @@ export function CompetitionResultsPanel({ competitionId, publicResults }: { comp
   }, [competitionId]);
 
   async function publish() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/competitions/${competitionId}/results/publish`, { method: "POST" });
+    const res = await perfFetch(
+      "admin.publish_results",
+      `/api/competitions/${competitionId}/results/publish`,
+      { method: "POST" },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

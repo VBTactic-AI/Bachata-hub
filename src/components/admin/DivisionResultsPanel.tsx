@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label, Select, Input } from "@/components/ui/field";
 import { RESULT_STATUS_LABELS } from "@/lib/competition-labels";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 export type DivisionResultRow = {
   id: string;
@@ -45,9 +46,15 @@ export function DivisionResultsPanel({
   const [correcting, setCorrecting] = useState<string | null>(null);
 
   async function calculate() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/divisions/${divisionId}/results/calculate`, { method: "POST" });
+    const res = await perfFetch(
+      "admin.calculate_results",
+      `/api/divisions/${divisionId}/results/calculate`,
+      { method: "POST" },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -58,9 +65,15 @@ export function DivisionResultsPanel({
   }
 
   async function review() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/divisions/${divisionId}/results/review`, { method: "POST" });
+    const res = await perfFetch(
+      "admin.review_results",
+      `/api/divisions/${divisionId}/results/review`,
+      { method: "POST" },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

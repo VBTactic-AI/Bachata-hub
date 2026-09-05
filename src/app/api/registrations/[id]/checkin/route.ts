@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { checkInRegistration } from "@/server/competition/check-in";
 import { respondToDomainError } from "@/server/http";
+import { measureServerOperationWithDuration, serverTimingHeader } from "@/lib/performance-debug/server";
 
 const schema = z.object({ late: z.boolean().optional() });
 
@@ -14,8 +15,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    const checkIn = await checkInRegistration(id, parsed.data);
-    return NextResponse.json({ ok: true, checkIn });
+    const [checkIn, serverMs] = await measureServerOperationWithDuration("admin.checkin", () =>
+      checkInRegistration(id, parsed.data)
+    );
+    return NextResponse.json({ ok: true, checkIn }, { headers: serverTimingHeader(serverMs) });
   } catch (e) {
     return respondToDomainError(e);
   }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { startRoundDrawing } from "@/server/competition/start-round-drawing";
 import { startDrawingSchema } from "@/server/competition/schemas";
 import { respondToDomainError } from "@/server/http";
+import { measureServerOperationWithDuration, serverTimingHeader } from "@/lib/performance-debug/server";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -12,8 +13,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    await startRoundDrawing(id, parsed.data.callOrder);
-    return NextResponse.json({ ok: true });
+    const [, serverMs] = await measureServerOperationWithDuration("admin.start_drawing", () =>
+      startRoundDrawing(id, parsed.data.callOrder)
+    );
+    return NextResponse.json({ ok: true }, { headers: serverTimingHeader(serverMs) });
   } catch (e) {
     return respondToDomainError(e);
   }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { HeatStatus, RoundStatus } from "@prisma/client";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 // Дублирует таблицу переходов src/server/state/heat-state.ts только для
 // отображения кнопок — сервер проверяет допустимость и права сам.
@@ -39,13 +40,15 @@ export function HeatStatusControls({
   const nextOptions = (NEXT[status] ?? []).filter((to) => to !== "RUNNING" || roundStatus === "RUNNING");
 
   async function go(to: HeatStatus) {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/heats/${heatId}/transition`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to }),
-    });
+    const res = await perfFetch(
+      "admin.heat_transition",
+      `/api/heats/${heatId}/transition`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }) },
+      clickStartedAt
+    );
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

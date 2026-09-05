@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { perfFetch } from "@/lib/performance-debug/client";
 
 // Если у дивизиона уже есть раунды, сервер их не дополняет, а заменяет
 // (docs/00_DECISIONS.md, A14) — удаляет старые и строит заново по плану
@@ -15,13 +16,15 @@ export function GenerateRoundsButton({ divisionId, hasExistingRounds }: { divisi
   const [error, setError] = useState<string | null>(null);
 
   async function run() {
+    const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/divisions/${divisionId}/generate-rounds`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const res = await perfFetch(
+      "admin.generate_rounds",
+      `/api/divisions/${divisionId}/generate-rounds`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      clickStartedAt
+    );
     setLoading(false);
     setConfirming(false);
     if (!res.ok) {
