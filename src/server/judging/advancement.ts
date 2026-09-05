@@ -4,7 +4,7 @@ import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ConcurrentModificationError, ValidationFailedError } from "../errors";
 import type { Actor } from "../rbac/actor";
-import { fillHelperShortage } from "../competition/draw-engine";
+import { alreadyScoredElsewhereInRound, fillHelperShortage } from "../competition/draw-engine";
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -284,7 +284,7 @@ async function createTieBreakRoundInTx(
   // категории строго выше (preferOwnFirst=true, подтверждено пользователем
   // 2026-09-04).
   const opposingRole: RegistrationRole = tie.role === "LEADER" ? "FOLLOWER" : "LEADER";
-  const parentScoredIds = await parentRoundScoredRegistrationIds(tx, parentRound.id);
+  const parentScoredIds = await alreadyScoredElsewhereInRound(tx, parentRound.id);
   for (const p of tie.group) parentScoredIds.delete(p.registrationId);
 
   const helpers = await fillHelperShortage(tx, {
@@ -324,14 +324,6 @@ async function createTieBreakRoundInTx(
     },
     reason: "Ничья на границе прохода — CLAUDE.md §19-20 запрещает выбирать проходящих автоматически.",
   });
-}
-
-export async function parentRoundScoredRegistrationIds(tx: PrismaTx, roundId: string): Promise<Set<string>> {
-  const heats = await tx.heat.findMany({
-    where: { roundId },
-    select: { draws: { orderBy: { version: "desc" }, take: 1, select: { participants: { where: { scored: true }, select: { registrationId: true } } } } },
-  });
-  return new Set(heats.flatMap((h) => h.draws[0]?.participants.map((p) => p.registrationId) ?? []));
 }
 
 // Если раунд только что перешёл в SCORING и оценивать вообще нечего/некому

@@ -94,6 +94,29 @@ export async function setDivisionJudges(
   const toAdd = desired.filter((d) => !existingKeys.has(`${d.role}:${d.judgeUserId}`));
   if (toRemove.length === 0 && toAdd.length === 0) return;
 
+  // JUDGE-001: JudgeScore/FinalJudgeScore/JudgeRoundConfirmation ссылаются на
+  // JudgeAssignment с ON DELETE RESTRICT — попытка удалить назначение, по
+  // которому судья уже что-то оценил, раньше падала необработанной ошибкой
+  // БД (P2003) и превращалась в общий "Внутренняя ошибка сервера" (CLAUDE.md
+  // §46), да ещё и откатывала весь batched diff разом, без объяснения, из-за
+  // какого именно судьи. Проверяем заранее и называем конкретных людей.
+  if (toRemove.length > 0) {
+    const removeIds = toRemove.map((e) => e.id);
+    const [scored, finalScored, confirmed] = await Promise.all([
+      prisma.judgeScore.findMany({ where: { judgeAssignmentId: { in: removeIds } }, select: { judgeAssignmentId: true }, distinct: ["judgeAssignmentId"] }),
+      prisma.finalJudgeScore.findMany({ where: { judgeAssignmentId: { in: removeIds } }, select: { judgeAssignmentId: true }, distinct: ["judgeAssignmentId"] }),
+      prisma.judgeRoundConfirmation.findMany({ where: { judgeAssignmentId: { in: removeIds } }, select: { judgeAssignmentId: true }, distinct: ["judgeAssignmentId"] }),
+    ]);
+    const blockedAssignmentIds = new Set([...scored, ...finalScored, ...confirmed].map((r) => r.judgeAssignmentId));
+    if (blockedAssignmentIds.size > 0) {
+      const blockedUserIds = toRemove.filter((e) => blockedAssignmentIds.has(e.id)).map((e) => e.judgeUserId);
+      const blockedJudges = await prisma.user.findMany({ where: { id: { in: blockedUserIds } }, select: { email: true } });
+      throw new ValidationFailedError(
+        `Нельзя убрать судью — уже есть оценки в этом дивизионе: ${blockedJudges.map((j) => j.email).join(", ")}. Снимите галочку только с тех, кто ещё не судил.`
+      );
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     for (const e of toRemove) {
       await tx.judgeAssignment.delete({ where: { id: e.id } });

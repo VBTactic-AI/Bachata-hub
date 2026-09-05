@@ -28,7 +28,7 @@ export function ConfirmJudgingButton({ roundId }: { roundId: string }) {
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <Button type="button" size="sm" disabled={loading} onClick={onClick}>
+      <Button type="button" size="touch" disabled={loading} onClick={onClick}>
         Готово
       </Button>
       {error && <span className="error-text">{error}</span>}

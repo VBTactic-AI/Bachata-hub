@@ -139,18 +139,22 @@ export async function getRoundEligiblePool(
 // такие люди исключаются из пула (уже отработали свою попытку в этом
 // раунде). Считаем только ПОСЛЕДНЮЮ версию Draw каждого заезда — старые
 // (пересобранные) версии не должны влиять на текущее состояние.
-// CODE-001: экспортирована, чтобы draw-helper.ts (listHelperCandidates,
-// resolveHelperSource) переиспользовала именно эту, версионно-корректную
-// реализацию вместо собственной без фильтра "только последняя версия Draw" —
-// без него ручной подбор помощника мог посчитать человека "уже станцевавшим"
-// по данным пересобранного (устаревшего) захода.
+// CODE-001/CODE-002: экспортирована, чтобы draw-helper.ts
+// (listHelperCandidates, resolveHelperSource) переиспользовала именно эту,
+// версионно-корректную реализацию вместо собственной без фильтра "только
+// последняя версия Draw" — без него ручной подбор помощника мог посчитать
+// человека "уже станцевавшим" по данным пересобранного (устаревшего) захода.
+// excludeHeatId опционален — advancement.ts/final-advancement.ts используют
+// эту же функцию БЕЗ исключения (ищут по всему родительскому раунду перед
+// созданием совершенно нового служебного захода-перетанцовки, которого ещё
+// нет среди heats раунда), не поддерживая для этого отдельную копию запроса.
 export async function alreadyScoredElsewhereInRound(
   tx: PrismaTx | typeof prisma,
   roundId: string,
-  excludeHeatId: string
+  excludeHeatId?: string
 ): Promise<Set<string>> {
   const heats = await tx.heat.findMany({
-    where: { roundId, id: { not: excludeHeatId } },
+    where: excludeHeatId ? { roundId, id: { not: excludeHeatId } } : { roundId },
     select: {
       draws: {
         orderBy: { version: "desc" },

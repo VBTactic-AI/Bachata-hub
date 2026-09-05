@@ -21,6 +21,12 @@ export const buttonVariants = cva(
       size: {
         default: "px-[22px] py-2.5 text-[0.95rem]",
         sm: "px-4 py-1.5 text-[0.85rem]",
+        // UX-006: для кнопок, по которым судья часто тапает на телефоне во
+        // время живого конкурса (JudgeScoreButtons, FinalJudgingScreen,
+        // ConfirmJudgingButton) — "sm" даёт ~30-34px, ниже комфортного
+        // минимума для частого тапа; min-h гарантирует высоту независимо от
+        // содержимого (одна цифра или "Да"/"Нет").
+        touch: "min-h-[44px] px-4 py-3 text-[0.85rem]",
       },
     },
     defaultVariants: {

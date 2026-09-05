@@ -25,7 +25,14 @@ export function JudgeScoreButtons({
   locked?: boolean;
 }) {
   const router = useRouter();
-  const [pending, setPending] = useState(() => getQueuedScore(drawParticipantId));
+  // UX-005: раньше initial state читался прямо из localStorage внутри
+  // ленивого инициализатора useState — на сервере getQueuedScore всегда
+  // возвращает undefined (typeof window === "undefined"), а на клиенте,
+  // если что-то реально осталось в очереди с офлайн-сессии, первый рендер
+  // отличался бы от серверного HTML (hydration mismatch). Чтение вынесено в
+  // подписку внутри useEffect — она гарантированно выполняется уже после
+  // гидратации и синхронно отдаёт текущее состояние очереди при подписке.
+  const [pending, setPending] = useState<ReturnType<typeof getQueuedScore>>(undefined);
   const [error, setError] = useState<string | null>(null);
   // UX-001: раньше "wasPending" читался из состояния React, захваченного в
   // замыкание эффекта ОДИН раз при монтировании (зависимость эффекта —
@@ -35,7 +42,7 @@ export function JudgeScoreButtons({
   // фактически никогда не срабатывало по-настоящему. Ref не участвует в
   // зависимостях эффекта и всегда читает актуальное значение — тот же
   // приём, что и pendingKeysRef в FinalJudgingScreen.tsx.
-  const wasPendingRef = useRef(pending !== undefined);
+  const wasPendingRef = useRef(false);
 
   useEffect(() => {
     return subscribeJudgeScoreQueue((state) => {
@@ -66,7 +73,7 @@ export function JudgeScoreButtons({
         <Button
           key={v}
           type="button"
-          size="sm"
+          size="touch"
           variant={savedValue === v ? "default" : "outline"}
           disabled={locked}
           onClick={() => enqueueJudgeScore(drawParticipantId, v)}

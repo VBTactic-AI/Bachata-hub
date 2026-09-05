@@ -4,8 +4,7 @@ import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ConcurrentModificationError, ValidationFailedError } from "../errors";
 import type { Actor } from "../rbac/actor";
-import { fillHelperShortage } from "../competition/draw-engine";
-import { parentRoundScoredRegistrationIds } from "./advancement";
+import { alreadyScoredElsewhereInRound, fillHelperShortage } from "../competition/draw-engine";
 import { rankFinalParticipants, resolveTieGroupPlaces, type FinalParticipantScores, type FinalCriterionPriority, type FinalTieGroup } from "./final-ranking";
 import { allowedJudgeRole } from "./final-scoring-matrix";
 
@@ -271,7 +270,7 @@ async function createFinalTieBreakRoundInTx(
   const tieRows = group.registrationIds.map((registrationId, i) => ({ drawId: draw.id, registrationId, role, scored: true, calledOrder: i + 1 }));
 
   const opposingRole: RegistrationRole = role === "LEADER" ? "FOLLOWER" : "LEADER";
-  const parentScoredIds = await parentRoundScoredRegistrationIds(tx, parentRound.id);
+  const parentScoredIds = await alreadyScoredElsewhereInRound(tx, parentRound.id);
   for (const id of group.registrationIds) parentScoredIds.delete(id);
 
   const helpers = await fillHelperShortage(tx, {

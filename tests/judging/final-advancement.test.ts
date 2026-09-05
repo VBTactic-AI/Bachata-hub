@@ -5,7 +5,12 @@ const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
 const fillHelperShortageMock = vi.fn();
-vi.mock("@/server/competition/draw-engine", () => ({ fillHelperShortage: (...a: unknown[]) => fillHelperShortageMock(...a) }));
+// CODE-002: alreadyScoredElsewhereInRound остаётся настоящей реализацией —
+// см. tests/judging/advancement.test.ts.
+vi.mock("@/server/competition/draw-engine", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/competition/draw-engine")>();
+  return { ...actual, fillHelperShortage: (...a: unknown[]) => fillHelperShortageMock(...a) };
+});
 
 const txRoundFindUniqueOrThrow = vi.fn();
 const txRoundFindMany = vi.fn();

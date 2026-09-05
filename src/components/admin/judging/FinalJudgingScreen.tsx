@@ -160,7 +160,7 @@ export function FinalJudgingScreen({
                       <Button
                         key={v}
                         type="button"
-                        size="sm"
+                        size="touch"
                         variant={value === v ? "default" : "outline"}
                         onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, v)}
                       >
