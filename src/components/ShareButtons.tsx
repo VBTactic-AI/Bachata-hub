@@ -20,14 +20,24 @@ export function ShareButtons({ url, title }: { url: string; title: string }) {
   return (
     <div className="flex flex-wrap gap-2">
       <a
-        className={buttonVariants({ variant: "secondary", size: "sm", className: "no-underline" })}
+        className={buttonVariants({
+          variant: "secondary",
+          size: "sm",
+          className: "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2",
+        })}
         href={telegramHref}
         target="_blank"
         rel="noopener noreferrer"
       >
         {t.event.shareTelegram}
       </a>
-      <Button variant="secondary" size="sm" type="button" onClick={copyForInstagram}>
+      <Button
+        variant="secondary"
+        size="sm"
+        type="button"
+        onClick={copyForInstagram}
+        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+      >
         {t.event.shareInstagram}
       </Button>
     </div>

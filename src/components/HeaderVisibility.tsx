@@ -14,7 +14,7 @@ import { usePathname } from "next/navigation";
 // Platform несёт свою собственную навигацию (DarkTopNav на десктопе,
 // BottomNav на мобильном) — светлый сайтовый Header поверх нёс бы двойную
 // навигацию, поэтому скрыт и там (06.09.2026).
-const HIDDEN_PREFIXES = ["/judging", "/compete", "/schools", "/login", "/profile", "/dancers"];
+const HIDDEN_PREFIXES = ["/judging", "/compete", "/schools", "/login", "/profile", "/dancers", "/events"];
 
 export function HeaderVisibility({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

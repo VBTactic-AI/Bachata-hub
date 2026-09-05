@@ -34,17 +34,19 @@ export default async function EventsPage({
     }),
   ]);
 
+  const selectClass = "border-night-border bg-night-card text-night-text hover:border-night-primary focus:border-night-primary focus:ring-night-primary/20";
+
   return (
-    <div>
-      <h1 className="page-title">{t.nav.calendar}</h1>
-      <p className="page-subtitle">
+    <div className="flex flex-col gap-4">
+      <h1 className="m-0 font-night text-xl font-extrabold text-night-text">{t.nav.calendar}</h1>
+      <p className="m-0 -mt-2 text-sm text-night-muted">
         {events.length} {pluralizeRu(events.length, t.event.eventsFoundCount)}
       </p>
 
-      <FiltersForm method="get">
-        <Label>
+      <FiltersForm method="get" className="border-night-border bg-night-card">
+        <Label className="text-night-muted">
           {t.event.filters.city}
-          <Select name="city" defaultValue={sp.city ?? ""}>
+          <Select name="city" defaultValue={sp.city ?? ""} className={selectClass}>
             <option value="">{t.common.all}</option>
             {cities.map((c) => (
               <option key={c.id} value={c.slug}>
@@ -53,9 +55,9 @@ export default async function EventsPage({
             ))}
           </Select>
         </Label>
-        <Label>
+        <Label className="text-night-muted">
           {t.event.filters.format}
-          <Select name="format" defaultValue={sp.format ?? ""}>
+          <Select name="format" defaultValue={sp.format ?? ""} className={selectClass}>
             <option value="">{t.common.all}</option>
             {Object.entries(t.event.formats).map(([key, label]) => (
               <option key={key} value={key}>
@@ -64,9 +66,9 @@ export default async function EventsPage({
             ))}
           </Select>
         </Label>
-        <Label>
+        <Label className="text-night-muted">
           {t.event.filters.level}
-          <Select name="level" defaultValue={sp.level ?? ""}>
+          <Select name="level" defaultValue={sp.level ?? ""} className={selectClass}>
             <option value="">{t.common.all}</option>
             {Object.entries(t.event.levels).map(([key, label]) => (
               <option key={key} value={key}>
@@ -75,9 +77,9 @@ export default async function EventsPage({
             ))}
           </Select>
         </Label>
-        <Label>
+        <Label className="text-night-muted">
           {t.event.filters.school}
-          <Select name="school" defaultValue={sp.school ?? ""}>
+          <Select name="school" defaultValue={sp.school ?? ""} className={selectClass}>
             <option value="">{t.common.all}</option>
             {schools.map((s) => (
               <option key={s.id} value={s.slug}>
@@ -86,26 +88,34 @@ export default async function EventsPage({
             ))}
           </Select>
         </Label>
-        <Label>
+        <Label className="text-night-muted">
           {t.event.filters.dateFrom}
-          <Input type="date" name="from" defaultValue={sp.from ?? ""} />
+          <Input type="date" name="from" defaultValue={sp.from ?? ""} className={selectClass} />
         </Label>
-        <Label>
+        <Label className="text-night-muted">
           {t.event.filters.dateTo}
-          <Input type="date" name="to" defaultValue={sp.to ?? ""} />
+          <Input type="date" name="to" defaultValue={sp.to ?? ""} className={selectClass} />
         </Label>
         <div className="flex gap-2">
-          <Button type="submit">{t.event.filters.apply}</Button>
-          <a href="/events" className={buttonVariants({ variant: "secondary", className: "no-underline" })}>
+          <Button type="submit" className="border-none bg-gradient-night-cta">
+            {t.event.filters.apply}
+          </Button>
+          <a
+            href="/events"
+            className={buttonVariants({
+              variant: "secondary",
+              className: "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2",
+            })}
+          >
             {t.event.filters.reset}
           </a>
         </div>
       </FiltersForm>
 
       {events.length === 0 ? (
-        <p className="hint-text">{t.home.noEventsToday}</p>
+        <p className="text-sm text-night-muted">{t.home.noEventsToday}</p>
       ) : (
-        <div className="card-grid">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((e) => (
             <EventCard key={e.id} event={e} />
           ))}

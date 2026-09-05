@@ -20,8 +20,11 @@ export function AttendanceButtons({
 
   if (!loggedIn) {
     return (
-      <p className="hint-text">
-        <a href="/login">{t.nav.login}</a>, чтобы отметить «{t.event.imGoing.toLowerCase()}» или «
+      <p className="text-sm text-night-muted">
+        <a href="/login" className="text-night-primary">
+          {t.nav.login}
+        </a>
+        , чтобы отметить «{t.event.imGoing.toLowerCase()}» или «
         {t.event.iWent.toLowerCase()}».
       </p>
     );
@@ -47,6 +50,9 @@ export function AttendanceButtons({
     router.refresh();
   }
 
+  const activeClass = "border-none bg-gradient-night-cta";
+  const inactiveClass = "border-night-border bg-transparent text-night-text hover:bg-night-card2";
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button
@@ -54,6 +60,7 @@ export function AttendanceButtons({
         disabled={loading}
         onClick={() => mark("GOING")}
         type="button"
+        className={status === "GOING" ? activeClass : inactiveClass}
       >
         {t.event.imGoing}
       </Button>
@@ -62,11 +69,12 @@ export function AttendanceButtons({
         disabled={loading}
         onClick={() => mark("WENT")}
         type="button"
+        className={status === "WENT" ? activeClass : inactiveClass}
       >
         {t.event.iWent}
       </Button>
       {status && (
-        <Button variant="ghost" disabled={loading} onClick={clear} type="button">
+        <Button variant="ghost" disabled={loading} onClick={clear} type="button" className="text-night-muted hover:text-night-text">
           {t.event.cancelMark}
         </Button>
       )}

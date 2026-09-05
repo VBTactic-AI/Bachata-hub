@@ -17,8 +17,8 @@ export default async function NewEventPage() {
   ]);
 
   return (
-    <div className="stack">
-      <h1 className="page-title">{t.event.addEventForm.title}</h1>
+    <div className="flex flex-col gap-4">
+      <h1 className="m-0 font-night text-xl font-extrabold text-night-text">{t.event.addEventForm.title}</h1>
       <AddEventForm cities={cities} ownedSchools={ownedSchools} />
     </div>
   );

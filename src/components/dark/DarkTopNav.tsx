@@ -19,6 +19,9 @@ export async function DarkTopNav() {
         {t.common.siteName}
       </Link>
       <nav className="flex flex-1 items-center gap-6 font-night text-sm font-medium">
+        <Link href="/events" className="text-night-muted no-underline hover:text-night-text hover:no-underline">
+          {t.nav.calendar}
+        </Link>
         <Link href="/compete" className="text-night-muted no-underline hover:text-night-text hover:no-underline">
           {t.nav.competitions}
         </Link>

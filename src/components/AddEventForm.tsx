@@ -72,19 +72,21 @@ export function AddEventForm({
   }
 
   if (done) {
-    return <p>{t.event.addEventForm.submitted}</p>;
+    return <p className="text-sm text-night-muted">{t.event.addEventForm.submitted}</p>;
   }
+
+  const fieldClass = "border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20";
 
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[560px]">
-      <Label>
+      <Label className="text-night-muted">
         {t.event.addEventForm.titleField}
-        <Input required value={title} onChange={(e) => setTitle(e.target.value)} />
+        <Input required value={title} onChange={(e) => setTitle(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.city}
-        <Select required value={cityId} onChange={(e) => setCityId(e.target.value)}>
+        <Select required value={cityId} onChange={(e) => setCityId(e.target.value)} className={fieldClass}>
           {cities.map((c) => (
             <option key={c.id} value={c.id}>
               {c.nameRu}
@@ -94,9 +96,9 @@ export function AddEventForm({
       </Label>
 
       {ownedSchools.length > 0 ? (
-        <Label>
+        <Label className="text-night-muted">
           {t.event.organizer}
-          <Select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
+          <Select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} className={fieldClass}>
             {ownedSchools.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -105,19 +107,20 @@ export function AddEventForm({
           </Select>
         </Label>
       ) : (
-        <Label>
+        <Label className="text-night-muted">
           {t.event.organizer}
           <Input
             placeholder={t.event.addEventForm.organizerPlaceholder}
             value={organizerName}
             onChange={(e) => setOrganizerName(e.target.value)}
+            className={fieldClass}
           />
         </Label>
       )}
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.format}
-        <Select value={format} onChange={(e) => setFormat(e.target.value as typeof format)}>
+        <Select value={format} onChange={(e) => setFormat(e.target.value as typeof format)} className={fieldClass}>
           {Object.entries(t.event.formats).map(([key, label]) => (
             <option key={key} value={key}>
               {label}
@@ -126,9 +129,9 @@ export function AddEventForm({
         </Select>
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.level}
-        <Select value={level} onChange={(e) => setLevel(e.target.value as typeof level)}>
+        <Select value={level} onChange={(e) => setLevel(e.target.value as typeof level)} className={fieldClass}>
           {Object.entries(t.event.levels).map(([key, label]) => (
             <option key={key} value={key}>
               {label}
@@ -137,69 +140,73 @@ export function AddEventForm({
         </Select>
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.date} / {t.event.time}
         <Input
           type="datetime-local"
           required
           value={startsAt}
           onChange={(e) => setStartsAt(e.target.value)}
+          className={fieldClass}
         />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.place}
-        <Input required value={venueName} onChange={(e) => setVenueName(e.target.value)} />
+        <Input required value={venueName} onChange={(e) => setVenueName(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.addEventForm.addressLabel}
-        <Input value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} />
+        <Input value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.description}
-        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.price}
         <Input
           placeholder={t.event.addEventForm.pricePlaceholder}
           value={priceText}
           onChange={(e) => setPriceText(e.target.value)}
+          className={fieldClass}
         />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.registerExternal}
         <Input
           type="url"
           placeholder={t.event.addEventForm.linkPlaceholder}
           value={externalLinkUrl}
           onChange={(e) => setExternalLinkUrl(e.target.value)}
+          className={fieldClass}
         />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.addEventForm.photoUrlLabel}
         <Input
           type="url"
           placeholder={t.event.addEventForm.linkPlaceholder}
           value={photoUrl}
           onChange={(e) => setPhotoUrl(e.target.value)}
+          className={fieldClass}
         />
       </Label>
 
-      <Label>
+      <Label className="text-night-muted">
         {t.event.tags} ({t.event.tagsHint})
-        <Input value={tags} onChange={(e) => setTags(e.target.value)} />
+        <Input value={tags} onChange={(e) => setTags(e.target.value)} className={fieldClass} />
       </Label>
 
-      <p className="hint-text">{t.event.addEventForm.submitNote}</p>
-      {error && <p className="error-text">{error}</p>}
+      <p className="text-sm text-night-muted">{t.event.addEventForm.submitNote}</p>
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <Button type="submit" disabled={loading}>
+      <Button type="submit" disabled={loading} className="border-none bg-gradient-night-cta">
         {t.common.submit}
       </Button>
     </FormRoot>

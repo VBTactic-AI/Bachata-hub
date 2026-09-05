@@ -86,47 +86,53 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   const isPast = event.startsAt < new Date();
 
   return (
-    <article className="stack">
+    <article className="flex flex-col gap-4">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-xl" />}
+      {event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-app" />}
 
       <div>
-        <p className="hint-text m-0">
+        <p className="m-0 text-sm text-night-muted">
           {formatDateTime(event.startsAt)} · {event.city.nameRu}
         </p>
-        <h1 className="page-title">{event.title}</h1>
-        <div>
-          <Tag>{t.event.formats[event.format]}</Tag>
-          <Tag>{t.event.levels[event.level]}</Tag>
-          {isPast && <Badge variant="community">{t.event.pastEvent}</Badge>}
+        <h1 className="m-0 mt-1 font-night text-2xl font-extrabold text-night-text">{event.title}</h1>
+        <div className="mt-2">
+          <Tag className="bg-night-card2 text-night-pink">{t.event.formats[event.format]}</Tag>
+          <Tag className="bg-night-card2 text-night-pink">{t.event.levels[event.level]}</Tag>
+          {isPast && (
+            <Badge variant="community" className="bg-night-card2 text-night-muted">
+              {t.event.pastEvent}
+            </Badge>
+          )}
         </div>
       </div>
 
-      <Card className="stack gap-2">
-        <p className="m-0">
-          <strong>{t.event.place}:</strong> {event.venueName}
-          {event.venueAddress ? `, ${event.venueAddress}` : ""}
+      <Card className="flex flex-col gap-2 border-night-border bg-night-card">
+        <p className="m-0 text-sm text-night-text">
+          <strong>{t.event.place}:</strong> <span className="text-night-muted">{event.venueName}</span>
+          {event.venueAddress ? <span className="text-night-muted">{`, ${event.venueAddress}`}</span> : ""}
         </p>
-        <p className="m-0">
+        <p className="m-0 text-sm text-night-text">
           <strong>{t.event.organizer}:</strong>{" "}
           {event.school ? (
-            <a href={`/schools/${event.school.slug}`}>{event.school.name}</a>
+            <a href={`/schools/${event.school.slug}`} className="text-night-primary">
+              {event.school.name}
+            </a>
           ) : (
-            event.organizerName || "—"
+            <span className="text-night-muted">{event.organizerName || "—"}</span>
           )}
         </p>
         {event.priceText && (
-          <p className="m-0">
-            <strong>{t.event.price}:</strong> {event.priceText}
+          <p className="m-0 text-sm text-night-text">
+            <strong>{t.event.price}:</strong> <span className="text-night-muted">{event.priceText}</span>
           </p>
         )}
         {event.externalLinkUrl && (
-          <p className="m-0">
-            <a href={event.externalLinkUrl} target="_blank" rel="noopener noreferrer">
+          <p className="m-0 text-sm">
+            <a href={event.externalLinkUrl} target="_blank" rel="noopener noreferrer" className="text-night-primary">
               {t.event.registerExternal} →
             </a>
           </p>
@@ -135,15 +141,17 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
 
       {event.description && (
         <div>
-          <h2 className="page-title">{t.event.description}</h2>
-          <p className="whitespace-pre-wrap">{event.description}</p>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">{t.event.description}</h2>
+          <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-night-muted">{event.description}</p>
         </div>
       )}
 
       {event.tags.length > 0 && (
         <div>
           {event.tags.map((tag) => (
-            <Tag key={tag}>#{tag}</Tag>
+            <Tag key={tag} className="bg-night-card2 text-night-pink">
+              #{tag}
+            </Tag>
           ))}
         </div>
       )}
