@@ -648,7 +648,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                           </div>
                           )}
 
-                          {!usesCustomFinalFlow && round.status === "READY" && <StartDrawingForm roundId={round.id} />}
+                          {/* Финал обязан пройти через "Начать финал" (StartFinalPanel
+                              выше) — та фиксирует критерии в FinalSession, до этого
+                              жеребьёвка не должна быть доступна вообще ни одной кнопкой:
+                              иначе раунд может уйти в RUNNING по обычному пути, без
+                              FinalSession, и судьи увидят обычную схему Да/Нет вместо
+                              критериев (найдено на живом тестировании, 2026-09-05). Для
+                              NORMAL-формата после старта финала жеребьёвка нужна как
+                              обычно — поэтому условие "уже есть finalSession", а не
+                              "не финал вовсе". Для JUDGES_DANCE/RANDOM_COUPLES кнопка и
+                              так не нужна (usesCustomFinalFlow), это отдельная защита
+                              на случай NORMAL-финала конкретно. */}
+                          {!usesCustomFinalFlow &&
+                            round.status === "READY" &&
+                            (!isFinalRound || round.finalSession) && <StartDrawingForm roundId={round.id} />}
                         </div>
                         );
                       })
