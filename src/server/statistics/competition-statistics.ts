@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
+import { isCheckInPhaseOver } from "../competition/no-show";
 
 // Статистика соревнования (CLAUDE.md §37) — считается "на лету" из уже
 // существующих таблиц, без отдельного снимка/кэша (проще и всегда актуально;
@@ -26,17 +27,25 @@ export type CompetitionStatistics = {
 export async function getCompetitionStatistics(competitionId: string): Promise<CompetitionStatistics> {
   await requirePermission("statistics:view", competitionId);
 
-  const [registrationsByStatus, checkInsByStatus, divisionsCount, roundsCount, tieBreakRoundsCount, heatsCount, judgeAssignments, competition] =
+  const [registrationsByStatus, checkedInCount, noShowCandidatesCount, divisionsCount, roundsCount, tieBreakRoundsCount, heatsCount, judgeAssignments, competition] =
     await Promise.all([
       prisma.registration.groupBy({ by: ["status", "role"], where: { competitionId }, _count: { _all: true } }),
-      prisma.checkIn.groupBy({ by: ["status"], where: { competitionId }, _count: { _all: true } }),
+      prisma.checkIn.count({ where: { competitionId, status: { in: ["CHECKED_IN", "LATE"] } } }),
+      // "Не пришли" — не отдельный статус в БД, считается на лету
+      // (docs/05_STATUS_REFERENCE.md, Часть Г, п.5 / src/server/competition/no-show.ts):
+      // REGISTERED без CheckIn. Гейт "окно check-in уже закрылось" применяем
+      // ниже, когда известен competition.status — до этого возвращаем 0, а
+      // не заранее посчитанное число, иначе тот, кто ещё просто не подошёл
+      // к стойке, на глазах у организатора выглядел бы "не явившимся".
+      prisma.registration.count({ where: { competitionId, status: "REGISTERED", checkIn: null } }),
       prisma.division.count({ where: { competitionId } }),
       prisma.round.count({ where: { division: { competitionId } } }),
       prisma.round.count({ where: { division: { competitionId }, type: "TIE_BREAK" } }),
       prisma.heat.count({ where: { round: { division: { competitionId } } } }),
       prisma.judgeAssignment.findMany({ where: { division: { competitionId } }, select: { judgeUserId: true }, distinct: ["judgeUserId"] }),
-      prisma.competition.findUniqueOrThrow({ where: { id: competitionId }, select: { startAt: true, endAt: true } }),
+      prisma.competition.findUniqueOrThrow({ where: { id: competitionId }, select: { startAt: true, endAt: true, status: true } }),
     ]);
+  const noShowCount = isCheckInPhaseOver(competition.status) ? noShowCandidatesCount : 0;
 
   function sumWhere<T extends { _count: { _all: number } }>(rows: T[], predicate: (r: T) => boolean): number {
     return rows.filter(predicate).reduce((sum, r) => sum + r._count._all, 0);
@@ -58,8 +67,8 @@ export async function getCompetitionStatistics(competitionId: string): Promise<C
     followersCount,
     scratchedCount: countBy(registrationsByStatus, "SCRATCHED"),
     disqualifiedCount: countBy(registrationsByStatus, "DISQUALIFIED"),
-    checkedInCount: countBy(checkInsByStatus, "CHECKED_IN") + countBy(checkInsByStatus, "LATE"),
-    noShowCount: countBy(checkInsByStatus, "NO_SHOW"),
+    checkedInCount,
+    noShowCount,
     judgesCount: judgeAssignments.length,
     divisionsCount,
     roundsCount,
