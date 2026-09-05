@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
-import { writeAudit } from "../audit/audit";
+import { writeAudit, writeAuditMany, type AuditEntry } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { getOrCreateLatestRulesVersion } from "./rules-version";
 
@@ -22,23 +22,27 @@ import { getOrCreateLatestRulesVersion } from "./rules-version";
 // начинались) — иначе это будет не пересборка черновика, а тихое удаление
 // реальных результатов соревнования (CLAUDE.md §18/§39).
 export async function generateRounds(divisionId: string): Promise<{ createdRoundIds: string[] }> {
+  // Division + план дивизиона + существующие раунды — одним запросом
+  // (relationLoadStrategy: "join") вместо трёх отдельных round-trip'ов к
+  // Supabase pooler (~150мс каждый сам по себе, задокументированная
+  // сетевая цена — не сложность запроса). Найдено вживую в Performance
+  // Diagnostic Mode (docs/PROGRESS.md). Данные и порядок те же, что и раньше
+  // — только способ получения.
   const division = await prisma.division.findUniqueOrThrow({
     where: { id: divisionId },
-    select: { id: true, competitionId: true, heatCapacity: true },
+    select: {
+      id: true,
+      competitionId: true,
+      heatCapacity: true,
+      stagePlan: { orderBy: { stage: { order: "asc" } }, include: { stage: true } },
+      rounds: { select: { id: true, status: true, stage: { select: { name: true } } } },
+    },
+    relationLoadStrategy: "join",
   });
   const actor = await requirePermission("round:create", division.competitionId);
 
-  const [plan, existingRounds] = await Promise.all([
-    prisma.divisionStagePlan.findMany({
-      where: { divisionId },
-      include: { stage: true },
-      orderBy: { stage: { order: "asc" } },
-    }),
-    prisma.round.findMany({
-      where: { divisionId },
-      select: { id: true, status: true, stage: { select: { name: true } } },
-    }),
-  ]);
+  const plan = division.stagePlan;
+  const existingRounds = division.rounds;
 
   if (plan.length === 0) {
     throw new ValidationFailedError(
@@ -82,6 +86,13 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
 
     const rules = await getOrCreateLatestRulesVersion(tx, division.competitionId, actor);
     const ids: string[] = [];
+    // Каждый Round/Heat всё равно получает свою собственную audit-запись с
+    // корректными after (CLAUDE.md §28) — батчится только сама вставка в
+    // конце (writeAuditMany), а не её содержимое. Нельзя было бы сделать то
+    // же для СОЗДАНИЯ Round/Heat через createMany — heat.roundId зависит от
+    // id только что созданного round, вставки внутри цикла остаются
+    // последовательными.
+    const auditEntries: AuditEntry[] = [];
 
     for (const [i, step] of steps.entries()) {
       const order = i + 1;
@@ -96,7 +107,7 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
       });
       ids.push(round.id);
 
-      await writeAudit(tx, {
+      auditEntries.push({
         actor,
         action: "round.create",
         entityType: "Round",
@@ -116,7 +127,7 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
       const heatCount = Math.ceil(step.participantCount / division.heatCapacity);
       for (let number = 1; number <= heatCount; number++) {
         const heat = await tx.heat.create({ data: { roundId: round.id, number } });
-        await writeAudit(tx, {
+        auditEntries.push({
           actor,
           action: "heat.create",
           entityType: "Heat",
@@ -125,6 +136,8 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
         });
       }
     }
+
+    await writeAuditMany(tx, auditEntries);
 
     await writeAudit(tx, {
       actor,

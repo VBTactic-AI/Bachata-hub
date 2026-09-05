@@ -5,14 +5,13 @@ const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
 const divisionFindUniqueOrThrow = vi.fn();
-const stagePlanFindMany = vi.fn();
-const roundFindMany = vi.fn();
 const rulesFindFirst = vi.fn();
 const rulesCreate = vi.fn();
 const roundCreate = vi.fn();
 const roundDeleteMany = vi.fn();
 const heatCreate = vi.fn();
 const auditCreate = vi.fn();
+const auditCreateMany = vi.fn();
 
 let roundCreateSeq = 0;
 let heatCreateSeq = 0;
@@ -21,14 +20,16 @@ const fakeTx = {
   competitionRules: { findFirst: rulesFindFirst, create: rulesCreate },
   round: { create: (...a: unknown[]) => roundCreate(...a), deleteMany: (...a: unknown[]) => roundDeleteMany(...a) },
   heat: { create: (...a: unknown[]) => heatCreate(...a) },
-  auditLog: { create: auditCreate },
+  auditLog: { create: auditCreate, createMany: auditCreateMany },
 };
 
+// division.findUniqueOrThrow теперь возвращает план и существующие раунды
+// вложенными (relationLoadStrategy: "join", один round-trip вместо трёх) —
+// divisionStagePlan.findMany/round.findMany отдельными вызовами прismы
+// больше не существуют, план/раунды приходят полями stagePlan/rounds.
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
-    divisionStagePlan: { findMany: (...a: unknown[]) => stagePlanFindMany(...a) },
-    round: { findMany: (...a: unknown[]) => roundFindMany(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
@@ -46,11 +47,20 @@ const FULL_PLAN = [
   { stageId: "st-final", participantCount: 2, stage: { name: "Финал", order: 4 } },
 ];
 
+function mockDivision(overrides?: { heatCapacity?: number; stagePlan?: unknown[]; rounds?: unknown[] }) {
+  divisionFindUniqueOrThrow.mockResolvedValue({
+    id: "div1",
+    competitionId: "comp1",
+    heatCapacity: overrides?.heatCapacity ?? 10,
+    stagePlan: overrides?.stagePlan ?? FULL_PLAN,
+    rounds: overrides?.rounds ?? [],
+  });
+}
+
 beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
-  divisionFindUniqueOrThrow.mockReset().mockResolvedValue({ id: "div1", competitionId: "comp1", heatCapacity: 10 });
-  stagePlanFindMany.mockReset().mockResolvedValue(FULL_PLAN);
-  roundFindMany.mockReset().mockResolvedValue([]);
+  divisionFindUniqueOrThrow.mockReset();
+  mockDivision();
   rulesFindFirst.mockReset().mockResolvedValue({ id: "rules-existing", version: 1 });
   rulesCreate.mockReset();
   roundCreateSeq = 0;
@@ -59,6 +69,7 @@ beforeEach(() => {
   heatCreateSeq = 0;
   heatCreate.mockReset().mockImplementation(() => Promise.resolve({ id: `heat${++heatCreateSeq}` }));
   auditCreate.mockReset();
+  auditCreateMany.mockReset();
 });
 
 describe("generateRounds()", () => {
@@ -68,7 +79,7 @@ describe("generateRounds()", () => {
   });
 
   it("отклоняет генерацию, если для дивизиона не задан план по этапам", async () => {
-    stagePlanFindMany.mockResolvedValue([]);
+    mockDivision({ stagePlan: [] });
     await expect(generateRounds("div1")).rejects.toBeInstanceOf(ValidationFailedError);
     expect(roundCreate).not.toHaveBeenCalled();
   });
@@ -79,6 +90,21 @@ describe("generateRounds()", () => {
     expect(result.createdRoundIds).toHaveLength(3);
     const stageIds = roundCreate.mock.calls.map((c) => c[0].data.stageId);
     expect(stageIds).toEqual(["st-qf", "st-sf", "st-final"]);
+  });
+
+  // Perf fix (docs/PROGRESS.md, Performance Diagnostic Mode): audit-записи
+  // на каждый созданный Round/Heat раньше писались по одной (createCall),
+  // теперь одним createMany — но каждая запись должна остаться отдельной
+  // строкой с собственным action/entityId/after, не одной "суммарной".
+  it("пишет audit одним createMany на все Round/Heat разом, с корректным содержимым по каждому", async () => {
+    await generateRounds("div1");
+
+    expect(auditCreate).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "round.create" }) }));
+    expect(auditCreateMany).toHaveBeenCalledTimes(1);
+    const rows = auditCreateMany.mock.calls[0][0].data as Array<{ action: string; entityId: string }>;
+    // 3 этапа плана -> 3 round.create + 3 heat.create (по 1 заходу на этап при heatCapacity=10).
+    expect(rows.filter((r) => r.action === "round.create")).toHaveLength(3);
+    expect(rows.filter((r) => r.action === "heat.create")).toHaveLength(3);
   });
 
   it("finalistsCount раунда = participantCount СЛЕДУЮЩЕГО этапа плана", async () => {
@@ -104,7 +130,7 @@ describe("generateRounds()", () => {
   });
 
   it("переиспользует вместимость заезда дивизиона для расчёта числа заездов", async () => {
-    divisionFindUniqueOrThrow.mockResolvedValue({ id: "div1", competitionId: "comp1", heatCapacity: 3 });
+    mockDivision({ heatCapacity: 3 });
 
     await generateRounds("div1");
 
@@ -124,10 +150,12 @@ describe("generateRounds() — пересборка существующих р�
   });
 
   it("если все существующие раунды ещё DRAFT/READY — удаляет их и строит заново с order=1", async () => {
-    roundFindMany.mockResolvedValue([
-      { id: "old1", status: "DRAFT", stage: { name: "Четвертьфинал" } },
-      { id: "old2", status: "READY", stage: { name: "Полуфинал" } },
-    ]);
+    mockDivision({
+      rounds: [
+        { id: "old1", status: "DRAFT", stage: { name: "Четвертьфинал" } },
+        { id: "old2", status: "READY", stage: { name: "Полуфинал" } },
+      ],
+    });
 
     await generateRounds("div1");
 
@@ -138,7 +166,7 @@ describe("generateRounds() — пересборка существующих р�
   });
 
   it("отклоняет пересборку, если хотя бы один раунд уже начат (не DRAFT/READY)", async () => {
-    roundFindMany.mockResolvedValue([{ id: "old1", status: "RUNNING", stage: { name: "Четвертьфинал" } }]);
+    mockDivision({ rounds: [{ id: "old1", status: "RUNNING", stage: { name: "Четвертьфинал" } }] });
 
     await expect(generateRounds("div1")).rejects.toBeInstanceOf(ValidationFailedError);
     expect(roundDeleteMany).not.toHaveBeenCalled();
