@@ -4,6 +4,7 @@ const resultFindMany = vi.fn();
 const roundResultFindMany = vi.fn();
 const judgeScoreFindMany = vi.fn();
 const finalJudgeScoreFindMany = vi.fn();
+const registrationFindMany = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -11,6 +12,7 @@ vi.mock("@/lib/prisma", () => ({
     roundResult: { findMany: (...a: unknown[]) => roundResultFindMany(...a) },
     judgeScore: { findMany: (...a: unknown[]) => judgeScoreFindMany(...a) },
     finalJudgeScore: { findMany: (...a: unknown[]) => finalJudgeScoreFindMany(...a) },
+    registration: { findMany: (...a: unknown[]) => registrationFindMany(...a) },
   },
 }));
 
@@ -21,6 +23,7 @@ beforeEach(() => {
   roundResultFindMany.mockReset().mockResolvedValue([]);
   judgeScoreFindMany.mockReset().mockResolvedValue([]);
   finalJudgeScoreFindMany.mockReset().mockResolvedValue([]);
+  registrationFindMany.mockReset().mockResolvedValue([]);
 });
 
 describe("getCompetitorStatistics()", () => {
