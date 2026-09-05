@@ -48,11 +48,6 @@ export default {
           text: "#ffffff",
           muted: "#8d7c85",
           disabled: "#5f5158",
-          // Отдельный фиолетовый акцент только для "Этапов отбора" (по
-          // референсу пользователя, 07.09.2026) — визуально отличает
-          // временную шкалу этапов от основной маджента-палитры сайта.
-          violet: "#7c3aed",
-          "violet-dark": "#4c1d95",
         },
       },
       fontFamily: {
@@ -90,7 +85,6 @@ export default {
         "gradient-primary": "linear-gradient(135deg, #a8296b 0%, #c9376f 100%)",
         "gradient-school": "linear-gradient(135deg, #f6d9e6, #fdf0e0)",
         "gradient-night-cta": "linear-gradient(100deg, #ff2d8a, #d6006c)",
-        "gradient-night-violet": "linear-gradient(100deg, #7c3aed, #4c1d95)",
         "gradient-night-hero":
           "radial-gradient(120% 90% at 25% 10%, rgba(255,45,138,0.4) 0%, transparent 58%), radial-gradient(100% 80% at 85% 95%, rgba(108,43,255,0.35) 0%, transparent 62%), linear-gradient(165deg, #331629, #120a12)",
       },
