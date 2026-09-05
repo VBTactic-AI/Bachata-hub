@@ -125,6 +125,7 @@ export function DivisionResultsPanel({
                               setCorrecting(null);
                               router.refresh();
                             }}
+                            onCancel={() => setCorrecting(null)}
                           />
                         )}
                       </li>
@@ -153,11 +154,13 @@ function CorrectResultForm({
   initialStatus,
   initialPlacement,
   onDone,
+  onCancel,
 }: {
   resultId: string;
   initialStatus: "FINALIST" | "ELIMINATED";
   initialPlacement: number | null;
   onDone: () => void;
+  onCancel: () => void;
 }) {
   const [status, setStatus] = useState<"FINALIST" | "ELIMINATED">(initialStatus);
   const [placement, setPlacement] = useState(initialPlacement ? String(initialPlacement) : "");
@@ -211,6 +214,9 @@ function CorrectResultForm({
       <div className="flex items-center gap-2">
         <Button type="submit" size="sm" disabled={loading || !reason.trim() || (status === "FINALIST" && !placement)}>
           Сохранить исправление
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={onCancel}>
+          Отмена
         </Button>
         {error && <span className="error-text">{error}</span>}
       </div>
