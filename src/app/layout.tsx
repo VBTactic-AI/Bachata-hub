@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Unbounded, Montserrat } from "next/font/google";
 import { t } from "@/lib/i18n/dictionary";
 import { Header } from "@/components/Header";
+import { FooterVisibility } from "@/components/FooterVisibility";
 import { PerformanceDebugPanel } from "@/components/admin/PerformanceDebugPanel";
 import "./globals.css";
 
@@ -49,11 +50,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="container py-6">
           {children}
         </main>
-        <footer className="mt-12 border-t border-line py-7 text-sm text-muted">
-          <div className="container">
-            <p>{t.footer.about}</p>
-          </div>
-        </footer>
+        <FooterVisibility>
+          <footer className="mt-12 border-t border-line py-7 text-sm text-muted">
+            <div className="container">
+              <p>{t.footer.about}</p>
+            </div>
+          </footer>
+        </FooterVisibility>
         {PERF_PANEL_ENABLED && <PerformanceDebugPanel />}
       </body>
     </html>

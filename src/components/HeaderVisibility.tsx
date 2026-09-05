@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { isDarkRoute } from "@/lib/dark-routes";
 
 // UX-004: судейский мобильный экран (CLAUDE.md §40 — "не перегружай
 // судейский интерфейс админскими функциями") раньше показывал полный
@@ -10,16 +11,12 @@ import { usePathname } from "next/navigation";
 // запросы к БД для nav-ссылок) — эта обёртка только решает, показывать ли
 // уже готовый результат.
 //
-// Тёмный "night"-раздел (/compete, /schools, /login) по образцу макета JBJ
-// Platform несёт свою собственную навигацию (DarkTopNav на десктопе,
-// BottomNav на мобильном) — светлый сайтовый Header поверх нёс бы двойную
-// навигацию, поэтому скрыт и там (06.09.2026).
-const HIDDEN_PREFIXES = ["/judging", "/compete", "/schools", "/login", "/profile", "/dancers", "/events"];
-
+// Тёмные разделы (см. src/lib/dark-routes.ts) по образцу макета JBJ Platform
+// несут собственную навигацию (DarkTopNav на десктопе, BottomNav на
+// мобильном) — светлый сайтовый Header поверх нёс бы двойную навигацию,
+// поэтому скрыт и там (06.09.2026).
 export function HeaderVisibility({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // "/" — точное совпадение, а не префикс: startsWith("/") иначе спрятал бы
-  // Header вообще на всех маршрутах сайта.
-  if (pathname === "/" || (pathname && HIDDEN_PREFIXES.some((p) => pathname.startsWith(p)))) return null;
+  if (isDarkRoute(pathname)) return null;
   return <>{children}</>;
 }
