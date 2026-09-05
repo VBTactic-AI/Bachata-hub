@@ -1,4 +1,4 @@
-import type { Prisma, RegistrationRole, Round } from "@prisma/client";
+import type { Prisma, RegistrationRole, Round, RoundStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
@@ -201,18 +201,33 @@ export async function calculateRoundResultsInTx(tx: PrismaTx, roundId: string, a
   // перетанцовка (recordTieBreakDecision).
 }
 
+// Судья может нажать "Готово" (confirmJudgeRoundDone), как только набрал
+// нужное число "Да" — независимо от того, все ли заходы раунда уже успели
+// формально закрыться (Round.status ещё RUNNING, а не SCORING: последний
+// Heat закрывается отдельным действием и может отстать на несколько секунд,
+// найдено на живом тестировании 2026-09-05). Раньше здесь проверялся ровно
+// status: "SCORING" — если оба судьи успевали подтвердить ДО того, как
+// раунд сам дошёл до SCORING, updateMany молча находил 0 строк (статус был
+// RUNNING/FINISHED) и просто ничего не делал — RoundResult уже посчитан
+// (calculateRoundResultsInTx идемпотентна и больше не пересчитает), но
+// раунд навсегда оставался незавершённым, блокируя следующий раунд
+// дивизиона. RUNNING/FINISHED/SCORING — все три законных "в процессе"
+// статуса на этом этапе (последний заход мог быть RUNNING или уже
+// формально FINISHED в момент вызова) — принимаем переход из любого из них.
+const COMPLETABLE_FROM: RoundStatus[] = ["RUNNING", "FINISHED", "SCORING"];
+
 async function completeRoundInTx(tx: PrismaTx, round: Round, actor: Actor): Promise<void> {
   const result = await tx.round.updateMany({
-    where: { id: round.id, status: "SCORING", statusVersion: round.statusVersion },
+    where: { id: round.id, status: { in: COMPLETABLE_FROM }, statusVersion: round.statusVersion },
     data: { status: "COMPLETED", statusVersion: { increment: 1 }, endedAt: new Date() },
   });
-  if (result.count === 0) return; // уже завершён кем-то/чем-то другим
+  if (result.count === 0) return; // уже завершён кем-то/чем-то другим, либо гонка по statusVersion
   await writeAudit(tx, {
     actor,
     action: "round.transition",
     entityType: "Round",
     entityId: round.id,
-    before: { status: "SCORING" },
+    before: { status: round.status },
     after: { status: "COMPLETED" },
     reason: "Все результаты определены — проходящие набраны без ничьей на границе.",
   });
