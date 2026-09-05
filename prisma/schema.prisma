@@ -654,6 +654,13 @@ model Competition {
   eventId       String?              @unique // афишная карточка слоя 1; nullable — соревнование может быть без публичной афиши
   event         Event?               @relation(fields: [eventId], references: [id])
   publicResults Boolean              @default(false)
+  // Публичная страница (Этап 12) — чисто информационные поля для зрителей,
+  // ни на что в движке не влияют. rulesText/rulesUrl — организатор заполняет
+  // любое из двух (или оба); mediaUrl — ссылка на внешний альбом/плейлист
+  // (по решению пользователя, 2026-09-05, без загрузки файлов на свой сервер).
+  rulesText     String?
+  rulesUrl      String?
+  mediaUrl      String?
   createdById   String
   createdBy     User                 @relation("CompetitionCreator", fields: [createdById], references: [id])
   createdAt     DateTime             @default(now())

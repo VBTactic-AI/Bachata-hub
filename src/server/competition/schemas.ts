@@ -109,6 +109,23 @@ export const setRulesSchema = z.object({
 });
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
 
+// --- Публичная страница (Этап 12) — чисто информационные поля ---
+
+// Форма всегда отправляет все три поля разом (не частичный патч) — пустая
+// строка означает явное намерение "очистить", а не "не менять" (сервис
+// сохраняет её как null, не как undefined/пропуск).
+const optionalUrlOrEmpty = z
+  .string()
+  .max(500)
+  .refine((v) => v === "" || /^https?:\/\//i.test(v), { message: "Ссылка должна начинаться с http:// или https://" });
+
+export const updateCompetitionPublicInfoSchema = z.object({
+  rulesText: z.string().max(5000),
+  rulesUrl: optionalUrlOrEmpty,
+  mediaUrl: optionalUrlOrEmpty,
+});
+export type UpdateCompetitionPublicInfoInput = z.infer<typeof updateCompetitionPublicInfoSchema>;
+
 export const competitionStatusSchema = z.enum([
   "DRAFT",
   "REGISTRATION_OPEN",

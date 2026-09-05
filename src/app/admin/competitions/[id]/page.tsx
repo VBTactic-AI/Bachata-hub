@@ -44,6 +44,7 @@ import { CompetitionStatisticsPanel } from "@/components/admin/CompetitionStatis
 import { JudgeStatisticsPanel } from "@/components/admin/JudgeStatisticsPanel";
 import { getCompetitionStatistics } from "@/server/statistics/competition-statistics";
 import { getJudgeStatisticsForCompetition } from "@/server/statistics/judge-statistics";
+import { PublicInfoPanel } from "@/components/admin/PublicInfoPanel";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -159,6 +160,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canReviewResults = can(actor, "result:review", competition.id);
   const canPublishResults = can(actor, "result:publish", competition.id);
   const canViewStatistics = can(actor, "statistics:view", competition.id);
+  const canEditPublicInfo = can(actor, "competition:settings_update", competition.id);
   const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
@@ -299,6 +301,16 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       </div>
 
       {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
+      {canEditPublicInfo && (
+        <PublicInfoPanel
+          competitionId={competition.id}
+          info={{
+            rulesText: competition.rulesText ?? "",
+            rulesUrl: competition.rulesUrl ?? "",
+            mediaUrl: competition.mediaUrl ?? "",
+          }}
+        />
+      )}
       {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
       {competitionStatistics && <CompetitionStatisticsPanel statistics={competitionStatistics} />}
       {judgeStatistics.length > 0 && <JudgeStatisticsPanel judges={judgeStatistics} />}
