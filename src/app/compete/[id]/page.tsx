@@ -31,6 +31,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   if (!view) notFound();
 
   const myRegistration = dancer ? await prisma.registration.findFirst({ where: { competitionId: id, dancerId: dancer.id } }) : null;
+  // Ссылка на судейский экран — раньше её нигде не было в интерфейсе
+  // (только прямой URL /judging/[competitionId], найдено на живом
+  // тестировании 2026-09-05): судья, которого назначили в админке, не мог
+  // сам найти дорогу на свой экран оценок.
+  const myJudgeAssignment = user
+    ? await prisma.judgeAssignment.findFirst({ where: { judgeUserId: user.id, division: { competitionId: id } } })
+    : null;
 
   const isOpen = view.status === "REGISTRATION_OPEN";
   const place = [view.cityName, view.venue].filter(Boolean).join(", ");
@@ -64,6 +71,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           className="block rounded-app border border-night-success/40 bg-night-success/10 px-4 py-3 text-center text-sm font-bold text-night-success no-underline"
         >
           ● Сейчас идёт: {view.liveStatus.divisionCategoryName} · {view.liveStatus.roundLabel} · Заход {view.liveStatus.heatNumber} — открыть табло →
+        </Link>
+      )}
+
+      {myJudgeAssignment && (
+        <Link
+          href={`/judging/${id}`}
+          className="block rounded-full border border-night-accent/40 bg-night-accent/10 py-3.5 text-center text-sm font-bold uppercase tracking-wide text-night-accent no-underline"
+        >
+          ⚖️ Судейство — открыть экран оценок
         </Link>
       )}
 
