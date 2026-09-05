@@ -3,6 +3,7 @@ import { getActor } from "@/server/rbac/actor";
 import { getJudgeQueue, type JudgeQueueItem } from "@/server/judging/scoring";
 import { listMyActiveFinalRounds } from "@/server/judging/final-scoring";
 import { measureServerOperation } from "@/lib/performance-debug/server";
+import { DomainError } from "@/server/errors";
 import { JudgeScoreButtons } from "@/components/admin/JudgeScoreButtons";
 import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
 import { JudgingQueueBanner } from "@/components/admin/judging/JudgingQueueBanner";
@@ -34,9 +35,29 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
   const actor = await getActor();
   if (!actor) redirect("/login");
 
-  const [{ items, skippedNotices, confirmedRoundIds }, myFinalRounds] = await measureServerOperation("judge.open_page", () =>
-    Promise.all([getJudgeQueue(competitionId), listMyActiveFinalRounds(competitionId)])
-  );
+  // CLAUDE.md §46: заход на эту страницу без назначения судьёй на это
+  // соревнование (JudgeAssignment есть, а CompetitionMember нет — либо
+  // человек просто ни разу не назначен судить) не должен ронять страницу
+  // необработанным исключением — показываем ту же понятную причину, что
+  // видит организатор при недостатке прав.
+  let queue: { items: JudgeQueueItem[]; skippedNotices: { roundId: string; divisionName: string; role: JudgeQueueItem["role"] }[]; confirmedRoundIds: string[] };
+  let myFinalRounds: Awaited<ReturnType<typeof listMyActiveFinalRounds>>;
+  try {
+    [queue, myFinalRounds] = await measureServerOperation("judge.open_page", () =>
+      Promise.all([getJudgeQueue(competitionId), listMyActiveFinalRounds(competitionId)])
+    );
+  } catch (e) {
+    if (e instanceof DomainError) {
+      return (
+        <div className="stack">
+          <h1 className="page-title">Судейство</h1>
+          <p className="hint-text">{e.userMessage}</p>
+        </div>
+      );
+    }
+    throw e;
+  }
+  const { items, skippedNotices, confirmedRoundIds } = queue;
   const confirmedSet = new Set(confirmedRoundIds);
 
   const byRound = new Map<string, JudgeQueueItem[]>();
