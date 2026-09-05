@@ -154,6 +154,7 @@ model School {
 
   @@index([cityId])
   @@index([verificationStatus])
+  @@index([ownerUserId])
 }
 
 model SchoolBranch {
@@ -167,6 +168,7 @@ model SchoolBranch {
   city     City?   @relation(fields: [cityId], references: [id])
 
   @@index([schoolId])
+  @@index([cityId])
 }
 
 model Teacher {
@@ -207,6 +209,7 @@ model ClassSchedule {
   hall      String? // зал / адрес занятия, если отличается от филиала
 
   @@index([schoolId])
+  @@index([teacherId])
 }
 
 enum DanceLevel {
@@ -241,6 +244,7 @@ model SchoolClaim {
 
   @@index([schoolId, status])
   @@index([claimantId])
+  @@index([reviewedById])
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +314,8 @@ model Event {
   @@index([schoolId])
   @@index([moderationStatus])
   @@index([eventType])
+  @@index([createdById])
+  @@index([moderatedById])
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +338,8 @@ model Review {
 
   @@index([schoolId])
   @@index([moderationStatus])
+  @@index([authorId])
+  @@index([moderatedById])
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +431,7 @@ model Achievement {
   createdAt   DateTime          @default(now())
 
   @@index([dancerId])
+  @@index([eventId])
 }
 
 // ---------------------------------------------------------------------------
@@ -586,6 +595,8 @@ model UserRoleAssignment {
 
   @@unique([userId, roleId])
   @@index([userId])
+  @@index([grantedById])
+  @@index([roleId])
 }
 
 // Роль пользователя внутри конкретного соревнования — реализует шаг
@@ -605,6 +616,8 @@ model CompetitionMember {
   @@unique([competitionId, userId, roleId])
   @@index([competitionId])
   @@index([userId])
+  @@index([addedById])
+  @@index([roleId])
 }
 
 // ---------------------------------------------------------------------------
@@ -654,6 +667,8 @@ model Competition {
 
   @@index([status])
   @@index([cityId])
+  @@index([createdById])
+  @@index([templateId])
 }
 
 // Версии правил соревнования. Unique по (competitionId, version), НЕ по
@@ -674,6 +689,7 @@ model CompetitionRules {
 
   @@unique([competitionId, version])
   @@index([competitionId])
+  @@index([lockedById])
 }
 
 // Общий для всех соревнований справочник категорий — редактирует только
@@ -734,6 +750,8 @@ model Division {
   results          Result[]
 
   @@unique([competitionId, categoryId])
+  @@index([categoryId])
+  @@index([resultsReviewedById])
 }
 
 // Общий для всех соревнований справочник этапов отбора (Отборочный,
@@ -770,6 +788,7 @@ model DivisionStagePlan {
   createdAt        DateTime          @default(now())
 
   @@unique([divisionId, stageId])
+  @@index([stageId])
 }
 
 // ---------------------------------------------------------------------------
@@ -841,6 +860,10 @@ model Round {
 
   @@unique([divisionId, order])
   @@index([status])
+  @@index([advancementPublishedById])
+  @@index([rulesId])
+  @@index([stageId])
+  @@index([tieBreakOfRoundId])
 }
 
 model Heat {
@@ -930,6 +953,7 @@ model Draw {
   participants DrawParticipant[]
 
   @@unique([heatId, version])
+  @@index([createdById])
 }
 
 // GUEST_HIGHER_CATEGORY — участник другого дивизиона этого же соревнования
@@ -961,6 +985,7 @@ model DrawParticipant {
   finalJudgeScores FinalJudgeScore[]
 
   @@unique([drawId, registrationId])
+  @@index([registrationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -990,6 +1015,8 @@ model JudgeAssignment {
   finalScores   FinalJudgeScore[]
 
   @@unique([divisionId, judgeUserId, role])
+  @@index([assignedById])
+  @@index([judgeUserId])
 }
 
 // Оценка одного судьи по одному вызванному участнику (scored=true) в
@@ -1013,6 +1040,7 @@ model JudgeScore {
   updatedAt          DateTime        @updatedAt
 
   @@unique([drawParticipantId, judgeAssignmentId])
+  @@index([judgeAssignmentId])
 }
 
 // Формат 0/1 ("Да/Нет"): судья свободно кликает "Да" по паркету, сколько
@@ -1037,6 +1065,7 @@ model JudgeRoundConfirmation {
   createdAt         DateTime        @default(now())
 
   @@unique([roundId, judgeAssignmentId])
+  @@index([judgeAssignmentId])
 }
 
 // Итог Advancement Engine по раунду на одного участника (CLAUDE.md §23).
@@ -1059,6 +1088,7 @@ model RoundResult {
   updatedAt      DateTime          @updatedAt
 
   @@unique([roundId, registrationId])
+  @@index([registrationId])
 }
 
 enum AdvancementStatus {
@@ -1169,6 +1199,9 @@ model FinalPair {
   createdAt               DateTime     @default(now())
 
   @@unique([finalSessionId, pairNumber])
+  @@index([createdById])
+  @@index([followerRegistrationId])
+  @@index([leaderRegistrationId])
 }
 
 // Оценка одного судьи по одному критерию для одного вызванного участника
@@ -1190,6 +1223,8 @@ model FinalJudgeScore {
   updatedAt          DateTime        @updatedAt
 
   @@unique([drawParticipantId, judgeAssignmentId, criterionId])
+  @@index([criterionId])
+  @@index([judgeAssignmentId])
 }
 
 // Итог финала на одного участника — ОТДЕЛЬНО от RoundResult/AdvancementStatus
@@ -1215,6 +1250,8 @@ model FinalResult {
   updatedAt      DateTime         @updatedAt
 
   @@unique([roundId, registrationId])
+  @@index([finalSessionId])
+  @@index([registrationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1262,6 +1299,10 @@ model Result {
 
   @@unique([divisionId, registrationId, version])
   @@index([divisionId, registrationId])
+  @@index([createdById])
+  @@index([publishedById])
+  @@index([registrationId])
+  @@index([roundReachedId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1299,6 +1340,7 @@ model CompetitionEvent {
   actor         User?    @relation("CompetitionEventActor", fields: [actorId], references: [id])
 
   @@index([competitionId, occurredAt])
+  @@index([actorId])
 }
 
 // Идемпотентность для draw/расчёта результатов/публикации (03 §26).
@@ -1399,6 +1441,8 @@ model Registration {
   // (Postgres и так выбирает seq scan на маленькой таблице), но так и
   // должно быть проиндексировано по мере роста числа участников.
   @@index([divisionId, role, status])
+  @@index([registeredById])
+  @@index([roleOverrideReviewedById])
 }
 
 model CheckIn {
@@ -1415,4 +1459,5 @@ model CheckIn {
 
   @@unique([competitionId, bibNumber])
   @@index([registrationId])
+  @@index([checkedInById])
 }
