@@ -24,8 +24,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://bachata:bachata@db:5432/bachata_hub
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-dev-secret-change-me}
-      SESSION_SECRET: ${SESSION_SECRET:-dev-secret-change-me}
+      # Без дефолта: если NEXTAUTH_SECRET/SESSION_SECRET не заданы в .env,
+      # `docker compose up` должен упасть с понятной ошибкой, а не тихо
+      # подняться на предсказуемом ключе (см. .env.example — как сгенерировать).
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Задайте NEXTAUTH_SECRET в .env (см. .env.example) — без дефолта, это ключ подписи сессий}
+      SESSION_SECRET: ${SESSION_SECRET:?Задайте SESSION_SECRET в .env (см. .env.example) — без дефолта, это ключ подписи сессий}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
       NODE_ENV: production
     ports:
