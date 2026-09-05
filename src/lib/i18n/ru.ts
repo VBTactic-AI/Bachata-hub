@@ -32,6 +32,7 @@ export const ru = {
     admin: "Модерация",
     addEvent: "Добавить событие",
     competitions: "Соревнования",
+    dashboard: "Панель управления",
     manageCompetitions: "Управление конкурсами",
     divisionCategories: "Категории",
     roundStages: "Этапы отбора",

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
-import { getCurrentUser, canCreateEvents, isModerator, isAdmin } from "@/lib/auth";
+import { getCurrentUser, canCreateEvents, isModerator } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-underline";
@@ -50,18 +50,8 @@ export async function DarkTopNav() {
           </Link>
         )}
         {hasCompetitionAccess && (
-          <Link href="/admin/competitions" className={NAV_LINK}>
-            {t.nav.manageCompetitions}
-          </Link>
-        )}
-        {isAdmin(user) && (
-          <Link href="/admin/division-categories" className={NAV_LINK}>
-            {t.nav.divisionCategories}
-          </Link>
-        )}
-        {isAdmin(user) && (
-          <Link href="/admin/round-stages" className={NAV_LINK}>
-            {t.nav.roundStages}
+          <Link href="/admin" className={NAV_LINK}>
+            {t.nav.dashboard}
           </Link>
         )}
       </nav>
