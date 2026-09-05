@@ -29,6 +29,7 @@ import { DivisionJudgesPanel, type PoolJudge } from "@/components/admin/Division
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
+import { isNoShow } from "@/server/competition/no-show";
 import { getRoundScoringProgress, rolesNotNeedingJudging } from "@/server/judging/advancement";
 import { getFinalScoringProgress } from "@/server/judging/final-advancement";
 import { FinalSettingsPanel } from "@/components/admin/FinalSettingsPanel";
@@ -716,42 +717,50 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             <p className="hint-text">Пока никто не зарегистрирован.</p>
           ) : (
             <div className="stack gap-3">
-              {registrations.map((r) => (
-                <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <strong>{r.dancer.displayName}</strong>
-                    <p className="hint-text mt-1">
-                      {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
-                      {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
-                      {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
-                    </p>
-                    {r.roleOverrideStatus === "PENDING" && (
-                      <p className="hint-text mt-1 text-accent">
-                        Просит роль «{ROLE_LABELS[r.requestedRole ?? ""] ?? r.requestedRole}» вместо подсказки по
-                        полу — ждёт подтверждения.
+              {registrations.map((r) => {
+                const noShow = isNoShow({
+                  registrationStatus: r.status,
+                  hasCheckIn: r.checkIn !== null,
+                  competitionStatus: competition.status,
+                });
+                return (
+                  <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <strong>{r.dancer.displayName}</strong>
+                      <p className="hint-text mt-1">
+                        {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
+                        {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
+                        {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
                       </p>
-                    )}
-                    {r.roleOverrideStatus === "REJECTED" && (
-                      <p className="hint-text mt-1">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {canChangeDivision && (
-                      <ChangeDivisionControl
-                        registrationId={r.id}
-                        currentDivisionId={r.divisionId}
-                        divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))}
-                      />
-                    )}
-                    {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
-                      <RoleOverrideReview registrationId={r.id} />
-                    )}
-                    {canCheckIn && r.status === "REGISTERED" && !r.checkIn && (
-                      <CheckInButton registrationId={r.id} />
-                    )}
-                  </div>
-                </Card>
-              ))}
+                      {r.roleOverrideStatus === "PENDING" && (
+                        <p className="hint-text mt-1 text-accent">
+                          Просит роль «{ROLE_LABELS[r.requestedRole ?? ""] ?? r.requestedRole}» вместо подсказки по
+                          полу — ждёт подтверждения.
+                        </p>
+                      )}
+                      {r.roleOverrideStatus === "REJECTED" && (
+                        <p className="hint-text mt-1">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canChangeDivision && (
+                        <ChangeDivisionControl
+                          registrationId={r.id}
+                          currentDivisionId={r.divisionId}
+                          divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))}
+                        />
+                      )}
+                      {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
+                        <RoleOverrideReview registrationId={r.id} />
+                      )}
+                      {noShow && <Badge variant="pending">Не явился</Badge>}
+                      {canCheckIn && r.status === "REGISTERED" && !r.checkIn && (
+                        <CheckInButton registrationId={r.id} />
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
           )}
           {canManageRegistrations && divisionOptions.length > 0 && (
@@ -770,6 +779,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 {myRegistration.division.category.name} · {ROLE_LABELS[myRegistration.role] ?? myRegistration.role} ·{" "}
                 {REGISTRATION_STATUS_LABELS[myRegistration.status] ?? myRegistration.status}
                 {myRegistration.checkIn && ` · номер ${myRegistration.checkIn.bibNumber}`}
+                {isNoShow({
+                  registrationStatus: myRegistration.status,
+                  hasCheckIn: myRegistration.checkIn !== null,
+                  competitionStatus: competition.status,
+                }) && " · не явился"}
               </p>
               {myRegistration.roleOverrideStatus === "PENDING" && (
                 <p className="hint-text mt-1 text-accent">
