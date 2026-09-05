@@ -29,19 +29,22 @@ function RoleStatsRow({ label, stats }: { label: string; stats: RoleStatistics }
 // (уникальные/повторные партнёры) не считается — Draw Engine не хранит,
 // кто с кем танцевал (docs/00_DECISIONS.md, A5), подтверждено пользователем.
 export function CompetitorStatisticsCard({ statistics }: { statistics: CompetitorStatistics }) {
-  if (statistics.overall.competitionsCount === 0) {
+  if (statistics.overall.competitionsCount === 0 && statistics.noShowsCount === 0) {
     return null;
   }
   return (
     <Card>
       <h2 className="page-title">Моя статистика</h2>
       <div className="stack gap-3 mt-2">
-        <RoleStatsRow label="Всего" stats={statistics.overall} />
+        {statistics.overall.competitionsCount > 0 && <RoleStatsRow label="Всего" stats={statistics.overall} />}
         {(["LEADER", "FOLLOWER"] as const).map(
           (role) =>
             statistics.byRole[role].competitionsCount > 0 && (
               <RoleStatsRow key={role} label={ROLE_LABELS[role]} stats={statistics.byRole[role]} />
             )
+        )}
+        {statistics.noShowsCount > 0 && (
+          <p className="hint-text m-0">Не явился на check-in: {statistics.noShowsCount}</p>
         )}
       </div>
     </Card>
