@@ -42,15 +42,23 @@ export function CreateCompetitionForm({ cities }: { cities: City[] }) {
     router.push(`/admin/competitions/${data.competition.id}`);
   }
 
+  const fieldClass = "border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20";
+
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[560px]">
-      <Label>
+      <Label className="text-night-muted">
         Название
-        <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Minsk Jack & Jill Open" />
+        <Input
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Minsk Jack & Jill Open"
+          className={fieldClass}
+        />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         Город
-        <Select value={cityId} onChange={(e) => setCityId(e.target.value)}>
+        <Select value={cityId} onChange={(e) => setCityId(e.target.value)} className={fieldClass}>
           <option value="">—</option>
           {cities.map((c) => (
             <option key={c.id} value={c.id}>
@@ -59,20 +67,20 @@ export function CreateCompetitionForm({ cities }: { cities: City[] }) {
           ))}
         </Select>
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         Площадка
-        <Input value={venue} onChange={(e) => setVenue(e.target.value)} />
+        <Input value={venue} onChange={(e) => setVenue(e.target.value)} className={fieldClass} />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         Дата и время начала
-        <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+        <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className={fieldClass} />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         Описание
-        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} className={fieldClass} />
       </Label>
-      {error && <p className="error-text">{error}</p>}
-      <Button type="submit" disabled={loading}>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <Button type="submit" disabled={loading} className="border-none bg-gradient-night-cta">
         Создать
       </Button>
     </FormRoot>

@@ -16,10 +16,10 @@ export default async function DivisionCategoriesPage() {
   const categories = await prisma.divisionCategory.findMany({ orderBy: { order: "asc" } });
 
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-4">
       <div>
-        <h1 className="page-title">Категории соревнований</h1>
-        <p className="page-subtitle">
+        <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Категории соревнований</h1>
+        <p className="m-0 mt-2 text-sm leading-relaxed text-night-muted">
           Общий справочник для всех соревнований. Организаторы выбирают дивизионы из этого списка — сами названия не
           придумывают. «Скрыть» не удаляет категорию, а просто убирает её из выбора для новых дивизионов; уже
           созданные дивизионы и регистрации не меняются. Порядок определяет иерархию уровней (по нему движок ищет
@@ -28,12 +28,16 @@ export default async function DivisionCategoriesPage() {
         </p>
       </div>
 
-      <div className="stack gap-3">
+      <div className="flex flex-col gap-3">
         {categories.map((c) => (
-          <Card key={c.id} className="flex flex-wrap items-center justify-between gap-2">
+          <Card key={c.id} className="flex flex-wrap items-center justify-between gap-2 border-night-border bg-night-card">
             <div className="flex flex-wrap items-center gap-2">
               <EditDivisionCategoryForm categoryId={c.id} name={c.name} order={c.order} />
-              {!c.isActive && <Badge variant="pending">скрыта</Badge>}
+              {!c.isActive && (
+                <Badge variant="pending" className="bg-night-card2 text-night-muted">
+                  скрыта
+                </Badge>
+              )}
             </div>
             <ToggleCategoryActiveButton categoryId={c.id} isActive={c.isActive} />
           </Card>

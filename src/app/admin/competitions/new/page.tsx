@@ -12,8 +12,8 @@ export default async function NewCompetitionPage() {
   const cities = await prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } });
 
   return (
-    <div className="stack">
-      <h1 className="page-title">Новое соревнование</h1>
+    <div className="flex flex-col gap-4">
+      <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Новое соревнование</h1>
       <CreateCompetitionForm cities={cities} />
     </div>
   );

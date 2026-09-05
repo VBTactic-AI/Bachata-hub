@@ -35,30 +35,30 @@ export default async function AdminDashboardPage() {
   const open = byStatus.get("REGISTRATION_OPEN") ?? 0;
 
   return (
-    <div className="stack">
-      <h1 className="page-title">Панель управления</h1>
+    <div className="flex flex-col gap-6">
+      <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Панель управления</h1>
 
-      <div className="card-grid">
-        <Card>
-          <p className="hint-text m-0">Всего соревнований</p>
-          <p className="m-0 mt-1 text-3xl font-extrabold text-ink">{competitions.length}</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Card className="border-night-border bg-night-card">
+          <p className="m-0 text-sm text-night-muted">Всего соревнований</p>
+          <p className="m-0 mt-1 text-3xl font-extrabold text-night-text">{competitions.length}</p>
         </Card>
-        <Card>
-          <p className="hint-text m-0">Регистрация открыта</p>
-          <p className="m-0 mt-1 text-3xl font-extrabold text-primary">{open}</p>
+        <Card className="border-night-border bg-night-card">
+          <p className="m-0 text-sm text-night-muted">Регистрация открыта</p>
+          <p className="m-0 mt-1 text-3xl font-extrabold text-night-primary">{open}</p>
         </Card>
-        <Card>
-          <p className="hint-text m-0">Идут сейчас</p>
-          <p className="m-0 mt-1 text-3xl font-extrabold text-accent">{live}</p>
+        <Card className="border-night-border bg-night-card">
+          <p className="m-0 text-sm text-night-muted">Идут сейчас</p>
+          <p className="m-0 mt-1 text-3xl font-extrabold text-night-pink">{live}</p>
         </Card>
       </div>
 
       {competitions.length > 0 && (
         <div>
-          <h2 className="page-title">По статусам</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">По статусам</h2>
           <div className="flex flex-wrap gap-2">
             {[...byStatus.entries()].map(([status, count]) => (
-              <span key={status} className="rounded-full bg-primary-light px-3 py-1.5 text-sm font-semibold text-primary-dark">
+              <span key={status} className="rounded-full bg-night-card2 px-3 py-1.5 text-sm font-semibold text-night-pink">
                 {STATUS_LABELS[status] ?? status}: {count}
               </span>
             ))}
@@ -67,17 +67,35 @@ export default async function AdminDashboardPage() {
       )}
 
       <div>
-        <h2 className="page-title">Разделы</h2>
-        <div className="card-grid">
-          <Link href="/admin/competitions" className={buttonVariants({ variant: "outline", className: "no-underline" })}>
+        <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Разделы</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Link
+            href="/admin/competitions"
+            className={buttonVariants({
+              variant: "outline",
+              className: "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text",
+            })}
+          >
             Соревнования →
           </Link>
           {isAdmin(user) && (
             <>
-              <Link href="/admin/division-categories" className={buttonVariants({ variant: "outline", className: "no-underline" })}>
+              <Link
+                href="/admin/division-categories"
+                className={buttonVariants({
+                  variant: "outline",
+                  className: "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text",
+                })}
+              >
                 Категории →
               </Link>
-              <Link href="/admin/round-stages" className={buttonVariants({ variant: "outline", className: "no-underline" })}>
+              <Link
+                href="/admin/round-stages"
+                className={buttonVariants({
+                  variant: "outline",
+                  className: "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text",
+                })}
+              >
                 Этапы отбора →
               </Link>
             </>

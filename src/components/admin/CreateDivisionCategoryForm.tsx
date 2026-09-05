@@ -32,12 +32,18 @@ export function CreateDivisionCategoryForm() {
 
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[420px]">
-      <Label>
+      <Label className="text-night-muted">
         Название новой категории
-        <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Юниоры" />
+        <Input
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Юниоры"
+          className="border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20"
+        />
       </Label>
-      {error && <p className="error-text">{error}</p>}
-      <Button type="submit" size="sm" disabled={loading}>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <Button type="submit" size="sm" disabled={loading} className="border-none bg-gradient-night-cta">
         Добавить категорию
       </Button>
     </FormRoot>

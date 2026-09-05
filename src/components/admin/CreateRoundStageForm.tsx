@@ -32,13 +32,15 @@ export function CreateRoundStageForm() {
     router.refresh();
   }
 
+  const fieldClass = "border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20";
+
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[420px]">
-      <Label>
+      <Label className="text-night-muted">
         Название нового этапа
-        <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Четвертьфинал" />
+        <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Четвертьфинал" className={fieldClass} />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         Сколько проходит дальше по умолчанию
         <Input
           required
@@ -47,10 +49,11 @@ export function CreateRoundStageForm() {
           value={defaultAdvanceCount}
           onChange={(e) => setDefaultAdvanceCount(e.target.value)}
           placeholder="8"
+          className={fieldClass}
         />
       </Label>
-      {error && <p className="error-text">{error}</p>}
-      <Button type="submit" size="sm" disabled={loading}>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      <Button type="submit" size="sm" disabled={loading} className="border-none bg-gradient-night-cta">
         Добавить этап
       </Button>
     </FormRoot>

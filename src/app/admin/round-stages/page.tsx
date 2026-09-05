@@ -16,10 +16,10 @@ export default async function RoundStagesPage() {
   const stages = await prisma.roundStageCatalog.findMany({ orderBy: { order: "asc" } });
 
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-4">
       <div>
-        <h1 className="page-title">Этапы отбора</h1>
-        <p className="page-subtitle">
+        <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Этапы отбора</h1>
+        <p className="m-0 mt-2 text-sm leading-relaxed text-night-muted">
           Общий справочник для всех соревнований (Отборочный, Четвертьфинал, Полуфинал, Финал...). Организаторы
           выбирают раунды из этого списка, а не придумывают названия сами. «Сколько проходит дальше» — число по
           умолчанию, при создании конкретного раунда его можно поправить под размер дивизиона. «Скрыть» не удаляет
@@ -29,12 +29,16 @@ export default async function RoundStagesPage() {
         </p>
       </div>
 
-      <div className="stack gap-3">
+      <div className="flex flex-col gap-3">
         {stages.map((s) => (
-          <Card key={s.id} className="flex flex-wrap items-center justify-between gap-2">
+          <Card key={s.id} className="flex flex-wrap items-center justify-between gap-2 border-night-border bg-night-card">
             <div className="flex flex-wrap items-center gap-2">
               <EditRoundStageForm stageId={s.id} name={s.name} defaultAdvanceCount={s.defaultAdvanceCount} />
-              {!s.isActive && <Badge variant="pending">скрыт</Badge>}
+              {!s.isActive && (
+                <Badge variant="pending" className="bg-night-card2 text-night-muted">
+                  скрыт
+                </Badge>
+              )}
             </div>
             <ToggleRoundStageActiveButton stageId={s.id} isActive={s.isActive} />
           </Card>

@@ -26,29 +26,37 @@ export default async function CompetitionsPage() {
       });
 
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="page-title">Соревнования</h1>
+        <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Соревнования</h1>
         {isSuperAdmin && (
-          <Link href="/admin/competitions/new" className={buttonVariants({ className: "no-underline" })}>
+          <Link
+            href="/admin/competitions/new"
+            className={buttonVariants({ className: "border-none bg-gradient-night-cta no-underline" })}
+          >
             + Новое соревнование
           </Link>
         )}
       </div>
 
       {competitions.length === 0 ? (
-        <p className="hint-text">Пока нет ни одного соревнования.</p>
+        <p className="text-sm text-night-muted">Пока нет ни одного соревнования.</p>
       ) : (
-        <div className="card-grid">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {competitions.map((c) => (
             <Link
               key={c.id}
               href={`/admin/competitions/${c.id}`}
-              className={cardVariants({ interactive: true, className: "no-underline" })}
+              className={cardVariants({
+                interactive: true,
+                className: "border-night-border bg-night-card no-underline hover:border-night-primary/60 hover:shadow-none",
+              })}
             >
-              <strong className="text-ink">{c.name}</strong>
+              <strong className="text-night-text">{c.name}</strong>
               <p className="mt-1.5">
-                <Badge variant="community">{STATUS_LABELS[c.status] ?? c.status}</Badge>
+                <Badge variant="community" className="bg-night-card2 text-night-pink">
+                  {STATUS_LABELS[c.status] ?? c.status}
+                </Badge>
               </p>
             </Link>
           ))}

@@ -20,14 +20,14 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
 
   return (
     <nav
-      className="flex gap-1.5 overflow-x-auto border-b border-line pb-3 sm:w-[220px] sm:shrink-0 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:pb-0 sm:pr-4"
+      className="flex gap-1.5 overflow-x-auto border-b border-night-border pb-3 font-night sm:w-[220px] sm:shrink-0 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:pb-0 sm:pr-4"
       aria-label="Разделы админки"
     >
       {links.map((l) => (
         <Link
           key={l.href}
           href={l.href}
-          className="shrink-0 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium text-ink no-underline hover:bg-primary-light hover:text-primary hover:no-underline"
+          className="shrink-0 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium text-night-muted no-underline hover:bg-night-card2 hover:text-night-text hover:no-underline"
         >
           {l.label}
         </Link>

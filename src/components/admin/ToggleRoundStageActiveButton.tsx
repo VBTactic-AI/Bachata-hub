@@ -20,7 +20,14 @@ export function ToggleRoundStageActiveButton({ stageId, isActive }: { stageId: s
   }
 
   return (
-    <Button variant="secondary" size="sm" type="button" disabled={loading} onClick={toggle}>
+    <Button
+      variant="secondary"
+      size="sm"
+      type="button"
+      disabled={loading}
+      onClick={toggle}
+      className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+    >
       {isActive ? "Скрыть" : "Вернуть в список"}
     </Button>
   );
