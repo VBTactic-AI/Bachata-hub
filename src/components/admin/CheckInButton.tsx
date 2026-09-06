@@ -31,10 +31,17 @@ export function CheckInButton({ registrationId }: { registrationId: string }) {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={onClick}>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={loading}
+        onClick={onClick}
+        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+      >
         Check-in
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </span>
   );
 }

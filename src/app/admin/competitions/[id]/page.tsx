@@ -720,16 +720,16 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {canViewAllRegistrations ? (
         <div>
-          <h2 className="page-title">Участники</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Участники</h2>
           {registrationsTotalCount > registrations.length && (
-            <p className="hint-text text-accent">
+            <p className="m-0 mb-2 text-sm text-amber-400">
               Показаны первые {registrations.length} из {registrationsTotalCount} — список обрезан.
             </p>
           )}
           {registrations.length === 0 ? (
-            <p className="hint-text">Пока никто не зарегистрирован.</p>
+            <p className="text-sm text-night-muted">Пока никто не зарегистрирован.</p>
           ) : (
-            <div className="stack gap-3">
+            <div className="flex flex-col gap-3">
               {registrations.map((r) => {
                 const noShow = isNoShow({
                   registrationStatus: r.status,
@@ -737,22 +737,22 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   competitionStatus: competition.status,
                 });
                 return (
-                  <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-night-border bg-night-card">
                     <div>
-                      <strong>{r.dancer.displayName}</strong>
-                      <p className="hint-text mt-1">
+                      <strong className="text-night-text">{r.dancer.displayName}</strong>
+                      <p className="mt-1 text-sm text-night-muted">
                         {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
                         {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
                         {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
                       </p>
                       {r.roleOverrideStatus === "PENDING" && (
-                        <p className="hint-text mt-1 text-accent">
+                        <p className="mt-1 text-sm text-night-pink">
                           Просит роль «{ROLE_LABELS[r.requestedRole ?? ""] ?? r.requestedRole}» вместо подсказки по
                           полу — ждёт подтверждения.
                         </p>
                       )}
                       {r.roleOverrideStatus === "REJECTED" && (
-                        <p className="hint-text mt-1">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
+                        <p className="mt-1 text-sm text-night-muted">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -766,7 +766,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
                         <RoleOverrideReview registrationId={r.id} />
                       )}
-                      {noShow && <Badge variant="pending">Не явился</Badge>}
+                      {noShow && (
+                        <Badge variant="pending" className="bg-night-card2 text-night-muted">
+                          Не явился
+                        </Badge>
+                      )}
                       {canCheckIn && r.status === "REGISTERED" && !r.checkIn && (
                         <CheckInButton registrationId={r.id} />
                       )}
@@ -778,7 +782,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           )}
           {canManageRegistrations && divisionOptions.length > 0 && (
             <div className="mt-4">
-              <h3 className="mb-2">Добавить участника вручную</h3>
+              <h3 className="mb-2 text-sm font-bold text-night-text">Добавить участника вручную</h3>
               <AdminRegisterForm competitionId={competition.id} divisions={divisionOptions} />
             </div>
           )}

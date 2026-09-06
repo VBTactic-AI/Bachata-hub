@@ -43,7 +43,11 @@ export function ChangeDivisionControl({
 
   return (
     <span className="inline-flex items-center gap-2">
-      <Select value={divisionId} onChange={(e) => setDivisionId(e.target.value)} className="!w-auto py-1.5 text-sm">
+      <Select
+        value={divisionId}
+        onChange={(e) => setDivisionId(e.target.value)}
+        className="!w-auto border-night-border bg-night-card2 py-1.5 text-sm text-night-text focus:border-night-primary focus:ring-night-primary/20"
+      >
         {divisions.map((d) => (
           <option key={d.id} value={d.id}>
             {d.categoryName}
@@ -51,11 +55,11 @@ export function ChangeDivisionControl({
         ))}
       </Select>
       {divisionId !== currentDivisionId && (
-        <Button type="button" size="sm" disabled={loading} onClick={apply}>
+        <Button type="button" size="sm" disabled={loading} onClick={apply} className="border-none bg-gradient-night-cta">
           Сохранить категорию
         </Button>
       )}
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </span>
   );
 }

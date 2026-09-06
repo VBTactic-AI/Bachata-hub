@@ -28,13 +28,20 @@ export function RoleOverrideReview({ registrationId }: { registrationId: string 
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <Button type="button" size="sm" disabled={loading} onClick={() => decide("APPROVE")}>
+      <Button type="button" size="sm" disabled={loading} onClick={() => decide("APPROVE")} className="border-none bg-gradient-night-cta">
         Подтвердить роль
       </Button>
-      <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={() => decide("REJECT")}>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={loading}
+        onClick={() => decide("REJECT")}
+        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+      >
         Отклонить (оставить по полу)
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </span>
   );
 }
