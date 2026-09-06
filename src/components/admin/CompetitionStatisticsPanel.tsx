@@ -14,7 +14,7 @@ export function CompetitionStatisticsPanel({ statistics }: { statistics: Competi
         Check-in: {statistics.checkedInCount} · Не пришли: {statistics.noShowCount} · Судей: {statistics.judgesCount}
       </p>
       <p className="hint-text m-0">
-        Дивизионов: {statistics.divisionsCount} · Раундов: {statistics.roundsCount} (из них перетанцовок: {statistics.tieBreakRoundsCount}) ·
+        Категорий: {statistics.divisionsCount} · Раундов: {statistics.roundsCount} (из них перетанцовок: {statistics.tieBreakRoundsCount}) ·
         Заходов: {statistics.heatsCount}
       </p>
       {statistics.durationMinutes !== null && (

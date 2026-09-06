@@ -112,7 +112,7 @@ export async function setFinalCriteria(divisionId: string, input: SetFinalCriter
   const existingIds = new Set(existing.map((c) => c.id));
   const keepIds = new Set(input.criteria.filter((c) => c.id).map((c) => c.id!));
   for (const id of keepIds) {
-    if (!existingIds.has(id)) throw new ValidationFailedError("Один из критериев не найден в этом дивизионе.");
+    if (!existingIds.has(id)) throw new ValidationFailedError("Один из критериев не найден в этой категории.");
   }
   const toDelete = existing.filter((c) => !keepIds.has(c.id));
   const existingToUpdate = input.criteria.filter((c) => c.id);

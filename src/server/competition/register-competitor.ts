@@ -43,7 +43,7 @@ async function insertRegistration(
     where: { id: params.divisionId, competitionId: params.competitionId },
     include: { competition: { select: { status: true } } },
   });
-  if (!division) throw new ValidationFailedError("Дивизион не найден в этом соревновании.");
+  if (!division) throw new ValidationFailedError("Категория не найдена в этом соревновании.");
   if (division.competition.status !== "REGISTRATION_OPEN") throw new RegistrationNotOpenError();
 
   // Если выбранная роль расходится с подсказкой по полу — сохраняем

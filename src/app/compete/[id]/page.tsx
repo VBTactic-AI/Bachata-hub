@@ -135,7 +135,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {view.divisions.length > 0 && (
         <div>
-          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Дивизионы</h2>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Категории</h2>
           <div className="stack gap-2">
             {view.divisions.map((d) => (
               <div key={d.id} className="flex items-center justify-between rounded-app border border-night-border bg-night-card p-3">

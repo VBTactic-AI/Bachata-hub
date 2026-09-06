@@ -113,7 +113,7 @@ export function CompetitionResultsPanel({ competitionId, publicResults }: { comp
               ))}
             </ul>
           )}
-          {issues && issues.length === 0 && <p className="hint-text m-0">Все дивизионы рассчитаны и проверены — можно публиковать.</p>}
+          {issues && issues.length === 0 && <p className="hint-text m-0">Все категории рассчитаны и проверены — можно публиковать.</p>}
           <Button type="button" size="sm" disabled={loading || !issues || issues.length > 0} onClick={publish}>
             Опубликовать результаты
           </Button>

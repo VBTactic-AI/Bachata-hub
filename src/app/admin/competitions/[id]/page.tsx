@@ -341,9 +341,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       )}
 
       <div>
-        <h2 className="page-title">Дивизионы</h2>
+        <h2 className="page-title">Категории</h2>
         {competition.divisions.length === 0 ? (
-          <p className="hint-text">Дивизионов пока нет.</p>
+          <p className="hint-text">Категорий пока нет.</p>
         ) : (
           <div className="stack gap-3">
             {competition.divisions.map((d) => (

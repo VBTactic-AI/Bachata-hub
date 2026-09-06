@@ -22,10 +22,14 @@ export function AddDivisionForm({
   const [heatCapacity, setHeatCapacity] = useState("10");
   // Сколько пар участвует в каждом этапе (docs/00_DECISIONS.md, A14) —
   // задаётся здесь один раз, до начала соревнования, дальше не меняется:
-  // на этом строится расчёт cutoff в Advancement Engine. Пустая строка —
-  // этот этап не входит в план ЭТОГО дивизиона (можно пропустить, напр.
-  // "Отборочный", если дивизион маленький).
-  const [stagePlan, setStagePlan] = useState<Record<string, string>>({});
+  // на этом строится расчёт cutoff в Advancement Engine. По умолчанию поля
+  // предзаполнены значением "по умолчанию" из справочника "Этапы отбора"
+  // (RoundStageCatalog.defaultAdvanceCount) — организатор может поправить
+  // под размер дивизиона или очистить поле, если этот этап дивизиону не
+  // нужен (напр. "Отборочный" для маленького дивизиона).
+  const [stagePlan, setStagePlan] = useState<Record<string, string>>(() =>
+    Object.fromEntries(stages.map((s) => [s.id, String(s.defaultAdvanceCount)]))
+  );
   // Ротация партнёров (Этап 6, docs/00_DECISIONS.md, A12) — настройки по
   // умолчанию для раундов этого дивизиона, можно переопределить позже на
   // уровне конкретного раунда.
@@ -40,7 +44,7 @@ export function AddDivisionForm({
     return (
       <p className="hint-text">
         Нет доступных категорий — либо справочник пуст (добавьте хотя бы одну в «Категории соревнований» в меню),
-        либо для всех активных категорий дивизион в этом соревновании уже есть.
+        либо каждая активная категория уже добавлена в это соревнование.
       </p>
     );
   }
@@ -69,7 +73,7 @@ export function AddDivisionForm({
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Не удалось добавить дивизион.");
+      setError(data.error || "Не удалось добавить категорию.");
       return;
     }
     router.refresh();
@@ -124,7 +128,7 @@ export function AddDivisionForm({
         <div className="stack gap-2">
           <p className="hint-text">
             Сколько пар участвует в каждом раунде — навсегда, задаётся сейчас (можно оставить этап пустым, если он
-            дивизиону не нужен).
+            категории не нужен).
           </p>
           {stages.map((s) => (
             <Label key={s.id} className="flex-row items-center gap-2">
@@ -142,7 +146,7 @@ export function AddDivisionForm({
       )}
       {error && <p className="error-text">{error}</p>}
       <Button type="submit" size="sm" disabled={loading}>
-        Добавить дивизион
+        Добавить категорию
       </Button>
     </FormRoot>
   );

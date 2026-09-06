@@ -81,7 +81,7 @@ export function AdminRegisterForm({ competitionId, divisions }: { competitionId:
           </Label>
         )}
         <Label>
-          Дивизион
+          Категория
           <Select value={divisionId} onChange={(e) => setDivisionId(e.target.value)}>
             {divisions.map((d) => (
               <option key={d.id} value={d.id}>

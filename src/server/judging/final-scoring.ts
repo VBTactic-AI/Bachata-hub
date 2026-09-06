@@ -71,7 +71,7 @@ export async function submitFinalJudgeScore(
     where: { divisionId_judgeUserId_role: { divisionId: round.division.id, judgeUserId: actor.userId, role: requiredRole } },
   });
   if (!assignment) {
-    throw new ValidationFailedError("Вы не назначены оценивать этот критерий у этого участника в этом дивизионе.");
+    throw new ValidationFailedError("Вы не назначены оценивать этот критерий у этого участника в этой категории.");
   }
 
   await prisma.$transaction(async (tx) => {

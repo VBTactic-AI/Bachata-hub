@@ -23,7 +23,7 @@ export async function addDivision(competitionId: string, input: AddDivisionInput
     where: { competitionId_categoryId: { competitionId, categoryId: input.categoryId } },
   });
   if (existing) {
-    throw new ValidationFailedError(`Дивизион категории «${category.name}» в этом соревновании уже есть.`);
+    throw new ValidationFailedError(`Категория «${category.name}» уже добавлена в это соревнование.`);
   }
 
   // План "сколько пар участвует в каждом этапе" (docs/00_DECISIONS.md, A14) —
@@ -129,7 +129,7 @@ export async function deleteDivision(divisionId: string): Promise<void> {
 
   if (division._count.registrations > 0) {
     throw new ValidationFailedError(
-      "Нельзя удалить дивизион — на него уже есть регистрации участников. Сначала снимите их регистрации."
+      "Нельзя удалить категорию — на неё уже есть регистрации участников. Сначала снимите их регистрации."
     );
   }
 

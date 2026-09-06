@@ -166,7 +166,7 @@ async function resolveHelperSource(
     const alreadyScoredIds = await alreadyScoredElsewhereInRound(prisma, heat.roundId, heat.id);
     if (!alreadyScoredIds.has(registrationId)) {
       throw new ValidationFailedError(
-        "Участник своего дивизиона может помогать только после того, как уже станцевал (получил оценку) в другом заходе этого раунда."
+        "Участник своей категории может помогать только после того, как уже станцевал (получил оценку) в другом заходе этого раунда."
       );
     }
     return "REUSED_ALREADY_SCORED";

@@ -87,7 +87,7 @@ export function DivisionResultsPanel({
 
   return (
     <div className="rounded-app-sm border border-line p-3 mt-2 stack gap-2">
-      <p className="m-0 font-semibold">Результаты дивизиона</p>
+      <p className="m-0 font-semibold">Результаты категории</p>
 
       {!hasResults && (
         <Button type="button" size="sm" disabled={loading} onClick={calculate}>

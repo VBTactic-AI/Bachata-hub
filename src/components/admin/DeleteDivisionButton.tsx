@@ -22,7 +22,7 @@ export function DeleteDivisionButton({ divisionId, hasRegistrations }: { divisio
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Не удалось удалить дивизион.");
+      setError(data.error || "Не удалось удалить категорию.");
       return;
     }
     router.refresh();
@@ -31,14 +31,14 @@ export function DeleteDivisionButton({ divisionId, hasRegistrations }: { divisio
   if (!confirming) {
     return (
       <Button type="button" size="sm" variant="ghost" onClick={() => setConfirming(true)}>
-        удалить дивизион
+        удалить категорию
       </Button>
     );
   }
 
   return (
     <span className="inline-flex items-center gap-2">
-      <span className="hint-text">Удалить дивизион без единой регистрации?</span>
+      <span className="hint-text">Удалить категорию без единой регистрации?</span>
       <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={onDelete}>
         Да, удалить
       </Button>

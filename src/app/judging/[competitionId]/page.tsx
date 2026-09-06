@@ -95,7 +95,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
         </div>
       )}
       {items.length === 0 && skippedNotices.length === 0 ? (
-        <p className="text-sm text-night-muted">Пока нет заходов, которые нужно оценить — вы не назначены судьёй ни на один дивизион, или заходы ещё не начались.</p>
+        <p className="text-sm text-night-muted">Пока нет заходов, которые нужно оценить — вы не назначены судьёй ни на одну категорию, или заходы ещё не начались.</p>
       ) : (
         [...byRound.entries()].map(([roundId, roundItems]) => {
           const byHeat = new Map<string, JudgeQueueItem[]>();

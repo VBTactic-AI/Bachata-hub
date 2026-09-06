@@ -86,7 +86,7 @@ export function ReplaceDrawHelperButton({
       ) : (
         <Select value={registrationId} onChange={(e) => setRegistrationId(e.target.value)} className="!w-auto py-1.5 text-sm">
           {groups.map((g) => (
-            <optgroup key={g.divisionId} label={g.isOwnDivision ? `${g.categoryName} (свой дивизион)` : g.categoryName}>
+            <optgroup key={g.divisionId} label={g.isOwnDivision ? `${g.categoryName} (своя категория)` : g.categoryName}>
               {g.registrations.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.displayName}

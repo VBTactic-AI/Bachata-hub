@@ -106,7 +106,7 @@ export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEA
         <span className="stack gap-1.5">
           {groups.map((g) => (
             <span key={g.divisionId} className="stack gap-0.5">
-              <span className="hint-text">{g.isOwnDivision ? `${g.categoryName} (свой дивизион)` : g.categoryName}</span>
+              <span className="hint-text">{g.isOwnDivision ? `${g.categoryName} (своя категория)` : g.categoryName}</span>
               {g.registrations.map((r) => {
                 const checked = selected.includes(r.id);
                 const disabled = !checked && selected.length >= neededCount;

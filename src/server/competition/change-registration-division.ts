@@ -23,7 +23,7 @@ export async function changeRegistrationDivision(
     where: { id: newDivisionId, competitionId: registration.competitionId },
   });
   if (!newDivision) {
-    throw new ValidationFailedError("Дивизион не найден в этом соревновании.");
+    throw new ValidationFailedError("Категория не найдена в этом соревновании.");
   }
   if (newDivision.id === registration.divisionId) return; // уже там — ничего делать не нужно
 
@@ -37,7 +37,7 @@ export async function changeRegistrationDivision(
   const oldDivisionHasRounds = await prisma.round.count({ where: { divisionId: registration.divisionId } });
   if (oldDivisionHasRounds > 0) {
     throw new ValidationFailedError(
-      "Нельзя сменить дивизион: в текущем дивизионе уже есть раунды — участник мог попасть в жеребьёвку или судейство."
+      "Нельзя сменить категорию: в текущей категории уже есть раунды — участник мог попасть в жеребьёвку или судейство."
     );
   }
 

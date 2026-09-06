@@ -24,7 +24,7 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
 
   const isFinal = await isFinalStageInTx(prisma, round.division.id, round.order);
   if (!isFinal) {
-    issues.push("Это не финальный раунд дивизиона — новая система судейства финала применяется только к последнему раунду");
+    issues.push("Это не финальный раунд категории — новая система судейства финала применяется только к последнему раунду");
     return issues;
   }
 

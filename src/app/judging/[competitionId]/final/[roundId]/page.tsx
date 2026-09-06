@@ -17,7 +17,7 @@ export default async function FinalJudgingPage({ params }: { params: Promise<{ c
     return (
       <div className="flex flex-col gap-3">
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text">Судейство финала</h1>
-        <p className="text-sm text-night-muted">Финал ещё не начат для этого раунда, либо вы не назначены судьёй в этом дивизионе.</p>
+        <p className="text-sm text-night-muted">Финал ещё не начат для этого раунда, либо вы не назначены судьёй в этой категории.</p>
         <a href={`/judging/${competitionId}`} className="text-sm text-night-primary">
           ← Ко всем заходам
         </a>

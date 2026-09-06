@@ -55,7 +55,7 @@ export async function submitJudgeScore(drawParticipantId: string, value: number,
     },
   });
   if (!assignment) {
-    throw new ValidationFailedError("Вы не назначены судить эту роль в этом дивизионе.");
+    throw new ValidationFailedError("Вы не назначены судить эту роль в этой категории.");
   }
 
   // Судья уже нажал "Готово" по этому раунду (формат "Да/Нет") — его оценки
@@ -135,7 +135,7 @@ export async function confirmJudgeRoundDone(roundId: string): Promise<void> {
     where: { divisionId: round.division.id, judgeUserId: actor.userId },
   });
   if (myAssignments.length === 0) {
-    throw new ValidationFailedError("Вы не назначены судить этот дивизион.");
+    throw new ValidationFailedError("Вы не назначены судить эту категорию.");
   }
 
   await prisma.$transaction(async (tx) => {

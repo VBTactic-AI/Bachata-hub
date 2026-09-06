@@ -57,7 +57,7 @@ export function RegisterSelfForm({
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[420px]">
       <Label>
-        Дивизион
+        Категория
         <Select value={divisionId} onChange={(e) => setDivisionId(e.target.value)}>
           {divisions.map((d) => (
             <option key={d.id} value={d.id}>

@@ -29,7 +29,7 @@ export async function startRoundDrawing(roundId: string, callOrder: CallOrder): 
     const isFinal = await isFinalStageInTx(prisma, round.divisionId, round.order);
     if (isFinal) {
       throw new ValidationFailedError(
-        'Это финальный раунд дивизиона — сначала нажмите "Начать финал" (фиксирует критерии оценки), а не "Начать жеребьёвку" напрямую.'
+        'Это финальный раунд категории — сначала нажмите "Начать финал" (фиксирует критерии оценки), а не "Начать жеребьёвку" напрямую.'
       );
     }
   }

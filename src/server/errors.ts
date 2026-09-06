@@ -59,7 +59,7 @@ export class RegistrationNotOpenError extends DomainError {
 
 export class AlreadyRegisteredError extends DomainError {
   constructor() {
-    super("Этот участник уже зарегистрирован в этом дивизионе.");
+    super("Этот участник уже зарегистрирован в этой категории.");
   }
 }
 

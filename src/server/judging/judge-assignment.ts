@@ -29,7 +29,7 @@ export async function assignJudge(
     where: { divisionId_judgeUserId_role: { divisionId, judgeUserId: judge.id, role } },
   });
   if (existing) {
-    throw new ValidationFailedError("Этот судья уже назначен на эту роль в этом дивизионе.");
+    throw new ValidationFailedError("Этот судья уже назначен на эту роль в этой категории.");
   }
 
   return prisma.$transaction(async (tx) => {
@@ -139,7 +139,7 @@ export async function setDivisionJudges(
       const blockedUserIds = toRemove.filter((e) => blockedAssignmentIds.has(e.id)).map((e) => e.judgeUserId);
       const blockedJudges = await prisma.user.findMany({ where: { id: { in: blockedUserIds } }, select: { email: true } });
       throw new ValidationFailedError(
-        `Нельзя убрать судью — уже есть оценки в этом дивизионе: ${blockedJudges.map((j) => j.email).join(", ")}. Снимите галочку только с тех, кто ещё не судил.`
+        `Нельзя убрать судью — уже есть оценки в этой категории: ${blockedJudges.map((j) => j.email).join(", ")}. Снимите галочку только с тех, кто ещё не судил.`
       );
     }
   }
