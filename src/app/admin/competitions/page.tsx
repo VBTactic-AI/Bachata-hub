@@ -6,6 +6,7 @@ import { can } from "@/server/rbac/authorize";
 import { buttonVariants } from "@/components/ui/button";
 import { cardVariants } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/cn";
 import { COMPETITION_STATUS_LABELS as STATUS_LABELS } from "@/lib/competition-labels";
 
 export default async function CompetitionsPage() {
@@ -32,7 +33,7 @@ export default async function CompetitionsPage() {
         {isSuperAdmin && (
           <Link
             href="/admin/competitions/new"
-            className={buttonVariants({ className: "border-none bg-gradient-night-cta no-underline" })}
+            className={cn(buttonVariants(), "border-none bg-gradient-night-cta no-underline")}
           >
             + Новое соревнование
           </Link>
@@ -47,10 +48,10 @@ export default async function CompetitionsPage() {
             <Link
               key={c.id}
               href={`/admin/competitions/${c.id}`}
-              className={cardVariants({
-                interactive: true,
-                className: "border-night-border bg-night-card no-underline hover:border-night-primary/60 hover:shadow-none",
-              })}
+              className={cn(
+                cardVariants({ interactive: true }),
+                "border-night-border bg-night-card no-underline hover:border-night-primary/60 hover:shadow-none"
+              )}
             >
               <strong className="text-night-text">{c.name}</strong>
               <p className="mt-1.5">

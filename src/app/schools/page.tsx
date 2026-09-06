@@ -6,10 +6,16 @@ import { SchoolCard } from "@/components/SchoolCard";
 import { pluralizeRu } from "@/lib/format";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FiltersForm, Label, Select } from "@/components/ui/field";
+import { cn } from "@/lib/cn";
 
 // Тёмные переопределения светлых токенов ui/field и ui/button (файлы не
-// трогаем — они общие с остальным светлым сайтом, CLAUDE.md §54). tailwind-
-// merge из cn() гарантирует, что эти классы победят конфликтующие светлые.
+// трогаем — они общие с остальным светлым сайтом, CLAUDE.md §54). Через
+// className-проп компонентов (Select/Label/Button) tailwind-merge (cn()
+// внутри самого компонента) гарантирует победу над светлыми классами —
+// но buttonVariants() вызванный НАПРЯМУЮ (не через <Button>) такого
+// слияния не делает сам, поэтому здесь оборачиваем его в cn() явно (баг
+// был здесь же — карточки конкурсов на /admin/competitions оставались
+// белыми ровно по этой причине, найдено пользователем 07.09.2026).
 const DARK_SELECT = "border-night-border bg-night-card text-night-text hover:border-night-primary focus:border-night-primary focus:ring-night-primary/20";
 const DARK_LABEL = "text-night-muted";
 
@@ -73,10 +79,10 @@ export default async function SchoolsPage({
           </Button>
           <a
             href="/schools"
-            className={buttonVariants({
-              variant: "secondary",
-              className: "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2",
-            })}
+            className={cn(
+              buttonVariants({ variant: "secondary" }),
+              "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2"
+            )}
           >
             {t.event.filters.reset}
           </a>

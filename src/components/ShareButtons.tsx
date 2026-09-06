@@ -2,6 +2,7 @@
 
 import { t } from "@/lib/i18n/dictionary";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 
 // Заточено под то, как реально расшаривают контент в этой аудитории —
 // Telegram и Instagram, а не абстрактная кнопка Web Share API.
@@ -20,11 +21,10 @@ export function ShareButtons({ url, title }: { url: string; title: string }) {
   return (
     <div className="flex flex-wrap gap-2">
       <a
-        className={buttonVariants({
-          variant: "secondary",
-          size: "sm",
-          className: "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2",
-        })}
+        className={cn(
+          buttonVariants({ variant: "secondary", size: "sm" }),
+          "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2"
+        )}
         href={telegramHref}
         target="_blank"
         rel="noopener noreferrer"

@@ -7,6 +7,9 @@ import { isAdmin, getCurrentUser } from "@/lib/auth";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { COMPETITION_STATUS_LABELS as STATUS_LABELS } from "@/lib/competition-labels";
+import { cn } from "@/lib/cn";
+
+const DARK_OUTLINE_LINK = "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text";
 
 // Панель управления /admin — раньше в разделе не было общего "входа": сразу
 // список соревнований без сводки (найдено пользователем 07.09.2026). Та же
@@ -69,33 +72,15 @@ export default async function AdminDashboardPage() {
       <div>
         <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Разделы</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Link
-            href="/admin/competitions"
-            className={buttonVariants({
-              variant: "outline",
-              className: "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text",
-            })}
-          >
+          <Link href="/admin/competitions" className={cn(buttonVariants({ variant: "outline" }), DARK_OUTLINE_LINK)}>
             Соревнования →
           </Link>
           {isAdmin(user) && (
             <>
-              <Link
-                href="/admin/division-categories"
-                className={buttonVariants({
-                  variant: "outline",
-                  className: "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text",
-                })}
-              >
+              <Link href="/admin/division-categories" className={cn(buttonVariants({ variant: "outline" }), DARK_OUTLINE_LINK)}>
                 Категории →
               </Link>
-              <Link
-                href="/admin/round-stages"
-                className={buttonVariants({
-                  variant: "outline",
-                  className: "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text",
-                })}
-              >
+              <Link href="/admin/round-stages" className={cn(buttonVariants({ variant: "outline" }), DARK_OUTLINE_LINK)}>
                 Этапы отбора →
               </Link>
             </>

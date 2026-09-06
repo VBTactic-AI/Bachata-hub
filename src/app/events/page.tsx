@@ -6,6 +6,7 @@ import { EventCard } from "@/components/EventCard";
 import { pluralizeRu } from "@/lib/format";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FiltersForm, Input, Label, Select } from "@/components/ui/field";
+import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = {
   title: t.nav.calendar,
@@ -102,10 +103,10 @@ export default async function EventsPage({
           </Button>
           <a
             href="/events"
-            className={buttonVariants({
-              variant: "secondary",
-              className: "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2",
-            })}
+            className={cn(
+              buttonVariants({ variant: "secondary" }),
+              "border-night-border bg-transparent text-night-text no-underline hover:bg-night-card2"
+            )}
           >
             {t.event.filters.reset}
           </a>

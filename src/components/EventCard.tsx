@@ -6,6 +6,7 @@ import { CalendarIcon, PinIcon } from "./Icon";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
 import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 
 type EventWithRelations = Event & { city: City; school: School | null };
 
@@ -63,11 +64,10 @@ export function EventCard({ event }: { event: EventWithRelations }) {
 
         <Link
           href={`/events/${event.slug}`}
-          className={buttonVariants({
-            variant: "outline",
-            size: "sm",
-            className: "mt-auto self-start border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-primary",
-          })}
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "mt-auto self-start border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-primary"
+          )}
         >
           {t.common.details} »
         </Link>
