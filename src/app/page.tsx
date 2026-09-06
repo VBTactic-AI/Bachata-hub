@@ -7,7 +7,7 @@ import { formatEventTime, formatRelativeDayLabel } from "@/lib/format";
 import { CityPicker } from "@/components/CityPicker";
 import { prisma } from "@/lib/prisma";
 import { DarkTopNav } from "@/components/dark/DarkTopNav";
-import { BottomNav } from "@/components/compete/BottomNav";
+import { BottomNavGate } from "@/components/compete/BottomNavGate";
 import type { City, Event, School } from "@prisma/client";
 
 type EventWithRelations = Event & { city: City; school: School | null };
@@ -148,7 +148,7 @@ export default async function HomePage() {
       </div>
       <Suspense fallback={null}>
         <div className="sm:hidden">
-          <BottomNav />
+          <BottomNavGate />
         </div>
       </Suspense>
     </div>

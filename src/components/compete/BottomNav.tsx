@@ -54,7 +54,16 @@ function SchoolIcon() {
   );
 }
 
-const ITEMS: NavItem[] = [
+function AdminIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="15" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 3.5h6M9 9.5h6M9 13.5h6M9 17h3.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const BASE_ITEMS: NavItem[] = [
   { href: "/", label: "Главная", icon: <HomeIcon />, match: (p) => p === "/" },
   { href: "/compete", label: "Конкурсы", icon: <TrophyIcon />, match: (p, tab) => p.startsWith("/compete") && tab !== "mine" },
   { href: "/compete?tab=mine", label: "Мои", icon: <HeartIcon />, match: (p, tab) => p.startsWith("/compete") && tab === "mine" },
@@ -62,22 +71,31 @@ const ITEMS: NavItem[] = [
   { href: "/profile", label: "Профиль", icon: <UserIcon />, match: (p) => p.startsWith("/profile") },
 ];
 
+const ADMIN_ITEM: NavItem = { href: "/admin", label: "Управление", icon: <AdminIcon />, match: (p) => p.startsWith("/admin") };
+
 // Fixed нижняя навигация мобильного приложения-раздела /compete (по
 // референсу пользователя, 2026-09-04) — с учётом safe-area на iPhone.
 // Внутри тёмной секции работает независимо от общего светлого Header сайта
 // (не трогаем src/app/layout.tsx — root layout со старыми страницами не
 // меняем, CLAUDE.md §54: минимальный набор изменений).
-export function BottomNav() {
+//
+// "Управление" — единственный вход в /admin на мобильном: DarkTopNav (там
+// эта ссылка есть) скрыт на узких экранах, а BottomNav — это единственная
+// постоянная навигация. Без неё организатор не мог попасть в свою же
+// админку с телефона (найдено пользователем, 07.09.2026). Условие показа —
+// то же hasCompetitionAccess ("любой залогиненный"), что и в DarkTopNav.
+export function BottomNav({ hasCompetitionAccess = false }: { hasCompetitionAccess?: boolean }) {
   const pathname = usePathname();
   const tab = useSearchParams().get("tab");
+  const items = hasCompetitionAccess ? [...BASE_ITEMS, ADMIN_ITEM] : BASE_ITEMS;
 
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-20 border-t border-night-border bg-night-card/95 backdrop-blur-md [padding-bottom:env(safe-area-inset-bottom)]"
       aria-label="Основная навигация"
     >
-      <div className="mx-auto flex max-w-[520px] items-center justify-around px-2 py-1.5">
-        {ITEMS.map((item) => {
+      <div className="mx-auto flex max-w-[560px] items-center justify-around px-2 py-1.5">
+        {items.map((item) => {
           const active = item.match(pathname, tab);
           return (
             <Link

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { BottomNav } from "@/components/compete/BottomNav";
+import { BottomNavGate } from "@/components/compete/BottomNavGate";
 import { DarkTopNav } from "@/components/dark/DarkTopNav";
 
 // Тёмная тема для /events/** (Календарь) по макету JBJ Platform — тот же
@@ -11,7 +11,7 @@ export default function EventsLayout({ children }: { children: React.ReactNode }
       <div className="px-4 pb-24 pt-4 sm:mx-auto sm:max-w-[1240px] sm:px-8 sm:pb-12 sm:pt-8">{children}</div>
       <Suspense fallback={null}>
         <div className="sm:hidden">
-          <BottomNav />
+          <BottomNavGate />
         </div>
       </Suspense>
     </div>

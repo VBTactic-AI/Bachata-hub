@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
-import { BottomNav } from "@/components/compete/BottomNav";
+import { BottomNavGate } from "@/components/compete/BottomNavGate";
 import { DarkTopNav } from "@/components/dark/DarkTopNav";
 
 // Тёмная тема для /admin/** по макету JBJ Platform (найдено пользователем
@@ -23,7 +23,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </div>
       <Suspense fallback={null}>
         <div className="sm:hidden">
-          <BottomNav />
+          <BottomNavGate />
         </div>
       </Suspense>
     </div>
