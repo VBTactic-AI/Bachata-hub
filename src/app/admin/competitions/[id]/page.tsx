@@ -384,6 +384,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 {canAssignJudges && (
                   <DivisionJudgesPanel
                     divisionId={d.id}
+                    competitionId={competition.id}
                     pool={competitionJudgePool}
                     leaderJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ja.judgeUserId)}
                     followerJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ja.judgeUserId)}

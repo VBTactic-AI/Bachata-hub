@@ -13,7 +13,7 @@ export type DancerSearchResult = {
 // без "*" вообще -> просто подстрока где угодно в имени (самый терпимый
 // вариант по умолчанию — организатору на живом check-in обычно проще
 // продиктовать имя, чем объяснять синтаксис шаблонов).
-function buildNameFilter(query: string): Prisma.StringFilter {
+export function buildNameFilter(query: string): Prisma.StringFilter {
   const trimmed = query.trim();
   if (trimmed.startsWith("*") && trimmed.endsWith("*") && trimmed.length > 1) {
     return { contains: trimmed.slice(1, -1), mode: "insensitive" };

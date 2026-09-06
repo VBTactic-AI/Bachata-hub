@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
+import { JudgeSearchBox } from "@/components/admin/JudgeSearchBox";
 
 export type PoolJudge = { judgeUserId: string; judgeEmail: string };
 
@@ -43,11 +44,13 @@ function JudgeColumn({
 // заменяет прежний интерфейс добавления/удаления судей по одному).
 export function DivisionJudgesPanel({
   divisionId,
+  competitionId,
   pool,
   leaderJudgeUserIds,
   followerJudgeUserIds,
 }: {
   divisionId: string;
+  competitionId: string;
   pool: PoolJudge[];
   leaderJudgeUserIds: string[];
   followerJudgeUserIds: string[];
@@ -138,7 +141,10 @@ export function DivisionJudgesPanel({
         </Button>
         {error && <span className="error-text">{error}</span>}
       </div>
-      <form onSubmit={onAddNew} className="flex flex-wrap items-end gap-2 pt-1 border-t border-line mt-1">
+      <div className="pt-1 border-t border-line mt-1">
+        <JudgeSearchBox competitionId={competitionId} onSelect={(j) => setNewEmail(j.email)} />
+      </div>
+      <form onSubmit={onAddNew} className="flex flex-wrap items-end gap-2">
         <label className="stack gap-1">
           <span className="hint-text">Добавить нового судью (email)</span>
           <Input
