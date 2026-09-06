@@ -1,3 +1,4 @@
+import type { FinalFormat } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
@@ -47,6 +48,7 @@ export async function submitFinalJudgeScore(
   if (!round.finalSession) {
     throw new ValidationFailedError("У этого раунда ещё не начат финал — критериальное судейство недоступно.");
   }
+  const finalFormat = round.finalSession.format; // локальная копия — TS не сужает round.finalSession внутри замыкания $transaction ниже
   if (!participant.scored) {
     throw new ValidationFailedError("Этот участник — помощник, его оценивать не нужно.");
   }
@@ -90,6 +92,38 @@ export async function submitFinalJudgeScore(
     if (existing && existing.clientSubmissionId === clientSubmissionId) {
       return; // повтор той же офлайн-отправки — уже применена
     }
+
+    // RELATIVE_PLACEMENT (скейтинг-система) — судья ставит МЕСТО, а не
+    // баллы: два разных участника одной роли не могут получить от ОДНОГО
+    // судьи одно и то же место (final-ranking.ts, rankFinalParticipantsBySkatingSystem
+    // ожидает на входе честную расстановку 1..N без повторов). Обычные
+    // критериальные форматы такого ограничения не имеют — там равные баллы
+    // у разных участников — нормальная ситуация.
+    if (finalFormat === "RELATIVE_PLACEMENT") {
+      const heats = await tx.heat.findMany({
+        where: { roundId: round.id },
+        select: {
+          draws: {
+            orderBy: { version: "desc" },
+            take: 1,
+            select: { participants: { where: { scored: true, role: participant.role }, select: { id: true } } },
+          },
+        },
+      });
+      const sameRoleIds = heats
+        .flatMap((h) => h.draws[0]?.participants ?? [])
+        .map((p) => p.id)
+        .filter((id) => id !== drawParticipantId);
+      if (sameRoleIds.length > 0) {
+        const clash = await tx.finalJudgeScore.findFirst({
+          where: { judgeAssignmentId: assignment.id, criterionId, value, drawParticipantId: { in: sameRoleIds } },
+        });
+        if (clash) {
+          throw new ValidationFailedError(`Вы уже поставили место ${value} другому участнику — в относительных местах места не могут повторяться.`);
+        }
+      }
+    }
+
     await tx.finalJudgeScore.upsert({
       where: { drawParticipantId_judgeAssignmentId_criterionId: { drawParticipantId, judgeAssignmentId: assignment.id, criterionId } },
       create: { drawParticipantId, judgeAssignmentId: assignment.id, criterionId, value, clientSubmissionId },
@@ -123,6 +157,7 @@ export type FinalJudgeQueueItem = {
 export type FinalJudgeQueue = {
   roundId: string;
   divisionName: string;
+  format: FinalFormat;
   criteria: CriterionSnapshot[]; // отсортированы по priority
   items: FinalJudgeQueueItem[]; // только участники МОЕЙ роли
   scoredCount: number;
@@ -210,6 +245,7 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
   return {
     roundId,
     divisionName: round.division.category.name,
+    format: round.finalSession.format,
     criteria,
     items,
     scoredCount,

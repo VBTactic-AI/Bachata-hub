@@ -5,7 +5,15 @@ import { writeAudit } from "../audit/audit";
 import { ConcurrentModificationError, ValidationFailedError } from "../errors";
 import type { Actor } from "../rbac/actor";
 import { alreadyScoredElsewhereInRound, fillHelperShortage } from "../competition/draw-engine";
-import { rankFinalParticipants, resolveTieGroupPlaces, type FinalParticipantScores, type FinalCriterionPriority, type FinalTieGroup } from "./final-ranking";
+import {
+  rankFinalParticipants,
+  rankFinalParticipantsBySkatingSystem,
+  resolveTieGroupPlaces,
+  type FinalParticipantScores,
+  type FinalParticipantPlacements,
+  type FinalCriterionPriority,
+  type FinalTieGroup,
+} from "./final-ranking";
 import { allowedJudgeRole } from "./final-scoring-matrix";
 
 type PrismaTx = Prisma.TransactionClient;
@@ -130,20 +138,17 @@ export async function calculateFinalResultsInTx(tx: PrismaTx, roundId: string, a
         select: {
           participants: {
             where: { scored: true },
-            select: { registrationId: true, role: true, finalJudgeScores: { select: { criterionId: true, value: true } } },
+            select: {
+              registrationId: true,
+              role: true,
+              finalJudgeScores: { select: { criterionId: true, value: true, judgeAssignmentId: true } },
+            },
           },
         },
       },
     },
   });
   const rows = heats.flatMap((h) => h.draws[0]?.participants ?? []);
-
-  const scoresByParticipant: FinalParticipantScores[] = rows.map((p) => {
-    const criteriaTotals: Record<string, number> = {};
-    for (const c of criteria) criteriaTotals[c.id] = 0;
-    for (const s of p.finalJudgeScores) criteriaTotals[s.criterionId] = (criteriaTotals[s.criterionId] ?? 0) + s.value;
-    return { registrationId: p.registrationId, role: p.role, criteriaTotals };
-  });
 
   const resultRows: {
     registrationId: string;
@@ -155,14 +160,51 @@ export async function calculateFinalResultsInTx(tx: PrismaTx, roundId: string, a
   }[] = [];
   const pendingTieGroups: { role: RegistrationRole; group: FinalTieGroup }[] = [];
 
-  for (const role of ["LEADER", "FOLLOWER"] as const) {
-    const roleParticipants = scoresByParticipant.filter((p) => p.role === role);
-    if (roleParticipants.length === 0) continue;
-    const { ranked, tieGroups } = rankFinalParticipants(roleParticipants, priorities);
-    for (const r of ranked) {
-      resultRows.push({ registrationId: r.registrationId, role, totalScore: r.totalScore, criteriaTotals: r.criteriaTotals, place: r.place, tieGroupKey: r.tieGroupKey });
+  if (round.finalSession.format === "RELATIVE_PLACEMENT") {
+    // Скейтинг-система (final-ranking.ts) — каждый судья ставит МЕСТО
+    // напрямую (единственный синтетический критерий "Место"), не сумму
+    // баллов. criteriaTotals здесь хранит НЕ суммы, а места, выставленные
+    // каждым судьёй (judgeAssignmentId -> место) — для прозрачности/аудита
+    // (CLAUDE.md §63), totalScore — уровень разрешения (majorityPlace),
+    // не итоговый счёт.
+    const placementsByParticipant: FinalParticipantPlacements[] = rows.map((p) => {
+      const judgePlacements: Record<string, number> = {};
+      for (const s of p.finalJudgeScores) judgePlacements[s.judgeAssignmentId] = s.value;
+      return { registrationId: p.registrationId, role: p.role, judgePlacements };
+    });
+    for (const role of ["LEADER", "FOLLOWER"] as const) {
+      const roleParticipants = placementsByParticipant.filter((p) => p.role === role);
+      if (roleParticipants.length === 0) continue;
+      const { ranked, tieGroups } = rankFinalParticipantsBySkatingSystem(roleParticipants);
+      for (const r of ranked) {
+        resultRows.push({
+          registrationId: r.registrationId,
+          role,
+          totalScore: r.majorityPlace,
+          criteriaTotals: r.judgePlacements,
+          place: r.place,
+          tieGroupKey: r.tieGroupKey,
+        });
+      }
+      for (const g of tieGroups) pendingTieGroups.push({ role, group: g });
     }
-    for (const g of tieGroups) pendingTieGroups.push({ role, group: g });
+  } else {
+    const scoresByParticipant: FinalParticipantScores[] = rows.map((p) => {
+      const criteriaTotals: Record<string, number> = {};
+      for (const c of criteria) criteriaTotals[c.id] = 0;
+      for (const s of p.finalJudgeScores) criteriaTotals[s.criterionId] = (criteriaTotals[s.criterionId] ?? 0) + s.value;
+      return { registrationId: p.registrationId, role: p.role, criteriaTotals };
+    });
+
+    for (const role of ["LEADER", "FOLLOWER"] as const) {
+      const roleParticipants = scoresByParticipant.filter((p) => p.role === role);
+      if (roleParticipants.length === 0) continue;
+      const { ranked, tieGroups } = rankFinalParticipants(roleParticipants, priorities);
+      for (const r of ranked) {
+        resultRows.push({ registrationId: r.registrationId, role, totalScore: r.totalScore, criteriaTotals: r.criteriaTotals, place: r.place, tieGroupKey: r.tieGroupKey });
+      }
+      for (const g of tieGroups) pendingTieGroups.push({ role, group: g });
+    }
   }
 
   if (resultRows.length > 0) {

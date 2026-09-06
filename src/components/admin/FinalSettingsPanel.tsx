@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 
-export type FinalFormatValue = "NORMAL" | "JUDGES_DANCE" | "RANDOM_COUPLES";
+export type FinalFormatValue = "NORMAL" | "JUDGES_DANCE" | "RANDOM_COUPLES" | "RELATIVE_PLACEMENT";
 export type FinalCriterionRow = { id?: string; name: string; minScore: number; maxScore: number; step: number };
 
 const FORMAT_LABELS: Record<FinalFormatValue, string> = {
   NORMAL: "Обычный J&J",
   JUDGES_DANCE: "Танец с судьями",
   RANDOM_COUPLES: "Случайные пары",
+  RELATIVE_PLACEMENT: "Относительные места (скейтинг)",
 };
 
 // Настройки финала дивизиона (Этап 9) — формат/критерии до старта финала
@@ -162,6 +163,12 @@ export function FinalSettingsPanel({
           судьи-Ведущие смотрят со стороны и оценивают остальные. Стадия 2 — наоборот.
         </p>
       )}
+      {format === "RELATIVE_PLACEMENT" && (
+        <p className="hint-text m-0">
+          Судьи ставят место напрямую (1..N, без повторов), итог считается системой «скейтинг» — не суммой баллов. Нужен
+          ровно один критерий ниже, например «Место», диапазон от 1 до числа финалистов, шаг 1.
+        </p>
+      )}
 
       <div>
         <p className="hint-text m-0">
@@ -208,7 +215,13 @@ export function FinalSettingsPanel({
           ))}
         </div>
         <div className="flex items-center gap-2 mt-1">
-          <Button type="button" size="sm" variant="outline" onClick={addCriterion}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={format === "RELATIVE_PLACEMENT" && criteria.length >= 1}
+            onClick={addCriterion}
+          >
             + Критерий
           </Button>
           <Button type="button" size="sm" disabled={loading || criteria.length === 0 || criteria.some((c) => !c.name.trim())} onClick={onSaveCriteria}>

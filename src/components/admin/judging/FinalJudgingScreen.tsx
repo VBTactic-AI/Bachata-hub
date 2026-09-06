@@ -29,12 +29,21 @@ export type FinalQueueItem = {
 // обычных раундах, CLAUDE.md §17): клик сохраняет локально и пытается
 // отправить сразу, без связи — досылается сама.
 export function FinalJudgingScreen({
+  format,
   criteria,
   items,
 }: {
+  format: "NORMAL" | "JUDGES_DANCE" | "RANDOM_COUPLES" | "RELATIVE_PLACEMENT";
   criteria: FinalCriterionInfo[];
   items: FinalQueueItem[];
 }) {
+  // RELATIVE_PLACEMENT (скейтинг-система) — судья вводит МЕСТО (меньше
+  // лучше), а не баллы (больше лучше) — единственный критерий формата.
+  // "Мой рейтинг"/"моя сумма" ниже — чисто клиентская подсказка судье (как и
+  // для остальных форматов, промт пользователя п.5), но направление
+  // сравнения должно быть развёрнуто, иначе подсказка была бы буквально
+  // задом наперёд (участник с местом "6" показывался бы как лучший).
+  const lowerIsBetter = format === "RELATIVE_PLACEMENT";
   const router = useRouter();
   const [tab, setTab] = useState<"score" | "rating">("score");
   const [index, setIndex] = useState(0);
@@ -100,20 +109,21 @@ export function FinalJudgingScreen({
   // и в official ranking engine, только чисто на клиенте для подсказки судье
   // — промт пользователя, п.5: "не является официальным рейтингом").
   const ranked = useMemo(() => {
+    const sign = lowerIsBetter ? -1 : 1;
     return [...items].sort((a, b) => {
       const sa = effectiveSum(a);
       const sb = effectiveSum(b);
-      if (sa !== sb) return sb - sa;
+      if (sa !== sb) return (sb - sa) * sign;
       for (const c of sortedCriteria) {
         const av = effectiveValue(a, c.id) ?? 0;
         const bv = effectiveValue(b, c.id) ?? 0;
-        if (av !== bv) return bv - av;
+        if (av !== bv) return (bv - av) * sign;
       }
       return 0;
       // eslint-disable-next-line react-hooks/exhaustive-deps
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, sortedCriteria]);
+  }, [items, sortedCriteria, lowerIsBetter]);
 
   if (items.length === 0) {
     return <p className="text-sm text-night-muted">Пока нет вызванных участников вашей роли для оценки.</p>;
@@ -190,13 +200,15 @@ export function FinalJudgingScreen({
 
           <div className="flex items-center justify-between px-1">
             <div>
-              <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моя сумма</p>
+              <p className="m-0 text-xs uppercase tracking-wide text-night-muted">{lowerIsBetter ? "Место" : "Моя сумма"}</p>
               <p className="m-0 text-2xl font-bold text-night-text">{currentSum}</p>
             </div>
-            <div className="text-right">
-              <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моё место</p>
-              <p className="m-0 text-2xl font-bold text-night-primary">#{currentRank}</p>
-            </div>
+            {!lowerIsBetter && (
+              <div className="text-right">
+                <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моё место</p>
+                <p className="m-0 text-2xl font-bold text-night-primary">#{currentRank}</p>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-2">

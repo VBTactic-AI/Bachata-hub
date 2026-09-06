@@ -104,6 +104,105 @@ export function rankFinalParticipants(
   return { ranked, tieGroups };
 }
 
+// Relative Placement / "скейтинг-система" (CLAUDE.md §18) — второй, отдельный
+// ranking engine финала: судьи ставят место НАПРЯМУЮ (1..N, без повторов у
+// одного судьи в рамках роли — проверяется при отправке оценки,
+// final-scoring.ts), а не сумму баллов по критериям. НЕЛЬЗЯ подменять
+// average(мест) — CLAUDE.md §18/§60 прямо запрещает. Алгоритм классический
+// (используется в бальных танцах/фигурном катании):
+//
+// 1. Для каждого участника ищем наименьшее место P (от 1 до N), на котором
+//    у него набралось БОЛЬШИНСТВО судейских голосов (голос засчитан, если
+//    судья поставил участнику место <= P). Это его "уровень разрешения".
+// 2. Меньший уровень разрешения — выше итоговое место.
+// 3. При равном уровне — сравниваем СУММУ мест (только тех судейских
+//    оценок, что <= уровня разрешения) — меньше сумма, выше место
+//    ("corrected sum", стандартный tie-break скейтинг-системы).
+// 3. Полное совпадение уровня И суммы — настоящая ничья: место не
+//    присваивается (tieGroupKey), как и в rankFinalParticipants выше —
+//    решается через resolveTieGroupPlaces, не автоматически (CLAUDE.md §19-20).
+
+export type FinalParticipantPlacements = {
+  registrationId: string;
+  role: RegistrationRole;
+  judgePlacements: Record<string, number>; // judgeAssignmentId -> место (1..N), поставленное этим судьёй
+};
+
+export type RankedFinalParticipantByPlacement = FinalParticipantPlacements & {
+  majorityPlace: number; // уровень разрешения — не итоговое место, а диагностическая величина (CLAUDE.md §63 — организатор должен понимать, почему система приняла решение)
+  place: number | null;
+  tieGroupKey: string | null;
+};
+
+export type FinalRankingResultByPlacement = {
+  ranked: RankedFinalParticipantByPlacement[];
+  tieGroups: FinalTieGroup[];
+};
+
+function placementsAtOrBetter(placements: Record<string, number>, p: number): number[] {
+  return Object.values(placements).filter((v) => v <= p);
+}
+
+function resolutionLevel(placements: Record<string, number>, judgeCount: number, n: number): number {
+  const majority = Math.floor(judgeCount / 2) + 1;
+  for (let p = 1; p <= n; p++) {
+    if (placementsAtOrBetter(placements, p).length >= majority) return p;
+  }
+  return n; // при полном наборе оценок (каждый судья расставил всех 1..N) большинство гарантированно набирается не позже N
+}
+
+function comparePlacementParticipants(
+  a: FinalParticipantPlacements,
+  b: FinalParticipantPlacements,
+  judgeCount: number,
+  n: number
+): number {
+  const levelA = resolutionLevel(a.judgePlacements, judgeCount, n);
+  const levelB = resolutionLevel(b.judgePlacements, judgeCount, n);
+  if (levelA !== levelB) return levelA - levelB; // меньший уровень разрешения — выше место
+  const sumA = placementsAtOrBetter(a.judgePlacements, levelA).reduce((s, v) => s + v, 0);
+  const sumB = placementsAtOrBetter(b.judgePlacements, levelB).reduce((s, v) => s + v, 0);
+  return sumA - sumB; // меньшая сумма — выше место
+}
+
+// Роли считаются ОТДЕЛЬНО, как и rankFinalParticipants — вызывающий код
+// передаёт участников одной роли за раз.
+export function rankFinalParticipantsBySkatingSystem(participants: FinalParticipantPlacements[]): FinalRankingResultByPlacement {
+  const n = participants.length;
+  const judgeIds = new Set<string>();
+  for (const p of participants) for (const judgeId of Object.keys(p.judgePlacements)) judgeIds.add(judgeId);
+  const judgeCount = judgeIds.size;
+
+  const withLevel = participants
+    .map((p) => ({ participant: p, level: resolutionLevel(p.judgePlacements, judgeCount, n) }))
+    .sort((x, y) => comparePlacementParticipants(x.participant, y.participant, judgeCount, n));
+
+  const ranked: RankedFinalParticipantByPlacement[] = [];
+  const tieGroups: FinalTieGroup[] = [];
+
+  let i = 0;
+  while (i < withLevel.length) {
+    let j = i + 1;
+    while (j < withLevel.length && comparePlacementParticipants(withLevel[i].participant, withLevel[j].participant, judgeCount, n) === 0) {
+      j++;
+    }
+    const group = withLevel.slice(i, j);
+    if (group.length === 1) {
+      const { participant, level } = group[0];
+      ranked.push({ ...participant, majorityPlace: level, place: i + 1, tieGroupKey: null });
+    } else {
+      const key = `tie-skate-${i + 1}-${j}`;
+      tieGroups.push({ key, startPlace: i + 1, registrationIds: group.map((w) => w.participant.registrationId) });
+      for (const w of group) {
+        ranked.push({ ...w.participant, majorityPlace: w.level, place: null, tieGroupKey: key });
+      }
+    }
+    i = j;
+  }
+
+  return { ranked, tieGroups };
+}
+
 // Вносит коллегиальное решение перетанцовки (RANK_ALL, CLAUDE.md §22) —
 // судьи вслух обсудили и целиком расставили tie-группу по местам,
 // orderedRegistrationIds — от лучшего к худшему. НЕ выбор N прошедших

@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { rankFinalParticipants, resolveTieGroupPlaces, type FinalParticipantScores } from "@/server/judging/final-ranking";
+import {
+  rankFinalParticipants,
+  rankFinalParticipantsBySkatingSystem,
+  resolveTieGroupPlaces,
+  type FinalParticipantScores,
+  type FinalParticipantPlacements,
+} from "@/server/judging/final-ranking";
 
 // Критерии по примеру пользователя (2026-09-04): приоритет — порядок
 // разрешения ничьей, НЕ коэффициент. tech=1, musicality=2, interaction=3,
@@ -113,5 +119,70 @@ describe("resolveTieGroupPlaces", () => {
     expect(() => resolveTieGroupPlaces(group, ["A", "C"])).toThrow();
     expect(() => resolveTieGroupPlaces(group, ["A"])).toThrow();
     expect(() => resolveTieGroupPlaces(group, ["A", "A"])).toThrow();
+  });
+});
+
+// Relative Placement / скейтинг-система — второй ranking engine (CLAUDE.md
+// §18): судьи ставят место напрямую, результат считается majority-алгоритмом,
+// НЕ средним и не суммой мест (CLAUDE.md §60 явно запрещает average(мест)).
+function placements(registrationId: string, judgePlacements: Record<string, number>): FinalParticipantPlacements {
+  return { registrationId, role: "LEADER", judgePlacements };
+}
+
+describe("rankFinalParticipantsBySkatingSystem", () => {
+  // TEST — учебный пример скейтинг-системы: 3 судьи, 3 участника, у A два
+  // первых места (большинство при p=1), поэтому A побеждает, хотя формально
+  // не все судьи поставили его первым.
+  it("определяет победителя по большинству голосов на минимальном месте", () => {
+    const a = placements("A", { j1: 1, j2: 2, j3: 1 });
+    const b = placements("B", { j1: 2, j2: 1, j3: 3 });
+    const c = placements("C", { j1: 3, j2: 3, j3: 2 });
+    const { ranked } = rankFinalParticipantsBySkatingSystem([a, b, c]);
+    expect(ranked.find((r) => r.registrationId === "A")?.place).toBe(1);
+    expect(ranked.find((r) => r.registrationId === "B")?.place).toBe(2);
+    expect(ranked.find((r) => r.registrationId === "C")?.place).toBe(3);
+  });
+
+  // TEST — КРИТИЧЕСКИЙ сценарий (CLAUDE.md §60 "не использовать average
+  // вместо Relative Placement без разрешения"): классический учебный пример,
+  // где простое среднее место дало бы ДРУГОЙ результат, чем настоящий
+  // скейтинг. У A три судьи из пяти поставили 1 место (большинство уже на
+  // p=1), у B все пять судей стабильно поставили 2 место (большинство только
+  // на p=2) — скейтинг отдаёт победу A, хотя средний балл A (2.6) хуже
+  // среднего балла B (2.0).
+  it("НЕ сводится к простому среднему места — большинство на меньшем уровне выигрывает даже при худшем среднем", () => {
+    const a = placements("A", { j1: 1, j2: 1, j3: 1, j4: 5, j5: 5 }); // среднее 2.6
+    const b = placements("B", { j1: 2, j2: 2, j3: 2, j4: 2, j5: 2 }); // среднее 2.0
+    const naiveAverageA = (1 + 1 + 1 + 5 + 5) / 5;
+    const naiveAverageB = (2 + 2 + 2 + 2 + 2) / 5;
+    expect(naiveAverageA).toBeGreaterThan(naiveAverageB); // по среднему B был бы "лучше"
+
+    const { ranked } = rankFinalParticipantsBySkatingSystem([a, b]);
+    expect(ranked.find((r) => r.registrationId === "A")?.place).toBe(1); // но по скейтингу побеждает A
+    expect(ranked.find((r) => r.registrationId === "B")?.place).toBe(2);
+  });
+
+  // TEST — полное совпадение расстановок судей (одинаковый уровень
+  // разрешения И одинаковая сумма) — настоящая ничья, место не
+  // присваивается автоматически (CLAUDE.md §19-20), как и в rankFinalParticipants.
+  it("при полном совпадении уровня и суммы создаёт tie-группу без автоматического места", () => {
+    const a = placements("A", { j1: 1, j2: 1, j3: 2, j4: 2 });
+    const b = placements("B", { j1: 1, j2: 1, j3: 2, j4: 2 });
+    const { ranked, tieGroups } = rankFinalParticipantsBySkatingSystem([a, b]);
+    expect(ranked.every((r) => r.place === null)).toBe(true);
+    expect(tieGroups).toHaveLength(1);
+    expect(new Set(tieGroups[0].registrationIds)).toEqual(new Set(["A", "B"]));
+  });
+
+  // TEST — при равном уровне разрешения решает "corrected sum" (сумма
+  // мест, попавших в порог большинства) — тот же принцип tie-break, что и в
+  // критериальном engine, но по сумме МЕСТ, а не баллов.
+  it("при равном уровне разрешения меньшая сумма мест выигрывает", () => {
+    // majority = 2 (2 судьи). Оба достигают большинства на p=2.
+    const a = placements("A", { j1: 1, j2: 2 }); // сумма при p=2: 1+2=3
+    const b = placements("B", { j1: 2, j2: 2 }); // сумма при p=2: 2+2=4
+    const { ranked } = rankFinalParticipantsBySkatingSystem([a, b]);
+    expect(ranked.find((r) => r.registrationId === "A")?.place).toBe(1);
+    expect(ranked.find((r) => r.registrationId === "B")?.place).toBe(2);
   });
 });

@@ -44,6 +44,14 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
       if (c.maxScore <= c.minScore) issues.push(`Критерий «${c.name}»: некорректный диапазон оценок`);
     }
 
+    // RELATIVE_PLACEMENT (скейтинг-система) — судья ставит ОДНО место
+    // (1..N) участнику, а не баллы по нескольким критериям одновременно.
+    // Больше одного активного критерия сделал бы неоднозначным, какое из
+    // "мест" судья вообще проставляет — требуем ровно один.
+    if (format === "RELATIVE_PLACEMENT" && criteria.length !== 1) {
+      issues.push('Формат "Относительные места" требует ровно один критерий — например, «Место» с диапазоном 1..N по числу финалистов.');
+    }
+
     // JUDGES_DANCE — какие критерии оценивает танцующий (партнёрящий)
     // судья, а не сторонний (промт пользователя, п.22-23: "scoring matrix").
     // Настраивается в FinalSettings.config.dancingJudgeCriteriaIds.
