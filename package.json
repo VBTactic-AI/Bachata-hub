@@ -16,6 +16,7 @@
     "seed:layer3": "tsx prisma/seed-layer3.ts",
     "seed:judges": "tsx prisma/seed-judges.ts",
     "seed:j260801-reference": "tsx prisma/seed-j260801-reference.ts",
+    "register:j260801-reference": "tsx prisma/register-j260801-reference.ts",
     "reset:competition-history": "tsx prisma/reset-competition-history.ts",
     "test": "vitest run"
   },
