@@ -7,12 +7,19 @@ import { getOrCreateLatestRulesVersion } from "./rules-version";
 // Авто-раскладка сетки раундов+заездов дивизиона по ПЛАНУ этого дивизиона
 // (docs/00_DECISIONS.md, A14) — план "сколько пар участвует в каждом этапе"
 // задаётся один раз при создании дивизиона (DivisionStagePlan) и дальше не
-// меняется; раньше (A7) раунды раскладывались сравнением живых чисел
-// регистраций с общим RoundStageCatalog.defaultAdvanceCount — теперь
-// используется явный план организатора, живые числа не участвуют в расчёте
-// (только показываются рядом для сверки, до генерации). Явное действие
-// организатора (кнопка "Перегенерировать раунды"), не происходит само по
-// себе.
+// меняется. Явное действие организатора (кнопка "Перегенерировать раунды"),
+// не происходит само по себе.
+//
+// Автопропуск этапов, которые никого не отсеивают (2026-09-06, по прямому
+// запросу пользователя — разворот части A14, см. docs/00_DECISIONS.md,
+// дополнение "A29"): план — это по-прежнему ЕДИНСТВЕННЫЙ источник чисел
+// (никаких магических порогов из каталога), но перед генерацией сравнивается
+// с реальным числом зарегистрированных+зачекиненных (по ролям отдельно —
+// см. selectStepsToGenerate). Для первого этапа сравнение идёт с реальными
+// живыми числами; для последующих — с числами ИЗ ПЛАНА (реальный результат
+// судейства следующих этапов на момент генерации ещё не известен). Последний
+// этап плана (обычно "Финал") не пропускается никогда — там определяются
+// места, а не отсев.
 //
 // Пересборка (2026-09-04, по запросу пользователя): если у дивизиона уже
 // есть раунды, они не ДОБАВЛЯЮТСЯ к существующим, а заменяют их — старые
@@ -21,6 +28,36 @@ import { getOrCreateLatestRulesVersion } from "./rules-version";
 // один раунд ещё не сдвинулся дальше READY (жеребьёвка/заезды/оценки не
 // начинались) — иначе это будет не пересборка черновика, а тихое удаление
 // реальных результатов соревнования (CLAUDE.md §18/§39).
+
+export type PlanStep = { stageId: string; stageName: string; participantCount: number; finalistsCount: number };
+
+// Чистая функция (тестируется отдельно, без БД) — решает, какие этапы плана
+// реально нужны. Этап пропускается, если он НИКОГО не отсеивает: и текущее
+// число ведущих, и текущее число ведомых уже <= порога этого этапа
+// (finalistsCount). Последний этап плана исключением быть не может — он
+// всегда возвращается.
+export function selectStepsToGenerate(steps: PlanStep[], liveCounts: { leaders: number; followers: number }): PlanStep[] {
+  const included: PlanStep[] = [];
+  let leaders = liveCounts.leaders;
+  let followers = liveCounts.followers;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const isLast = i === steps.length - 1;
+    if (!isLast && leaders <= step.finalistsCount && followers <= step.finalistsCount) {
+      continue; // этап никого не отсеивает — пропускаем, пул переходит дальше без изменений
+    }
+    included.push(step);
+    if (!isLast) {
+      // Дальше считаем не по факту (реальные результаты судейства этого
+      // этапа ещё не известны на момент генерации), а по плану — организатор
+      // сам решил, сколько реально дойдёт до следующего этапа.
+      leaders = Math.min(leaders, step.finalistsCount);
+      followers = Math.min(followers, step.finalistsCount);
+    }
+  }
+  return included;
+}
+
 export async function generateRounds(divisionId: string): Promise<{ createdRoundIds: string[] }> {
   // Division + план дивизиона + существующие раунды — одним запросом
   // (relationLoadStrategy: "join") вместо трёх отдельных round-trip'ов к
@@ -60,13 +97,27 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
   // finalistsCount раунда этапа X = participantCount СЛЕДУЮЩЕГО по порядку
   // этапа плана (сколько проходит из X в X+1); у последнего этапа плана
   // следующего нет — число идёт как есть (сколько мест/победителей).
-  type Step = { stageId: string; stageName: string; participantCount: number; finalistsCount: number };
-  const steps: Step[] = plan.map((p, i) => ({
+  const allSteps: PlanStep[] = plan.map((p, i) => ({
     stageId: p.stageId,
     stageName: p.stage.name,
     participantCount: p.participantCount,
     finalistsCount: i < plan.length - 1 ? plan[i + 1].participantCount : p.participantCount,
   }));
+
+  // Реальные зарегистрированные+зачекиненные по ролям (тот же фильтр, что и
+  // getRoundEligiblePool, draw-engine.ts) — используются только для решения
+  // "нужен ли первый этап по факту", дальше selectStepsToGenerate считает по
+  // плану (см. комментарий выше).
+  const [liveLeaders, liveFollowers] = await Promise.all([
+    prisma.registration.count({
+      where: { divisionId, role: "LEADER", status: "REGISTERED", checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } } },
+    }),
+    prisma.registration.count({
+      where: { divisionId, role: "FOLLOWER", status: "REGISTERED", checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } } },
+    }),
+  ]);
+  const steps = selectStepsToGenerate(allSteps, { leaders: liveLeaders, followers: liveFollowers });
+  const skippedStageNames = allSteps.filter((s) => !steps.includes(s)).map((s) => s.stageName);
 
   const createdRoundIds = await prisma.$transaction(async (tx) => {
     if (existingRounds.length > 0) {
@@ -144,7 +195,7 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
       action: "division.generate_rounds",
       entityType: "Division",
       entityId: divisionId,
-      after: { createdRoundIds: ids, stagesUsed: steps.map((s) => s.stageName) },
+      after: { createdRoundIds: ids, stagesUsed: steps.map((s) => s.stageName), skippedStages: skippedStageNames },
     });
 
     return ids;

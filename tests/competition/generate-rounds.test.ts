@@ -5,6 +5,7 @@ const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
 const divisionFindUniqueOrThrow = vi.fn();
+const registrationCount = vi.fn();
 const rulesFindFirst = vi.fn();
 const rulesCreate = vi.fn();
 const roundCreate = vi.fn();
@@ -30,11 +31,12 @@ const fakeTx = {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
+    registration: { count: (...a: unknown[]) => registrationCount(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { generateRounds } = await import("@/server/competition/generate-rounds");
+const { generateRounds, selectStepsToGenerate } = await import("@/server/competition/generate-rounds");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -61,6 +63,10 @@ beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
   divisionFindUniqueOrThrow.mockReset();
   mockDivision();
+  // По умолчанию — как будто реально зарегистрировано столько же, сколько
+  // участвует в первом этапе плана (8/8) — ни один этап не пропускается,
+  // существующие тесты этого файла продолжают проверять "план без пропусков".
+  registrationCount.mockReset().mockResolvedValue(8);
   rulesFindFirst.mockReset().mockResolvedValue({ id: "rules-existing", version: 1 });
   rulesCreate.mockReset();
   roundCreateSeq = 0;
@@ -171,5 +177,124 @@ describe("generateRounds() — пересборка существующих р�
     await expect(generateRounds("div1")).rejects.toBeInstanceOf(ValidationFailedError);
     expect(roundDeleteMany).not.toHaveBeenCalled();
     expect(roundCreate).not.toHaveBeenCalled();
+  });
+});
+
+// Автопропуск этапов, которые никого не отсеивают (2026-09-06, разворот
+// части A14 по прямому запросу пользователя — план по-прежнему единственный
+// источник чисел, но сравнивается с реальными зарегистрированными перед
+// генерацией). Сценарий — реальный кейс, найденный пользователем: категория
+// "Дебютанты" (7 ведущих / 13 ведомых) с планом
+// Отборочный(25)->Четвертьфинал(20)->Полуфинал(10)->Финал(6).
+describe("generateRounds() — автопропуск этапов без отсева", () => {
+  const PLAN_WITH_QUALIFYING = [
+    { stageId: "st-qual", participantCount: 25, stage: { name: "Отборочный", order: 1 } },
+    { stageId: "st-qf", participantCount: 20, stage: { name: "Четвертьфинал", order: 2 } },
+    { stageId: "st-sf", participantCount: 10, stage: { name: "Полуфинал", order: 3 } },
+    { stageId: "st-final", participantCount: 6, stage: { name: "Финал", order: 4 } },
+  ];
+
+  function mockLiveCounts(leaders: number, followers: number) {
+    registrationCount.mockImplementation((args: { where: { role: "LEADER" | "FOLLOWER" } }) =>
+      Promise.resolve(args.where.role === "LEADER" ? leaders : followers)
+    );
+  }
+
+  it("7 ведущих / 13 ведомых — «Отборочный» пропущен (никого не отсеивает), первым идёт «Четвертьфинал»", async () => {
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING });
+    mockLiveCounts(7, 13);
+
+    const result = await generateRounds("div1");
+
+    expect(result.createdRoundIds).toHaveLength(3);
+    const stageIds = roundCreate.mock.calls.map((c) => c[0].data.stageId);
+    expect(stageIds).toEqual(["st-qf", "st-sf", "st-final"]);
+    // Четвертьфинал становится первым — order=1, а не 2.
+    expect(roundCreate.mock.calls[0][0].data.order).toBe(1);
+  });
+
+  it("реально большое поле (30/30) — «Отборочный» реально отсеивает, создаётся", async () => {
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING });
+    mockLiveCounts(30, 30);
+
+    const result = await generateRounds("div1");
+
+    expect(result.createdRoundIds).toHaveLength(4);
+    const stageIds = roundCreate.mock.calls.map((c) => c[0].data.stageId);
+    expect(stageIds).toEqual(["st-qual", "st-qf", "st-sf", "st-final"]);
+  });
+
+  it("отсев нужен только по одной роли (7М/13Ж — Ж больше порога) — этап не пропускается", async () => {
+    // Порог Четвертьфинала = 10 (из Полуфинала). У Ж 13 > 10 — этап нужен,
+    // даже если у М (7) уже давно всё "автоматом" (это дальше решает
+    // rolesNotNeedingJudging в advancement.ts, не генерация раундов).
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING });
+    mockLiveCounts(7, 13);
+
+    await generateRounds("div1");
+
+    const stageIds = roundCreate.mock.calls.map((c) => c[0].data.stageId);
+    expect(stageIds).toContain("st-qf");
+  });
+
+  it("финал не пропускается никогда, даже если по плану он тоже 'без отсева'", async () => {
+    // Уже 6/6 в реальности к первому этапу (гипотетический маленький
+    // дивизион) — все промежуточные этапы пропущены, но Финал создаётся всё
+    // равно, т.к. в нём определяются места, а не отсев.
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING });
+    mockLiveCounts(6, 6);
+
+    const result = await generateRounds("div1");
+
+    expect(result.createdRoundIds).toHaveLength(1);
+    expect(roundCreate.mock.calls[0][0].data.stageId).toBe("st-final");
+  });
+
+  it("записывает пропущенные этапы в audit division.generate_rounds", async () => {
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING });
+    mockLiveCounts(7, 13);
+
+    await generateRounds("div1");
+
+    const divisionAudit = auditCreate.mock.calls.find((c) => c[0].data.action === "division.generate_rounds");
+    expect(divisionAudit?.[0].data.after.skippedStages).toEqual(["Отборочный"]);
+  });
+});
+
+describe("selectStepsToGenerate() — чистая функция", () => {
+  const steps = [
+    { stageId: "qual", stageName: "Отборочный", participantCount: 25, finalistsCount: 20 },
+    { stageId: "qf", stageName: "Четвертьфинал", participantCount: 20, finalistsCount: 10 },
+    { stageId: "sf", stageName: "Полуфинал", participantCount: 10, finalistsCount: 6 },
+    { stageId: "final", stageName: "Финал", participantCount: 6, finalistsCount: 6 },
+  ];
+
+  it("пропускает этапы, у которых обе роли уже <= порога", () => {
+    const result = selectStepsToGenerate(steps, { leaders: 7, followers: 13 });
+    expect(result.map((s) => s.stageId)).toEqual(["qf", "sf", "final"]);
+  });
+
+  it("не пропускает ничего, если реальные числа больше первого порога", () => {
+    const result = selectStepsToGenerate(steps, { leaders: 30, followers: 30 });
+    expect(result.map((s) => s.stageId)).toEqual(["qual", "qf", "sf", "final"]);
+  });
+
+  it("никогда не пропускает последний этап плана", () => {
+    const result = selectStepsToGenerate(steps, { leaders: 6, followers: 6 });
+    expect(result.map((s) => s.stageId)).toEqual(["final"]);
+  });
+
+  it("после пропуска этапа пул для следующего решения не меняется (реальные числа несут дальше)", () => {
+    // 9 ведущих: <=20 (Четвертьфинал порог с учётом Отборочного пропуска),
+    // но >6 (Полуфинал порог) — Отборочный и Четвертьфинал пропущены (оба
+    // порога >= 9), Полуфинал остаётся, т.к. 9 > 6.
+    const result = selectStepsToGenerate(steps, { leaders: 9, followers: 9 });
+    expect(result.map((s) => s.stageId)).toEqual(["sf", "final"]);
+  });
+
+  it("план из одного этапа — этот этап всегда создаётся (он же последний)", () => {
+    const oneStep = [{ stageId: "final", stageName: "Финал", participantCount: 6, finalistsCount: 6 }];
+    const result = selectStepsToGenerate(oneStep, { leaders: 3, followers: 3 });
+    expect(result.map((s) => s.stageId)).toEqual(["final"]);
   });
 });
