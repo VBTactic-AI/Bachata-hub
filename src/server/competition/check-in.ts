@@ -18,14 +18,21 @@ export async function checkInRegistration(registrationId: string, opts?: { late?
   }
 
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.checkIn.findUnique({ where: { registrationId } });
-    if (existing) throw new ValidationFailedError("Check-in для этого участника уже выполнен.");
-
+    // "Уже зачекинен" отдельным pre-check'ом больше не проверяем — это тот же
+    // самый uniq-индекс на registrationId, что и в catch(P2002) ниже, с тем же
+    // текстом ошибки; отдельный round-trip к пулеру Supabase (~50-150мс,
+    // см. диагностику производительности check-in, 2026-09-06) не добавлял
+    // ничего, кроме задержки на общем пути.
+    //
     // Ретрай на случай гонки за один и тот же номер (03 §27) — на стойке
-    // check-in обычно последовательный, но не полагаемся на это.
+    // check-in могут работать несколько волонтёров одновременно, поэтому
+    // pre-check clash'а (в отличие от "уже зачекинен" выше) оставляем: без
+    // него конкурентный check-in чаще ловил бы "попробуйте ещё раз" вместо
+    // прохождения с первой попытки. count() считаем один раз — он не может
+    // измениться внутри нашей же незакоммиченной транзакции между попытками.
     let bibNumber: string | null = null;
+    const count = await tx.checkIn.count({ where: { competitionId: registration.competitionId } });
     for (let attempt = 0; attempt < 5 && !bibNumber; attempt++) {
-      const count = await tx.checkIn.count({ where: { competitionId: registration.competitionId } });
       const candidate = String(count + 1 + attempt);
       const clash = await tx.checkIn.findUnique({
         where: { competitionId_bibNumber: { competitionId: registration.competitionId, bibNumber: candidate } },
