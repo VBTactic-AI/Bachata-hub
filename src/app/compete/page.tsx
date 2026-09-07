@@ -32,6 +32,11 @@ export default async function CompeteListPage({ searchParams }: { searchParams: 
       city: { select: { nameRu: true } },
       event: { select: { photoUrl: true } },
       divisions: { include: { category: { select: { name: true } } }, orderBy: { category: { order: "asc" } } },
+      // Общий счётчик на карточке (2026-09-07) — сколько всего человек
+      // зарегистрировано на конкурс (по всем дивизионам). REGISTERED, как и
+      // везде (public-competition-view.ts) — SCRATCHED/DISQUALIFIED в счётчик
+      // не входят.
+      _count: { select: { registrations: { where: { status: "REGISTERED" } } } },
     },
     orderBy: tab === "soon" ? { startAt: "asc" } : { startAt: "desc" },
   });
@@ -48,6 +53,7 @@ export default async function CompeteListPage({ searchParams }: { searchParams: 
     coverUrl: c.event?.photoUrl ?? null,
     isRegistered: myCompetitionIds.has(c.id),
     divisionNames: c.divisions.map((d) => d.category.name),
+    registrationsCount: c._count.registrations,
   }));
 
   return (

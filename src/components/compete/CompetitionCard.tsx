@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CompetitionStatus } from "@prisma/client";
+import { pluralizeRu } from "@/lib/format";
 
 export type CompetitionCardData = {
   id: string;
@@ -11,6 +12,7 @@ export type CompetitionCardData = {
   coverUrl: string | null;
   isRegistered: boolean;
   divisionNames: string[];
+  registrationsCount: number;
 };
 
 const DATE_FMT = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -41,7 +43,7 @@ function StatusPill({ status, isRegistered }: { status: CompetitionStatus; isReg
 // карточка целиком ведёт на страницу соревнования, статус-пилюля справа не
 // отдельная ссылка (вложенные <a> невалидны), просто индикатор.
 export function CompetitionCard({ competition }: { competition: CompetitionCardData }) {
-  const { id, name, startAt, venue, cityName, status, coverUrl, isRegistered, divisionNames } = competition;
+  const { id, name, startAt, venue, cityName, status, coverUrl, isRegistered, divisionNames, registrationsCount } = competition;
   const place = [cityName, venue].filter(Boolean).join(", ");
   const cover = (
     <div
@@ -63,6 +65,11 @@ export function CompetitionCard({ competition }: { competition: CompetitionCardD
           <p className="m-0 line-clamp-2 font-night text-[0.95rem] font-bold leading-snug text-night-text">{name}</p>
           {place && <p className="m-0 mt-0.5 truncate text-[0.8rem] text-night-muted">{place}</p>}
           {startAt && <p className="m-0 text-[0.8rem] text-night-muted">{DATE_FMT.format(startAt)}</p>}
+          {registrationsCount > 0 && (
+            <p className="m-0 text-[0.8rem] text-night-muted">
+              {registrationsCount} {pluralizeRu(registrationsCount, ["участник", "участника", "участников"])}
+            </p>
+          )}
         </div>
         <StatusPill status={status} isRegistered={isRegistered} />
       </Link>
@@ -80,6 +87,11 @@ export function CompetitionCard({ competition }: { competition: CompetitionCardD
           </div>
           {startAt && <p className="m-0 text-sm font-medium text-night-primary">{DATE_FMT.format(startAt)}</p>}
           {place && <p className="m-0 text-xs text-night-muted">{place}</p>}
+          {registrationsCount > 0 && (
+            <p className="m-0 text-xs text-night-muted">
+              {registrationsCount} {pluralizeRu(registrationsCount, ["участник", "участника", "участников"])}
+            </p>
+          )}
           {divisionNames.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1.5">
               {divisionNames.map((d) => (
