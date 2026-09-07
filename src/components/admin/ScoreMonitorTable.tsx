@@ -24,6 +24,13 @@ import type {
 type ScoreEvent =
   | { kind: "judge_score"; drawParticipantId: string; judgeAssignmentId: string; value: number }
   | { kind: "final_judge_score"; drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number }
+  // RELATIVE_PLACEMENT (скейтинг) — атомарная подмена места (final-scoring.ts)
+  // УДАЛЯЕТ запись прежнего обладателя места, а не просто меняет её значение.
+  // Без отдельного события на DELETE монитор никогда не узнавал об этом и
+  // молча продолжал показывать старое значение освобождённого участника —
+  // выглядело как "два участника с одинаковым местом у одного судьи", хотя
+  // в БД дубликата не было (найдено вживую, 2026-09-07).
+  | { kind: "final_judge_score_deleted"; drawParticipantId: string; judgeAssignmentId: string; criterionId: string }
   // Судья нажал "Готово" (confirmJudgeRoundDone/confirmFinalJudgeRoundDone) —
   // отдельно от самих оценок: без этого события подпись "✓ Готово" на
   // мониторе появлялась бы только после следующего пересинка, а не сразу
@@ -121,6 +128,20 @@ function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, o
           onEventRef.current({
             kind: "final_judge_score",
             ...(payload.new as { drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number }),
+          });
+        })
+        // REPLICA IDENTITY FULL на FinalJudgeScore (миграция
+        // 20260907030000) гарантирует, что payload.old несёт полную
+        // удалённую строку, а не только id — иначе тут нечем было бы понять,
+        // чью именно ячейку освобождать.
+        .on("postgres_changes", { event: "DELETE", schema: "public", table: "FinalJudgeScore" }, (payload) => {
+          const old = payload.old as Partial<{ drawParticipantId: string; judgeAssignmentId: string; criterionId: string }>;
+          if (!old.drawParticipantId || !old.judgeAssignmentId || !old.criterionId) return;
+          onEventRef.current({
+            kind: "final_judge_score_deleted",
+            drawParticipantId: old.drawParticipantId,
+            judgeAssignmentId: old.judgeAssignmentId,
+            criterionId: old.criterionId,
           });
         })
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "JudgeRoundConfirmation" }, (payload) => {
@@ -352,14 +373,19 @@ export function FinalScoreMonitor({
       setFollower(confirm);
       return;
     }
-    if (event.kind !== "final_judge_score") return;
+    if (event.kind !== "final_judge_score" && event.kind !== "final_judge_score_deleted") return;
     const judgeAssignmentId = event.judgeAssignmentId;
+    // "final_judge_score_deleted" (атомарная подмена места, RELATIVE_PLACEMENT)
+    // пишет в ячейку null тем же путём, каким INSERT/UPDATE пишет туда
+    // значение — освобождённый участник должен показать "—", а не застрять
+    // со старым значением до следующего полного пересинка.
+    const newValue = event.kind === "final_judge_score" ? event.value : null;
     const apply = (table: FinalTable): FinalTable => {
       const rowIdx = table.rows.findIndex((r) => r.drawParticipantId === event.drawParticipantId);
       if (rowIdx === -1 || !table.judges.some((j) => j.judgeAssignmentId === judgeAssignmentId)) return table;
       const rows = table.rows.map((r, i) => {
         if (i !== rowIdx) return r;
-        const judgeScores = { ...(r.scores[judgeAssignmentId] ?? {}), [event.criterionId]: event.value };
+        const judgeScores = { ...(r.scores[judgeAssignmentId] ?? {}), [event.criterionId]: newValue };
         return { ...r, scores: { ...r.scores, [judgeAssignmentId]: judgeScores } };
       });
       // required фиксирован (участники × применимые критерии для этого
