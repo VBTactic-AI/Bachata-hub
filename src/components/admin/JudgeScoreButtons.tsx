@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { enqueueJudgeScore, getQueuedScore, subscribeJudgeScoreQueue } from "@/components/admin/judging/judge-score-queue";
 
 // Мобильный судейский UI (CLAUDE.md §40) — быстро выбрать оценку и увидеть
@@ -23,7 +22,6 @@ export function JudgeScoreButtons({
   // ошибки от клика (2026-09-04).
   locked?: boolean;
 }) {
-  const router = useRouter();
   // UX-005: раньше initial state читался прямо из localStorage внутри
   // ленивого инициализатора useState — на сервере getQueuedScore всегда
   // возвращает undefined (typeof window === "undefined"), а на клиенте,
@@ -33,30 +31,19 @@ export function JudgeScoreButtons({
   // гидратации и синхронно отдаёт текущее состояние очереди при подписке.
   const [pending, setPending] = useState<ReturnType<typeof getQueuedScore>>(undefined);
   const [error, setError] = useState<string | null>(null);
-  // UX-001: раньше "wasPending" читался из состояния React, захваченного в
-  // замыкание эффекта ОДИН раз при монтировании (зависимость эффекта —
-  // только drawParticipantId) — эффект никогда не пересоздавался при смене
-  // pending, поэтому "было ли это в очереди только что" почти всегда было
-  // равно самому первому значению (обычно undefined), и условие ниже
-  // фактически никогда не срабатывало по-настоящему. Ref не участвует в
-  // зависимостях эффекта и всегда читает актуальное значение — тот же
-  // приём, что и pendingKeysRef в FinalJudgingScreen.tsx.
-  const wasPendingRef = useRef(false);
 
+  // router.refresh() после доставки оценки — не отсюда: одна такая кнопка на
+  // экране далеко не одна (см. judging/[competitionId]/page.tsx), и если
+  // каждая сама дёргает router.refresh(), быстрая серия тапов или догон
+  // очереди после офлайна превращается в шторм последовательных RSC-рефетчей
+  // одной и той же страницы (жалоба пользователя на "лаги", 2026-09-07).
+  // Один дебаунсящий подписчик на всю страницу — JudgeQueueRefresher.
   useEffect(() => {
     return subscribeJudgeScoreQueue((state) => {
       const item = state.queue.find((q) => q.drawParticipantId === drawParticipantId);
-      const wasPending = wasPendingRef.current;
-      wasPendingRef.current = item !== undefined;
       setPending(item);
       setError(state.errors[drawParticipantId] ?? null);
-      if (wasPending && !item && !state.errors[drawParticipantId]) {
-        // Очередь только что доставила эту оценку до сервера — подтянуть
-        // актуальное состояние (список судей/прогресс мог измениться).
-        router.refresh();
-      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawParticipantId]);
 
   const savedValue = pending ? pending.value : myScore;

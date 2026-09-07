@@ -66,6 +66,27 @@ export function subscribeJudgeScoreQueue(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
+// Отдельная (от subscribeJudgeScoreQueue выше) подписка ровно на "оценка
+// только что реально доставлена на сервер" — раньше на это реагировала
+// КАЖДАЯ кнопка (JudgeScoreButtons.tsx) сама, своим router.refresh(); на
+// экране с десятками кнопок одного захода это превращалось в шторм
+// последовательных RSC-рефетчей одной и той же страницы при быстрой серии
+// тапов или при догоне очереди после офлайна (жалоба пользователя на "лаги",
+// 2026-09-07) — визуально куда заметнее, чем сама отправка (та и так не
+// блокирует UI, см. enqueueJudgeScore). Один разделяемый список слушателей
+// вместо "по одному на кнопку" даёт единственному подписчику
+// (JudgeQueueRefresher) дебаунсить router.refresh() централизованно.
+const deliveryListeners = new Set<() => void>();
+
+export function subscribeJudgeScoreDelivery(listener: () => void): () => void {
+  deliveryListeners.add(listener);
+  return () => deliveryListeners.delete(listener);
+}
+
+function notifyDelivered(): void {
+  for (const l of deliveryListeners) l();
+}
+
 export function getQueuedScore(drawParticipantId: string): QueuedScore | undefined {
   return loadQueue().find((q) => q.drawParticipantId === drawParticipantId);
 }
@@ -125,6 +146,7 @@ export async function flushJudgeScoreQueue(): Promise<void> {
         errors[item.drawParticipantId] = result.message;
       } else {
         delete errors[item.drawParticipantId];
+        notifyDelivered();
       }
       saveQueue(loadQueue().filter((q) => q.clientSubmissionId !== item.clientSubmissionId));
     }

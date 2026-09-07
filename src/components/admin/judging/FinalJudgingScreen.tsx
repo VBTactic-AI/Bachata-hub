@@ -57,6 +57,12 @@ export function FinalJudgingScreen({
   // визуально обнулялась после отправки всех критериев, хотя в БД всё
   // сохранялось верно). Тот же приём, что и в JudgeScoreButtons.tsx.
   const pendingKeysRef = useRef<Set<string>>(new Set());
+  // Дебаунс router.refresh(), а не вызов на каждую доставленную оценку —
+  // при догоне очереди после офлайна несколько критериев/участников
+  // доставляются подряд, каждый через отдельное состояние очереди; без
+  // дебаунса это была бы серия последовательных RSC-рефетчей одной и той же
+  // страницы (тот же шторм, что и в JudgeScoreButtons.tsx, 2026-09-07).
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // UX-002: очередь и раньше отслеживала реальные (не сетевые) ошибки
   // отправки — но этот экран нигде их не показывал, в отличие от
   // JudgeScoreButtons.tsx (обычные раунды). Судья видел, что кнопка просто
@@ -76,7 +82,10 @@ export function FinalJudgingScreen({
       pendingKeysRef.current = currentKeys;
       setErrorsByKey(Object.fromEntries(Object.entries(state.errors).filter(([k]) => relevantIds.has(k.split(":")[0]))));
       setTick((t) => t + 1);
-      if (delivered) router.refresh();
+      if (delivered) {
+        if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = setTimeout(() => router.refresh(), 400);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);

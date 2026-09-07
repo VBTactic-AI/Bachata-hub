@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { measureServerOperation } from "@/lib/performance-debug/server";
@@ -164,6 +165,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canReviewResults = can(actor, "result:review", competition.id);
   const canPublishResults = can(actor, "result:publish", competition.id);
   const canViewStatistics = can(actor, "statistics:view", competition.id);
+  const canViewScoreMonitor = can(actor, "score:view_all", competition.id);
   const canEditPublicInfo = can(actor, "competition:settings_update", competition.id);
   const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
@@ -438,6 +440,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             </span>
                             <RoundStatusControls roundId={round.id} status={round.status} />
                           </div>
+                          {canViewScoreMonitor && (
+                            <Link href={`/admin/competitions/${competition.id}/score-monitor/${round.id}`} className="hint-text">
+                              Онлайн-монитор оценок судей →
+                            </Link>
+                          )}
 
                           {isFinalRound && round.status === "READY" && !round.finalSession && canManageFinal && (
                             <StartFinalPanel roundId={round.id} />
