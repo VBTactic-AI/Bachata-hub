@@ -440,7 +440,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             </span>
                             <RoundStatusControls roundId={round.id} status={round.status} />
                           </div>
-                          {canViewScoreMonitor && (
+                          {/* Перетанцовка "за место" (FULL_RANK/RANK_ALL, TIEBREAK-001/A22) —
+                              судьи её больше не оценивают вовсе (rolesNotNeedingJudging,
+                              2026-09-07): решение вносит HEAD_JUDGE вручную (реордер-форма
+                              ниже), монитор судейских оценок для неё нечего показывать.
+                              Обычная перетанцовка на отсев (SELECT_N) — судьи по-прежнему
+                              реально ставят оценки, монитор остаётся. */}
+                          {canViewScoreMonitor && !(round.type === "TIE_BREAK" && (isFullRankTieBreak || isFinalTieBreak)) && (
                             <Link href={`/admin/competitions/${competition.id}/score-monitor/${round.id}`} className="hint-text">
                               Онлайн-монитор оценок судей →
                             </Link>
