@@ -54,6 +54,13 @@ export const ROTATION_MODE_LABELS: Record<string, string> = {
   SEGMENT_MANUAL_SHIFT: "Смена между отрезками (вручную, диджей называет число)",
 };
 
+// Метод оценки раундов до финала (Division.judgingMaxScore/Round.judgingMaxScore,
+// 2026-09-07) — 1 = "Да/Нет", 2 = "0/1/2" с квотой по числу проходящих.
+export const JUDGING_MAX_SCORE_LABELS: Record<number, string> = {
+  1: "Да/Нет",
+  2: "0-1-2",
+};
+
 export const ROTATION_STATUS_LABELS: Record<string, string> = {
   IDLE: "Не начата",
   RUNNING: "Идёт",

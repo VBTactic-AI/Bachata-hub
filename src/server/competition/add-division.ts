@@ -53,6 +53,7 @@ export async function addDivision(competitionId: string, input: AddDivisionInput
         rotationIntervalSec: input.rotationIntervalSec,
         rotationShiftMin: input.rotationShiftMin,
         rotationShiftMax: input.rotationShiftMax,
+        judgingMaxScore: input.judgingMaxScore,
         rules: (input.rules ?? {}) as Prisma.InputJsonValue,
       },
     });
@@ -62,7 +63,12 @@ export async function addDivision(competitionId: string, input: AddDivisionInput
       action: "division.create",
       entityType: "Division",
       entityId: created.id,
-      after: { competitionId, categoryId: created.categoryId, categoryName: category.name },
+      after: {
+        competitionId,
+        categoryId: created.categoryId,
+        categoryName: category.name,
+        judgingMaxScore: created.judgingMaxScore,
+      },
     });
 
     if (stagePlan.length > 0) {

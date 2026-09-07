@@ -737,6 +737,12 @@ model Division {
   rotationIntervalSec Int              @default(30)
   rotationShiftMin    Int              @default(1)
   rotationShiftMax    Int              @default(3)
+  // Метод оценки раундов ДО финала для этого дивизиона (1 = "Да/Нет",
+  // 2 = "0/1/2" с квотой по числу проходящих) — задаётся один раз при
+  // создании дивизиона (как DivisionStagePlan, A14), не редактируется через
+  // DivisionSettingsPanel. generateRounds() использует это значение как
+  // Round.judgingMaxScore для каждого создаваемого раунда.
+  judgingMaxScore     Int              @default(1)
   rules               Json
   createdAt           DateTime         @default(now())
 
@@ -1066,8 +1072,10 @@ model JudgeRoundConfirmation {
   round             Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
   judgeAssignmentId String
   judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
-  // Снимок числа "Да" на момент подтверждения — для истории/аудита, не
-  // пересчитывается позже.
+  // Снимок числа "Да" (формат 0/1) на момент подтверждения — для
+  // истории/аудита, не пересчитывается позже. Для формата "0/1/2"
+  // (Round.judgingMaxScore=2) это же поле хранит количество оценок "2"
+  // (переиспользуется, не переименовано — нигде не отображается в UI).
   yesCount          Int
   createdAt         DateTime        @default(now())
 

@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { getCurrentUser } from "@/lib/auth";
+import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Permission } from "./permissions";
 
@@ -21,50 +21,58 @@ export type Actor = {
 // редиректа, а requirePermission() внутри getJudgeQueue() зовёт его снова —
 // без cache() это дублирующийся набор запросов к RBAC-таблицам за один и тот
 // же HTTP-запрос.
+//
+// Раньше здесь был `await getCurrentUser()` первым шагом — но getActor()'у
+// из результата getCurrentUser() нужен только userId, а он известен сразу
+// после проверки подписи JWT (без похода в БД). Ожидание полной строки User
+// только ради userId искусственно делало RBAC-запрос ниже последовательным
+// ПОСЛЕ отдельного round-trip'а getCurrentUser() (~150мс + ~150мс = ~300мс
+// на удалённой БД, Supabase pooler) — хотя оба запроса не зависят друг от
+// друга по данным. getSessionUserId() — тот же декодинг без запроса к БД,
+// поэтому RBAC-запрос теперь стартует сразу, не дожидаясь getCurrentUser()
+// (который, если вызван где-то ещё в этом же HTTP-запросе — напр. в layout —
+// теперь ничем не блокируется и может выполняться параллельно).
 export const getActor = cache(async (): Promise<Actor | null> => {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  const userId = await getSessionUserId();
+  if (!userId) return null;
 
-  // Мост со слоем 1 (docs/00_DECISIONS.md, D2) запрошен той же волной
-  // запросов, а не отдельным await после неё — на удалённой БД (Supabase
-  // pooler) каждый дополнительный последовательный round-trip стоит
-  // ~150мс, а этот путь идёт демо-ADMIN'ом буквально на каждое действие.
-  const isSiteAdmin = user.role === "ADMIN";
-  // UserRoleAssignment и CompetitionMember — обе связи объявлены прямо на
-  // User в схеме (competitionRoleAssignments/competitionMemberships), поэтому
-  // их можно получить ОДНИМ запросом через вложенный include вместо двух
-  // отдельных findMany — было 2 round-trip'а к Supabase pooler (~150мс
-  // каждый) сверх round-trip'а самого getCurrentUser(), обнаружено вживую в
-  // Performance Diagnostic Mode (docs/PROGRESS.md): RBAC-запросы повторялись
-  // одинаково на каждое судейское/админское действие. SUPER_ADMIN-мост
-  // остаётся отдельным запросом (Role не связана с User напрямую), но
-  // по-прежнему идёт параллельно.
-  const [userWithRbac, superAdminRole] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: user.id },
-      relationLoadStrategy: "join",
-      select: {
-        competitionRoleAssignments: {
-          include: { role: { include: { permissions: { include: { permission: true } } } } },
-        },
-        competitionMemberships: {
-          include: { role: { include: { permissions: { include: { permission: true } } } } },
-        },
+  // role/isBlocked/email добавлены в ТОТ ЖЕ select, что и раньше отдельно
+  // запрашивал getCurrentUser() — экономит ещё один round-trip: Role сама
+  // становится известна из ЭТОГО же запроса, не нужно ждать её из
+  // getCurrentUser(), чтобы решить, нужен ли SUPER_ADMIN-мост ниже.
+  const userWithRbac = await prisma.user.findUnique({
+    where: { id: userId },
+    relationLoadStrategy: "join",
+    select: {
+      role: true,
+      isBlocked: true,
+      email: true,
+      competitionRoleAssignments: {
+        include: { role: { include: { permissions: { include: { permission: true } } } } },
       },
-    }),
-    isSiteAdmin
-      ? prisma.role.findUnique({
-          where: { code: "SUPER_ADMIN" },
-          relationLoadStrategy: "join",
-          include: { permissions: { include: { permission: true } } },
-        })
-      : Promise.resolve(null),
-  ]);
-  const globalAssignments = userWithRbac?.competitionRoleAssignments ?? [];
-  const memberships = userWithRbac?.competitionMemberships ?? [];
+      competitionMemberships: {
+        include: { role: { include: { permissions: { include: { permission: true } } } } },
+      },
+    },
+  });
+  if (!userWithRbac || userWithRbac.isBlocked) return null;
+
+  // Мост со слоем 1 (docs/00_DECISIONS.md, D2) — отдельный запрос (Role не
+  // связана с User напрямую), но только когда реально нужен: для абсолютного
+  // большинства пользователей (не site-admin) это ноль дополнительных
+  // запросов, а не "всегда параллельно, но лишний" — role уже известна из
+  // запроса выше, ждать её отдельно не нужно.
+  const isSiteAdmin = userWithRbac.role === "ADMIN";
+  const superAdminRole = isSiteAdmin
+    ? await prisma.role.findUnique({
+        where: { code: "SUPER_ADMIN" },
+        relationLoadStrategy: "join",
+        include: { permissions: { include: { permission: true } } },
+      })
+    : null;
 
   const globalPermissions = new Set<Permission>();
-  for (const assignment of globalAssignments) {
+  for (const assignment of userWithRbac.competitionRoleAssignments) {
     for (const rp of assignment.role.permissions) {
       globalPermissions.add(rp.permission.code as Permission);
     }
@@ -74,7 +82,7 @@ export const getActor = cache(async (): Promise<Actor | null> => {
   }
 
   const permissionsByCompetition = new Map<string, Set<Permission>>();
-  for (const member of memberships) {
+  for (const member of userWithRbac.competitionMemberships) {
     let set = permissionsByCompetition.get(member.competitionId);
     if (!set) {
       set = new Set<Permission>();
@@ -85,5 +93,5 @@ export const getActor = cache(async (): Promise<Actor | null> => {
     }
   }
 
-  return { userId: user.id, email: user.email, globalPermissions, permissionsByCompetition };
+  return { userId, email: userWithRbac.email, globalPermissions, permissionsByCompetition };
 });

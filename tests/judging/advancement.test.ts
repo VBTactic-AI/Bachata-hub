@@ -489,6 +489,43 @@ describe("maybeCalculateOnEntryInTx() — роль без отсева не тр
 
     expect(txRoundResultCreateMany).not.toHaveBeenCalled();
   });
+
+  // Формат "0/1/2" (judgingMaxScore=2, 2026-09-07) — та же строгость, что и
+  // "Да/Нет" (A21): раунд ждёт JudgeRoundConfirmation, а не сырые JudgeScore.
+  // Без правки advancement.ts (расширения условия на judgingMaxScore===2) этот
+  // формат завершался бы сразу по сырым баллам, и жёсткий блок на "Готово" в
+  // scoring.ts ничего не значил бы.
+  it('формат "0/1/2": раунд завершается, когда все судьи нажали "Готово" — не по одним сырым баллам', async () => {
+    const round = { ...baseRound, judgingMaxScore: 2, finalistsCount: 2 };
+    txRoundFindUniqueOrThrow.mockResolvedValue(round);
+    txRoundCount.mockResolvedValue(1); // не финал
+    txRoundResultCount.mockResolvedValue(0);
+    const followers = Array.from({ length: 5 }, (_, i) => ({ id: `f${i}`, role: "FOLLOWER" as const, judgeScores: [] }));
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: followers }] }]);
+    txJudgeAssignmentFindMany.mockResolvedValue([{ id: "assign-f", role: "FOLLOWER" }]);
+    txJudgeRoundConfirmationCount.mockResolvedValue(1);
+
+    await maybeFinalizeAfterScoreInTx(fakeTx as never, "round1", actor);
+
+    expect(txRoundResultCreateMany).toHaveBeenCalled();
+  });
+
+  it('формат "0/1/2": НЕ завершается, пока не все судьи нажали "Готово", даже если баллы уже расставлены', async () => {
+    const round = { ...baseRound, judgingMaxScore: 2, finalistsCount: 2 };
+    txRoundFindUniqueOrThrow.mockResolvedValue(round);
+    txRoundCount.mockResolvedValue(1); // не финал
+    const followers = Array.from({ length: 5 }, (_, i) => ({ id: `f${i}`, role: "FOLLOWER" as const, judgeScores: [] }));
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: followers }] }]);
+    txJudgeAssignmentFindMany.mockResolvedValue([
+      { id: "assign-f1", role: "FOLLOWER" },
+      { id: "assign-f2", role: "FOLLOWER" },
+    ]);
+    txJudgeRoundConfirmationCount.mockResolvedValue(1);
+
+    await maybeFinalizeAfterScoreInTx(fakeTx as never, "round1", actor);
+
+    expect(txRoundResultCreateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("maybeCalculateOnEntryInTx()", () => {

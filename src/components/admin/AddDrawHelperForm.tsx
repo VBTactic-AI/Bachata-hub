@@ -4,15 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { REGISTRATION_ROLE_LABELS as ROLE_LABELS } from "@/lib/competition-labels";
-
-type Candidate = { id: string; displayName: string; bibNumber: string | null };
-type CandidateGroup = {
-  divisionId: string;
-  categoryName: string;
-  categoryOrder: number;
-  isOwnDivision: boolean;
-  registrations: Candidate[];
-};
+import { fetchHelperCandidates, invalidateHelperCandidates, type HelperCandidateGroup } from "./draw-helper-candidates";
 
 // Роль всегда та, которой реально не хватает в заезде (родитель считает это
 // по факту текущего списка и не рендерит форму вовсе, если сторон уже
@@ -27,7 +19,7 @@ type CandidateGroup = {
 export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEADER" | "FOLLOWER" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [groups, setGroups] = useState<CandidateGroup[]>([]);
+  const [groups, setGroups] = useState<HelperCandidateGroup[]>([]);
   const [neededCount, setNeededCount] = useState(1);
   const [selected, setSelected] = useState<string[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
@@ -38,19 +30,16 @@ export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEA
     if (!open) return;
     setLoadingCandidates(true);
     setError(null);
-    fetch(`/api/heats/${heatId}/helpers?role=${role}`)
-      .then((res) => res.json())
+    fetchHelperCandidates(heatId, role)
       .then((data) => {
-        if (!data.ok) {
-          setError(data.error || "Не удалось загрузить список кандидатов.");
-          setGroups([]);
-          return;
-        }
-        setGroups(data.divisions ?? []);
-        setNeededCount(data.neededCount ?? 1);
+        setGroups(data.divisions);
+        setNeededCount(data.neededCount);
         setSelected(data.suggestedRegistrationId ? [data.suggestedRegistrationId] : []);
       })
-      .catch(() => setError("Не удалось загрузить список кандидатов."))
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "Не удалось загрузить список кандидатов.");
+        setGroups([]);
+      })
       .finally(() => setLoadingCandidates(false));
   }, [open, role, heatId]);
 
@@ -76,10 +65,12 @@ export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEA
         const data = await res.json().catch(() => ({}));
         setSubmitting(false);
         setError(data.error || "Не удалось добавить помощника.");
+        invalidateHelperCandidates(heatId, role);
         router.refresh();
         return;
       }
     }
+    invalidateHelperCandidates(heatId, role);
     setSubmitting(false);
     setOpen(false);
     router.refresh();

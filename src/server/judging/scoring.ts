@@ -105,17 +105,31 @@ export async function submitJudgeScore(drawParticipantId: string, value: number,
   });
 }
 
-// Судья явно нажимает "Готово" по раунду формата "Да/Нет" — по запросу
-// пользователя (2026-09-04): свободно кликает "Да"/"Нет" сколько угодно, но
-// раунд не ждёт явного "Нет" по каждому оставшемуся и не завершается сам по
-// первому попавшемуся моменту, когда числа сошлись (иначе случайный лишний
-// клик мог бы мгновенно и необратимо закрыть раунд, пока судья ещё
-// поправляет себя). Принимается, только если "Да" ровно
-// Round.finalistsCount — иначе понятная ошибка, ничего не фиксируется.
-// Судья может быть закреплён на обе роли одного дивизиона — тогда одно
-// нажатие подтверждает обе, только если ОБЕ уже готовы (частичного
-// подтверждения одной роли при неготовности другой не бывает — проще и
-// понятнее судье, чем два отдельных состояния "готово"/"не готово").
+// Квота для формата "0/1/2" (docs/00_DECISIONS.md, 2026-09-07): ровно
+// ceil(N/2) оценок "2" и floor(N/2) оценок "1", где N = Round.finalistsCount
+// для этой роли (сколько должно пройти дальше). Если N нечётно — лишняя
+// единица уходит в "2" (явное решение пользователя). Всем остальным
+// участникам роли — "0"/отсутствие оценки, они не входят в эту квоту.
+// Чистая функция — переиспользуется и здесь (валидация "Готово"), и на
+// странице судьи (отображение "нужно/уже поставлено").
+export function scoreQuotaForScale2(finalistsCount: number): { twosNeeded: number; onesNeeded: number } {
+  const twosNeeded = Math.ceil(finalistsCount / 2);
+  return { twosNeeded, onesNeeded: finalistsCount - twosNeeded };
+}
+
+// Судья явно нажимает "Готово" по раунду формата "Да/Нет" или "0/1/2" — по
+// запросу пользователя (2026-09-04, расширено на "0/1/2" 2026-09-07): судья
+// свободно кликает сколько угодно, меняя мнение, но раунд не ждёт от него
+// явных оценок по каждому оставшемуся и не завершается сам по первому
+// попавшемуся моменту, когда числа сошлись (иначе случайный лишний клик мог
+// бы мгновенно и необратимо закрыть раунд, пока судья ещё поправляет себя).
+// Принимается, только если распределение оценок точно совпадает с
+// требуемым (формат "Да/Нет" — "Да" ровно Round.finalistsCount; формат
+// "0/1/2" — scoreQuotaForScale2) — иначе понятная ошибка, ничего не
+// фиксируется. Судья может быть закреплён на обе роли одного дивизиона —
+// тогда одно нажатие подтверждает обе, только если ОБЕ уже готовы
+// (частичного подтверждения одной роли при неготовности другой не бывает —
+// проще и понятнее судье, чем два отдельных состояния "готово"/"не готово").
 export async function confirmJudgeRoundDone(roundId: string): Promise<void> {
   const round = await prisma.round.findUniqueOrThrow({
     where: { id: roundId },
@@ -127,9 +141,13 @@ export async function confirmJudgeRoundDone(roundId: string): Promise<void> {
   if (round.status === "COMPLETED") {
     throw new ValidationFailedError("Раунд уже завершён.");
   }
-  if (round.judgingMaxScore !== 1 || !round.finalistsCount) {
-    throw new ValidationFailedError('Кнопка "Готово" доступна только для формата оценки "Да/Нет".');
+  if ((round.judgingMaxScore !== 1 && round.judgingMaxScore !== 2) || !round.finalistsCount) {
+    throw new ValidationFailedError('Кнопка "Готово" доступна только для форматов оценки "Да/Нет" и "0/1/2".');
   }
+  // Локальная константа вместо round.finalistsCount ниже — TS не сужает
+  // number|null объектного поля через замыкание $transaction, а guard выше
+  // уже гарантирует, что оно truthy.
+  const finalistsCount = round.finalistsCount;
 
   const myAssignments = await prisma.judgeAssignment.findMany({
     where: { divisionId: round.division.id, judgeUserId: actor.userId },
@@ -146,16 +164,37 @@ export async function confirmJudgeRoundDone(roundId: string): Promise<void> {
       });
       if (already) continue; // эта роль уже подтверждена раньше — молча пропускаем, не ошибка
 
-      const yesCount = await tx.judgeScore.count({
-        where: { judgeAssignmentId: assignment.id, value: 1, drawParticipant: { draw: { heat: { roundId } } } },
-      });
-      if (yesCount !== round.finalistsCount) {
-        const roleLabel = assignment.role === "LEADER" ? "Ведущие" : "Ведомые";
-        throw new ValidationFailedError(
-          `${roleLabel}: отмечено ${yesCount} "Да", нужно ровно ${round.finalistsCount} — поправьте перед тем как нажать "Готово".`
-        );
+      const roleLabel = assignment.role === "LEADER" ? "Ведущие" : "Ведомые";
+
+      if (round.judgingMaxScore === 1) {
+        const yesCount = await tx.judgeScore.count({
+          where: { judgeAssignmentId: assignment.id, value: 1, drawParticipant: { draw: { heat: { roundId } } } },
+        });
+        if (yesCount !== finalistsCount) {
+          throw new ValidationFailedError(
+            `${roleLabel}: отмечено ${yesCount} "Да", нужно ровно ${finalistsCount} — поправьте перед тем как нажать "Готово".`
+          );
+        }
+        toConfirm.push({ assignmentId: assignment.id, role: assignment.role, yesCount });
+      } else {
+        const { twosNeeded, onesNeeded } = scoreQuotaForScale2(finalistsCount);
+        const [twosCount, onesCount] = await Promise.all([
+          tx.judgeScore.count({
+            where: { judgeAssignmentId: assignment.id, value: 2, drawParticipant: { draw: { heat: { roundId } } } },
+          }),
+          tx.judgeScore.count({
+            where: { judgeAssignmentId: assignment.id, value: 1, drawParticipant: { draw: { heat: { roundId } } } },
+          }),
+        ]);
+        if (twosCount !== twosNeeded || onesCount !== onesNeeded) {
+          throw new ValidationFailedError(
+            `${roleLabel}: нужно ровно ${twosNeeded} оценок "2" и ${onesNeeded} оценок "1" — сейчас ${twosCount} и ${onesCount}. Поправьте перед тем как нажать "Готово".`
+          );
+        }
+        // Поле называется yesCount по историческим причинам (формат
+        // "Да/Нет") — для "0/1/2" хранит количество оценок "2" (см. схему).
+        toConfirm.push({ assignmentId: assignment.id, role: assignment.role, yesCount: twosCount });
       }
-      toConfirm.push({ assignmentId: assignment.id, role: assignment.role, yesCount });
     }
 
     for (const c of toConfirm) {

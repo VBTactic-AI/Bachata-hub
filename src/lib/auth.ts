@@ -62,6 +62,28 @@ export async function destroySession() {
   cookieStore.delete(SESSION_COOKIE);
 }
 
+// Декодирует сессионный cookie и возвращает userId БЕЗ обращения к БД (только
+// проверка подписи JWT, локально). Нужен местам, которым известного userId
+// достаточно, чтобы сразу начать СВОЙ запрос к БД, не дожидаясь отдельного
+// похода getCurrentUser() за полной строкой User — getActor() раньше делал
+// именно так (await getCurrentUser() целиком, хотя ему был нужен только
+// userId), что превращало два независимых запроса в искусственно
+// последовательную цепочку (~150мс на удалённой БД, Supabase pooler, за
+// КАЖДЫЙ round-trip — см. docs/00_DECISIONS.md, диагностика Check-in,
+// 2026-09-06/07).
+export async function getSessionUserId(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, getSecret());
+    const userId = payload.sub;
+    return typeof userId === "string" ? userId : null;
+  } catch {
+    return null;
+  }
+}
+
 // Возвращает текущего пользователя (или null для гостя). Используется во всех
 // server-компонентах и route handlers, где важна роль/авторство.
 //
@@ -72,14 +94,9 @@ export async function destroySession() {
 // сетевых похода к удалённой БД (Supabase pooler, ~150мс каждый round-trip)
 // за одними и теми же данными в рамках одного и того же запроса пользователя.
 export const getCurrentUser = cache(async (): Promise<User | null> => {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-
+  const userId = await getSessionUserId();
+  if (!userId) return null;
   try {
-    const { payload } = await jwtVerify(token, getSecret());
-    const userId = payload.sub;
-    if (!userId || typeof userId !== "string") return null;
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.isBlocked) return null;
     return user;

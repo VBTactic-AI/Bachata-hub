@@ -37,6 +37,9 @@ export function AddDivisionForm({
   const [rotationIntervalSec, setRotationIntervalSec] = useState("30");
   const [rotationShiftMin, setRotationShiftMin] = useState("1");
   const [rotationShiftMax, setRotationShiftMax] = useState("3");
+  // Метод оценки раундов до финала — задаётся один раз здесь, как и план по
+  // этапам ниже, дальше не меняется (2026-09-07).
+  const [judgingMaxScore, setJudgingMaxScore] = useState<"1" | "2">("1");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -66,6 +69,7 @@ export function AddDivisionForm({
         rotationIntervalSec: Number(rotationIntervalSec),
         rotationShiftMin: Number(rotationShiftMin),
         rotationShiftMax: Number(rotationShiftMax),
+        judgingMaxScore: Number(judgingMaxScore),
         stagePlan: stagePlanEntries,
         rules: {},
       }),
@@ -124,6 +128,13 @@ export function AddDivisionForm({
           </Label>
         </div>
       )}
+      <Label>
+        Метод оценки раундов (до финала) — задаётся сейчас, дальше не меняется
+        <Select value={judgingMaxScore} onChange={(e) => setJudgingMaxScore(e.target.value as "1" | "2")}>
+          <option value="1">Да/Нет</option>
+          <option value="2">0-1-2 (с квотой по числу проходящих)</option>
+        </Select>
+      </Label>
       {stages.length > 0 && (
         <div className="stack gap-2">
           <p className="hint-text">

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label, Input, Select } from "@/components/ui/field";
-import { ROTATION_MODE_LABELS } from "@/lib/competition-labels";
+import { ROTATION_MODE_LABELS, JUDGING_MAX_SCORE_LABELS } from "@/lib/competition-labels";
 
 type RotationMode = "TRACK_AUTO_SHIFT" | "SEGMENT_MANUAL_SHIFT";
 
@@ -27,7 +27,18 @@ export type DivisionSettings = {
 // карточку соревнования заново ради одной строки текста не нужно. Остальной
 // странице (расчёты раундов и т.п.) актуальное значение придёт при следующей
 // её собственной перезагрузке — здесь важна только эта надпись.
-export function DivisionSettingsPanel({ divisionId, settings }: { divisionId: string; settings: DivisionSettings }) {
+// judgingMaxScore передаётся отдельным пропом, а не частью DivisionSettings
+// — это поле не входит в форму редактирования (фиксируется один раз при
+// создании дивизиона, docs/00_DECISIONS.md), здесь только отображается.
+export function DivisionSettingsPanel({
+  divisionId,
+  settings,
+  judgingMaxScore,
+}: {
+  divisionId: string;
+  settings: DivisionSettings;
+  judgingMaxScore: number;
+}) {
   const [current, setCurrent] = useState(settings);
   const [editing, setEditing] = useState(false);
   const [heatCapacity, setHeatCapacity] = useState(String(settings.heatCapacity));
@@ -79,6 +90,8 @@ export function DivisionSettingsPanel({ divisionId, settings }: { divisionId: st
           Вместимость захода: {current.heatCapacity} · Ротация: {ROTATION_MODE_LABELS[current.rotationMode] ?? current.rotationMode}
           {current.rotationMode === "SEGMENT_MANUAL_SHIFT" && ` (${current.rotationShiftMin}–${current.rotationShiftMax} партнёров)`}
           {current.rotationMode === "TRACK_AUTO_SHIFT" && ` (каждые ${current.rotationIntervalSec} сек)`}
+          {" · Оценка: "}
+          {JUDGING_MAX_SCORE_LABELS[judgingMaxScore] ?? judgingMaxScore}
         </p>
         <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(true)}>
           изменить настройки

@@ -47,7 +47,7 @@ function Column({
             {!p.scored && canEditDraw && (
               <>
                 <ReplaceDrawHelperButton heatId={heatId} participantId={p.id} role={role} />
-                <RemoveDrawHelperButton participantId={p.id} />
+                <RemoveDrawHelperButton participantId={p.id} heatId={heatId} role={role} />
               </>
             )}
           </p>

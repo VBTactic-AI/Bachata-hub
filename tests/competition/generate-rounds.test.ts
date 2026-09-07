@@ -49,11 +49,17 @@ const FULL_PLAN = [
   { stageId: "st-final", participantCount: 2, stage: { name: "Финал", order: 4 } },
 ];
 
-function mockDivision(overrides?: { heatCapacity?: number; stagePlan?: unknown[]; rounds?: unknown[] }) {
+function mockDivision(overrides?: {
+  heatCapacity?: number;
+  judgingMaxScore?: number;
+  stagePlan?: unknown[];
+  rounds?: unknown[];
+}) {
   divisionFindUniqueOrThrow.mockResolvedValue({
     id: "div1",
     competitionId: "comp1",
     heatCapacity: overrides?.heatCapacity ?? 10,
+    judgingMaxScore: overrides?.judgingMaxScore ?? 1,
     stagePlan: overrides?.stagePlan ?? FULL_PLAN,
     rounds: overrides?.rounds ?? [],
   });
@@ -133,6 +139,16 @@ describe("generateRounds()", () => {
 
     // Четвертьфинал: 8/10 -> 1. Полуфинал: 4/10 -> 1. Финал: 2/10 -> 1.
     expect(heatCreate).toHaveBeenCalledTimes(3);
+  });
+
+  it("переиспользует judgingMaxScore дивизиона для каждого созданного раунда", async () => {
+    mockDivision({ judgingMaxScore: 2 });
+
+    await generateRounds("div1");
+
+    for (const call of roundCreate.mock.calls) {
+      expect(call[0].data.judgingMaxScore).toBe(2);
+    }
   });
 
   it("переиспользует вместимость заезда дивизиона для расчёта числа заездов", async () => {

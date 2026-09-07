@@ -425,14 +425,15 @@ async function getRoundScoringProgressInTx(tx: PrismaTx | typeof prisma, roundId
   const assignments = await tx.judgeAssignment.findMany({ where: { divisionId: round.divisionId }, select: { id: true, role: true } });
   const relevantAssignments = assignments.filter((a) => !skippedRoles.has(a.role));
 
-  // Формат 0/1 ("Да/Нет"): раунд не ждёт от судьи явного "Нет" по каждому
-  // оставшемуся (клики "Да" сами по себе не завершают раунд — только явное
-  // "Готово", confirmJudgeRoundDone в scoring.ts) — по запросу пользователя,
-  // 2026-09-04: судья свободно меняет мнение сколько угодно, а раунд не
-  // должен мгновенно и необратимо завершиться от случайного лишнего клика.
-  // "required"/"submitted" здесь — не сырые оценки, а число судей и число
-  // тех из них, кто уже нажал "Готово" (JudgeRoundConfirmation).
-  if (round.judgingMaxScore === 1 && (round.finalistsCount ?? 0) > 0) {
+  // Форматы 0/1 ("Да/Нет") и 0/1/2 (Round.judgingMaxScore === 2, с квотой по
+  // числу проходящих, 2026-09-07): раунд не ждёт от судьи явных оценок по
+  // каждому оставшемуся (сырые клики сами по себе не завершают раунд —
+  // только явное "Готово", confirmJudgeRoundDone в scoring.ts) — по запросу
+  // пользователя, 2026-09-04: судья свободно меняет мнение сколько угодно, а
+  // раунд не должен мгновенно и необратимо завершиться от случайного лишнего
+  // клика. "required"/"submitted" здесь — не сырые оценки, а число судей и
+  // число тех из них, кто уже нажал "Готово" (JudgeRoundConfirmation).
+  if ((round.judgingMaxScore === 1 || round.judgingMaxScore === 2) && (round.finalistsCount ?? 0) > 0) {
     if (relevantAssignments.length === 0) return { required: 0, submitted: 0, complete: true };
     const confirmed = await tx.judgeRoundConfirmation.count({
       where: { roundId, judgeAssignmentId: { in: relevantAssignments.map((a) => a.id) } },

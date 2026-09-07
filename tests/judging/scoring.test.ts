@@ -62,7 +62,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { submitJudgeScore, getJudgeQueue, confirmJudgeRoundDone } = await import("@/server/judging/scoring");
+const { submitJudgeScore, getJudgeQueue, confirmJudgeRoundDone, scoreQuotaForScale2 } = await import("@/server/judging/scoring");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -295,16 +295,89 @@ describe("confirmJudgeRoundDone()", () => {
     expect(txJudgeRoundConfirmationCreate).not.toHaveBeenCalled();
   });
 
-  it('отклоняет "Готово" для раунда со шкалой 0/1/2 — кнопка только для формата "Да/Нет"', async () => {
-    roundFindUniqueOrThrow.mockResolvedValue({ ...roundBase, judgingMaxScore: 2 });
-
-    await expect(confirmJudgeRoundDone("round1")).rejects.toBeInstanceOf(ValidationFailedError);
-    expect(judgeAssignmentFindMany).not.toHaveBeenCalled();
-  });
-
   it("отклоняет, если раунд уже завершён", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({ ...roundBase, status: "COMPLETED" });
 
     await expect(confirmJudgeRoundDone("round1")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+});
+
+// scoreQuotaForScale2() — чистая функция, квота для формата "0/1/2"
+// (docs/00_DECISIONS.md, 2026-09-07): ceil(N/2) оценок "2", floor(N/2)
+// оценок "1", где N = Round.finalistsCount для роли.
+describe("scoreQuotaForScale2()", () => {
+  it("чётное N — поровну", () => {
+    expect(scoreQuotaForScale2(6)).toEqual({ twosNeeded: 3, onesNeeded: 3 });
+  });
+
+  it("нечётное N — лишняя единица уходит в «2»", () => {
+    expect(scoreQuotaForScale2(3)).toEqual({ twosNeeded: 2, onesNeeded: 1 });
+  });
+
+  it("N=1 — одна оценка «2», ни одной «1»", () => {
+    expect(scoreQuotaForScale2(1)).toEqual({ twosNeeded: 1, onesNeeded: 0 });
+  });
+
+  it("N=0 — квота пустая (в проде недостижимо: confirmJudgeRoundDone отклоняет finalistsCount=0)", () => {
+    expect(scoreQuotaForScale2(0)).toEqual({ twosNeeded: 0, onesNeeded: 0 });
+  });
+});
+
+// Формат "0/1/2" (Round.judgingMaxScore=2) — та же строгость, что и "Да/Нет":
+// жёсткий блок на "Готово", пока распределение "2"/"1" не совпадёт точно с
+// scoreQuotaForScale2 (docs/00_DECISIONS.md, 2026-09-07). До этой фичи любой
+// judgingMaxScore !== 1 отклонялся сразу — теперь 2 полноценно поддержан.
+describe('confirmJudgeRoundDone() — формат "0/1/2"', () => {
+  const roundBase2 = {
+    id: "round1",
+    status: "SCORING",
+    judgingMaxScore: 2,
+    finalistsCount: 6, // twosNeeded=3, onesNeeded=3
+    division: { id: "div1", competitionId: "comp1" },
+  };
+
+  function mockCounts(twos: number, ones: number) {
+    txJudgeScoreCount.mockImplementation(({ where }: { where: { value: number } }) =>
+      Promise.resolve(where.value === 2 ? twos : ones)
+    );
+  }
+
+  it("фиксирует оценки при точной квоте (чётное N=6 → 3 «2» и 3 «1»)", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue(roundBase2);
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "LEADER" }]);
+    txJudgeRoundConfirmationFindUnique.mockResolvedValue(null);
+    mockCounts(3, 3);
+    txJudgeRoundConfirmationCreate.mockResolvedValue({ id: "conf1" });
+
+    await confirmJudgeRoundDone("round1");
+
+    expect(txJudgeRoundConfirmationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ roundId: "round1", judgeAssignmentId: "assign1", yesCount: 3 }) })
+    );
+    expect(maybeFinalizeAfterScoreInTxMock).toHaveBeenCalledWith(fakeTx, "round1", actor);
+  });
+
+  it("нечётное N=3 (twosNeeded=2, onesNeeded=1) — фиксирует при 2 «2» и 1 «1»", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({ ...roundBase2, finalistsCount: 3 });
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "FOLLOWER" }]);
+    txJudgeRoundConfirmationFindUnique.mockResolvedValue(null);
+    mockCounts(2, 1);
+    txJudgeRoundConfirmationCreate.mockResolvedValue({ id: "conf1" });
+
+    await confirmJudgeRoundDone("round1");
+
+    expect(txJudgeRoundConfirmationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ yesCount: 2 }) })
+    );
+  });
+
+  it('отклоняет "Готово", если числа "2"/"1" не совпадают с квотой, и ничего не фиксирует', async () => {
+    roundFindUniqueOrThrow.mockResolvedValue(roundBase2);
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "LEADER" }]);
+    txJudgeRoundConfirmationFindUnique.mockResolvedValue(null);
+    mockCounts(4, 2); // нужно 3 и 3
+
+    await expect(confirmJudgeRoundDone("round1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txJudgeRoundConfirmationCreate).not.toHaveBeenCalled();
   });
 });

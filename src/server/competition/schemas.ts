@@ -28,6 +28,13 @@ export const divisionStagePlanEntrySchema = z.object({
   participantCount: z.coerce.number().int().positive(),
 });
 
+// Метод оценки раундов ДО финала (1 = "Да/Нет", 2 = "0/1/2" с квотой по
+// числу проходящих) — задаётся один раз при создании дивизиона, дальше не
+// меняется (см. addDivisionSchema, не входит в updateDivisionSettingsSchema).
+export const judgingMaxScoreSchema = z.coerce.number().int().refine((v) => v === 1 || v === 2, {
+  message: 'Метод оценки должен быть "Да/Нет" (1) или "0/1/2" (2).',
+});
+
 export const addDivisionSchema = z.object({
   categoryId: z.string().min(1),
   minAge: z.coerce.number().int().positive().optional(),
@@ -41,6 +48,7 @@ export const addDivisionSchema = z.object({
   rotationIntervalSec: z.coerce.number().int().positive().optional(),
   rotationShiftMin: z.coerce.number().int().positive().optional(),
   rotationShiftMax: z.coerce.number().int().positive().optional(),
+  judgingMaxScore: judgingMaxScoreSchema.default(1),
   stagePlan: z.array(divisionStagePlanEntrySchema).default([]),
   rules: z.record(z.unknown()).default({}),
 });

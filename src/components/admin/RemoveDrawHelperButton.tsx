@@ -3,8 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { invalidateHelperCandidates } from "./draw-helper-candidates";
 
-export function RemoveDrawHelperButton({ participantId }: { participantId: string }) {
+export function RemoveDrawHelperButton({
+  participantId,
+  heatId,
+  role,
+}: {
+  participantId: string;
+  heatId: string;
+  role: "LEADER" | "FOLLOWER";
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -12,7 +21,10 @@ export function RemoveDrawHelperButton({ participantId }: { participantId: strin
     setLoading(true);
     const res = await fetch(`/api/draw-participants/${participantId}`, { method: "DELETE" });
     setLoading(false);
-    if (res.ok) router.refresh();
+    if (res.ok) {
+      invalidateHelperCandidates(heatId, role);
+      router.refresh();
+    }
   }
 
   return (

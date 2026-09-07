@@ -362,6 +362,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       rotationShiftMin: d.rotationShiftMin,
                       rotationShiftMax: d.rotationShiftMax,
                     }}
+                    judgingMaxScore={d.judgingMaxScore}
                   />
                 )}
                 {canManageRounds && (

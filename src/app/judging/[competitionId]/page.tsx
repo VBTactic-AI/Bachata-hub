@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { getActor } from "@/server/rbac/actor";
-import { getJudgeQueue, type JudgeQueueItem } from "@/server/judging/scoring";
+import { getJudgeQueue, scoreQuotaForScale2, type JudgeQueueItem } from "@/server/judging/scoring";
 import { listMyActiveFinalRounds } from "@/server/judging/final-scoring";
 import { measureServerOperation } from "@/lib/performance-debug/server";
 import { DomainError } from "@/server/errors";
 import { JudgeScoreButtons } from "@/components/admin/JudgeScoreButtons";
 import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
 import { JudgingQueueBanner } from "@/components/admin/judging/JudgingQueueBanner";
+import { JudgeQueueRefresher } from "@/components/admin/judging/JudgeQueueRefresher";
 import { REGISTRATION_ROLE_LABELS as ROLE_LABELS } from "@/lib/competition-labels";
 
 // "Отметили X из N" — сколько "Да" судья уже поставил в этом раунде из
@@ -22,6 +23,29 @@ function YesCounter({ marked, total }: { marked: number; total: number }) {
     <p className={`m-0 text-sm font-semibold ${over ? "text-red-400" : "text-night-muted"}`}>
       Отметили {marked} из {total}
       {over && " — это больше, чем нужно"}
+    </p>
+  );
+}
+
+// Тот же смысл, что YesCounter, но для формата "0/1/2" (2026-09-07):
+// судья должен поставить ровно twosNeeded оценок "2" и onesNeeded оценок
+// "1" (scoreQuotaForScale2, scoring.ts) — числа считаются на сервере, здесь
+// только сравнение с уже поставленным для подсветки.
+function ScoreQuotaCounter({
+  markedTwos,
+  twosNeeded,
+  markedOnes,
+  onesNeeded,
+}: {
+  markedTwos: number;
+  twosNeeded: number;
+  markedOnes: number;
+  onesNeeded: number;
+}) {
+  const off = markedTwos !== twosNeeded || markedOnes !== onesNeeded;
+  return (
+    <p className={`m-0 text-sm font-semibold ${off ? "text-red-400" : "text-night-muted"}`}>
+      Нужно «2»: {markedTwos} из {twosNeeded} · «1»: {markedOnes} из {onesNeeded}
     </p>
   );
 }
@@ -69,6 +93,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
 
   return (
     <div className="flex flex-col gap-4">
+      <JudgeQueueRefresher />
       <h1 className="m-0 font-night text-xl font-extrabold text-night-text">Судейство</h1>
       <JudgingQueueBanner />
       {myFinalRounds.length > 0 && (
@@ -106,14 +131,22 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
           }
           const { maxValue, finalistsCount } = roundItems[0];
           const markedYes = roundItems.filter((i) => i.myScore === 1).length;
+          const markedTwos = roundItems.filter((i) => i.myScore === 2).length;
+          const markedOnes = roundItems.filter((i) => i.myScore === 1).length;
           const yesNoFormat = maxValue === 1 && finalistsCount > 0;
+          const scale2Format = maxValue === 2 && finalistsCount > 0;
+          const { twosNeeded, onesNeeded } = scoreQuotaForScale2(finalistsCount);
           const confirmed = confirmedSet.has(roundId);
 
           return (
             <div key={roundId} className="flex flex-col gap-3">
-              {yesNoFormat && (
+              {(yesNoFormat || scale2Format) && (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-app border border-night-border bg-night-card p-3">
-                  <YesCounter marked={markedYes} total={finalistsCount} />
+                  {yesNoFormat ? (
+                    <YesCounter marked={markedYes} total={finalistsCount} />
+                  ) : (
+                    <ScoreQuotaCounter markedTwos={markedTwos} twosNeeded={twosNeeded} markedOnes={markedOnes} onesNeeded={onesNeeded} />
+                  )}
                   {confirmed ? (
                     <span className="rounded-full border border-night-success/40 bg-night-success/10 px-3 py-1 text-sm font-semibold text-night-success">
                       ✓ Готово — оценки зафиксированы

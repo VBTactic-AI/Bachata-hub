@@ -4,15 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/field";
-
-type Candidate = { id: string; displayName: string; bibNumber: string | null };
-type CandidateGroup = {
-  divisionId: string;
-  categoryName: string;
-  categoryOrder: number;
-  isOwnDivision: boolean;
-  registrations: Candidate[];
-};
+import { fetchHelperCandidates, invalidateHelperCandidates, type HelperCandidateGroup } from "./draw-helper-candidates";
 
 export function ReplaceDrawHelperButton({
   heatId,
@@ -25,7 +17,7 @@ export function ReplaceDrawHelperButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [groups, setGroups] = useState<CandidateGroup[]>([]);
+  const [groups, setGroups] = useState<HelperCandidateGroup[]>([]);
   const [registrationId, setRegistrationId] = useState("");
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -35,18 +27,15 @@ export function ReplaceDrawHelperButton({
     if (!open) return;
     setLoadingCandidates(true);
     setError(null);
-    fetch(`/api/heats/${heatId}/helpers?role=${role}`)
-      .then((res) => res.json())
+    fetchHelperCandidates(heatId, role)
       .then((data) => {
-        if (!data.ok) {
-          setError(data.error || "Не удалось загрузить список кандидатов.");
-          setGroups([]);
-          return;
-        }
-        setGroups(data.divisions ?? []);
-        setRegistrationId(data.suggestedRegistrationId ?? data.divisions?.[0]?.registrations?.[0]?.id ?? "");
+        setGroups(data.divisions);
+        setRegistrationId(data.suggestedRegistrationId ?? data.divisions[0]?.registrations[0]?.id ?? "");
       })
-      .catch(() => setError("Не удалось загрузить список кандидатов."))
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "Не удалось загрузить список кандидатов.");
+        setGroups([]);
+      })
       .finally(() => setLoadingCandidates(false));
   }, [open, role, heatId]);
 
@@ -65,6 +54,7 @@ export function ReplaceDrawHelperButton({
       setError(data.error || "Не удалось заменить помощника.");
       return;
     }
+    invalidateHelperCandidates(heatId, role);
     setOpen(false);
     router.refresh();
   }
