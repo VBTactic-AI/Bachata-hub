@@ -16,7 +16,6 @@ export type PublicRosterRow = {
   displayName: string;
   bibNumber: string | null;
 };
-export type PublicFinalistGroup = { roundLabel: string; divisionCategoryName: string; rows: PublicRosterRow[] };
 export type PublicResultRow = PublicRosterRow & { status: "FINALIST" | "ELIMINATED"; placement: number | null };
 export type PublicLiveStatus = { heatId: string; heatNumber: number; roundLabel: string; divisionCategoryName: string } | null;
 
@@ -27,10 +26,11 @@ export type PublicLiveStatus = { heatId: string; heatNumber: number; roundLabel:
 // (для промежуточных раундов — Round.advancementPublishedAt/RoundResult; для
 // финала — Competition.publicResults/Result, ровно тот же гейт, что и в
 // resultsPublished/results выше — не изобретаем новое правило публикации).
-// "ADVANCED" используется единообразно и для промежуточного отсева
-// (RoundResult.status===ADVANCED), и для финального FINALIST — для
-// зрителя это один и тот же смысл "прошёл этот раунд".
-export type PublicRoundProgressStatus = "ADVANCED" | "ELIMINATED" | null;
+// "ADVANCED" используется для промежуточного отсева (RoundResult.status===ADVANCED)
+// — для зрителя это просто "прошёл этот раунд". В колонке финала вместо
+// "ADVANCED" — конкретное МЕСТО (Result.placement, по запросу пользователя,
+// 2026-09-07): там уже не отсев, а призовые места, число информативнее галочки.
+export type PublicRoundProgressStatus = "ADVANCED" | "ELIMINATED" | number | null;
 export type PublicDivisionProgressColumn = { roundId: string; label: string; isFinal: boolean };
 export type PublicDivisionProgressRow = PublicRosterRow & { cells: Record<string, PublicRoundProgressStatus> };
 export type PublicDivisionProgress = { divisionId: string; columns: PublicDivisionProgressColumn[]; rows: PublicDivisionProgressRow[] };
@@ -52,7 +52,6 @@ export type PublicCompetitionView = {
   divisions: PublicDivisionSummary[];
   judges: PublicJudge[];
   liveStatus: PublicLiveStatus;
-  finalistGroups: PublicFinalistGroup[];
   resultsPublished: boolean;
   results: PublicResultRow[];
   divisionProgress: PublicDivisionProgress[];
@@ -85,7 +84,7 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
   });
   if (!competition || competition.status === "DRAFT") return null;
 
-  const [divisions, judgeAssignments, activeHeat, publishedRounds, resultRows, registrationsByRole, progressRounds, progressRegistrations] = await Promise.all([
+  const [divisions, judgeAssignments, activeHeat, resultRows, registrationsByRole, progressRounds, progressRegistrations] = await Promise.all([
     prisma.division.findMany({
       where: { competitionId },
       select: {
@@ -106,22 +105,6 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         id: true,
         number: true,
         round: { select: { type: true, stage: { select: { name: true } }, division: { select: { category: { select: { name: true } } } } } },
-      },
-    }),
-    prisma.round.findMany({
-      where: { division: { competitionId }, advancementPublishedAt: { not: null } },
-      select: {
-        type: true,
-        stage: { select: { name: true } },
-        division: { select: { category: { select: { name: true } } } },
-        results: {
-          where: { status: "ADVANCED" },
-          select: {
-            registration: {
-              select: { role: true, dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } },
-            },
-          },
-        },
       },
     }),
     competition.publicResults
@@ -175,19 +158,6 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
     .sort((a, b) => a.localeCompare(b))
     .map((displayName) => ({ displayName }));
 
-  const finalistGroups: PublicFinalistGroup[] = publishedRounds
-    .filter((r) => r.results.length > 0)
-    .map((r) => ({
-      roundLabel: roundLabel(r),
-      divisionCategoryName: r.division.category.name,
-      rows: r.results.map((rr) => ({
-        divisionCategoryName: r.division.category.name,
-        role: rr.registration.role,
-        displayName: rr.registration.dancer.displayName,
-        bibNumber: rr.registration.checkIn?.bibNumber ?? null,
-      })),
-    }));
-
   const latestResultByKey = new Map<string, (typeof resultRows)[number]>();
   for (const r of resultRows) {
     const key = `${r.divisionId}:${r.registrationId}`;
@@ -224,7 +194,7 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         for (const r of rounds) {
           if (r.id === finalRoundId) {
             const result = latestResultByKey.get(`${d.id}:${reg.id}`);
-            cells[r.id] = result ? (result.status === "FINALIST" ? "ADVANCED" : "ELIMINATED") : null;
+            cells[r.id] = result ? (result.status === "FINALIST" ? result.placement : "ELIMINATED") : null;
           } else if (r.advancementPublishedAt) {
             const rr = r.results.find((x) => x.registrationId === reg.id);
             cells[r.id] = rr ? (rr.status === "ADVANCED" ? "ADVANCED" : "ELIMINATED") : null;
@@ -271,7 +241,6 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
           divisionCategoryName: activeHeat.round.division.category.name,
         }
       : null,
-    finalistGroups,
     divisionProgress,
     resultsPublished: competition.publicResults,
     results,

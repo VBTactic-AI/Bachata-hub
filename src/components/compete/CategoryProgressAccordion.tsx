@@ -8,7 +8,8 @@ export type CategoryProgressItem = { id: string; categoryName: string; registrat
 
 function StatusMark({ status }: { status: PublicRoundProgressStatus }) {
   if (status === "ADVANCED") return <span className="font-semibold text-night-success">✓</span>;
-  if (status === "ELIMINATED") return <span className="text-night-disabled">✗</span>;
+  if (status === "ELIMINATED") return <span className="font-semibold text-red-400">✗</span>;
+  if (typeof status === "number") return <span className="font-semibold text-night-success">{status}</span>;
   return <span className="text-night-disabled">—</span>;
 }
 

@@ -144,39 +144,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         </div>
       )}
 
-      {view.finalistGroups.length > 0 && (
-        <div>
-          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Финалисты</h2>
-          <div className="stack gap-3">
-            {view.finalistGroups.map((g, idx) => (
-              <div key={idx}>
-                <p className="m-0 mb-1 text-xs uppercase tracking-wide text-night-muted">
-                  {g.divisionCategoryName} · {g.roundLabel}
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  {(["LEADER", "FOLLOWER"] as const).map((role) => {
-                    const rows = g.rows.filter((r) => r.role === role);
-                    if (rows.length === 0) return null;
-                    return (
-                      <div key={role}>
-                        <p className="m-0 text-[0.72rem] text-night-muted">{REGISTRATION_ROLE_LABELS[role]}</p>
-                        <ul className="m-0 list-none p-0 text-sm text-night-text">
-                          {rows.map((r) => (
-                            <li key={`${r.bibNumber}-${r.displayName}`}>
-                              №{r.bibNumber ?? "—"} {r.displayName}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {view.resultsPublished && view.results.length > 0 && (
         <div>
           <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Результаты</h2>
