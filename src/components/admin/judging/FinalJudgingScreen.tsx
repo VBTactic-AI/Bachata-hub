@@ -11,6 +11,18 @@ import {
 } from "@/components/admin/judging/final-judge-score-queue";
 
 export type FinalCriterionInfo = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
+
+// Цвета мест для RELATIVE_PLACEMENT (скейтинг) — по бренд-палитре "night"
+// (tailwind.config.ts: primary/success — остальное подобрано в тон, чтобы
+// вписаться в тёмную тему раздела /judging). Индекс 5 (жёлтый) — единственный,
+// которому нужен тёмный текст вместо белого.
+const PLACE_COLORS = ["#ff2d8a", "#37d67a", "#a78bfa", "#fb923c", "#22d3ee", "#facc15", "#ff9ac9", "#94a3b8"];
+function placeColor(place: number): string {
+  return PLACE_COLORS[(place - 1) % PLACE_COLORS.length];
+}
+function placeTextColor(place: number): string {
+  return (place - 1) % PLACE_COLORS.length === 5 ? "#241c00" : "#ffffff";
+}
 export type FinalQueueItem = {
   drawParticipantId: string;
   role: "LEADER" | "FOLLOWER";
@@ -55,6 +67,9 @@ export function FinalJudgingScreen({
   const router = useRouter();
   const [tab, setTab] = useState<"score" | "rating">("score");
   const [index, setIndex] = useState(0);
+  // Открытая карточка выбора места (скейтинг) — id участника, для которого
+  // сейчас показан лист с местами 1..N, либо null, если лист закрыт.
+  const [placeSheetFor, setPlaceSheetFor] = useState<string | null>(null);
   // Реактивный тик — просто чтобы перерисоваться, когда очередь меняется
   // (эффективные значения читаются заново из очереди/пропсов при рендере).
   const [, setTick] = useState(0);
@@ -150,16 +165,53 @@ export function FinalJudgingScreen({
   const currentSum = effectiveSum(current);
   const currentRank = ranked.findIndex((r) => r.drawParticipantId === current.drawParticipantId) + 1;
 
+  // RELATIVE_PLACEMENT — вместо табов "Оценка"/"Мой рейтинг" со сквозным
+  // пролистыванием одного участника за раз, судья видит сразу весь список
+  // своей роли с местом рядом с каждым (промт пользователя, 2026-09-07:
+  // "место отображается сразу, чтобы всегда было перед глазами"). Формат
+  // гарантированно имеет ровно один критерий (FinalSettingsPanel.tsx,
+  // валидация "требует ровно один критерий") — это он и есть.
+  const placementCriterion = format === "RELATIVE_PLACEMENT" ? sortedCriteria[0] : undefined;
+
+  function placeOf(item: FinalQueueItem): number | null {
+    return placementCriterion ? effectiveValue(item, placementCriterion.id) : null;
+  }
+  // Места уникальны в пределах РОЛИ (final-scoring.ts: sameRoleIds), не
+  // глобально — Leaders и Followers судятся раздельными пулами (CLAUDE.md §5).
+  function roleGroup(role: "LEADER" | "FOLLOWER") {
+    return items.filter((it) => it.role === role);
+  }
+  function holderAtPlace(role: "LEADER" | "FOLLOWER", place: number, excludeId: string) {
+    return roleGroup(role).find((it) => it.drawParticipantId !== excludeId && placeOf(it) === place);
+  }
+  // Переставить участника на свободное место — идёт через ту же офлайн-очередь
+  // (final-judge-score-queue.ts), что и обычная оценка: один PATCH-по-сути на
+  // (drawParticipantId, criterionId). НЕ реализуем "поменять местами" —
+  // сервер (final-scoring.ts) проверяет отсутствие дубликата места СИНХРОННО
+  // на каждую отправку, поэтому одновременный обмен двух уже занятых мест
+  // неизбежно споткнётся о переходное состояние, где оба участника случайно
+  // делят одно значение. Если место занято другим — переключаем лист на
+  // ЭТОГО другого участника, чтобы судья сначала освободил место у него.
+  function assignPlace(item: FinalQueueItem, place: number) {
+    if (!placementCriterion || confirmed) return;
+    enqueueFinalJudgeScore(item.drawParticipantId, placementCriterion.id, place);
+  }
+  const rolesPresent = (["LEADER", "FOLLOWER"] as const).filter((r) => items.some((it) => it.role === r));
+  const placedCount = placementCriterion ? items.filter((it) => placeOf(it) !== null).length : 0;
+  const sheetItem = placeSheetFor ? (items.find((it) => it.drawParticipantId === placeSheetFor) ?? null) : null;
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1 rounded-app bg-night-card p-4">
-        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-night-muted">
-          Пара {index + 1} из {items.length} · оценено {scoredCount}
-        </p>
-        <p className="m-0 text-lg font-bold text-night-text">
-          №{current.bibNumber ?? "—"} {current.displayName} · {current.role === "LEADER" ? "Ведущий" : "Ведомая"}
-        </p>
-      </div>
+      {!placementCriterion && (
+        <div className="flex flex-col gap-1 rounded-app bg-night-card p-4">
+          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-night-muted">
+            Пара {index + 1} из {items.length} · оценено {scoredCount}
+          </p>
+          <p className="m-0 text-lg font-bold text-night-text">
+            №{current.bibNumber ?? "—"} {current.displayName} · {current.role === "LEADER" ? "Ведущий" : "Ведомая"}
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-app border border-night-border bg-night-card p-3">
         <p className={`m-0 text-sm font-semibold ${scoredCount < items.length ? "text-night-muted" : "text-night-success"}`}>
@@ -174,109 +226,214 @@ export function FinalJudgingScreen({
         )}
       </div>
 
-      <div className="flex gap-2 rounded-full bg-night-card p-1">
-        <button
-          type="button"
-          onClick={() => setTab("score")}
-          className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "score" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
-        >
-          Оценка
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("rating")}
-          className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "rating" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
-        >
-          Мой рейтинг
-        </button>
-      </div>
-
-      {tab === "score" && (
+      {placementCriterion ? (
         <div className="flex flex-col gap-3">
-          {myCriteriaFor(current).map((c) => {
-            const value = effectiveValue(current, c.id);
-            const criterionError = errorsByKey[`${current.drawParticipantId}:${c.id}`];
-            const canDec = value !== null && value - c.step >= c.minScore;
-            const canInc = value === null ? true : value + c.step <= c.maxScore;
-            return (
-              <div key={c.id} className="flex items-center gap-3 rounded-app bg-night-card p-4">
-                <div className="min-w-0 flex-1">
-                  <p className="m-0 text-[0.95rem] font-semibold text-night-text">{c.name}</p>
-                  <p className="m-0 text-xs text-night-muted">
-                    {c.minScore}–{c.maxScore}
-                  </p>
-                  {criterionError && <p className="m-0 mt-1 text-xs text-red-400">{criterionError}</p>}
-                </div>
-                <button
-                  type="button"
-                  disabled={!canDec || confirmed}
-                  onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.max(c.minScore, (value ?? c.minScore) - c.step))}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
-                >
-                  −
-                </button>
-                <span className="w-9 shrink-0 text-center text-xl font-bold text-night-text">{value ?? "–"}</span>
-                <button
-                  type="button"
-                  disabled={!canInc || confirmed}
-                  onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.min(c.maxScore, (value ?? c.minScore) + c.step))}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
-                >
-                  +
-                </button>
-              </div>
-            );
-          })}
-
-          <div className="flex items-center justify-between px-1">
-            <div>
-              <p className="m-0 text-xs uppercase tracking-wide text-night-muted">{lowerIsBetter ? "Место" : "Моя сумма"}</p>
-              <p className="m-0 text-2xl font-bold text-night-text">{currentSum}</p>
+          <div className="flex items-center gap-2 rounded-app bg-night-card p-3">
+            <span className="shrink-0 text-xs font-semibold text-night-muted">
+              {placedCount} / {items.length}
+            </span>
+            <div className="flex flex-1 gap-1">
+              {items.map((it) => (
+                <span
+                  key={it.drawParticipantId}
+                  className={`h-1.5 flex-1 rounded-full ${placeOf(it) !== null ? "bg-night-primary" : "bg-night-card2"}`}
+                />
+              ))}
             </div>
-            {!lowerIsBetter && (
-              <div className="text-right">
-                <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моё место</p>
-                <p className="m-0 text-2xl font-bold text-night-primary">#{currentRank}</p>
-              </div>
-            )}
           </div>
 
-          <div className="flex items-center justify-between gap-2">
+          {rolesPresent.map((role) => (
+            <div key={role} className="flex flex-col gap-1 rounded-app bg-night-card p-2">
+              {rolesPresent.length > 1 && (
+                <p className="m-0 px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-night-muted">
+                  {role === "LEADER" ? "Ведущие" : "Ведомые"}
+                </p>
+              )}
+              {roleGroup(role).map((it) => {
+                const place = placeOf(it);
+                return (
+                  <button
+                    key={it.drawParticipantId}
+                    type="button"
+                    disabled={confirmed}
+                    onClick={() => setPlaceSheetFor(it.drawParticipantId)}
+                    className="grid grid-cols-[40px_1fr_52px] items-center gap-2 rounded-app-sm border-b border-night-border/60 px-2 py-3 text-left last:border-b-0 disabled:opacity-60"
+                  >
+                    <span className="font-night text-sm font-bold text-night-muted">{it.bibNumber ?? "—"}</span>
+                    <span className="min-w-0 truncate text-[0.95rem] text-night-text">{it.displayName}</span>
+                    <span
+                      className="flex h-9 w-full items-center justify-center rounded-app-sm border border-night-border text-base font-extrabold text-night-muted"
+                      style={place !== null ? { background: placeColor(place), color: placeTextColor(place), borderColor: "transparent" } : undefined}
+                    >
+                      {place ?? "—"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2 rounded-full bg-night-card p-1">
+            <button
+              type="button"
+              onClick={() => setTab("score")}
+              className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "score" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
+            >
+              Оценка
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("rating")}
+              className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "rating" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
+            >
+              Мой рейтинг
+            </button>
+          </div>
+
+          {tab === "score" && (
+            <div className="flex flex-col gap-3">
+              {myCriteriaFor(current).map((c) => {
+                const value = effectiveValue(current, c.id);
+                const criterionError = errorsByKey[`${current.drawParticipantId}:${c.id}`];
+                const canDec = value !== null && value - c.step >= c.minScore;
+                const canInc = value === null ? true : value + c.step <= c.maxScore;
+                return (
+                  <div key={c.id} className="flex items-center gap-3 rounded-app bg-night-card p-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="m-0 text-[0.95rem] font-semibold text-night-text">{c.name}</p>
+                      <p className="m-0 text-xs text-night-muted">
+                        {c.minScore}–{c.maxScore}
+                      </p>
+                      {criterionError && <p className="m-0 mt-1 text-xs text-red-400">{criterionError}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!canDec || confirmed}
+                      onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.max(c.minScore, (value ?? c.minScore) - c.step))}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
+                    >
+                      −
+                    </button>
+                    <span className="w-9 shrink-0 text-center text-xl font-bold text-night-text">{value ?? "–"}</span>
+                    <button
+                      type="button"
+                      disabled={!canInc || confirmed}
+                      onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.min(c.maxScore, (value ?? c.minScore) + c.step))}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
+                );
+              })}
+
+              <div className="flex items-center justify-between px-1">
+                <div>
+                  <p className="m-0 text-xs uppercase tracking-wide text-night-muted">{lowerIsBetter ? "Место" : "Моя сумма"}</p>
+                  <p className="m-0 text-2xl font-bold text-night-text">{currentSum}</p>
+                </div>
+                {!lowerIsBetter && (
+                  <div className="text-right">
+                    <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моё место</p>
+                    <p className="m-0 text-2xl font-bold text-night-primary">#{currentRank}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={index === 0}
+                  onClick={() => setIndex((i) => Math.max(0, i - 1))}
+                  className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+                >
+                  ← Предыдущий
+                </Button>
+                <Button
+                  type="button"
+                  disabled={index >= items.length - 1}
+                  onClick={() => setIndex((i) => Math.min(items.length - 1, i + 1))}
+                  className="border-none bg-gradient-night-cta"
+                >
+                  Следующий →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {tab === "rating" && (
+            <div className="rounded-app bg-night-card p-4">
+              <p className="m-0 mb-3 text-sm text-night-muted">Мой рейтинг — не является официальным результатом соревнования.</p>
+              <ol className="m-0 flex list-none flex-col gap-2 p-0">
+                {ranked.map((r, i) => (
+                  <li key={r.drawParticipantId} className="flex items-center justify-between gap-2 rounded-app-sm bg-night-card2 px-3 py-2.5 text-sm">
+                    <span className="text-night-text">
+                      #{i + 1} · №{r.bibNumber ?? "—"} {r.displayName}
+                    </span>
+                    <span className="font-bold text-night-primary">{effectiveSum(r)}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </>
+      )}
+
+      {sheetItem && placementCriterion && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setPlaceSheetFor(null)} />
+          <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[520px] rounded-t-app border-t border-night-border bg-night-card2 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-night-border" />
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-night-muted">№{sheetItem.bibNumber ?? "—"}</p>
+            <h3 className="m-0 mb-3 font-night text-lg font-extrabold text-night-text">{sheetItem.displayName}</h3>
+            <div className="grid max-h-[50vh] grid-cols-4 gap-2 overflow-y-auto">
+              {Array.from(
+                { length: placementCriterion.maxScore - placementCriterion.minScore + 1 },
+                (_, i) => placementCriterion.minScore + i
+              ).map((place) => {
+                const holder = holderAtPlace(sheetItem.role, place, sheetItem.drawParticipantId);
+                const mine = placeOf(sheetItem) === place;
+                return (
+                  <button
+                    key={place}
+                    type="button"
+                    onClick={() => {
+                      if (mine) {
+                        setPlaceSheetFor(null);
+                        return;
+                      }
+                      if (holder) {
+                        setPlaceSheetFor(holder.drawParticipantId);
+                        return;
+                      }
+                      assignPlace(sheetItem, place);
+                      setPlaceSheetFor(null);
+                    }}
+                    className="flex min-h-[64px] flex-col items-center justify-center gap-0.5 rounded-app-sm border border-night-border px-1 py-2 text-center text-night-muted"
+                    style={holder || mine ? { background: placeColor(place), color: placeTextColor(place), borderColor: "transparent" } : undefined}
+                  >
+                    <span className="font-night text-lg font-extrabold">{place}</span>
+                    <span className="max-w-full truncate text-[10px] leading-tight opacity-90">
+                      {mine ? "выбрано" : holder ? holder.displayName : "свободно"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="m-0 mt-3 text-xs text-night-muted">Занятое место откроет карточку того участника — сначала переставьте его.</p>
             <Button
               type="button"
               variant="outline"
-              disabled={index === 0}
-              onClick={() => setIndex((i) => Math.max(0, i - 1))}
-              className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+              onClick={() => setPlaceSheetFor(null)}
+              className="mt-3 w-full border-night-border bg-transparent text-night-text hover:bg-night-card"
             >
-              ← Предыдущий
-            </Button>
-            <Button
-              type="button"
-              disabled={index >= items.length - 1}
-              onClick={() => setIndex((i) => Math.min(items.length - 1, i + 1))}
-              className="border-none bg-gradient-night-cta"
-            >
-              Следующий →
+              Отмена
             </Button>
           </div>
-        </div>
-      )}
-
-      {tab === "rating" && (
-        <div className="rounded-app bg-night-card p-4">
-          <p className="m-0 mb-3 text-sm text-night-muted">Мой рейтинг — не является официальным результатом соревнования.</p>
-          <ol className="m-0 flex list-none flex-col gap-2 p-0">
-            {ranked.map((r, i) => (
-              <li key={r.drawParticipantId} className="flex items-center justify-between gap-2 rounded-app-sm bg-night-card2 px-3 py-2.5 text-sm">
-                <span className="text-night-text">
-                  #{i + 1} · №{r.bibNumber ?? "—"} {r.displayName}
-                </span>
-                <span className="font-bold text-night-primary">{effectiveSum(r)}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+        </>
       )}
     </div>
   );
