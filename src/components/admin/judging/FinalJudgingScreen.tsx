@@ -207,7 +207,21 @@ export function FinalJudgingScreen({
   // optimisticallyCleared), к самой отправке отношения не имеет.
   function assignPlace(item: FinalQueueItem, place: number, holderId?: string) {
     if (!placementCriterion || confirmed) return;
-    if (holderId) setOptimisticallyCleared((prev) => new Set(prev).add(holderId));
+    // БАГ (промт пользователя, 2026-09-07): раньше сюда добавлялся только
+    // holderId — сам item.drawParticipantId, если он ПРЕЖДЕ уже был обнулён
+    // оптимистично (он же сейчас — прежний держатель чужого места), из
+    // optimisticallyCleared не убирался. Он получал новое значение через
+    // очередь, но placeOf() всё равно проверяет optimisticallyCleared ПЕРВЫМ
+    // делом и продолжал показывать "—", какое бы место дальше ни выбрали —
+    // до следующего router.refresh(). Явное новое значение всегда должно
+    // перекрывать более раннюю оптимистичную пометку "пусто" для ЭТОГО ЖЕ
+    // участника.
+    setOptimisticallyCleared((prev) => {
+      const next = new Set(prev);
+      next.delete(item.drawParticipantId);
+      if (holderId) next.add(holderId);
+      return next;
+    });
     enqueueFinalJudgeScore(item.drawParticipantId, placementCriterion.id, place);
   }
   const rolesPresent = (["LEADER", "FOLLOWER"] as const).filter((r) => items.some((it) => it.role === r));
