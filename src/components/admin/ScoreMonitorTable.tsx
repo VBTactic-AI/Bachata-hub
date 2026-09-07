@@ -429,6 +429,11 @@ function FinalRoleTable({ title, table }: { title: string; table: FinalTable }) 
                       className={`border border-line px-2 py-1 text-center ${total?.complete ? "text-success" : "text-danger"}`}
                     >
                       {total ? `${total.submitted}/${total.required}` : "—"}
+                      {total?.confirmed && (
+                        <span className="block text-xs text-success" title='Судья нажал "Готово" — оценки зафиксированы'>
+                          ✓ Готово
+                        </span>
+                      )}
                     </td>
                   );
                 })}

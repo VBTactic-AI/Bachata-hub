@@ -289,7 +289,41 @@ describe("getFinalScoreMonitor()", () => {
     expect(monitor).not.toBeNull();
     expect(monitor!.leader.rows[0].scores.j1).toEqual({ c1: 8, c2: null });
     // required=2 (2 критерия × 1 участник), submitted=1 (только c1 оценён) — не завершено.
-    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 2, submitted: 1, complete: false }]);
+    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 2, submitted: 1, complete: false, confirmed: false }]);
+  });
+
+  it("confirmed=true для финала, когда судья нажал «Готово» (та же JudgeRoundConfirmation, что и у обычных раундов)", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      division: { competitionId: "comp1" },
+      finalSession: {
+        format: "NORMAL",
+        config: {},
+        criteriaSnapshot: [{ id: "c1", name: "Timing", priority: 1, minScore: 0, maxScore: 10, step: 1 }],
+      },
+    });
+    judgeAssignmentFindMany.mockResolvedValue([judgeAssignment("j1", "LEADER", { email: "j1@x.com", dancerDisplayName: "Судья Ф" })]);
+    heatFindMany.mockResolvedValue([
+      {
+        draws: [
+          {
+            participants: [
+              {
+                id: "pA",
+                role: "LEADER",
+                registration: { checkIn: { bibNumber: "1" } },
+                finalJudgeScores: [{ judgeAssignmentId: "j1", criterionId: "c1", value: 8 }],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    judgeRoundConfirmationFindMany.mockResolvedValue([{ judgeAssignmentId: "j1" }]);
+
+    const monitor = await getFinalScoreMonitor("round1");
+
+    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 1, submitted: 1, complete: true, confirmed: true }]);
   });
 
   it("JUDGES_DANCE: критерий «танцующего судьи» не входит в required судьи ЭТОЙ ЖЕ роли участника", async () => {
@@ -313,7 +347,7 @@ describe("getFinalScoreMonitor()", () => {
 
     const monitor = await getFinalScoreMonitor("round1");
 
-    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 0, submitted: 0, complete: true }]);
+    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 0, submitted: 0, complete: true, confirmed: false }]);
     expect(monitor!.leader.rows[0].scores.j1).toEqual({ partnership: null });
   });
 });

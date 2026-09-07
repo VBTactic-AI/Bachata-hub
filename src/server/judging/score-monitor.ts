@@ -244,6 +244,20 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
     orderBy: { createdAt: "asc" },
   });
 
+  // Финал теперь тоже подтверждается кнопкой "Готово" (confirmFinalJudgeRoundDone,
+  // final-scoring.ts, 2026-09-07) — та же таблица JudgeRoundConfirmation, что
+  // и у обычных раундов.
+  const confirmedAssignmentIds = new Set(
+    assignments.length === 0
+      ? []
+      : (
+          await prisma.judgeRoundConfirmation.findMany({
+            where: { roundId, judgeAssignmentId: { in: assignments.map((a) => a.id) } },
+            select: { judgeAssignmentId: true },
+          })
+        ).map((c) => c.judgeAssignmentId)
+  );
+
   function buildTable(role: RegistrationRole): FinalScoreMonitorTable {
     const roleAssignments = assignments.filter((a) => a.role === role);
     const roleParticipants = [...participants.filter((p) => p.role === role)].sort(
@@ -276,7 +290,7 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
           if (p.finalJudgeScores.some((s) => s.criterionId === c.id && s.judgeAssignmentId === a.id)) submitted += 1;
         }
       }
-      return { judgeAssignmentId: a.id, required, submitted, complete: submitted >= required };
+      return { judgeAssignmentId: a.id, required, submitted, complete: submitted >= required, confirmed: confirmedAssignmentIds.has(a.id) };
     });
 
     return { criteria: criteria.map((c) => ({ id: c.id, name: c.name })), judges, rows, totals };
