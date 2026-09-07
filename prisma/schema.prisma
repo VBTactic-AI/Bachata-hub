@@ -23,7 +23,16 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // DATABASE_URL — transaction-pooler Supabase (:6543, pgbouncer=true),
+  // для обычных запросов приложения в рантайме — им и остаётся.
   url      = env("DATABASE_URL")
+  // directUrl — используется ТОЛЬКО Prisma CLI (migrate dev/deploy, db execute,
+  // introspect), не рантаймом. Через transaction-pooler `prisma migrate deploy`
+  // виснет/падает — миграциям нужны сессионные фичи (advisory locks),
+  // которых pgbouncer в transaction-режиме не даёт. См. .env.example —
+  // DIRECT_URL берётся из Supabase Dashboard → Database → Connection string
+  // → "Session pooler" или "Direct connection" (без pgbouncer=true).
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------

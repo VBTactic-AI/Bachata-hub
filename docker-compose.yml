@@ -24,6 +24,10 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://bachata:bachata@db:5432/bachata_hub
+      # DIRECT_URL обязателен для схемы (prisma migrate deploy ниже упадёт без
+      # него) — локальный "db" без pgbouncer, так что то же самое подключение
+      # подходит и для миграций, и для обычных запросов.
+      DIRECT_URL: postgresql://bachata:bachata@db:5432/bachata_hub
       # Без дефолта: если NEXTAUTH_SECRET/SESSION_SECRET не заданы в .env,
       # `docker compose up` должен упасть с понятной ошибкой, а не тихо
       # подняться на предсказуемом ключе (см. .env.example — как сгенерировать).
