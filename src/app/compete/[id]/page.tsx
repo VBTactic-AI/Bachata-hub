@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { InfoCard } from "@/components/compete/InfoCard";
+import { CategoryProgressAccordion } from "@/components/compete/CategoryProgressAccordion";
 import { getPublicCompetitionView } from "@/server/public/public-competition-view";
 import { REGISTRATION_ROLE_LABELS } from "@/lib/competition-labels";
 
@@ -136,14 +137,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {view.divisions.length > 0 && (
         <div>
           <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Категории</h2>
-          <div className="stack gap-2">
-            {view.divisions.map((d) => (
-              <div key={d.id} className="flex items-center justify-between rounded-app border border-night-border bg-night-card p-3">
-                <span className="text-sm font-medium text-night-text">{d.categoryName}</span>
-                <span className="text-sm text-night-muted">{d.registrationsCount} участников</span>
-              </div>
-            ))}
-          </div>
+          <CategoryProgressAccordion
+            items={view.divisions.map((d) => ({ id: d.id, categoryName: d.categoryName, registrationsCount: d.registrationsCount }))}
+            progress={view.divisionProgress}
+          />
         </div>
       )}
 

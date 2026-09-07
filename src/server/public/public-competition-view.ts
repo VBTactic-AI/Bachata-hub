@@ -20,6 +20,21 @@ export type PublicFinalistGroup = { roundLabel: string; divisionCategoryName: st
 export type PublicResultRow = PublicRosterRow & { status: "FINALIST" | "ELIMINATED"; placement: number | null };
 export type PublicLiveStatus = { heatId: string; heatNumber: number; roundLabel: string; divisionCategoryName: string } | null;
 
+// Прогресс по раундам одной категории (2026-09-07, по запросу пользователя)
+// — колонки: реальные раунды дивизиона (TIE_BREAK не в счёт, как и везде,
+// см. isFinalStageInTx), в порядке order; последняя колонка — финал.
+// Ячейка = null, пока результат ЭТОГО раунда не опубликован организатором
+// (для промежуточных раундов — Round.advancementPublishedAt/RoundResult; для
+// финала — Competition.publicResults/Result, ровно тот же гейт, что и в
+// resultsPublished/results выше — не изобретаем новое правило публикации).
+// "ADVANCED" используется единообразно и для промежуточного отсева
+// (RoundResult.status===ADVANCED), и для финального FINALIST — для
+// зрителя это один и тот же смысл "прошёл этот раунд".
+export type PublicRoundProgressStatus = "ADVANCED" | "ELIMINATED" | null;
+export type PublicDivisionProgressColumn = { roundId: string; label: string; isFinal: boolean };
+export type PublicDivisionProgressRow = PublicRosterRow & { cells: Record<string, PublicRoundProgressStatus> };
+export type PublicDivisionProgress = { divisionId: string; columns: PublicDivisionProgressColumn[]; rows: PublicDivisionProgressRow[] };
+
 export type PublicCompetitionView = {
   id: string;
   name: string;
@@ -40,6 +55,7 @@ export type PublicCompetitionView = {
   finalistGroups: PublicFinalistGroup[];
   resultsPublished: boolean;
   results: PublicResultRow[];
+  divisionProgress: PublicDivisionProgress[];
   stats: { registrationsCount: number; leadersCount: number; followersCount: number; divisionsCount: number };
 };
 
@@ -69,7 +85,7 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
   });
   if (!competition || competition.status === "DRAFT") return null;
 
-  const [divisions, judgeAssignments, activeHeat, publishedRounds, resultRows, registrationsByRole] = await Promise.all([
+  const [divisions, judgeAssignments, activeHeat, publishedRounds, resultRows, registrationsByRole, progressRounds, progressRegistrations] = await Promise.all([
     prisma.division.findMany({
       where: { competitionId },
       select: {
@@ -126,6 +142,31 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         })
       : Promise.resolve([]),
     prisma.registration.groupBy({ by: ["role"], where: { competitionId, status: "REGISTERED" }, _count: { _all: true } }),
+    // Раунды для таблицы прогресса по категориям (2026-09-07) — только
+    // "настоящие" раунды организатора (type: null — TIE_BREAK не отдельная
+    // публичная колонка, решение перетанцовки уже отражено в RoundResult
+    // родительского раунда, как и в publishRoundAdvancement).
+    prisma.round.findMany({
+      where: { division: { competitionId }, type: null },
+      orderBy: [{ divisionId: "asc" }, { order: "asc" }],
+      select: {
+        id: true,
+        divisionId: true,
+        stage: { select: { name: true } },
+        advancementPublishedAt: true,
+        results: { select: { registrationId: true, status: true } },
+      },
+    }),
+    prisma.registration.findMany({
+      where: { competitionId, status: "REGISTERED" },
+      select: {
+        id: true,
+        divisionId: true,
+        role: true,
+        dancer: { select: { displayName: true } },
+        checkIn: { select: { bibNumber: true } },
+      },
+    }),
   ]);
 
   const judges: PublicJudge[] = judgeAssignments
@@ -161,6 +202,47 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
     placement: r.placement,
   }));
 
+  const progressRoundsByDivision = new Map<string, (typeof progressRounds)>();
+  for (const r of progressRounds) {
+    const arr = progressRoundsByDivision.get(r.divisionId) ?? [];
+    arr.push(r);
+    progressRoundsByDivision.set(r.divisionId, arr);
+  }
+
+  const divisionProgress: PublicDivisionProgress[] = divisions.map((d) => {
+    const rounds = progressRoundsByDivision.get(d.id) ?? []; // уже отсортированы по order запросом выше
+    const finalRoundId = rounds.length > 0 ? rounds[rounds.length - 1].id : null;
+    const columns: PublicDivisionProgressColumn[] = rounds.map((r, idx) => ({
+      roundId: r.id,
+      label: roundLabel({ stage: r.stage, type: null }),
+      isFinal: idx === rounds.length - 1,
+    }));
+    const rows: PublicDivisionProgressRow[] = progressRegistrations
+      .filter((reg) => reg.divisionId === d.id)
+      .map((reg) => {
+        const cells: Record<string, PublicRoundProgressStatus> = {};
+        for (const r of rounds) {
+          if (r.id === finalRoundId) {
+            const result = latestResultByKey.get(`${d.id}:${reg.id}`);
+            cells[r.id] = result ? (result.status === "FINALIST" ? "ADVANCED" : "ELIMINATED") : null;
+          } else if (r.advancementPublishedAt) {
+            const rr = r.results.find((x) => x.registrationId === reg.id);
+            cells[r.id] = rr ? (rr.status === "ADVANCED" ? "ADVANCED" : "ELIMINATED") : null;
+          } else {
+            cells[r.id] = null;
+          }
+        }
+        return {
+          divisionCategoryName: d.category.name,
+          role: reg.role,
+          displayName: reg.dancer.displayName,
+          bibNumber: reg.checkIn?.bibNumber ?? null,
+          cells,
+        };
+      });
+    return { divisionId: d.id, columns, rows };
+  });
+
   const countByRole = (role: RegistrationRole) => registrationsByRole.find((r) => r.role === role)?._count._all ?? 0;
   const leadersCount = countByRole("LEADER");
   const followersCount = countByRole("FOLLOWER");
@@ -190,6 +272,7 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         }
       : null,
     finalistGroups,
+    divisionProgress,
     resultsPublished: competition.publicResults,
     results,
     stats: {
