@@ -73,13 +73,13 @@ export function CategoryProgressAccordion({ items, progress }: { items: Category
                                 {REGISTRATION_ROLE_LABELS[role]}
                               </td>
                             </tr>,
-                            ...rows.map((r) => (
-                              <tr key={`${r.bibNumber}-${r.displayName}`}>
-                                <td className="whitespace-nowrap text-night-text">
+                            ...rows.map((r, idx) => (
+                              <tr key={`${r.bibNumber}-${r.displayName}`} className={idx % 2 === 1 ? "bg-night-card2" : undefined}>
+                                <td className="whitespace-nowrap py-1 pl-1 text-night-text">
                                   №{r.bibNumber ?? "—"} {r.displayName}
                                 </td>
                                 {divisionProgress.columns.map((c) => (
-                                  <td key={c.roundId} className="px-2 text-center">
+                                  <td key={c.roundId} className="px-2 py-1 text-center">
                                     <StatusMark status={r.cells[c.roundId] ?? null} />
                                   </td>
                                 ))}
