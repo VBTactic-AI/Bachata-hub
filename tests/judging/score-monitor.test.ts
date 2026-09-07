@@ -88,12 +88,16 @@ describe("getPrelimScoreMonitor() — числовая шкала (не Да/Н�
   });
 });
 
-describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxScore=1): ИТОГО — реальный прогресс по участникам, «Готово» отдельным флагом", () => {
-  // По живой жалобе пользователя (2026-09-07): ИТОГО раньше показывало не
-  // "сколько участников оценено", а "нажал ли судья «Готово»" (0/1 — сбивало
-  // с толку на живом табло). Теперь ИТОГО — то же самое, что видно в
-  // строках таблицы (сколько ячеек не "—"), а confirmed — отдельный флаг.
-  it("submitted/required — реальное число оценённых участников, независимо от «Готово»", async () => {
+describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxScore=1): ИТОГО — положительные оценки / finalistsCount, «Готово» отдельным флагом", () => {
+  // По живой жалобе пользователя (2026-09-07, повторно): предыдущая версия
+  // ИТОГО показывала "сколько участников вообще оценено" (напр. "7/7" даже
+  // когда одна из оценок — "0") — на живом табло это читалось как "судья
+  // всё сделал", хотя реальный вопрос "сколько он должен пропустить дальше"
+  // и сколько положительных оценок реально стоит. Правильно: required —
+  // Round.finalistsCount (сколько должно пройти), submitted — сколько
+  // ПОЛОЖИТЕЛЬНЫХ (не "0") оценок судья уже поставил. confirmed — по-прежнему
+  // отдельный флаг ("Готово" нажато), не путается с этим счётчиком.
+  it("submitted/required — положительные оценки судьи / сколько должно пройти дальше (finalistsCount), не число оценённых участников", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({
       divisionId: "div1",
       // 2 участника роли > 1 места — роль не пропускается (rolesNotNeedingJudging).
@@ -120,12 +124,14 @@ describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxSc
 
     const monitor = await getPrelimScoreMonitor("round1");
 
+    // required=1 (finalistsCount, НЕ 2 участника), submitted=1 (ровно одна
+    // положительная оценка — pB вообще без оценки не считается).
     expect(monitor.follower.totals).toEqual([
-      { judgeAssignmentId: "j1", required: 2, submitted: 1, complete: false, confirmed: false },
+      { judgeAssignmentId: "j1", required: 1, submitted: 1, complete: true, confirmed: false },
     ]);
   });
 
-  it("confirmed=true, когда судья нажал «Готово» (JudgeRoundConfirmation) — независимо от submitted/required", async () => {
+  it("оценка «0» НЕ считается положительной — не входит в submitted, даже если участник оценён", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({
       divisionId: "div1",
       finalistsCount: 1,
@@ -151,8 +157,46 @@ describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxSc
 
     const monitor = await getPrelimScoreMonitor("round1");
 
+    // Оба участника оценены (0 и 1), но submitted считает только положительную
+    // (value=1) — required=1=submitted, а не 2 (число оценённых участников).
     expect(monitor.follower.totals).toEqual([
-      { judgeAssignmentId: "j1", required: 2, submitted: 2, complete: true, confirmed: true },
+      { judgeAssignmentId: "j1", required: 1, submitted: 1, complete: true, confirmed: true },
+    ]);
+  });
+
+  it("формат «0/1/2» (judgingMaxScore=2) — «1» и «2» вместе считаются положительными, «0» нет", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      // 4 участника роли, finalistsCount=3 — роль не пропускается.
+      finalistsCount: 3,
+      order: 1,
+      type: null,
+      judgingMaxScore: 2,
+      division: { competitionId: "comp1" },
+    });
+    judgeAssignmentFindMany.mockResolvedValue([judgeAssignment("j1", "LEADER", { email: "j1@x.com", dancerDisplayName: "Судья 1" })]);
+    heatFindMany.mockResolvedValue([
+      {
+        draws: [
+          {
+            participants: [
+              participant("pA", "LEADER", "1", [{ judgeAssignmentId: "j1", value: 2 }]),
+              participant("pB", "LEADER", "2", [{ judgeAssignmentId: "j1", value: 1 }]),
+              participant("pC", "LEADER", "3", [{ judgeAssignmentId: "j1", value: 0 }]),
+              participant("pD", "LEADER", "4", []),
+            ],
+          },
+        ],
+      },
+    ]);
+    judgeRoundConfirmationFindMany.mockResolvedValue([]);
+
+    const monitor = await getPrelimScoreMonitor("round1");
+
+    // required=3 (finalistsCount), submitted=2 (только «2» и «1» — «0» и
+    // отсутствующая оценка не считаются) — ещё не готово.
+    expect(monitor.leader.totals).toEqual([
+      { judgeAssignmentId: "j1", required: 3, submitted: 2, complete: false, confirmed: false },
     ]);
   });
 

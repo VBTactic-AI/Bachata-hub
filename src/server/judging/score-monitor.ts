@@ -134,17 +134,29 @@ export async function getPrelimScoreMonitor(roundId: string): Promise<PrelimScor
       ),
     }));
 
-    // ИТОГО показывает то же, что видно в самой таблице (сколько ячеек уже
-    // не "—") — сколько участников этот судья реально оценил из скольких
-    // должен, а не "нажал ли он «Готово»" (это отдельная, финальная кнопка,
-    // не связанная напрямую с прогрессом по ходу раунда — 2026-09-07,
-    // по факту увиденного на живом табло пользователем: "0/1" сбивал с
-    // толку вместо ожидаемого "6 из 7"). Раунд по-прежнему завершается
-    // только по явному "Готово" (confirmJudgeRoundDone, scoring.ts) — здесь
-    // это не меняется, только отображение на мониторе.
+    // ИТОГО для форматов "Да/Нет"/"0/1/2" показывает "сколько ПОЛОЖИТЕЛЬНЫХ
+    // оценок судья уже поставил / сколько должно пройти дальше"
+    // (Round.finalistsCount), а не "скольких участников вообще оценил из
+    // скольких всего" — иначе табло показывало бы "7/7" (все 7 участников
+    // оценены, из них 1 нулевая) вместо реального прогресса к нужному числу
+    // проходящих (найдено пользователем на живом табло, 2026-09-07). Та же
+    // величина, что судья видит на своём экране (JudgeScoreButtons/
+    // ScoreQuotaCounter, scoring.ts) — "0" не считается положительной
+    // оценкой, для шкалы 0/1/2 "1" и "2" считаются вместе (детальный разбор
+    // по уровням — только на экране самого судьи). Раунд по-прежнему
+    // завершается только по явному "Готово" (confirmJudgeRoundDone,
+    // scoring.ts) — здесь это не меняется, только отображение на мониторе.
     const totals: ScoreMonitorTotal[] = roleAssignments.map((a) => {
       const confirmed = isConfirmationBased ? confirmedAssignmentIds.has(a.id) : undefined;
       if (skippedRoles.has(role)) return { judgeAssignmentId: a.id, required: 0, submitted: 0, complete: true, confirmed };
+      if (isConfirmationBased) {
+        const required = round.finalistsCount ?? 0;
+        const submitted = roleParticipants.filter((p) => {
+          const score = p.judgeScores.find((s) => s.judgeAssignmentId === a.id);
+          return score !== undefined && score.value > 0;
+        }).length;
+        return { judgeAssignmentId: a.id, required, submitted, complete: submitted === required, confirmed };
+      }
       const required = roleParticipants.length;
       const submitted = roleParticipants.filter((p) => p.judgeScores.some((s) => s.judgeAssignmentId === a.id)).length;
       return { judgeAssignmentId: a.id, required, submitted, complete: submitted >= required, confirmed };
