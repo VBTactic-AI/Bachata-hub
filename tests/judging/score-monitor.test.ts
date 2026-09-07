@@ -88,8 +88,12 @@ describe("getPrelimScoreMonitor() — числовая шкала (не Да/Н�
   });
 });
 
-describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxScore=1): ИТОГО по confirmJudgeRoundDone, не по сырым кликам", () => {
-  it("сырая оценка есть, но судья ещё не нажал «Готово» — ИТОГО 0/1, не 1/1", async () => {
+describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxScore=1): ИТОГО — реальный прогресс по участникам, «Готово» отдельным флагом", () => {
+  // По живой жалобе пользователя (2026-09-07): ИТОГО раньше показывало не
+  // "сколько участников оценено", а "нажал ли судья «Готово»" (0/1 — сбивало
+  // с толку на живом табло). Теперь ИТОГО — то же самое, что видно в
+  // строках таблицы (сколько ячеек не "—"), а confirmed — отдельный флаг.
+  it("submitted/required — реальное число оценённых участников, независимо от «Готово»", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({
       divisionId: "div1",
       // 2 участника роли > 1 места — роль не пропускается (rolesNotNeedingJudging).
@@ -116,10 +120,12 @@ describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxSc
 
     const monitor = await getPrelimScoreMonitor("round1");
 
-    expect(monitor.follower.totals).toEqual([{ judgeAssignmentId: "j1", required: 1, submitted: 0, complete: false }]);
+    expect(monitor.follower.totals).toEqual([
+      { judgeAssignmentId: "j1", required: 2, submitted: 1, complete: false, confirmed: false },
+    ]);
   });
 
-  it("после «Готово» (JudgeRoundConfirmation) — ИТОГО 1/1, complete=true", async () => {
+  it("confirmed=true, когда судья нажал «Готово» (JudgeRoundConfirmation) — независимо от submitted/required", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({
       divisionId: "div1",
       finalistsCount: 1,
@@ -135,7 +141,7 @@ describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxSc
           {
             participants: [
               participant("pA", "FOLLOWER", "1", [{ judgeAssignmentId: "j1", value: 1 }]),
-              participant("pB", "FOLLOWER", "2", []),
+              participant("pB", "FOLLOWER", "2", [{ judgeAssignmentId: "j1", value: 0 }]),
             ],
           },
         ],
@@ -145,7 +151,28 @@ describe("getPrelimScoreMonitor() — формат «Да/Нет» (judgingMaxSc
 
     const monitor = await getPrelimScoreMonitor("round1");
 
-    expect(monitor.follower.totals).toEqual([{ judgeAssignmentId: "j1", required: 1, submitted: 1, complete: true }]);
+    expect(monitor.follower.totals).toEqual([
+      { judgeAssignmentId: "j1", required: 2, submitted: 2, complete: true, confirmed: true },
+    ]);
+  });
+
+  it("на числовой шкале (не Да/Нет и не 0/1/2) confirmed — undefined, кнопки «Готово» там нет вовсе", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      finalistsCount: 1,
+      order: 1,
+      type: null,
+      judgingMaxScore: 10,
+      division: { competitionId: "comp1" },
+    });
+    judgeAssignmentFindMany.mockResolvedValue([judgeAssignment("j1", "LEADER", { email: "j1@x.com", dancerDisplayName: "Судья 1" })]);
+    heatFindMany.mockResolvedValue([
+      { draws: [{ participants: [participant("pA", "LEADER", "1", []), participant("pB", "LEADER", "2", [])] }] },
+    ]);
+
+    const monitor = await getPrelimScoreMonitor("round1");
+
+    expect(monitor.leader.totals[0].confirmed).toBeUndefined();
   });
 });
 
