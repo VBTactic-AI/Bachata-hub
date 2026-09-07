@@ -5,6 +5,7 @@ import type {
   FinalScoreMonitorTable as FinalTable,
   PrelimScoreMonitorTable as PrelimTable,
   ScoreMonitorJudgeColumn,
+  ScoreMonitorSnapshot,
 } from "@/server/judging/score-monitor";
 
 // Live-таблица оценок для head judge/admin (промт пользователя, 2026-09-07):
@@ -26,9 +27,17 @@ type ScoreEvent =
       value: number;
     };
 
-function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void): boolean {
+// onOpen вызывается при КАЖДОМ (пере)открытии потока — не только при первом
+// монтировании. На Vercel serverless-функция раздачи (stream/route.ts)
+// планово закрывается сама раньше платформенного таймаута (maxDuration), и
+// у SSE нет истории "додай то, что пропустил" — единственный надёжный способ
+// не зависнуть с устаревшей таблицей молча — полный пересинк на каждый
+// (ре)коннект, а не только точечные события между ними (2026-09-07).
+function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, onOpen: () => void): boolean {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -40,7 +49,10 @@ function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void): 
         // сообщение непонятного формата — игнорируем, не ломаем поток ради одного события
       }
     });
-    source.onopen = () => setConnected(true);
+    source.onopen = () => {
+      setConnected(true);
+      onOpenRef.current();
+    };
     // EventSource сам переподключается при обрыве (браузер) — просто отмечаем
     // как временно не в сети, отдельный fallback-поллинг не нужен (2026-09-07).
     source.onerror = () => setConnected(false);
@@ -49,6 +61,17 @@ function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void): 
   }, [roundId]);
 
   return connected;
+}
+
+async function fetchScoreMonitorSnapshot(roundId: string): Promise<ScoreMonitorSnapshot | null> {
+  try {
+    const res = await fetch(`/api/admin/rounds/${roundId}/score-monitor`);
+    if (!res.ok) return null;
+    return (await res.json()) as ScoreMonitorSnapshot;
+  } catch {
+    // сеть недоступна прямо сейчас — следующий (пере)коннект SSE попробует снова
+    return null;
+  }
 }
 
 function JudgeHeaderLabel({ judge }: { judge: ScoreMonitorJudgeColumn }) {
@@ -95,7 +118,13 @@ export function PrelimScoreMonitor({
     setLeader(apply);
     setFollower(apply);
   };
-  const connected = useScoreEvents(roundId, applyEvent);
+  const resync = async () => {
+    const snapshot = await fetchScoreMonitorSnapshot(roundId);
+    if (snapshot?.kind !== "prelim") return;
+    setLeader(snapshot.leader);
+    setFollower(snapshot.follower);
+  };
+  const connected = useScoreEvents(roundId, applyEvent, resync);
 
   return (
     <div className="stack gap-6">
@@ -197,7 +226,13 @@ export function FinalScoreMonitor({
     setLeader(apply);
     setFollower(apply);
   };
-  const connected = useScoreEvents(roundId, applyEvent);
+  const resync = async () => {
+    const snapshot = await fetchScoreMonitorSnapshot(roundId);
+    if (snapshot?.kind !== "final") return;
+    setLeader(snapshot.leader);
+    setFollower(snapshot.follower);
+  };
+  const connected = useScoreEvents(roundId, applyEvent, resync);
 
   return (
     <div className="stack gap-6">

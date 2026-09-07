@@ -245,3 +245,29 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
 
   return { format, leader: buildTable("LEADER"), follower: buildTable("FOLLOWER") };
 }
+
+// ---------------------------------------------------------------------------
+// Полный пересинк (для ресинка после реконнекта SSE)
+// ---------------------------------------------------------------------------
+
+// Vercel: serverless-функция раздачи SSE (score-monitor/stream/route.ts)
+// обрывается по таймауту (maxDuration) — EventSource браузера сам
+// переподключается, но пропущенные за время обрыва события никуда не
+// докладываются (у SSE нет буфера "додай то, что я пропустил"). Эта функция
+// даёт клиенту полный снимок заново при каждом (пере)открытии потока —
+// пересинк дороже точечного апдейта, но гарантирует, что таблица не
+// "зависает" молча устаревшей после обрыва, а сама себя чинит.
+export type ScoreMonitorSnapshot =
+  | { kind: "prelim"; maxValue: number; leader: PrelimScoreMonitorTable; follower: PrelimScoreMonitorTable }
+  | { kind: "final"; format: FinalFormat; leader: FinalScoreMonitorTable; follower: FinalScoreMonitorTable }
+  | { kind: "none" };
+
+export async function getScoreMonitorSnapshot(roundId: string): Promise<ScoreMonitorSnapshot> {
+  const round = await prisma.round.findUniqueOrThrow({ where: { id: roundId }, select: { finalSession: { select: { id: true } } } });
+  if (round.finalSession) {
+    const final = await getFinalScoreMonitor(roundId);
+    return final ? { kind: "final", format: final.format, leader: final.leader, follower: final.follower } : { kind: "none" };
+  }
+  const prelim = await getPrelimScoreMonitor(roundId);
+  return { kind: "prelim", maxValue: prelim.maxValue, leader: prelim.leader, follower: prelim.follower };
+}

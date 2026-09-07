@@ -19,7 +19,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { getPrelimScoreMonitor, getFinalScoreMonitor } = await import("@/server/judging/score-monitor");
+const { getPrelimScoreMonitor, getFinalScoreMonitor, getScoreMonitorSnapshot } = await import("@/server/judging/score-monitor");
 
 const actor: Actor = { userId: "admin1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
 
@@ -244,5 +244,37 @@ describe("getFinalScoreMonitor()", () => {
 
     expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 0, submitted: 0, complete: true }]);
     expect(monitor!.leader.rows[0].scores.j1).toEqual({ partnership: null });
+  });
+});
+
+describe("getScoreMonitorSnapshot() — полный ресинк для клиента после реконнекта SSE", () => {
+  it("раунд без finalSession — kind: 'prelim'", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      finalistsCount: 1,
+      order: 1,
+      type: null,
+      judgingMaxScore: 5,
+      division: { competitionId: "comp1" },
+      finalSession: null,
+    });
+    heatFindMany.mockResolvedValue([]);
+
+    const snapshot = await getScoreMonitorSnapshot("round1");
+
+    expect(snapshot.kind).toBe("prelim");
+  });
+
+  it("раунд с finalSession — kind: 'final'", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      division: { competitionId: "comp1" },
+      finalSession: { format: "NORMAL", config: {}, criteriaSnapshot: [] },
+    });
+    heatFindMany.mockResolvedValue([]);
+
+    const snapshot = await getScoreMonitorSnapshot("round1");
+
+    expect(snapshot.kind).toBe("final");
   });
 });
