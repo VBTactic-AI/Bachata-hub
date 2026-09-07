@@ -276,8 +276,8 @@ export function PrelimScoreMonitor({
   return (
     <div className="stack gap-6">
       <LiveBadge connected={connected} />
-      <PrelimRoleTable title="Ведущие (Leader)" table={leader} maxValue={maxValue} />
-      <PrelimRoleTable title="Ведомые (Follower)" table={follower} maxValue={maxValue} />
+      <PrelimRoleTable title="Партнёры (Leader)" table={leader} maxValue={maxValue} />
+      <PrelimRoleTable title="Партнёрши (Follower)" table={follower} maxValue={maxValue} />
     </div>
   );
 }
@@ -414,8 +414,8 @@ export function FinalScoreMonitor({
   return (
     <div className="stack gap-6">
       <LiveBadge connected={connected} />
-      <FinalRoleTable title="Ведущие (Leader)" table={leader} />
-      <FinalRoleTable title="Ведомые (Follower)" table={follower} />
+      <FinalRoleTable title="Партнёры (Leader)" table={leader} />
+      <FinalRoleTable title="Партнёрши (Follower)" table={follower} />
     </div>
   );
 }

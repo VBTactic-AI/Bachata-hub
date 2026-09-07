@@ -146,7 +146,7 @@ export async function transitionRound(
           const followers = participants.filter((p) => p.role === "FOLLOWER");
           if (leaders.length !== followers.length) {
             throw new ValidationFailedError(
-              `Нельзя зафиксировать жеребьёвку: в заходе №${heat.number} не поровну ведущих (${leaders.length}) и ведомых (${followers.length}) — кому-то не хватит партнёра. Добавьте помощника или разбейте заход.`
+              `Нельзя зафиксировать жеребьёвку: в заходе №${heat.number} не поровну Партнёров (${leaders.length}) и Партнёрш (${followers.length}) — кому-то не хватит пары. Добавьте помощника или разбейте заход.`
             );
           }
           for (const p of leaders) if (p.scored) placedLeaderIds.add(p.registrationId);

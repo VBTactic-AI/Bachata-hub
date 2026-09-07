@@ -20,7 +20,7 @@ type PrismaTx = Prisma.TransactionClient;
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
 type FinalTieGroupConfig = { finalTieGroupKey?: string; finalTieGroupRole?: RegistrationRole; finalTieGroupStartPlace?: number };
 
-const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
+const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Партнёр", FOLLOWER: "Партнёрша" };
 
 export type FinalScoringProgress = { required: number; submitted: number; complete: boolean };
 

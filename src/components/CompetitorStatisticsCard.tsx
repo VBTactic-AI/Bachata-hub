@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import type { CompetitorStatistics, RoleStatistics } from "@/server/statistics/competitor-statistics";
 
-const ROLE_LABELS: Record<string, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
+const ROLE_LABELS: Record<string, string> = { LEADER: "Партнёр", FOLLOWER: "Партнёрша" };
 
 function pct(value: number | null): string {
   return value === null ? "—" : `${Math.round(value * 100)}%`;

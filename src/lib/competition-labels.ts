@@ -13,7 +13,11 @@ export const COMPETITION_STATUS_LABELS: Record<string, string> = {
   ARCHIVED: "Архив",
 };
 
-export const REGISTRATION_ROLE_LABELS: Record<string, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
+export const REGISTRATION_ROLE_LABELS: Record<string, string> = { LEADER: "Партнёр", FOLLOWER: "Партнёрша" };
+export const REGISTRATION_ROLE_LABELS_PLURAL: Record<string, string> = { LEADER: "Партнёры", FOLLOWER: "Партнёрши" };
+// Родительный падеж множественного числа — для конструкций вида "Партнёров: N" /
+// "не поровну Партнёров и Партнёрш".
+export const REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL: Record<string, string> = { LEADER: "Партнёров", FOLLOWER: "Партнёрш" };
 
 export const REGISTRATION_STATUS_LABELS: Record<string, string> = {
   REGISTERED: "Зарегистрирован",

@@ -105,7 +105,7 @@ export function DivisionResultsPanel({
               if (roleRows.length === 0) return null;
               return (
                 <div key={role}>
-                  <p className="hint-text m-0">{role === "LEADER" ? "Ведущие" : "Ведомые"}</p>
+                  <p className="hint-text m-0">{role === "LEADER" ? "Партнёры" : "Партнёрши"}</p>
                   <ul className="stack gap-0.5 m-0 pl-4">
                     {roleRows.map((r) => (
                       <li key={r.registrationId}>

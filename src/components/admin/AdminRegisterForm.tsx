@@ -93,8 +93,8 @@ export function AdminRegisterForm({ competitionId, divisions }: { competitionId:
         <Label>
           Роль
           <Select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
-            <option value="LEADER">Ведущий (Leader)</option>
-            <option value="FOLLOWER">Ведомый (Follower)</option>
+            <option value="LEADER">Партнёр (Leader)</option>
+            <option value="FOLLOWER">Партнёрша (Follower)</option>
           </Select>
         </Label>
         {error && <p className="error-text">{error}</p>}

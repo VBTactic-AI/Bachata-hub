@@ -9,7 +9,7 @@ type DivisionOption = { id: string; categoryName: string };
 type Role = "LEADER" | "FOLLOWER";
 type Outcome = { divisionId: string; ok: boolean; pending?: boolean; message?: string };
 
-const ROLE_LABEL: Record<Role, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
+const ROLE_LABEL: Record<Role, string> = { LEADER: "Партнёр", FOLLOWER: "Партнёрша" };
 
 // Пошаговая регистрация (по референсу пользователя, 2026-09-04) поверх уже
 // существующего API POST /api/competitions/[id]/registrations — один вызов

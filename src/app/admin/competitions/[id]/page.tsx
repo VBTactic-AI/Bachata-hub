@@ -369,8 +369,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 )}
                 {canManageRounds && (
                   <p className="hint-text mt-1">
-                    Ведущих: {countFor(registeredCounts, d.id, "LEADER")} (
-                    {countFor(checkedInCounts, d.id, "LEADER")} прошли check-in) · Ведомых:{" "}
+                    Партнёров: {countFor(registeredCounts, d.id, "LEADER")} (
+                    {countFor(checkedInCounts, d.id, "LEADER")} прошли check-in) · Партнёрш:{" "}
                     {countFor(registeredCounts, d.id, "FOLLOWER")} ({countFor(checkedInCounts, d.id, "FOLLOWER")} прошли
                     check-in)
                   </p>
@@ -538,7 +538,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                             <div className="mt-2 grid grid-cols-2 gap-3">
                               {(["LEADER", "FOLLOWER"] as const).map((r) => (
                                 <div key={r}>
-                                  <p className="hint-text">{r === "LEADER" ? "Ведущие" : "Ведомые"}</p>
+                                  <p className="hint-text">{r === "LEADER" ? "Партнёры" : "Партнёрши"}</p>
                                   <ul className="stack gap-0.5">
                                     {round.results
                                       .filter((res) => res.registration.role === r)
@@ -570,7 +570,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                               {round.heats.map((heat) => (
                                 <div key={heat.id} className="pl-3">
                                   <p className="hint-text m-0">
-                                    Стадия {heat.number} ({heat.number === 1 ? "Ведущие" : "Ведомые"}) · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                                    Стадия {heat.number} ({heat.number === 1 ? "Партнёры" : "Партнёрши"}) · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
                                   </p>
                                   <ul className="stack gap-0.5 m-0 pl-4">
                                     {(heat.draws[0]?.participants ?? []).map((p) => (

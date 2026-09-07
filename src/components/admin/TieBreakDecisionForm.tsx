@@ -80,7 +80,7 @@ export function TieBreakDecisionForm({
           {order.map((c, i) => (
             <li key={c.registrationId} className="flex items-center gap-2">
               <span>
-                {c.role === "LEADER" ? "Ведущий" : "Ведомый"} {c.displayName} №{c.bibNumber ?? "—"}
+                {c.role === "LEADER" ? "Партнёр" : "Партнёрша"} {c.displayName} №{c.bibNumber ?? "—"}
               </span>
               <Button type="button" size="sm" variant="outline" disabled={i === 0} onClick={() => move(i, -1)}>
                 ↑
@@ -115,7 +115,7 @@ export function TieBreakDecisionForm({
           <li key={c.registrationId}>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={selected.has(c.registrationId)} onChange={() => toggle(c.registrationId)} />
-              {c.role === "LEADER" ? "Ведущий" : "Ведомый"} {c.displayName} №{c.bibNumber ?? "—"}
+              {c.role === "LEADER" ? "Партнёр" : "Партнёрша"} {c.displayName} №{c.bibNumber ?? "—"}
             </label>
           </li>
         ))}

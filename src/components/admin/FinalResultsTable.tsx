@@ -37,7 +37,7 @@ export function FinalResultsTable({
         if (rows.length === 0) return null;
         return (
           <div key={role}>
-            <p className="hint-text m-0">{role === "LEADER" ? "Ведущие" : "Ведомые"}</p>
+            <p className="hint-text m-0">{role === "LEADER" ? "Партнёры" : "Партнёрши"}</p>
             <div className="overflow-x-auto">
               <table className="w-full mt-1 text-sm">
                 <thead>

@@ -236,7 +236,7 @@ export function FinalJudgingScreen({
             Пара {index + 1} из {items.length} · оценено {scoredCount}
           </p>
           <p className="m-0 text-lg font-bold text-night-text">
-            №{current.bibNumber ?? "—"} {current.displayName} · {current.role === "LEADER" ? "Ведущий" : "Ведомая"}
+            №{current.bibNumber ?? "—"} {current.displayName} · {current.role === "LEADER" ? "Партнёр" : "Партнёрша"}
           </p>
         </div>
       )}
@@ -274,7 +274,7 @@ export function FinalJudgingScreen({
             <div key={role} className="flex flex-col gap-1 rounded-app bg-night-card p-2">
               {rolesPresent.length > 1 && (
                 <p className="m-0 px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-night-muted">
-                  {role === "LEADER" ? "Ведущие" : "Ведомые"}
+                  {role === "LEADER" ? "Партнёры" : "Партнёрши"}
                 </p>
               )}
               {roleGroup(role).map((it) => {

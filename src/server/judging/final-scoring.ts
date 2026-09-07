@@ -262,7 +262,7 @@ export async function confirmFinalJudgeRoundDone(roundId: string): Promise<void>
       }, 0);
 
       if (submitted !== required) {
-        const roleLabel = assignment.role === "LEADER" ? "Ведущие" : "Ведомые";
+        const roleLabel = assignment.role === "LEADER" ? "Партнёры" : "Партнёрши";
         throw new ValidationFailedError(
           `${roleLabel}: оценено ${submitted} из ${required} — сначала оцените всех участников по всем критериям, прежде чем нажать "Готово".`
         );

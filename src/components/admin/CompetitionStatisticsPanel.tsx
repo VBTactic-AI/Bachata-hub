@@ -7,7 +7,7 @@ export function CompetitionStatisticsPanel({ statistics }: { statistics: Competi
     <div className="rounded-app-sm border border-line p-3 stack gap-1">
       <p className="m-0 font-semibold">Статистика соревнования</p>
       <p className="hint-text m-0">
-        Регистраций: {statistics.registrationsCount} (Ведущих: {statistics.leadersCount}, Ведомых: {statistics.followersCount}) ·
+        Регистраций: {statistics.registrationsCount} (Партнёров: {statistics.leadersCount}, Партнёрш: {statistics.followersCount}) ·
         Снялись: {statistics.scratchedCount} · Дисквалифицированы: {statistics.disqualifiedCount}
       </p>
       <p className="hint-text m-0">

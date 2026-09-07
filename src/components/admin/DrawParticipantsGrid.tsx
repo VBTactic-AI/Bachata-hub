@@ -73,8 +73,8 @@ export function DrawParticipantsGrid({
 
   return (
     <div className="grid grid-cols-2 gap-4 mt-2 pl-3" style={{ maxWidth: 420 }}>
-      <Column heatId={heatId} role="LEADER" title="Ведущий" participants={leaders} canEditDraw={canEditDraw} />
-      <Column heatId={heatId} role="FOLLOWER" title="Ведомый" participants={followers} canEditDraw={canEditDraw} />
+      <Column heatId={heatId} role="LEADER" title="Партнёр" participants={leaders} canEditDraw={canEditDraw} />
+      <Column heatId={heatId} role="FOLLOWER" title="Партнёрша" participants={followers} canEditDraw={canEditDraw} />
     </div>
   );
 }

@@ -19,7 +19,7 @@ type PrismaTx = Prisma.TransactionClient;
 // не через READY->DRAWING->DRAW_LOCKED (docs/00_DECISIONS.md, см. также
 // start-final.ts — переход READY->RUNNING минует обычную жеребьёвку).
 const STAGE_ROLE: Record<1 | 2, RegistrationRole> = { 1: "LEADER", 2: "FOLLOWER" };
-const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Ведущие", FOLLOWER: "Ведомые" };
+const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Партнёры", FOLLOWER: "Партнёрши" };
 
 // Переиспользуется и final-random-couples.ts — та же эксклюзивность
 // паркета нужна там для первой пары.
@@ -139,7 +139,7 @@ export async function advanceJudgesDanceStage(roundId: string): Promise<AdvanceJ
         entityId: heat1.id,
         before: { status: heat1.status },
         after: { status: "FINISHED" },
-        reason: "Стадия 1 (Ведущие) завершена — начинается стадия 2 (Ведомые).",
+        reason: "Стадия 1 (Партнёры) завершена — начинается стадия 2 (Партнёрши).",
       });
       await createStageHeatInTx(tx, {
         roundId,
@@ -156,7 +156,7 @@ export async function advanceJudgesDanceStage(roundId: string): Promise<AdvanceJ
   if (currentStage === 2) {
     const heat2 = round.heats[round.heats.length - 1];
     if (!heat2) throw new ValidationFailedError("Не найден заход второй стадии.");
-    await transitionHeat(heat2.id, "FINISHED", { reason: "Стадия 2 (Ведомые) завершена — подсчёт результатов финала." });
+    await transitionHeat(heat2.id, "FINISHED", { reason: "Стадия 2 (Партнёрши) завершена — подсчёт результатов финала." });
     return { stage: null };
   }
 

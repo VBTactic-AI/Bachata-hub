@@ -132,8 +132,8 @@ export function DivisionJudgesPanel({
     <div className="stack gap-2 mt-2">
       <p className="hint-text font-semibold m-0">Судьи</p>
       <div className="grid grid-cols-2 gap-4" style={{ maxWidth: 480 }}>
-        <JudgeColumn title="Судят ведущих" pool={pool} checked={leaders} onToggle={(id) => toggle("LEADER", id)} />
-        <JudgeColumn title="Судят ведомых" pool={pool} checked={followers} onToggle={(id) => toggle("FOLLOWER", id)} />
+        <JudgeColumn title="Судят Партнёров" pool={pool} checked={leaders} onToggle={(id) => toggle("LEADER", id)} />
+        <JudgeColumn title="Судят Партнёрш" pool={pool} checked={followers} onToggle={(id) => toggle("FOLLOWER", id)} />
       </div>
       <div className="flex items-center gap-2">
         <Button type="button" size="sm" disabled={loading} onClick={onSave}>
@@ -157,8 +157,8 @@ export function DivisionJudgesPanel({
           />
         </label>
         <Select value={newRole} onChange={(e) => setNewRole(e.target.value as "LEADER" | "FOLLOWER")} className="max-w-[160px]">
-          <option value="LEADER">Ведущих</option>
-          <option value="FOLLOWER">Ведомых</option>
+          <option value="LEADER">Партнёров</option>
+          <option value="FOLLOWER">Партнёрш</option>
         </Select>
         <Button type="submit" size="sm" variant="outline" disabled={addLoading}>
           + Судья

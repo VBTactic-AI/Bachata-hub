@@ -114,7 +114,7 @@ describe("checkFinalReadiness()", () => {
     judgeAssignmentFindMany.mockResolvedValue([{ role: "LEADER" }]); // ведомых некому судить
     getRoundEligiblePoolMock.mockImplementation(async (_tx: unknown, params: { role: string }) => (params.role === "FOLLOWER" ? new Set(["reg2"]) : new Set(["reg1"])));
     const issues = await checkFinalReadiness("final1");
-    expect(issues.some((i) => i.includes("Ведомый"))).toBe(true);
+    expect(issues.some((i) => i.includes("Партнёрша"))).toBe(true);
   });
 });
 

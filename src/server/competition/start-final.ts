@@ -7,7 +7,7 @@ import { isFinalStageInTx } from "../judging/advancement";
 import { getRoundEligiblePool } from "./draw-engine";
 import { transition } from "../state/machine";
 
-const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Ведущий", FOLLOWER: "Ведомый" };
+const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Партнёр", FOLLOWER: "Партнёрша" };
 
 type JudgesDanceConfig = { dancingJudgeCriteriaIds?: string[] };
 
@@ -85,7 +85,7 @@ export async function checkFinalReadiness(roundId: string): Promise<string[]> {
   // организатор не выровняет регистрацию/check-in.
   if (format === "RANDOM_COUPLES" && pools.leaders.size !== pools.followers.size) {
     issues.push(
-      `Для формата "Случайные пары" число ведущих и ведомых должно совпадать — сейчас ${pools.leaders.size} ведущих и ${pools.followers.size} ведомых`
+      `Для формата "Случайные пары" число Партнёров и Партнёрш должно совпадать — сейчас ${pools.leaders.size} Партнёров и ${pools.followers.size} Партнёрш`
     );
   }
 

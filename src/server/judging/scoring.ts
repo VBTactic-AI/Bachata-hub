@@ -164,7 +164,7 @@ export async function confirmJudgeRoundDone(roundId: string): Promise<void> {
       });
       if (already) continue; // эта роль уже подтверждена раньше — молча пропускаем, не ошибка
 
-      const roleLabel = assignment.role === "LEADER" ? "Ведущие" : "Ведомые";
+      const roleLabel = assignment.role === "LEADER" ? "Партнёры" : "Партнёрши";
 
       if (round.judgingMaxScore === 1) {
         const yesCount = await tx.judgeScore.count({

@@ -125,8 +125,8 @@ export function PublicScreenBoard({ competitionId }: { competitionId: string }) 
       {r && r.status === "PAUSED" && <p className="m-0 mt-6 text-4xl text-white/80">Пауза</p>}
 
       <div className="mt-10 grid w-full max-w-4xl grid-cols-2 gap-8 text-left">
-        <RoleColumn label="Ведущие" participants={leaders} />
-        <RoleColumn label="Ведомые" participants={followers} />
+        <RoleColumn label="Партнёры" participants={leaders} />
+        <RoleColumn label="Партнёрши" participants={followers} />
       </div>
     </BoardShell>
   );

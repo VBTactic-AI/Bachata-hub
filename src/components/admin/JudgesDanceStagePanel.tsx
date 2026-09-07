@@ -17,9 +17,9 @@ export function JudgesDanceStagePanel({ roundId, currentStage }: { roundId: stri
 
   const label =
     currentStage === null
-      ? "Начать стадию 1 (Ведущие)"
+      ? "Начать стадию 1 (Партнёры)"
       : currentStage === 1
-        ? "Завершить стадию 1 и начать стадию 2 (Ведомые)"
+        ? "Завершить стадию 1 и начать стадию 2 (Партнёрши)"
         : "Завершить финал";
 
   async function onAdvance() {
@@ -40,8 +40,8 @@ export function JudgesDanceStagePanel({ roundId, currentStage }: { roundId: stri
       <p className="m-0 font-semibold">Финал «Танец с судьями»</p>
       <p className="hint-text m-0">
         {currentStage === null && "Ещё не начат."}
-        {currentStage === 1 && "Идёт стадия 1: ведущие финалисты танцуют с судьями-Ведомыми."}
-        {currentStage === 2 && "Идёт стадия 2: ведомые финалистки танцуют с судьями-Ведущими."}
+        {currentStage === 1 && "Идёт стадия 1: финалисты-Партнёры танцуют с судьями-Партнёршами."}
+        {currentStage === 2 && "Идёт стадия 2: финалистки-Партнёрши танцуют с судьями-Партнёрами."}
       </p>
       <Button type="button" size="sm" disabled={loading} onClick={onAdvance}>
         {label}

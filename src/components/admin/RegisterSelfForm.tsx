@@ -28,7 +28,7 @@ export function RegisterSelfForm({
   if (done === "PENDING_ROLE") {
     return (
       <p className="hint-text">
-        Вы зарегистрированы. Роль «{role === "LEADER" ? "Ведущий" : "Ведомый"}» отличается от подсказки по вашему полу
+        Вы зарегистрированы. Роль «{role === "LEADER" ? "Партнёр" : "Партнёрша"}» отличается от подсказки по вашему полу
         — организатор подтвердит её перед check-in.
       </p>
     );
@@ -69,8 +69,8 @@ export function RegisterSelfForm({
       <Label>
         Роль
         <Select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
-          <option value="LEADER">Ведущий (Leader)</option>
-          <option value="FOLLOWER">Ведомый (Follower)</option>
+          <option value="LEADER">Партнёр (Leader)</option>
+          <option value="FOLLOWER">Партнёрша (Follower)</option>
         </Select>
       </Label>
       {suggestedRole && role !== suggestedRole && (
