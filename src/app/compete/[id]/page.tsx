@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { InfoCard } from "@/components/compete/InfoCard";
 import { CategoryProgressAccordion } from "@/components/compete/CategoryProgressAccordion";
 import { getPublicCompetitionView } from "@/server/public/public-competition-view";
+import { pluralizeRu } from "@/lib/format";
 
 const DATE_FMT = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 
@@ -117,7 +118,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         {place && <InfoCard icon="📍" label="Место" value={place} />}
         {view.divisions.length > 0 && <InfoCard icon="🏆" label="Категории" value={view.divisions.map((d) => d.categoryName).join(", ")} />}
         {view.organizerName && <InfoCard icon="👤" label="Организатор" value={view.organizerName} />}
-        <InfoCard icon="🧑‍🤝‍🧑" label="Участников" value={`${view.stats.registrationsCount} (${view.stats.leadersCount} вед. / ${view.stats.followersCount} вед.)`} />
+        <InfoCard
+          icon="🧑‍🤝‍🧑"
+          label="Участников"
+          value={`${view.stats.registrationsCount} (${view.stats.leadersCount} ${pluralizeRu(view.stats.leadersCount, ["партнёр", "партнёра", "партнёров"])} / ${view.stats.followersCount} ${pluralizeRu(view.stats.followersCount, ["партнёрша", "партнёрши", "партнёрш"])})`}
+        />
         {view.judges.length > 0 && <InfoCard icon="⚖️" label="Судьи" value={view.judges.map((j) => j.displayName).join(", ")} />}
       </div>
 

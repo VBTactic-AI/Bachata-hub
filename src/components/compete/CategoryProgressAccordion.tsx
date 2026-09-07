@@ -55,7 +55,9 @@ export function CategoryProgressAccordion({ items, progress }: { items: Category
                     <table className="w-full text-sm">
                       <thead>
                         <tr>
-                          <th className="text-left font-medium text-night-muted">Участник</th>
+                          <th className="sticky left-0 z-10 whitespace-nowrap bg-night-card pr-2 text-left font-medium text-night-muted">
+                            Участник
+                          </th>
                           {divisionProgress.columns.map((c) => (
                             <th key={c.roundId} className="whitespace-nowrap px-2 text-center font-medium text-night-muted">
                               {c.label}
@@ -73,18 +75,21 @@ export function CategoryProgressAccordion({ items, progress }: { items: Category
                                 {REGISTRATION_ROLE_LABELS[role]}
                               </td>
                             </tr>,
-                            ...rows.map((r, idx) => (
-                              <tr key={`${r.bibNumber}-${r.displayName}`} className={idx % 2 === 1 ? "bg-night-card2" : undefined}>
-                                <td className="whitespace-nowrap py-1 pl-1 text-night-text">
-                                  №{r.bibNumber ?? "—"} {r.displayName}
-                                </td>
-                                {divisionProgress.columns.map((c) => (
-                                  <td key={c.roundId} className="px-2 py-1 text-center">
-                                    <StatusMark status={r.cells[c.roundId] ?? null} />
+                            ...rows.map((r, idx) => {
+                              const rowBg = idx % 2 === 1 ? "bg-night-card2" : "bg-night-card";
+                              return (
+                                <tr key={`${r.bibNumber}-${r.displayName}`} className={rowBg}>
+                                  <td className={`sticky left-0 z-10 whitespace-nowrap py-1 pl-1 pr-2 text-night-text ${rowBg}`}>
+                                    №{r.bibNumber ?? "—"} {r.displayName}
                                   </td>
-                                ))}
-                              </tr>
-                            )),
+                                  {divisionProgress.columns.map((c) => (
+                                    <td key={c.roundId} className="px-2 py-1 text-center">
+                                      <StatusMark status={r.cells[c.roundId] ?? null} />
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            }),
                           ];
                         })}
                       </tbody>
