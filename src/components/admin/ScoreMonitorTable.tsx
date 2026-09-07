@@ -23,7 +23,12 @@ import type {
 
 type ScoreEvent =
   | { kind: "judge_score"; drawParticipantId: string; judgeAssignmentId: string; value: number }
-  | { kind: "final_judge_score"; drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number };
+  | { kind: "final_judge_score"; drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number }
+  // Судья нажал "Готово" (confirmJudgeRoundDone/confirmFinalJudgeRoundDone) —
+  // отдельно от самих оценок: без этого события подпись "✓ Готово" на
+  // мониторе появлялась бы только после следующего пересинка, а не сразу
+  // (найдено вживую, 2026-09-07).
+  | { kind: "judge_round_confirmation"; judgeAssignmentId: string };
 
 const anonUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -118,6 +123,12 @@ function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, o
             ...(payload.new as { drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number }),
           });
         })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "JudgeRoundConfirmation" }, (payload) => {
+          onEventRef.current({
+            kind: "judge_round_confirmation",
+            ...(payload.new as { judgeAssignmentId: string }),
+          });
+        })
         .subscribe((status) => {
           if (status === "SUBSCRIBED") {
             clearDisconnectBadge();
@@ -203,6 +214,15 @@ export function PrelimScoreMonitor({
   // (жалоба пользователя на живом табло, 2026-09-07).
   const isConfirmationBased = (maxValue === 1 || maxValue === 2) && finalistsCount > 0;
   const applyEvent = (event: ScoreEvent) => {
+    if (event.kind === "judge_round_confirmation") {
+      const confirm = (table: PrelimTable): PrelimTable => ({
+        ...table,
+        totals: table.totals.map((t) => (t.judgeAssignmentId === event.judgeAssignmentId ? { ...t, confirmed: true } : t)),
+      });
+      setLeader(confirm);
+      setFollower(confirm);
+      return;
+    }
     if (event.kind !== "judge_score") return;
     const apply = (table: PrelimTable): PrelimTable => {
       const rowIdx = table.rows.findIndex((r) => r.drawParticipantId === event.drawParticipantId);
@@ -323,6 +343,15 @@ export function FinalScoreMonitor({
   const [follower, setFollower] = useState(initialFollower);
 
   const applyEvent = (event: ScoreEvent) => {
+    if (event.kind === "judge_round_confirmation") {
+      const confirm = (table: FinalTable): FinalTable => ({
+        ...table,
+        totals: table.totals.map((t) => (t.judgeAssignmentId === event.judgeAssignmentId ? { ...t, confirmed: true } : t)),
+      });
+      setLeader(confirm);
+      setFollower(confirm);
+      return;
+    }
     if (event.kind !== "final_judge_score") return;
     const judgeAssignmentId = event.judgeAssignmentId;
     const apply = (table: FinalTable): FinalTable => {
