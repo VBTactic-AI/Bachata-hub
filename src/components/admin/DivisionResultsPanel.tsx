@@ -44,6 +44,7 @@ export function DivisionResultsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [correcting, setCorrecting] = useState<string | null>(null);
+  const [swapping, setSwapping] = useState<string | null>(null);
 
   async function calculate() {
     const clickStartedAt = performance.now();
@@ -116,6 +117,11 @@ export function DivisionResultsPanel({
                             исправить
                           </Button>
                         )}
+                        {canCorrect && r.status === "FINALIST" && (
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setSwapping(swapping === r.id ? null : r.id)}>
+                            ⇄ поменять местами
+                          </Button>
+                        )}
                         {canCorrect && correcting === r.id && (
                           <CorrectResultForm
                             resultId={r.id}
@@ -126,6 +132,17 @@ export function DivisionResultsPanel({
                               router.refresh();
                             }}
                             onCancel={() => setCorrecting(null)}
+                          />
+                        )}
+                        {canCorrect && swapping === r.id && (
+                          <SwapResultForm
+                            resultId={r.id}
+                            otherFinalists={roleRows.filter((x) => x.id !== r.id && x.status === "FINALIST")}
+                            onDone={() => {
+                              setSwapping(null);
+                              router.refresh();
+                            }}
+                            onCancel={() => setSwapping(null)}
                           />
                         )}
                       </li>
@@ -214,6 +231,78 @@ function CorrectResultForm({
       <div className="flex items-center gap-2">
         <Button type="submit" size="sm" disabled={loading || !reason.trim() || (status === "FINALIST" && !placement)}>
           Сохранить исправление
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={onCancel}>
+          Отмена
+        </Button>
+        {error && <span className="error-text">{error}</span>}
+      </div>
+    </form>
+  );
+}
+
+// Обмен местами двух финалистов (results.ts, swapResultPlacements) — единый
+// способ поменять двух местами: correctResult() по одному участнику теперь
+// отказывает в уже занятом месте (найдено вживую 2026-09-08 — два участника
+// оказались на одном месте после исправления по отдельности), обмен меняет
+// обе строки одной транзакцией, дубликата места не бывает даже транзитно.
+function SwapResultForm({
+  resultId,
+  otherFinalists,
+  onDone,
+  onCancel,
+}: {
+  resultId: string;
+  otherFinalists: { id: string; displayName: string; bibNumber: string | null; placement: number | null }[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [otherId, setOtherId] = useState(otherFinalists[0]?.id ?? "");
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    const res = await fetch(`/api/results/swap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resultIdA: resultId, resultIdB: otherId, reason }),
+    });
+    setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Не удалось поменять местами.");
+      return;
+    }
+    onDone();
+  }
+
+  if (otherFinalists.length === 0) {
+    return <p className="hint-text mt-1 pl-4 border-l border-line">Больше не с кем меняться местами в этой роли.</p>;
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="stack gap-1.5 mt-1 pl-4 border-l border-line">
+      <Label>
+        Поменять местами с
+        <Select value={otherId} onChange={(e) => setOtherId(e.target.value)}>
+          {otherFinalists.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.placement} место — №{o.bibNumber ?? "—"} {o.displayName}
+            </option>
+          ))}
+        </Select>
+      </Label>
+      <Label>
+        Причина обмена
+        <Input value={reason} onChange={(e) => setReason(e.target.value)} required />
+      </Label>
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={loading || !reason.trim()}>
+          Поменять местами
         </Button>
         <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={onCancel}>
           Отмена

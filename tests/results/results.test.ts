@@ -18,6 +18,7 @@ const txResultCreate = vi.fn();
 const txDivisionUpdate = vi.fn();
 const txCompetitionUpdate = vi.fn();
 const txAuditCreate = vi.fn();
+const txAuditCreateMany = vi.fn();
 const txResultFindMany = vi.fn();
 
 const fakeTx = {
@@ -30,7 +31,7 @@ const fakeTx = {
   },
   division: { update: txDivisionUpdate },
   competition: { update: txCompetitionUpdate },
-  auditLog: { create: txAuditCreate },
+  auditLog: { create: txAuditCreate, createMany: txAuditCreateMany },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -56,6 +57,7 @@ const {
   publishCompetitionResults,
   unpublishCompetitionResults,
   correctResult,
+  swapResultPlacements,
 } = await import("@/server/results/results");
 const { ValidationFailedError } = await import("@/server/errors");
 
@@ -76,6 +78,7 @@ beforeEach(() => {
   txDivisionUpdate.mockReset();
   txCompetitionUpdate.mockReset();
   txAuditCreate.mockReset();
+  txAuditCreateMany.mockReset();
   txResultFindMany.mockReset().mockResolvedValue([]);
 });
 
@@ -280,6 +283,7 @@ describe("correctResult() — correction workflow (CLAUDE.md §29-30)", () => {
       divisionId: "div1",
       registrationId: "reg-a",
       division: { competitionId: "comp1" },
+      registration: { role: "LEADER" },
     });
   });
 
@@ -336,5 +340,100 @@ describe("correctResult() — correction workflow (CLAUDE.md §29-30)", () => {
     const data = txResultCreate.mock.calls[0][0].data;
     expect(data.publishedAt).toBeInstanceOf(Date);
     expect(data.publishedById).toBe("u1");
+  });
+
+  // РЕГРЕССИЯ (найдено вживую 2026-09-08): ручная правка одной строки без
+  // проверки соседей позволила поставить двух разных участников на одно и
+  // то же 2 место (3 место при этом осталось никем не занято). БД не
+  // должна допускать такое состояние — исправление обязано быть отклонено,
+  // а не создавать дубликат.
+  it("отклоняет исправление, если место уже занято ДРУГИМ участником той же роли", async () => {
+    txResultFindFirstOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      registrationId: "reg-a",
+      version: 1,
+      roundReachedId: "r1",
+      status: "FINALIST",
+      placement: 3,
+      publishedAt: null,
+    });
+    txResultFindMany.mockResolvedValue([
+      { registrationId: "reg-a", version: 1, status: "FINALIST", placement: 3, registration: { dancer: { displayName: "Денисевич Николай" }, checkIn: { bibNumber: "2" } } },
+      { registrationId: "reg-b", version: 1, status: "FINALIST", placement: 2, registration: { dancer: { displayName: "Зеленковский Сергей" }, checkIn: { bibNumber: "4" } } },
+    ]);
+
+    await expect(correctResult("res1", { status: "FINALIST", placement: 2 }, "хочу поставить на 2 место")).rejects.toThrow(/Зеленковский Сергей/);
+    expect(txResultCreate).not.toHaveBeenCalled();
+  });
+
+  it("не мешает исправлению, если место совпадает с ТЕКУЩИМ (то же самое место того же участника)", async () => {
+    txResultFindFirstOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      registrationId: "reg-a",
+      version: 1,
+      roundReachedId: "r1",
+      status: "FINALIST",
+      placement: 2,
+      publishedAt: null,
+    });
+    txResultFindMany.mockResolvedValue([
+      { registrationId: "reg-a", version: 1, status: "FINALIST", placement: 2, registration: { dancer: { displayName: "Денисевич Николай" }, checkIn: { bibNumber: "2" } } },
+    ]);
+
+    await correctResult("res1", { status: "FINALIST", placement: 2 }, "уточнение причины, место не меняется");
+    expect(txResultCreate).toHaveBeenCalled();
+  });
+});
+
+describe("swapResultPlacements() — атомарный обмен местами двух финалистов", () => {
+  beforeEach(() => {
+    resultFindUniqueOrThrow.mockImplementation((args: { where: { id: string } }) => {
+      const id = args.where.id;
+      if (id === "resA") return Promise.resolve({ id: "resA", divisionId: "div1", registrationId: "reg-a", division: { competitionId: "comp1" }, registration: { role: "LEADER" } });
+      if (id === "resB") return Promise.resolve({ id: "resB", divisionId: "div1", registrationId: "reg-b", division: { competitionId: "comp1" }, registration: { role: "LEADER" } });
+      return Promise.reject(new Error(`unexpected id ${id}`));
+    });
+  });
+
+  it("отклоняет без причины", async () => {
+    await expect(swapResultPlacements("resA", "resB", "")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("отклоняет обмен участника с самим собой (тот же resultId)", async () => {
+    await expect(swapResultPlacements("resA", "resA", "причина")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("отклоняет, если результаты из разных дивизионов или ролей", async () => {
+    resultFindUniqueOrThrow.mockImplementation((args: { where: { id: string } }) => {
+      const id = args.where.id;
+      if (id === "resA") return Promise.resolve({ id: "resA", divisionId: "div1", registrationId: "reg-a", division: { competitionId: "comp1" }, registration: { role: "LEADER" } });
+      if (id === "resB") return Promise.resolve({ id: "resB", divisionId: "div1", registrationId: "reg-b", division: { competitionId: "comp1" }, registration: { role: "FOLLOWER" } });
+      return Promise.reject(new Error("unexpected"));
+    });
+    await expect(swapResultPlacements("resA", "resB", "причина")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txResultCreate).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет, если один из участников не является действующим финалистом", async () => {
+    txResultFindFirstOrThrow
+      .mockResolvedValueOnce({ divisionId: "div1", registrationId: "reg-a", version: 1, roundReachedId: "r1", status: "FINALIST", placement: 2, publishedAt: null })
+      .mockResolvedValueOnce({ divisionId: "div1", registrationId: "reg-b", version: 1, roundReachedId: "r1", status: "ELIMINATED", placement: null, publishedAt: null });
+    await expect(swapResultPlacements("resA", "resB", "причина")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txResultCreate).not.toHaveBeenCalled();
+  });
+
+  it("меняет местами обе строки одной транзакцией — по новой версии каждому, с audit на обоих", async () => {
+    txResultFindFirstOrThrow
+      .mockResolvedValueOnce({ divisionId: "div1", registrationId: "reg-a", version: 1, roundReachedId: "r1", status: "FINALIST", placement: 2, publishedAt: null })
+      .mockResolvedValueOnce({ divisionId: "div1", registrationId: "reg-b", version: 1, roundReachedId: "r1", status: "FINALIST", placement: 3, publishedAt: null });
+    txResultCreate.mockResolvedValueOnce({ id: "res-newA", placement: 3, version: 2 }).mockResolvedValueOnce({ id: "res-newB", placement: 2, version: 2 });
+
+    await swapResultPlacements("resA", "resB", "Перепутали местами при вводе");
+
+    expect(txResultCreate).toHaveBeenNthCalledWith(1, { data: expect.objectContaining({ registrationId: "reg-a", placement: 3, version: 2 }) });
+    expect(txResultCreate).toHaveBeenNthCalledWith(2, { data: expect.objectContaining({ registrationId: "reg-b", placement: 2, version: 2 }) });
+    const auditRows = txAuditCreateMany.mock.calls[0][0].data;
+    expect(auditRows).toHaveLength(2);
+    expect(auditRows.every((r: { action: string; reason: string }) => r.action === "result.swap" && r.reason === "Перепутали местами при вводе")).toBe(true);
   });
 });

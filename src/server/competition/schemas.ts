@@ -328,3 +328,12 @@ export const correctResultSchema = z
     path: ["placement"],
   });
 export type CorrectResultInput = z.infer<typeof correctResultSchema>;
+
+// Обмен местами двух финалистов (results.ts, swapResultPlacements) — не
+// requestId, конкретных resultId, обе строки берутся из тела запроса.
+export const swapResultPlacementsSchema = z.object({
+  resultIdA: z.string().min(1),
+  resultIdB: z.string().min(1),
+  reason: z.string().min(1).max(500),
+});
+export type SwapResultPlacementsInput = z.infer<typeof swapResultPlacementsSchema>;

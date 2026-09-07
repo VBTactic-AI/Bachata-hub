@@ -1,7 +1,7 @@
 import type { Prisma, RegistrationRole, ResultStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
-import { writeAudit } from "../audit/audit";
+import { writeAudit, writeAuditMany } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 
 // Официальный протокол результатов дивизиона (Result, Этап 10,
@@ -234,13 +234,56 @@ export async function unpublishCompetitionResults(competitionId: string, reason:
   });
 }
 
+// Проверяет, что место свободно среди ТЕКУЩИХ (последняя version на
+// registrationId) FINALIST-строк дивизиона+роли — не считая самого
+// исправляемого участника. Найдено вживую (2026-09-07/08): ручная
+// коррекция одного Result безусловно принимала любое число, и админ мог
+// поставить двух разных участников на одно и то же место (место 2 у обоих,
+// место 3 не занято никем) — БД не должна допускать такое состояние вообще
+// (CLAUDE.md §19 — как и при отсеве, ничья/дублирование места не решается
+// произвольным выбором). correctResult() (одна строка) теперь ОТКАЗЫВАЕТ в
+// таком исправлении вместо того, чтобы создать дубликат; для настоящего
+// обмена местами (частый случай реальной правки) — swapResultPlacements()
+// ниже, меняет оба места одной транзакцией, так что дублирования не бывает
+// даже транзитно.
+async function assertPlacementFree(
+  tx: Prisma.TransactionClient,
+  params: { divisionId: string; role: RegistrationRole; placement: number; excludeRegistrationId: string }
+): Promise<void> {
+  const all = await tx.result.findMany({
+    where: { divisionId: params.divisionId, registration: { role: params.role } },
+    select: {
+      registrationId: true,
+      version: true,
+      status: true,
+      placement: true,
+      registration: { select: { dancer: { select: { displayName: true } }, checkIn: { select: { bibNumber: true } } } },
+    },
+  });
+  const latestByRegistration = new Map<string, (typeof all)[number]>();
+  for (const r of all) {
+    const cur = latestByRegistration.get(r.registrationId);
+    if (!cur || r.version > cur.version) latestByRegistration.set(r.registrationId, r);
+  }
+  const holder = [...latestByRegistration.values()].find(
+    (r) => r.registrationId !== params.excludeRegistrationId && r.status === "FINALIST" && r.placement === params.placement
+  );
+  if (holder) {
+    throw new ValidationFailedError(
+      `Место ${params.placement} уже занято участником №${holder.registration.checkIn?.bibNumber ?? "—"} ${holder.registration.dancer.displayName} — сначала измените его место, либо используйте обмен местами (swapResultPlacements).`
+    );
+  }
+}
+
 // Correction workflow (CLAUDE.md §29-30): исправление официального
 // результата — всегда через новую версию с обязательной причиной, старая
 // строка остаётся нетронутой. Работает и до, и после публикации (единый
 // путь, а не два разных механизма) — если предыдущая версия уже была
 // опубликована, новая версия публикуется сразу же (иначе публично
 // показанное место осталось бы неверным); если черновик ещё не публиковался
-// — новая версия тоже остаётся черновиком.
+// — новая версия тоже остаётся черновиком. Место обязано быть свободным
+// среди текущих FINALIST дивизиона+роли (assertPlacementFree) — БД не
+// должна допускать двух участников на одном месте одновременно.
 export async function correctResult(
   resultId: string,
   data: { status: ResultStatus; placement: number | null },
@@ -257,7 +300,7 @@ export async function correctResult(
   }
   const target = await prisma.result.findUniqueOrThrow({
     where: { id: resultId },
-    include: { division: { select: { competitionId: true } } },
+    include: { division: { select: { competitionId: true } }, registration: { select: { role: true } } },
   });
   const actor = await requirePermission("result:publish", target.division.competitionId);
 
@@ -266,6 +309,16 @@ export async function correctResult(
       where: { divisionId: target.divisionId, registrationId: target.registrationId },
       orderBy: { version: "desc" },
     });
+
+    if (data.status === "FINALIST") {
+      await assertPlacementFree(tx, {
+        divisionId: target.divisionId,
+        role: target.registration.role,
+        placement: data.placement!,
+        excludeRegistrationId: target.registrationId,
+      });
+    }
+
     const created = await tx.result.create({
       data: {
         divisionId: latest.divisionId,
@@ -289,6 +342,98 @@ export async function correctResult(
       after: { status: created.status, placement: created.placement, version: created.version },
       reason,
     });
+  });
+}
+
+// Обмен местами между двумя ФИНАЛИСТАМИ одной роли одного дивизиона —
+// единственный безопасный способ поменять двух людей местами, раз
+// correctResult() (одна строка) теперь отказывает в занятом месте
+// (assertPlacementFree выше). Обе строки меняются местами в ОДНОЙ
+// транзакции: в БД никогда не бывает промежуточного состояния ни с
+// дубликатом места, ни с "дыркой" — это ровно тот кейс, который раньше
+// ломался при ручном исправлении по одному участнику за раз (2026-09-08).
+export async function swapResultPlacements(resultIdA: string, resultIdB: string, reason: string): Promise<void> {
+  if (!reason.trim()) {
+    throw new ValidationFailedError("Нужно указать причину обмена местами.");
+  }
+  if (resultIdA === resultIdB) {
+    throw new ValidationFailedError("Нельзя поменять местами участника с самим собой.");
+  }
+  const [a, b] = await Promise.all([
+    prisma.result.findUniqueOrThrow({
+      where: { id: resultIdA },
+      include: { division: { select: { competitionId: true } }, registration: { select: { role: true } } },
+    }),
+    prisma.result.findUniqueOrThrow({
+      where: { id: resultIdB },
+      include: { division: { select: { competitionId: true } }, registration: { select: { role: true } } },
+    }),
+  ]);
+  if (a.divisionId !== b.divisionId || a.registration.role !== b.registration.role) {
+    throw new ValidationFailedError("Меняться местами могут только два финалиста одной роли одного дивизиона.");
+  }
+  if (a.registrationId === b.registrationId) {
+    throw new ValidationFailedError("Это один и тот же участник.");
+  }
+  const actor = await requirePermission("result:publish", a.division.competitionId);
+
+  await prisma.$transaction(async (tx) => {
+    const [latestA, latestB] = await Promise.all([
+      tx.result.findFirstOrThrow({ where: { divisionId: a.divisionId, registrationId: a.registrationId }, orderBy: { version: "desc" } }),
+      tx.result.findFirstOrThrow({ where: { divisionId: b.divisionId, registrationId: b.registrationId }, orderBy: { version: "desc" } }),
+    ]);
+    if (latestA.status !== "FINALIST" || latestB.status !== "FINALIST" || latestA.placement === null || latestB.placement === null) {
+      throw new ValidationFailedError("Меняться местами могут только два действующих финалиста (у обоих должно быть место).");
+    }
+
+    const createdA = await tx.result.create({
+      data: {
+        divisionId: latestA.divisionId,
+        registrationId: latestA.registrationId,
+        version: latestA.version + 1,
+        roundReachedId: latestA.roundReachedId,
+        status: "FINALIST",
+        placement: latestB.placement,
+        publishedAt: latestA.publishedAt ? new Date() : null,
+        publishedById: latestA.publishedAt ? actor.userId : null,
+        createdById: actor.userId,
+        reason,
+      },
+    });
+    const createdB = await tx.result.create({
+      data: {
+        divisionId: latestB.divisionId,
+        registrationId: latestB.registrationId,
+        version: latestB.version + 1,
+        roundReachedId: latestB.roundReachedId,
+        status: "FINALIST",
+        placement: latestA.placement,
+        publishedAt: latestB.publishedAt ? new Date() : null,
+        publishedById: latestB.publishedAt ? actor.userId : null,
+        createdById: actor.userId,
+        reason,
+      },
+    });
+    await writeAuditMany(tx, [
+      {
+        actor,
+        action: "result.swap",
+        entityType: "Result",
+        entityId: createdA.id,
+        before: { placement: latestA.placement, version: latestA.version },
+        after: { placement: createdA.placement, version: createdA.version, swappedWith: createdB.id },
+        reason,
+      },
+      {
+        actor,
+        action: "result.swap",
+        entityType: "Result",
+        entityId: createdB.id,
+        before: { placement: latestB.placement, version: latestB.version },
+        after: { placement: createdB.placement, version: createdB.version, swappedWith: createdA.id },
+        reason,
+      },
+    ]);
   });
 }
 
