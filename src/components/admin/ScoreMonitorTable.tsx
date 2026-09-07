@@ -27,21 +27,31 @@ type ScoreEvent =
       value: number;
     };
 
+// Сервер сам планово закрывает поток раньше таймаута платформы (Vercel,
+// maxDuration в stream/route.ts) — браузер (EventSource) переподключается
+// к нему сам, обычно за доли секунды. Мигать "переподключение…" на каждый
+// такой плановый разрыв было бы шумно и пугало бы зря (2026-09-07) — бейдж
+// показывает "не в сети" только если разрыв длится дольше DISCONNECT_DELAY_MS
+// подряд; более короткие/штатные переподключения проходят молча.
+const DISCONNECT_DELAY_MS = 10000;
+
 // onOpen вызывается при КАЖДОМ (пере)открытии потока — не только при первом
-// монтировании. На Vercel serverless-функция раздачи (stream/route.ts)
-// планово закрывается сама раньше платформенного таймаута (maxDuration), и
-// у SSE нет истории "додай то, что пропустил" — единственный надёжный способ
-// не зависнуть с устаревшей таблицей молча — полный пересинк на каждый
-// (ре)коннект, а не только точечные события между ними (2026-09-07).
+// монтировании. У SSE нет истории "додай то, что пропустил" — единственный
+// надёжный способ не зависнуть с устаревшей таблицей молча — полный пересинк
+// на каждый (ре)коннект, а не только точечные события между ними (2026-09-07).
 function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, onOpen: () => void): boolean {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const onOpenRef = useRef(onOpen);
   onOpenRef.current = onOpen;
-  const [connected, setConnected] = useState(false);
+  // Оптимистично true — не мигаем "переподключение…" сразу же на самое
+  // первое (обычно мгновенное) подключение при открытии страницы.
+  const [connected, setConnected] = useState(true);
 
   useEffect(() => {
     const source = new EventSource(`/api/admin/rounds/${roundId}/score-monitor/stream`);
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
     source.addEventListener("score", (e) => {
       try {
         onEventRef.current(JSON.parse((e as MessageEvent).data) as ScoreEvent);
@@ -50,13 +60,28 @@ function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, o
       }
     });
     source.onopen = () => {
+      if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+        disconnectTimer = null;
+      }
       setConnected(true);
       onOpenRef.current();
     };
-    // EventSource сам переподключается при обрыве (браузер) — просто отмечаем
-    // как временно не в сети, отдельный fallback-поллинг не нужен (2026-09-07).
-    source.onerror = () => setConnected(false);
-    return () => source.close();
+    source.onerror = () => {
+      // Уже отсчитываем задержку с предыдущей ошибки (браузер сам повторяет
+      // попытки, onerror сработает на каждую неудачную) — не перезапускаем
+      // таймер заново на каждый повтор, иначе "не в сети" никогда бы не
+      // показалось при по-настоящему долгом обрыве.
+      if (disconnectTimer) return;
+      disconnectTimer = setTimeout(() => {
+        setConnected(false);
+        disconnectTimer = null;
+      }, DISCONNECT_DELAY_MS);
+    };
+    return () => {
+      source.close();
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
