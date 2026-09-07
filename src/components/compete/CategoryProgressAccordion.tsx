@@ -71,9 +71,12 @@ export function CategoryProgressAccordion({ items, progress }: { items: Category
                           if (rows.length === 0) return [];
                           return [
                             <tr key={`${role}-header`}>
-                              <td colSpan={divisionProgress.columns.length + 1} className="pt-2 text-xs uppercase tracking-wide text-night-muted">
+                              <td className="sticky left-0 z-10 whitespace-nowrap bg-night-card pt-2 pr-2 text-xs uppercase tracking-wide text-night-muted">
                                 {REGISTRATION_ROLE_LABELS[role]}
                               </td>
+                              {divisionProgress.columns.map((c) => (
+                                <td key={c.roundId} className="bg-night-card" />
+                              ))}
                             </tr>,
                             ...rows.map((r, idx) => {
                               const rowBg = idx % 2 === 1 ? "bg-night-card2" : "bg-night-card";
