@@ -30,8 +30,13 @@ const txFinalResultFindUnique = vi.fn();
 const txJudgeRoundConfirmationFindUnique = vi.fn();
 const txJudgeRoundConfirmationCreate = vi.fn();
 const auditCreate = vi.fn();
+// pg_advisory_xact_lock перед проверкой конфликта места (final-scoring.ts,
+// защита от гонки двух одновременных запросов) — в тестах транзакция не
+// настоящая, так что просто подтверждаем вызов, ничего не блокируя.
+const txExecuteRaw = vi.fn().mockResolvedValue(0);
 
 const fakeTx = {
+  $executeRaw: txExecuteRaw,
   finalJudgeScore: {
     findUnique: txFinalJudgeScoreFindUnique,
     findFirst: txFinalJudgeScoreFindFirst,
@@ -108,6 +113,7 @@ beforeEach(() => {
   txHeatFindMany.mockReset().mockResolvedValue([]);
   txFinalResultFindUnique.mockReset().mockResolvedValue(null);
   auditCreate.mockReset();
+  txExecuteRaw.mockClear();
 });
 
 describe("submitFinalJudgeScore() — SCORE-001", () => {
@@ -174,6 +180,7 @@ describe("submitFinalJudgeScore() — RELATIVE_PLACEMENT, атомарная п�
 
     await submitFinalJudgeScore("dp1", "place", 2, "sub-1");
 
+    expect(txExecuteRaw).toHaveBeenCalled(); // advisory xact-lock сериализует конкурентные запросы (CLAUDE.md §34)
     expect(txFinalJudgeScoreDelete).toHaveBeenCalledWith({ where: { id: "score-dp2" } });
     expect(auditCreate).toHaveBeenCalledWith(
       expect.objectContaining({
