@@ -41,7 +41,13 @@ export default async function ScoreMonitorPage({ params }: { params: Promise<{ i
         </h1>
       </div>
       {prelim && (
-        <PrelimScoreMonitor roundId={roundId} maxValue={prelim.maxValue} initialLeader={prelim.leader} initialFollower={prelim.follower} />
+        <PrelimScoreMonitor
+          roundId={roundId}
+          maxValue={prelim.maxValue}
+          finalistsCount={prelim.finalistsCount}
+          initialLeader={prelim.leader}
+          initialFollower={prelim.follower}
+        />
       )}
       {final && <FinalScoreMonitor roundId={roundId} format={final.format} initialLeader={final.leader} initialFollower={final.follower} />}
       {!prelim && !final && <p className="hint-text">Для этого раунда финал ещё не начат — данных пока нет.</p>}

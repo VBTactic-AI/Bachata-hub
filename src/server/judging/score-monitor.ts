@@ -52,7 +52,15 @@ export type PrelimScoreMonitorTable = {
   totals: ScoreMonitorTotal[];
 };
 
-export type PrelimScoreMonitor = { maxValue: number; leader: PrelimScoreMonitorTable; follower: PrelimScoreMonitorTable };
+export type PrelimScoreMonitor = {
+  maxValue: number;
+  // Клиенту нужно для пересчёта ИТОГО на живых событиях (Realtime), не
+  // дожидаясь полного пересинка с сервера — та же величина, что определяет
+  // "положительная оценка / сколько должно пройти дальше" ниже.
+  finalistsCount: number;
+  leader: PrelimScoreMonitorTable;
+  follower: PrelimScoreMonitorTable;
+};
 
 export async function getPrelimScoreMonitor(roundId: string): Promise<PrelimScoreMonitor> {
   const round = await prisma.round.findUniqueOrThrow({
@@ -165,7 +173,12 @@ export async function getPrelimScoreMonitor(roundId: string): Promise<PrelimScor
     return { judges, rows, totals };
   }
 
-  return { maxValue: round.judgingMaxScore, leader: buildTable("LEADER"), follower: buildTable("FOLLOWER") };
+  return {
+    maxValue: round.judgingMaxScore,
+    finalistsCount: round.finalistsCount ?? 0,
+    leader: buildTable("LEADER"),
+    follower: buildTable("FOLLOWER"),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +296,7 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
 // точечного апдейта, но гарантирует, что таблица не "зависает" молча
 // устаревшей после обрыва, а сама себя чинит.
 export type ScoreMonitorSnapshot =
-  | { kind: "prelim"; maxValue: number; leader: PrelimScoreMonitorTable; follower: PrelimScoreMonitorTable }
+  | { kind: "prelim"; maxValue: number; finalistsCount: number; leader: PrelimScoreMonitorTable; follower: PrelimScoreMonitorTable }
   | { kind: "final"; format: FinalFormat; leader: FinalScoreMonitorTable; follower: FinalScoreMonitorTable }
   | { kind: "none" };
 
@@ -294,5 +307,5 @@ export async function getScoreMonitorSnapshot(roundId: string): Promise<ScoreMon
     return final ? { kind: "final", format: final.format, leader: final.leader, follower: final.follower } : { kind: "none" };
   }
   const prelim = await getPrelimScoreMonitor(roundId);
-  return { kind: "prelim", maxValue: prelim.maxValue, leader: prelim.leader, follower: prelim.follower };
+  return { kind: "prelim", maxValue: prelim.maxValue, finalistsCount: prelim.finalistsCount, leader: prelim.leader, follower: prelim.follower };
 }

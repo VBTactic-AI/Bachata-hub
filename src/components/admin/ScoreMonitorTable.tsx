@@ -181,26 +181,45 @@ function LiveBadge({ connected }: { connected: boolean }) {
 export function PrelimScoreMonitor({
   roundId,
   maxValue,
+  finalistsCount,
   initialLeader,
   initialFollower,
 }: {
   roundId: string;
   maxValue: number;
+  finalistsCount: number;
   initialLeader: PrelimTable;
   initialFollower: PrelimTable;
 }) {
   const [leader, setLeader] = useState(initialLeader);
   const [follower, setFollower] = useState(initialFollower);
 
+  // "Да/Нет"/"0/1/2" — required/submitted это "положительная оценка / сколько
+  // должно пройти дальше" (та же величина, что судья видит на своём экране),
+  // не "сколько участников вообще оценено" — см. score-monitor.ts. required
+  // сам по себе не меняется от одной новой оценки (участники/finalistsCount
+  // раунда фиксированы, пока он идёт), пересчитываем только submitted/complete
+  // — иначе строка ИТОГО замирала бы до следующего полного пересинка
+  // (жалоба пользователя на живом табло, 2026-09-07).
+  const isConfirmationBased = (maxValue === 1 || maxValue === 2) && finalistsCount > 0;
   const applyEvent = (event: ScoreEvent) => {
     if (event.kind !== "judge_score") return;
     const apply = (table: PrelimTable): PrelimTable => {
       const rowIdx = table.rows.findIndex((r) => r.drawParticipantId === event.drawParticipantId);
-      if (rowIdx === -1 || !table.judges.some((j) => j.judgeAssignmentId === event.judgeAssignmentId)) return table;
+      const judgeAssignmentId = event.judgeAssignmentId;
+      if (rowIdx === -1 || !table.judges.some((j) => j.judgeAssignmentId === judgeAssignmentId)) return table;
       const rows = table.rows.map((r, i) =>
-        i === rowIdx ? { ...r, scores: { ...r.scores, [event.judgeAssignmentId]: event.value } } : r
+        i === rowIdx ? { ...r, scores: { ...r.scores, [judgeAssignmentId]: event.value } } : r
       );
-      return { ...table, rows };
+      const totals = table.totals.map((t) => {
+        if (t.judgeAssignmentId !== judgeAssignmentId || t.required === 0) return t;
+        const submitted = isConfirmationBased
+          ? rows.filter((r) => (r.scores[judgeAssignmentId] ?? 0) > 0).length
+          : rows.filter((r) => r.scores[judgeAssignmentId] !== null).length;
+        const complete = isConfirmationBased ? submitted === t.required : submitted >= t.required;
+        return { ...t, submitted, complete };
+      });
+      return { ...table, rows, totals };
     };
     setLeader(apply);
     setFollower(apply);
@@ -305,15 +324,26 @@ export function FinalScoreMonitor({
 
   const applyEvent = (event: ScoreEvent) => {
     if (event.kind !== "final_judge_score") return;
+    const judgeAssignmentId = event.judgeAssignmentId;
     const apply = (table: FinalTable): FinalTable => {
       const rowIdx = table.rows.findIndex((r) => r.drawParticipantId === event.drawParticipantId);
-      if (rowIdx === -1 || !table.judges.some((j) => j.judgeAssignmentId === event.judgeAssignmentId)) return table;
+      if (rowIdx === -1 || !table.judges.some((j) => j.judgeAssignmentId === judgeAssignmentId)) return table;
       const rows = table.rows.map((r, i) => {
         if (i !== rowIdx) return r;
-        const judgeScores = { ...(r.scores[event.judgeAssignmentId] ?? {}), [event.criterionId]: event.value };
-        return { ...r, scores: { ...r.scores, [event.judgeAssignmentId]: judgeScores } };
+        const judgeScores = { ...(r.scores[judgeAssignmentId] ?? {}), [event.criterionId]: event.value };
+        return { ...r, scores: { ...r.scores, [judgeAssignmentId]: judgeScores } };
       });
-      return { ...table, rows };
+      // required фиксирован (участники × применимые критерии для этого
+      // судьи не меняются от одной новой оценки) — пересчитываем только
+      // submitted: ячейки, неприменимые этому судье, так и останутся null
+      // (в них никогда не прилетает событие), поэтому подсчёт непустых
+      // ячеек корректен без отдельного знания, какие критерии применимы.
+      const totals = table.totals.map((t) => {
+        if (t.judgeAssignmentId !== judgeAssignmentId) return t;
+        const submitted = rows.reduce((sum, r) => sum + Object.values(r.scores[judgeAssignmentId] ?? {}).filter((v) => v !== null).length, 0);
+        return { ...t, submitted, complete: submitted >= t.required };
+      });
+      return { ...table, rows, totals };
     };
     setLeader(apply);
     setFollower(apply);
