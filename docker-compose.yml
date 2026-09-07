@@ -31,6 +31,16 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?Задайте SESSION_SECRET в .env (см. .env.example) — без дефолта, это ключ подписи сессий}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
       NODE_ENV: production
+      # Live-таблица оценок (score-relay.ts) — необязательные: без них фича
+      # просто не покажет live-обновления (см. .env.example), никакая другая
+      # часть сайта от них не зависит. ВАЖНО: имеют смысл только если
+      # DATABASE_URL выше указывает на тот же Supabase-проект, что и эти
+      # ключи — по умолчанию в этом docker-compose.yml DATABASE_URL смотрит
+      # на локальный одноразовый контейнер "db" (postgres:16-alpine), а не на
+      # Supabase, так что live-обновления здесь работать не будут, даже если
+      # ключи заданы, пока DATABASE_URL не переключат на реальный Supabase.
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
     ports:
       - "3000:3000"
     # На первом запуске применяем миграции и наполняем демо-данными,
