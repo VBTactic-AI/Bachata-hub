@@ -115,11 +115,22 @@ export function rankFinalParticipants(
 //    у него набралось БОЛЬШИНСТВО судейских голосов (голос засчитан, если
 //    судья поставил участнику место <= P). Это его "уровень разрешения".
 // 2. Меньший уровень разрешения — выше итоговое место.
-// 3. При равном уровне — сравниваем СУММУ мест (только тех судейских
-//    оценок, что <= уровня разрешения) — меньше сумма, выше место
-//    ("corrected sum", стандартный tie-break скейтинг-системы).
-// 3. Полное совпадение уровня И суммы — настоящая ничья: место не
-//    присваивается (tieGroupKey), как и в rankFinalParticipants выше —
+// 3. При равном уровне — сравниваем КОЛИЧЕСТВО судейских оценок <= уровня
+//    разрешения ("majority count") — БОЛЬШЕ судей согласилось, выше место.
+//    Это ошибочно отсутствовало до 2026-09-07: раньше тай-брейк сразу
+//    прыгал на сумму мест, из-за чего участник с большинством ВСЕХ судей
+//    в его пользу мог проиграть участнику, у которого согласилось меньше
+//    судей, но с меньшей суммой. Реальный кейс (см. docs/00_DECISIONS.md):
+//    при 4 судьях, N=6, уровень=3 — у одного участника счёт 4/4 (сумма 10),
+//    у другого 3/4 (сумма 6, четвёртый судья дал место вне уровня) —
+//    классическая скейтинг-система отдаёт место первому (4 > 3), а не
+//    второму по меньшей сумме.
+// 4. Если И уровень, И количество совпали — тогда сравниваем СУММУ мест
+//    (только тех судейских оценок, что <= уровня разрешения) — меньше
+//    сумма, выше место ("corrected sum", стандартный tie-break скейтинг-
+//    системы).
+// 5. Полное совпадение уровня, количества И суммы — настоящая ничья: место
+//    не присваивается (tieGroupKey), как и в rankFinalParticipants выше —
 //    решается через resolveTieGroupPlaces, не автоматически (CLAUDE.md §19-20).
 
 export type FinalParticipantPlacements = {
@@ -160,9 +171,14 @@ function comparePlacementParticipants(
   const levelA = resolutionLevel(a.judgePlacements, judgeCount, n);
   const levelB = resolutionLevel(b.judgePlacements, judgeCount, n);
   if (levelA !== levelB) return levelA - levelB; // меньший уровень разрешения — выше место
-  const sumA = placementsAtOrBetter(a.judgePlacements, levelA).reduce((s, v) => s + v, 0);
-  const sumB = placementsAtOrBetter(b.judgePlacements, levelB).reduce((s, v) => s + v, 0);
-  return sumA - sumB; // меньшая сумма — выше место
+
+  const atLevelA = placementsAtOrBetter(a.judgePlacements, levelA);
+  const atLevelB = placementsAtOrBetter(b.judgePlacements, levelB);
+  if (atLevelA.length !== atLevelB.length) return atLevelB.length - atLevelA.length; // больше судей в зачёте на этом уровне — выше место
+
+  const sumA = atLevelA.reduce((s, v) => s + v, 0);
+  const sumB = atLevelB.reduce((s, v) => s + v, 0);
+  return sumA - sumB; // меньшая сумма — выше место (только когда и уровень, и количество совпали)
 }
 
 // Роли считаются ОТДЕЛЬНО, как и rankFinalParticipants — вызывающий код
