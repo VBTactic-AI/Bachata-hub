@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
 import {
   enqueueFinalJudgeScore,
   getQueuedFinalScore,
@@ -29,13 +30,20 @@ export type FinalQueueItem = {
 // обычных раундах, CLAUDE.md §17): клик сохраняет локально и пытается
 // отправить сразу, без связи — досылается сама.
 export function FinalJudgingScreen({
+  roundId,
   format,
   criteria,
   items,
+  confirmed,
 }: {
+  roundId: string;
   format: "NORMAL" | "JUDGES_DANCE" | "RANDOM_COUPLES" | "RELATIVE_PLACEMENT";
   criteria: FinalCriterionInfo[];
   items: FinalQueueItem[];
+  // Судья уже нажал "Готово" по этому финалу (confirmFinalJudgeRoundDone) —
+  // оценки зафиксированы, кнопки редактирования блокируются (2026-09-07, по
+  // образцу обычных раундов, JudgeScoreButtons.tsx).
+  confirmed: boolean;
 }) {
   // RELATIVE_PLACEMENT (скейтинг-система) — судья вводит МЕСТО (меньше
   // лучше), а не баллы (больше лучше) — единственный критерий формата.
@@ -153,6 +161,19 @@ export function FinalJudgingScreen({
         </p>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-app border border-night-border bg-night-card p-3">
+        <p className={`m-0 text-sm font-semibold ${scoredCount < items.length ? "text-night-muted" : "text-night-success"}`}>
+          Оценено {scoredCount} из {items.length}
+        </p>
+        {confirmed ? (
+          <span className="rounded-full border border-night-success/40 bg-night-success/10 px-3 py-1 text-sm font-semibold text-night-success">
+            ✓ Готово — оценки зафиксированы
+          </span>
+        ) : (
+          <ConfirmJudgingButton roundId={roundId} final />
+        )}
+      </div>
+
       <div className="flex gap-2 rounded-full bg-night-card p-1">
         <button
           type="button"
@@ -188,7 +209,7 @@ export function FinalJudgingScreen({
                 </div>
                 <button
                   type="button"
-                  disabled={!canDec}
+                  disabled={!canDec || confirmed}
                   onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.max(c.minScore, (value ?? c.minScore) - c.step))}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
                 >
@@ -197,7 +218,7 @@ export function FinalJudgingScreen({
                 <span className="w-9 shrink-0 text-center text-xl font-bold text-night-text">{value ?? "–"}</span>
                 <button
                   type="button"
-                  disabled={!canInc}
+                  disabled={!canInc || confirmed}
                   onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.min(c.maxScore, (value ?? c.minScore) + c.step))}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
                 >

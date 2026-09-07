@@ -52,17 +52,23 @@ const prismaHeatFindFirstOrThrow = vi.fn();
 const prismaDrawFindFirstOrThrow = vi.fn();
 const prismaFinalResultFindMany = vi.fn();
 
+const prismaHeatFindMany = vi.fn();
+const prismaJudgeAssignmentFindMany = vi.fn();
+const prismaJudgeRoundConfirmationCount = vi.fn();
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     round: { findUniqueOrThrow: prismaRoundFindUniqueOrThrow },
-    heat: { findFirstOrThrow: prismaHeatFindFirstOrThrow },
+    heat: { findFirstOrThrow: prismaHeatFindFirstOrThrow, findMany: (...a: unknown[]) => prismaHeatFindMany(...a) },
     draw: { findFirstOrThrow: prismaDrawFindFirstOrThrow },
     finalResult: { findMany: prismaFinalResultFindMany },
+    judgeAssignment: { findMany: (...a: unknown[]) => prismaJudgeAssignmentFindMany(...a) },
+    judgeRoundConfirmation: { count: (...a: unknown[]) => prismaJudgeRoundConfirmationCount(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => prismaTransaction(fn),
   },
 }));
 
-const { calculateFinalResultsInTx, recordFinalTieBreakDecision } = await import("@/server/judging/final-advancement");
+const { calculateFinalResultsInTx, recordFinalTieBreakDecision, getFinalScoringProgress } = await import("@/server/judging/final-advancement");
 const { ValidationFailedError, ConcurrentModificationError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -295,5 +301,65 @@ describe("recordFinalTieBreakDecision() — RANK_ALL, коллегиальное
   it("отклоняет решение для перетанцовки обычного (не финального) раунда", async () => {
     prismaRoundFindUniqueOrThrow.mockResolvedValue({ ...tieBreakRound, tieBreakOfRound: { ...baseRound, id: "final1", finalSession: null } });
     await expect(recordFinalTieBreakDecision("tb1", ["regA", "regB"])).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+});
+
+// getFinalScoringProgress() — по подтверждениям судей ("Готово"), не по
+// сырым оценкам (2026-09-07, по образцу обычных раундов, A21). Без этой
+// точки подключения confirmFinalJudgeRoundDone ничего бы не значил — финал
+// завершался бы сразу по сырым баллам, как раньше.
+describe("getFinalScoringProgress()", () => {
+  const roundWithFinal = {
+    divisionId: "div1",
+    finalSession: { format: "NORMAL", config: {}, criteriaSnapshot: [{ id: "crit1", name: "Техника", priority: 1, minScore: 0, maxScore: 10, step: 1 }] },
+  };
+
+  beforeEach(() => {
+    prismaRoundFindUniqueOrThrow.mockReset();
+    prismaHeatFindMany.mockReset();
+    prismaJudgeAssignmentFindMany.mockReset();
+    prismaJudgeRoundConfirmationCount.mockReset();
+  });
+
+  it("complete=true, только когда ВСЕ судьи, у кого есть что оценивать, подтвердили", async () => {
+    prismaRoundFindUniqueOrThrow.mockResolvedValue(roundWithFinal);
+    prismaHeatFindMany.mockResolvedValue([{ draws: [{ participants: [{ id: "p1", role: "LEADER" }] }] }]);
+    prismaJudgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "LEADER" }]);
+    prismaJudgeRoundConfirmationCount.mockResolvedValue(1); // единственный релевантный судья подтвердил
+
+    const progress = await getFinalScoringProgress("round1");
+
+    expect(progress).toEqual({ required: 1, submitted: 1, complete: true });
+  });
+
+  it("complete=false, пока не все релевантные судьи подтвердили — даже если сырые оценки уже все стоят", async () => {
+    prismaRoundFindUniqueOrThrow.mockResolvedValue(roundWithFinal);
+    prismaHeatFindMany.mockResolvedValue([{ draws: [{ participants: [{ id: "p1", role: "LEADER" }] }] }]);
+    prismaJudgeAssignmentFindMany.mockResolvedValue([
+      { id: "assign1", role: "LEADER" },
+      { id: "assign2", role: "LEADER" },
+    ]);
+    prismaJudgeRoundConfirmationCount.mockResolvedValue(1); // только один из двух подтвердил
+
+    const progress = await getFinalScoringProgress("round1");
+
+    expect(progress).toEqual({ required: 2, submitted: 1, complete: false });
+  });
+
+  it("судья без релевантной работы (role без участников) не входит в required", async () => {
+    prismaRoundFindUniqueOrThrow.mockResolvedValue(roundWithFinal);
+    prismaHeatFindMany.mockResolvedValue([{ draws: [{ participants: [{ id: "p1", role: "LEADER" }] }] }]); // только LEADER-участники
+    prismaJudgeAssignmentFindMany.mockResolvedValue([
+      { id: "assign1", role: "LEADER" },
+      { id: "assign2", role: "FOLLOWER" }, // нечего оценивать — FOLLOWER-участников нет
+    ]);
+    prismaJudgeRoundConfirmationCount.mockResolvedValue(1);
+
+    const progress = await getFinalScoringProgress("round1");
+
+    expect(progress).toEqual({ required: 1, submitted: 1, complete: true });
+    expect(prismaJudgeRoundConfirmationCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ judgeAssignmentId: { in: ["assign1"] } }) })
+    );
   });
 });

@@ -1,10 +1,10 @@
-import type { FinalFormat } from "@prisma/client";
+import type { FinalFormat, RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { maybeFinalizeFinalAfterScoreInTx } from "./final-advancement";
-import { allowedJudgeRole } from "./final-scoring-matrix";
+import { allowedJudgeRole, countRequiredForJudgeRole } from "./final-scoring-matrix";
 
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
 
@@ -76,6 +76,16 @@ export async function submitFinalJudgeScore(
     throw new ValidationFailedError("Вы не назначены оценивать этот критерий у этого участника в этой категории.");
   }
 
+  // Судья уже нажал "Готово" по этому раунду (confirmFinalJudgeRoundDone) —
+  // его оценки зафиксированы, даже если финал ещё ждёт других судей
+  // (2026-09-07, по образцу обычных раундов, scoring.ts).
+  const myConfirmation = await prisma.judgeRoundConfirmation.findUnique({
+    where: { roundId_judgeAssignmentId: { roundId: round.id, judgeAssignmentId: assignment.id } },
+  });
+  if (myConfirmation) {
+    throw new ValidationFailedError('Вы уже нажали "Готово" по этому раунду — оценки зафиксированы, менять их больше нельзя.');
+  }
+
   await prisma.$transaction(async (tx) => {
     // SCORE-001: тот же случай, что и в scoring.ts — раунд остаётся в SCORING,
     // пока не решена перетанцовка ДРУГОЙ роли, и правка оценки уже
@@ -141,6 +151,105 @@ export async function submitFinalJudgeScore(
   });
 }
 
+// Судья явно нажимает "Готово" по финалу — по образцу обычных раундов
+// (confirmJudgeRoundDone, scoring.ts, A21): свободно ставит/меняет оценки
+// сколько угодно, но финал не ждёт от него явного заполнения последней
+// клетки и не завершается сам по первому попавшемуся моменту, когда всё
+// собрано (иначе случайный лишний клик мог бы мгновенно и необратимо
+// завершить финал — определить места, которые уже не поправить иначе как
+// через correction workflow). Принимается, только если у судьи заполнены
+// ВСЕ обязательные клетки (участник × критерий его роли) — иначе понятная
+// ошибка, ничего не фиксируется. Судья, назначенный на обе роли одного
+// дивизиона (JUDGES_DANCE), — одно нажатие подтверждает обе, только если
+// ОБЕ уже готовы.
+export async function confirmFinalJudgeRoundDone(roundId: string): Promise<void> {
+  const round = await prisma.round.findUniqueOrThrow({
+    where: { id: roundId },
+    include: {
+      division: { select: { id: true, competitionId: true } },
+      finalSession: { select: { format: true, config: true, criteriaSnapshot: true } },
+    },
+  });
+  const competitionId = round.division.competitionId;
+  const actor = await requirePermission("score:submit", competitionId);
+
+  if (!round.finalSession) {
+    throw new ValidationFailedError("У этого раунда ещё не начат финал.");
+  }
+  if (round.status === "COMPLETED") {
+    throw new ValidationFailedError("Финал уже завершён.");
+  }
+  const finalSession = round.finalSession;
+
+  const myAssignments = await prisma.judgeAssignment.findMany({
+    where: { divisionId: round.division.id, judgeUserId: actor.userId },
+  });
+  if (myAssignments.length === 0) {
+    throw new ValidationFailedError("Вы не назначены судить эту категорию.");
+  }
+
+  const criteria = finalSession.criteriaSnapshot as unknown as CriterionSnapshot[];
+  const heats = await prisma.heat.findMany({
+    where: { roundId },
+    select: {
+      draws: {
+        orderBy: { version: "desc" },
+        take: 1,
+        select: {
+          participants: {
+            where: { scored: true },
+            select: { role: true, finalJudgeScores: { select: { judgeAssignmentId: true, criterionId: true } } },
+          },
+        },
+      },
+    },
+  });
+  const participants = heats.flatMap((h) => h.draws[0]?.participants ?? []);
+
+  await prisma.$transaction(async (tx) => {
+    for (const assignment of myAssignments) {
+      const already = await tx.judgeRoundConfirmation.findUnique({
+        where: { roundId_judgeAssignmentId: { roundId, judgeAssignmentId: assignment.id } },
+      });
+      if (already) continue; // эта роль уже подтверждена раньше — молча пропускаем, не ошибка
+
+      const required = countRequiredForJudgeRole(participants, criteria, finalSession.format, finalSession.config, assignment.role);
+      if (required === 0) continue; // нечего подтверждать для этой роли (напр. JUDGES_DANCE без "танцующих" критериев)
+
+      const submitted = participants.reduce((sum, p) => {
+        return (
+          sum +
+          criteria.filter(
+            (c) =>
+              allowedJudgeRole(c.id, p.role, finalSession.format, finalSession.config) === assignment.role &&
+              p.finalJudgeScores.some((s) => s.judgeAssignmentId === assignment.id && s.criterionId === c.id)
+          ).length
+        );
+      }, 0);
+
+      if (submitted !== required) {
+        const roleLabel = assignment.role === "LEADER" ? "Ведущие" : "Ведомые";
+        throw new ValidationFailedError(
+          `${roleLabel}: оценено ${submitted} из ${required} — сначала оцените всех участников по всем критериям, прежде чем нажать "Готово".`
+        );
+      }
+
+      const created = await tx.judgeRoundConfirmation.create({
+        data: { roundId, judgeAssignmentId: assignment.id, yesCount: submitted },
+      });
+      await writeAudit(tx, {
+        actor,
+        action: "final_judge.confirm_round",
+        entityType: "JudgeRoundConfirmation",
+        entityId: created.id,
+        after: { roundId, judgeAssignmentId: assignment.id, role: assignment.role, submitted, required },
+      });
+    }
+
+    await maybeFinalizeFinalAfterScoreInTx(tx, roundId, actor);
+  });
+}
+
 export type FinalJudgeQueueItem = {
   drawParticipantId: string;
   role: "LEADER" | "FOLLOWER";
@@ -162,6 +271,9 @@ export type FinalJudgeQueue = {
   items: FinalJudgeQueueItem[]; // только участники МОЕЙ роли
   scoredCount: number;
   totalCount: number;
+  // Уже нажал(а) "Готово" по ВСЕМ своим ролям в этом раунде
+  // (confirmFinalJudgeRoundDone) — 2026-09-07.
+  confirmed: boolean;
 };
 
 // Что видит судья на своём экране финала: критерии (по снимку правил),
@@ -242,6 +354,25 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
 
   const scoredCount = items.filter((it) => it.criteriaIds.every((id) => it.scores[id] !== null)).length;
 
+  // "Готово" по ВСЕМ моим назначениям, у которых вообще есть что оценивать
+  // в этом раунде (роль без работы, напр. JUDGES_DANCE без "танцующих"
+  // критериев, не в счёт) — то же правило, что и в confirmFinalJudgeRoundDone.
+  const relevantAssignmentIds = myAssignments
+    .filter((a) => countRequiredForJudgeRole(items.map((it) => ({ role: it.role })), criteria, format, config, a.role) > 0)
+    .map((a) => a.id);
+  const myConfirmedIds =
+    relevantAssignmentIds.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await prisma.judgeRoundConfirmation.findMany({
+              where: { roundId, judgeAssignmentId: { in: relevantAssignmentIds } },
+              select: { judgeAssignmentId: true },
+            })
+          ).map((c) => c.judgeAssignmentId)
+        );
+  const confirmed = relevantAssignmentIds.length > 0 && relevantAssignmentIds.every((id) => myConfirmedIds.has(id));
+
   return {
     roundId,
     divisionName: round.division.category.name,
@@ -250,6 +381,7 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
     items,
     scoredCount,
     totalCount: items.length,
+    confirmed,
   };
 }
 

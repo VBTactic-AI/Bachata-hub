@@ -14,7 +14,7 @@ import {
   type FinalCriterionPriority,
   type FinalTieGroup,
 } from "./final-ranking";
-import { allowedJudgeRole } from "./final-scoring-matrix";
+import { countRequiredForJudgeRole } from "./final-scoring-matrix";
 
 type PrismaTx = Prisma.TransactionClient;
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
@@ -24,10 +24,16 @@ const ROLE_LABEL: Record<RegistrationRole, string> = { LEADER: "Ведущий",
 
 export type FinalScoringProgress = { required: number; submitted: number; complete: boolean };
 
-// Прогресс судейства финала — участник(scored=true) × судья его роли ×
-// критерий. Финал НИКОГДА не пропускает судейство роли (в отличие от
-// обычных раундов, advancement.ts rolesNotNeedingJudging) — "проходят N" в
-// финале это места, не отсев (уже решено для обычного судейства, isFinalStageInTx).
+// Прогресс судейства финала — по подтверждениям судей ("Готово"), не по
+// сырым оценкам (2026-09-07, по образцу обычных раундов, A21 — раунд не
+// должен мгновенно и необратимо завершиться от одной случайной последней
+// оценки, судья должен явно подтвердить, что закончил). "required" — число
+// судейских назначений, у которых вообще есть что оценивать в этом раунде
+// (участник × критерий его роли > 0); "submitted" — сколько из них уже
+// нажали "Готово" (confirmFinalJudgeRoundDone, final-scoring.ts). Финал
+// НИКОГДА не пропускает судейство роли целиком (в отличие от обычных
+// раундов, advancement.ts rolesNotNeedingJudging) — "проходят N" в финале
+// это места, не отсев (уже решено для обычного судейства, isFinalStageInTx).
 export async function getFinalScoringProgressInTx(tx: PrismaTx | typeof prisma, roundId: string): Promise<FinalScoringProgress> {
   const round = await tx.round.findUniqueOrThrow({
     where: { id: roundId },
@@ -45,25 +51,16 @@ export async function getFinalScoringProgressInTx(tx: PrismaTx | typeof prisma, 
   const participants = heats.flatMap((h) => h.draws[0]?.participants ?? []);
   if (participants.length === 0 || criteria.length === 0) return { required: 0, submitted: 0, complete: true };
 
-  const assignments = await tx.judgeAssignment.findMany({ where: { divisionId: round.divisionId }, select: { role: true } });
-  const judgesByRole: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
-  for (const a of assignments) judgesByRole[a.role]++;
+  const assignments = await tx.judgeAssignment.findMany({ where: { divisionId: round.divisionId }, select: { id: true, role: true } });
+  const relevantAssignmentIds = assignments
+    .filter((a) => countRequiredForJudgeRole(participants, criteria, round.finalSession!.format, round.finalSession!.config, a.role) > 0)
+    .map((a) => a.id);
+  if (relevantAssignmentIds.length === 0) return { required: 0, submitted: 0, complete: true };
 
-  // Кто именно судит критерий — зависит от формата (allowedJudgeRole,
-  // final-scoring-matrix.ts): в JUDGES_DANCE это не всегда судья ТОЙ ЖЕ
-  // роли, что участник (там критерий "танцующего судьи" оценивает
-  // противоположная роль) — считаем по каждому критерию отдельно, а не
-  // просто "судьи роли участника × число критериев".
-  let required = 0;
-  for (const p of participants) {
-    for (const c of criteria) {
-      required += judgesByRole[allowedJudgeRole(c.id, p.role, round.finalSession.format, round.finalSession.config)];
-    }
-  }
-  const participantIds = participants.map((p) => p.id);
-  const submitted = participantIds.length === 0 ? 0 : await tx.finalJudgeScore.count({ where: { drawParticipantId: { in: participantIds } } });
-
-  return { required, submitted, complete: submitted >= required };
+  const confirmed = await tx.judgeRoundConfirmation.count({
+    where: { roundId, judgeAssignmentId: { in: relevantAssignmentIds } },
+  });
+  return { required: relevantAssignmentIds.length, submitted: confirmed, complete: confirmed >= relevantAssignmentIds.length };
 }
 
 export async function getFinalScoringProgress(roundId: string): Promise<FinalScoringProgress> {

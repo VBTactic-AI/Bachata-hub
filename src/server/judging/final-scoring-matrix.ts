@@ -19,3 +19,24 @@ export function allowedJudgeRole(criterionId: string, participantRole: Registrat
   const dancingIds = (config as JudgesDanceConfig | null)?.dancingJudgeCriteriaIds ?? [];
   return dancingIds.includes(criterionId) ? oppositeRole(participantRole) : participantRole;
 }
+
+// Сколько пар (участник × критерий) обязан оценить судья указанной РОЛИ —
+// общий подсчёт для confirmFinalJudgeRoundDone (final-scoring.ts) и
+// getFinalScoringProgressInTx (final-advancement.ts), чтобы не разойтись в
+// двух местах (2026-09-07, добавлено вместе с кнопкой "Готово" для финала —
+// по образцу обычных раундов, A21).
+export function countRequiredForJudgeRole(
+  participants: { role: RegistrationRole }[],
+  criteria: { id: string }[],
+  format: string,
+  config: unknown,
+  judgeRole: RegistrationRole
+): number {
+  let required = 0;
+  for (const p of participants) {
+    for (const c of criteria) {
+      if (allowedJudgeRole(c.id, p.role, format, config) === judgeRole) required++;
+    }
+  }
+  return required;
+}
