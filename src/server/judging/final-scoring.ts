@@ -438,8 +438,21 @@ export async function listMyActiveFinalRounds(competitionId: string): Promise<My
       status: { in: ["RUNNING", "PAUSED", "FINISHED", "SCORING"] },
       finalSession: { isNot: null },
     },
-    select: { id: true, division: { select: { category: { select: { name: true } } } } },
+    select: {
+      id: true,
+      division: { select: { category: { select: { name: true } } } },
+      // Пока не решена перетанцовка за место (FULL_RANK/RANK_ALL,
+      // TIEBREAK-001/A22) — на экране самого финала уже нечего оценивать
+      // (SCORE-001 блокирует правку посчитанных участников), а реальное
+      // решение вносит HEAD_JUDGE отдельной формой (реордер), не судья.
+      // Приглашать судью "открыть финал" в этот момент только сбивает с
+      // толку (2026-09-07, по запросу пользователя) — скрываем раунд из
+      // списка, пока висит хоть одна незавершённая перетанцовка.
+      tieBreakRounds: { where: { status: { not: "COMPLETED" } }, select: { id: true } },
+    },
   });
 
-  return rounds.map((r) => ({ roundId: r.id, divisionName: r.division.category.name }));
+  return rounds
+    .filter((r) => r.tieBreakRounds.length === 0)
+    .map((r) => ({ roundId: r.id, divisionName: r.division.category.name }));
 }

@@ -20,6 +20,7 @@ const judgeAssignmentFindUnique = vi.fn();
 const judgeAssignmentFindMany = vi.fn();
 const judgeRoundConfirmationFindUnique = vi.fn();
 const roundFindUniqueOrThrow = vi.fn();
+const roundFindMany = vi.fn();
 const heatFindMany = vi.fn();
 const txFinalJudgeScoreFindUnique = vi.fn();
 const txFinalJudgeScoreFindFirst = vi.fn();
@@ -62,7 +63,10 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: (...a: unknown[]) => judgeAssignmentFindUnique(...a),
       findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a),
     },
-    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
+    round: {
+      findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a),
+      findMany: (...a: unknown[]) => roundFindMany(...a),
+    },
     heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
     // "Готово" по финалу (confirmFinalJudgeRoundDone, 2026-09-07) — та же
     // проверка "судья уже подтвердил", что и в обычных раундах (scoring.ts).
@@ -71,7 +75,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { submitFinalJudgeScore, confirmFinalJudgeRoundDone } = await import("@/server/judging/final-scoring");
+const { submitFinalJudgeScore, confirmFinalJudgeRoundDone, listMyActiveFinalRounds } = await import("@/server/judging/final-scoring");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -103,6 +107,7 @@ beforeEach(() => {
   judgeAssignmentFindMany.mockReset();
   judgeRoundConfirmationFindUnique.mockReset().mockResolvedValue(null);
   roundFindUniqueOrThrow.mockReset();
+  roundFindMany.mockReset();
   heatFindMany.mockReset();
   txJudgeRoundConfirmationFindUnique.mockReset();
   txJudgeRoundConfirmationCreate.mockReset();
@@ -308,5 +313,42 @@ describe("confirmFinalJudgeRoundDone()", () => {
     roundFindUniqueOrThrow.mockResolvedValue({ ...roundBase, status: "COMPLETED" });
 
     await expect(confirmFinalJudgeRoundDone("round1")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+});
+
+// listMyActiveFinalRounds() — баннер "Финал открыт" на странице судьи
+// (/judging/[competitionId]). Пока висит нерешённая перетанцовка за место
+// (FULL_RANK/RANK_ALL, TIEBREAK-001/A22) — на экране самого финала уже
+// нечего оценивать (SCORE-001), решение вносит HEAD_JUDGE отдельной формой,
+// не судья — приглашать его открыть финал заново только сбивает с толку
+// (2026-09-07, по запросу пользователя).
+describe("listMyActiveFinalRounds() — скрывает финал, пока не решена перетанцовка", () => {
+  it("показывает финал, если нерешённых перетанцовок нет", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([{ divisionId: "div1", role: "LEADER" }]);
+    roundFindMany.mockResolvedValue([{ id: "final1", division: { category: { name: "Дебютанты" } }, tieBreakRounds: [] }]);
+
+    const rounds = await listMyActiveFinalRounds("comp1");
+
+    expect(rounds).toEqual([{ roundId: "final1", divisionName: "Дебютанты" }]);
+  });
+
+  it("скрывает финал, пока есть хоть одна незавершённая перетанцовка", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([{ divisionId: "div1", role: "LEADER" }]);
+    roundFindMany.mockResolvedValue([
+      { id: "final1", division: { category: { name: "Дебютанты" } }, tieBreakRounds: [{ id: "tb1" }] },
+    ]);
+
+    const rounds = await listMyActiveFinalRounds("comp1");
+
+    expect(rounds).toEqual([]);
+  });
+
+  it("пустой список, если судья вообще не назначен ни на один дивизион", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([]);
+
+    const rounds = await listMyActiveFinalRounds("comp1");
+
+    expect(rounds).toEqual([]);
+    expect(roundFindMany).not.toHaveBeenCalled();
   });
 });
