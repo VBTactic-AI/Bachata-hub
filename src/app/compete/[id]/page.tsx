@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { InfoCard } from "@/components/compete/InfoCard";
 import { CategoryProgressAccordion } from "@/components/compete/CategoryProgressAccordion";
 import { getPublicCompetitionView } from "@/server/public/public-competition-view";
-import { REGISTRATION_ROLE_LABELS } from "@/lib/competition-labels";
 
 const DATE_FMT = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 
@@ -141,39 +140,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             items={view.divisions.map((d) => ({ id: d.id, categoryName: d.categoryName, registrationsCount: d.registrationsCount }))}
             progress={view.divisionProgress}
           />
-        </div>
-      )}
-
-      {view.resultsPublished && view.results.length > 0 && (
-        <div>
-          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Результаты</h2>
-          <div className="stack gap-3">
-            {[...new Set(view.results.map((r) => r.divisionCategoryName))].map((categoryName) => (
-              <div key={categoryName}>
-                <p className="m-0 mb-1 text-xs uppercase tracking-wide text-night-muted">{categoryName}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {(["LEADER", "FOLLOWER"] as const).map((role) => {
-                    const rows = view.results
-                      .filter((r) => r.divisionCategoryName === categoryName && r.role === role)
-                      .sort((a, b) => (a.placement ?? 999) - (b.placement ?? 999));
-                    if (rows.length === 0) return null;
-                    return (
-                      <div key={role}>
-                        <p className="m-0 text-[0.72rem] text-night-muted">{REGISTRATION_ROLE_LABELS[role]}</p>
-                        <ul className="m-0 list-none p-0 text-sm text-night-text">
-                          {rows.map((r) => (
-                            <li key={`${r.bibNumber}-${r.displayName}`}>
-                              {r.status === "FINALIST" ? `${r.placement ?? "—"} место` : "выбыл"} — №{r.bibNumber ?? "—"} {r.displayName}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

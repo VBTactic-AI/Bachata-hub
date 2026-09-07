@@ -80,19 +80,20 @@ describe("getPublicCompetitionView()", () => {
     expect(view!.judges).toEqual([{ displayName: "Судья Иванов" }]);
   });
 
-  it("результаты пустые, пока Competition.publicResults=false — Result вообще не запрашивается", async () => {
-    const view = await getPublicCompetitionView("comp1");
-    expect(view!.resultsPublished).toBe(false);
-    expect(view!.results).toEqual([]);
+  it("пока Competition.publicResults=false — Result вообще не запрашивается", async () => {
+    await getPublicCompetitionView("comp1");
     expect(resultFindMany).not.toHaveBeenCalled();
   });
 
-  it("результаты берут только ТЕКУЩУЮ (последнюю) версию на дивизион+регистрацию", async () => {
+  it("колонка финала в прогрессе по категориям берёт только ТЕКУЩУЮ (последнюю) версию Result", async () => {
     competitionFindUnique.mockResolvedValue({ ...baseCompetition, publicResults: true });
+    divisionFindMany.mockResolvedValue([{ id: "d1", category: { name: "Любители" }, _count: { registrations: 1 } }]);
+    roundFindMany.mockResolvedValue([{ id: "r1", divisionId: "d1", stage: { name: "Финал" }, advancementPublishedAt: null, results: [] }]);
+    registrationFindMany.mockResolvedValue([{ id: "r1reg", divisionId: "d1", role: "LEADER", dancer: { displayName: "Иван" }, checkIn: { bibNumber: "5" } }]);
     resultFindMany.mockResolvedValue([
       {
         divisionId: "d1",
-        registrationId: "r1",
+        registrationId: "r1reg",
         version: 2,
         status: "FINALIST",
         placement: 2,
@@ -101,7 +102,7 @@ describe("getPublicCompetitionView()", () => {
       },
       {
         divisionId: "d1",
-        registrationId: "r1",
+        registrationId: "r1reg",
         version: 1,
         status: "FINALIST",
         placement: 1,
@@ -110,10 +111,10 @@ describe("getPublicCompetitionView()", () => {
       },
     ]);
     const view = await getPublicCompetitionView("comp1");
-    expect(view!.results).toEqual([{ divisionCategoryName: "Любители", role: "LEADER", displayName: "Иван", bibNumber: "5", status: "FINALIST", placement: 2 }]);
+    expect(view!.divisionProgress[0].rows[0].cells.r1).toBe(2);
   });
 
-  it("прогресс по категориям: промежуточный раунд гейтится advancementPublishedAt, финал — publicResults", async () => {
+  it("прогресс по категориям: промежуточный раунд гейтится advancementPublishedAt, финал — publicResults и никогда не показывает ELIMINATED (только место или прочерк)", async () => {
     competitionFindUnique.mockResolvedValue({ ...baseCompetition, publicResults: true });
     divisionFindMany.mockResolvedValue([{ id: "d1", category: { name: "Дебютанты" }, _count: { registrations: 2 } }]);
     roundFindMany.mockResolvedValue([
@@ -164,7 +165,7 @@ describe("getPublicCompetitionView()", () => {
         ],
         rows: [
           { divisionCategoryName: "Дебютанты", role: "LEADER", displayName: "Иван", bibNumber: "1", cells: { r1: "ADVANCED", r2: 1 } },
-          { divisionCategoryName: "Дебютанты", role: "LEADER", displayName: "Пётр", bibNumber: "2", cells: { r1: "ELIMINATED", r2: "ELIMINATED" } },
+          { divisionCategoryName: "Дебютанты", role: "LEADER", displayName: "Пётр", bibNumber: "2", cells: { r1: "ELIMINATED", r2: null } },
         ],
       },
     ]);

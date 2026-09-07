@@ -16,7 +16,6 @@ export type PublicRosterRow = {
   displayName: string;
   bibNumber: string | null;
 };
-export type PublicResultRow = PublicRosterRow & { status: "FINALIST" | "ELIMINATED"; placement: number | null };
 export type PublicLiveStatus = { heatId: string; heatNumber: number; roundLabel: string; divisionCategoryName: string } | null;
 
 // Прогресс по раундам одной категории (2026-09-07, по запросу пользователя)
@@ -24,12 +23,16 @@ export type PublicLiveStatus = { heatId: string; heatNumber: number; roundLabel:
 // см. isFinalStageInTx), в порядке order; последняя колонка — финал.
 // Ячейка = null, пока результат ЭТОГО раунда не опубликован организатором
 // (для промежуточных раундов — Round.advancementPublishedAt/RoundResult; для
-// финала — Competition.publicResults/Result, ровно тот же гейт, что и в
-// resultsPublished/results выше — не изобретаем новое правило публикации).
-// "ADVANCED" используется для промежуточного отсева (RoundResult.status===ADVANCED)
-// — для зрителя это просто "прошёл этот раунд". В колонке финала вместо
-// "ADVANCED" — конкретное МЕСТО (Result.placement, по запросу пользователя,
-// 2026-09-07): там уже не отсев, а призовые места, число информативнее галочки.
+// финала — Competition.publicResults/Result — существующий флаг публикации
+// официальных мест, не изобретаем новое правило публикации).
+// "ADVANCED"/"ELIMINATED" используются только для промежуточных раундов
+// (RoundResult.status) — для зрителя это просто "прошёл"/"не прошёл этот
+// раунд". Колонка финала — особая: там либо конкретное МЕСТО
+// (Result.placement, для дошедших до финала), либо null (не дошёл до
+// финала — не важно, на каком раунде выбыл, крестик уже стоит в ЕГО
+// раунде, повторять "ELIMINATED" в финале избыточно и вводит в
+// заблуждение, по запросу пользователя, 2026-09-08). "ELIMINATED" в этой
+// колонке никогда не появляется.
 export type PublicRoundProgressStatus = "ADVANCED" | "ELIMINATED" | number | null;
 export type PublicDivisionProgressColumn = { roundId: string; label: string; isFinal: boolean };
 export type PublicDivisionProgressRow = PublicRosterRow & { cells: Record<string, PublicRoundProgressStatus> };
@@ -52,8 +55,6 @@ export type PublicCompetitionView = {
   divisions: PublicDivisionSummary[];
   judges: PublicJudge[];
   liveStatus: PublicLiveStatus;
-  resultsPublished: boolean;
-  results: PublicResultRow[];
   divisionProgress: PublicDivisionProgress[];
   stats: { registrationsCount: number; leadersCount: number; followersCount: number; divisionsCount: number };
 };
@@ -163,15 +164,6 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
     const key = `${r.divisionId}:${r.registrationId}`;
     if (!latestResultByKey.has(key)) latestResultByKey.set(key, r);
   }
-  const results: PublicResultRow[] = [...latestResultByKey.values()].map((r) => ({
-    divisionCategoryName: r.division.category.name,
-    role: r.registration.role,
-    displayName: r.registration.dancer.displayName,
-    bibNumber: r.registration.checkIn?.bibNumber ?? null,
-    status: r.status,
-    placement: r.placement,
-  }));
-
   const progressRoundsByDivision = new Map<string, (typeof progressRounds)>();
   for (const r of progressRounds) {
     const arr = progressRoundsByDivision.get(r.divisionId) ?? [];
@@ -194,7 +186,12 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         for (const r of rounds) {
           if (r.id === finalRoundId) {
             const result = latestResultByKey.get(`${d.id}:${reg.id}`);
-            cells[r.id] = result ? (result.status === "FINALIST" ? result.placement : "ELIMINATED") : null;
+            // В колонке финала — только место (дошёл) или прочерк (не дошёл
+            // до финала, независимо от того, на каком раунде выбыл — это
+            // уже показано крестиком в СВОЁМ раунде, повторять его здесь
+            // как "выбыл" избыточно и, по запросу пользователя, неверно
+            // читается, 2026-09-08).
+            cells[r.id] = result?.status === "FINALIST" ? result.placement : null;
           } else if (r.advancementPublishedAt) {
             const rr = r.results.find((x) => x.registrationId === reg.id);
             cells[r.id] = rr ? (rr.status === "ADVANCED" ? "ADVANCED" : "ELIMINATED") : null;
@@ -242,8 +239,6 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         }
       : null,
     divisionProgress,
-    resultsPublished: competition.publicResults,
-    results,
     stats: {
       registrationsCount: leadersCount + followersCount,
       leadersCount,
