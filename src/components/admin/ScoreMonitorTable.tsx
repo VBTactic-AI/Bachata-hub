@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 import type {
   FinalScoreMonitorTable as FinalTable,
   PrelimScoreMonitorTable as PrelimTable,
@@ -11,76 +12,131 @@ import type {
 // Live-таблица оценок для head judge/admin (промт пользователя, 2026-09-07):
 // строки — номер участника без имени, столбцы — судьи (имя без email),
 // в ячейках — их оценки в прямом эфире; последняя строка — ИТОГО (сдал ли
-// судья все оценки, как на его собственном экране). Обновляется по SSE
-// (score-relay.ts -> /api/admin/rounds/[roundId]/score-monitor/stream),
-// первичный снимок приходит с сервера как props — страница сама решает,
-// какой из двух форматов (обычный раунд/финал) запрашивать.
+// судья все оценки, как на его собственном экране). Браузер подписывается
+// на Supabase Realtime НАПРЯМУЮ (без сервера-посредника — тот обрывался и
+// холодно стартовал заново каждые ~55-60с на Vercel serverless, 2026-09-07,
+// найдено по логам "Waiting for server response" ~20-30с). Сервер выдаёт
+// только короткоживущий токен на конкретный раунд (realtime-token/route.ts,
+// после обычной requirePermission) — RLS-политика "realtime_read_by_round_token"
+// (миграция 20260907020000) не даёт увидеть чужие раунды. Первичный снимок
+// приходит с сервера как props (обычный SSR).
 
 type ScoreEvent =
-  | { kind: "judge_score"; roundId: string; drawParticipantId: string; judgeAssignmentId: string; value: number }
-  | {
-      kind: "final_judge_score";
-      roundId: string;
-      drawParticipantId: string;
-      judgeAssignmentId: string;
-      criterionId: string;
-      value: number;
-    };
+  | { kind: "judge_score"; drawParticipantId: string; judgeAssignmentId: string; value: number }
+  | { kind: "final_judge_score"; drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number };
 
-// Сервер сам планово закрывает поток раньше таймаута платформы (Vercel,
-// maxDuration в stream/route.ts) — браузер (EventSource) переподключается
-// к нему сам, обычно за доли секунды. Мигать "переподключение…" на каждый
-// такой плановый разрыв было бы шумно и пугало бы зря (2026-09-07) — бейдж
-// показывает "не в сети" только если разрыв длится дольше DISCONNECT_DELAY_MS
-// подряд; более короткие/штатные переподключения проходят молча.
+const anonUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+async function fetchRealtimeToken(roundId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/admin/rounds/${roundId}/score-monitor/realtime-token`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { token: string };
+    return data.token;
+  } catch {
+    return null;
+  }
+}
+
+// Реальная сессия короче TTL токена (10 минут) — обновляем заранее, чтобы
+// подписка не потеряла авторизацию посреди просмотра.
+const TOKEN_REFRESH_MS = 8 * 60 * 1000;
+// Разрыв WS кратковременный/штатный — не мигаем "переподключение…" сразу,
+// только если реально не восстановилось дольше этого времени (2026-09-07).
 const DISCONNECT_DELAY_MS = 10000;
 
-// onOpen вызывается при КАЖДОМ (пере)открытии потока — не только при первом
-// монтировании. У SSE нет истории "додай то, что пропустил" — единственный
-// надёжный способ не зависнуть с устаревшей таблицей молча — полный пересинк
-// на каждый (ре)коннект, а не только точечные события между ними (2026-09-07).
+// onOpen вызывается при КАЖДОМ (пере)подключении канала — не только при
+// первом монтировании: у Realtime-подписки нет истории "додай то, что
+// пропустил" во время разрыва, единственный надёжный способ не зависнуть с
+// устаревшей таблицей молча — полный пересинк на каждый (ре)коннект.
 function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, onOpen: () => void): boolean {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const onOpenRef = useRef(onOpen);
   onOpenRef.current = onOpen;
-  // Оптимистично true — не мигаем "переподключение…" сразу же на самое
-  // первое (обычно мгновенное) подключение при открытии страницы.
   const [connected, setConnected] = useState(true);
 
   useEffect(() => {
-    const source = new EventSource(`/api/admin/rounds/${roundId}/score-monitor/stream`);
+    if (!anonUrl || !anonKey) {
+      console.error("NEXT_PUBLIC_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_ANON_KEY не заданы — live-обновления недоступны.");
+      setConnected(false);
+      return;
+    }
+    const supabase = createClient(anonUrl, anonKey);
+    let channel: RealtimeChannel | null = null;
     let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
 
-    source.addEventListener("score", (e) => {
-      try {
-        onEventRef.current(JSON.parse((e as MessageEvent).data) as ScoreEvent);
-      } catch {
-        // сообщение непонятного формата — игнорируем, не ломаем поток ради одного события
-      }
-    });
-    source.onopen = () => {
-      if (disconnectTimer) {
-        clearTimeout(disconnectTimer);
-        disconnectTimer = null;
-      }
-      setConnected(true);
-      onOpenRef.current();
-    };
-    source.onerror = () => {
-      // Уже отсчитываем задержку с предыдущей ошибки (браузер сам повторяет
-      // попытки, onerror сработает на каждую неудачную) — не перезапускаем
-      // таймер заново на каждый повтор, иначе "не в сети" никогда бы не
-      // показалось при по-настоящему долгом обрыве.
+    function scheduleDisconnectBadge() {
       if (disconnectTimer) return;
       disconnectTimer = setTimeout(() => {
         setConnected(false);
         disconnectTimer = null;
       }, DISCONNECT_DELAY_MS);
-    };
+    }
+    function clearDisconnectBadge() {
+      if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+        disconnectTimer = null;
+      }
+      setConnected(true);
+    }
+
+    async function start() {
+      const token = await fetchRealtimeToken(roundId);
+      if (cancelled || !token) {
+        scheduleDisconnectBadge();
+        return;
+      }
+      supabase.realtime.setAuth(token);
+
+      channel = supabase
+        .channel(`score-monitor:${roundId}`)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "JudgeScore" }, (payload) => {
+          onEventRef.current({ kind: "judge_score", ...(payload.new as { drawParticipantId: string; judgeAssignmentId: string; value: number }) });
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "JudgeScore" }, (payload) => {
+          onEventRef.current({ kind: "judge_score", ...(payload.new as { drawParticipantId: string; judgeAssignmentId: string; value: number }) });
+        })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "FinalJudgeScore" }, (payload) => {
+          onEventRef.current({
+            kind: "final_judge_score",
+            ...(payload.new as { drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number }),
+          });
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "FinalJudgeScore" }, (payload) => {
+          onEventRef.current({
+            kind: "final_judge_score",
+            ...(payload.new as { drawParticipantId: string; judgeAssignmentId: string; criterionId: string; value: number }),
+          });
+        })
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            clearDisconnectBadge();
+            onOpenRef.current();
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            scheduleDisconnectBadge();
+          }
+        });
+
+      // Токен короче сессии специально (round-token.ts) — обновляем, пока
+      // канал открыт, иначе подписка молча перестанет видеть новые строки
+      // после истечения токена (RLS начнёт отклонять).
+      refreshTimer = setInterval(async () => {
+        const fresh = await fetchRealtimeToken(roundId);
+        if (fresh) supabase.realtime.setAuth(fresh);
+      }, TOKEN_REFRESH_MS);
+    }
+
+    void start();
+
     return () => {
-      source.close();
+      cancelled = true;
       if (disconnectTimer) clearTimeout(disconnectTimer);
+      if (refreshTimer) clearInterval(refreshTimer);
+      if (channel) supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
