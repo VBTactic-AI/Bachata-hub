@@ -90,7 +90,13 @@ function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, o
         scheduleDisconnectBadge();
         return;
       }
-      supabase.realtime.setAuth(token);
+      // ВАЖНО: await обязателен. Без него channel.subscribe() ниже мог
+      // отправить join-сообщение раньше, чем токен реально применится
+      // внутри supabase-js (гонка, найденная вживую, 2026-09-07) — RLS
+      // тогда молча не пропускала ни одного события, будто токен не действует
+      // вовсе, хотя сам токен и политика были верны.
+      await supabase.realtime.setAuth(token);
+      if (cancelled) return;
 
       channel = supabase
         .channel(`score-monitor:${roundId}`)
@@ -126,7 +132,7 @@ function useScoreEvents(roundId: string, onEvent: (event: ScoreEvent) => void, o
       // после истечения токена (RLS начнёт отклонять).
       refreshTimer = setInterval(async () => {
         const fresh = await fetchRealtimeToken(roundId);
-        if (fresh) supabase.realtime.setAuth(fresh);
+        if (fresh) await supabase.realtime.setAuth(fresh);
       }, TOKEN_REFRESH_MS);
     }
 
