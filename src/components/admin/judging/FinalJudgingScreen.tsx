@@ -70,6 +70,17 @@ export function FinalJudgingScreen({
   // Открытая карточка выбора места (скейтинг) — id участника, для которого
   // сейчас показан лист с местами 1..N, либо null, если лист закрыт.
   const [placeSheetFor, setPlaceSheetFor] = useState<string | null>(null);
+  // Участники, освобождённые атомарной подменой места (final-scoring.ts:
+  // "клиент занял их место — сервер обнулил их запись") — судья должен
+  // видеть "—" СРАЗУ, не дожидаясь router.refresh() (промт пользователя,
+  // 2026-09-07: "в UI пусто отображается сразу"). Чисто оптимистичная
+  // клиентская подсказка: сбрасывается целиком, как только придут свежие
+  // серверные props (items) — то есть подтверждённое состояние всегда
+  // побеждает предположение.
+  const [optimisticallyCleared, setOptimisticallyCleared] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setOptimisticallyCleared(new Set());
+  }, [items]);
   // Реактивный тик — просто чтобы перерисоваться, когда очередь меняется
   // (эффективные значения читаются заново из очереди/пропсов при рендере).
   const [, setTick] = useState(0);
@@ -174,6 +185,7 @@ export function FinalJudgingScreen({
   const placementCriterion = format === "RELATIVE_PLACEMENT" ? sortedCriteria[0] : undefined;
 
   function placeOf(item: FinalQueueItem): number | null {
+    if (optimisticallyCleared.has(item.drawParticipantId)) return null;
     return placementCriterion ? effectiveValue(item, placementCriterion.id) : null;
   }
   // Места уникальны в пределах РОЛИ (final-scoring.ts: sameRoleIds), не
@@ -184,16 +196,18 @@ export function FinalJudgingScreen({
   function holderAtPlace(role: "LEADER" | "FOLLOWER", place: number, excludeId: string) {
     return roleGroup(role).find((it) => it.drawParticipantId !== excludeId && placeOf(it) === place);
   }
-  // Переставить участника на свободное место — идёт через ту же офлайн-очередь
-  // (final-judge-score-queue.ts), что и обычная оценка: один PATCH-по-сути на
-  // (drawParticipantId, criterionId). НЕ реализуем "поменять местами" —
-  // сервер (final-scoring.ts) проверяет отсутствие дубликата места СИНХРОННО
-  // на каждую отправку, поэтому одновременный обмен двух уже занятых мест
-  // неизбежно споткнётся о переходное состояние, где оба участника случайно
-  // делят одно значение. Если место занято другим — переключаем лист на
-  // ЭТОГО другого участника, чтобы судья сначала освободил место у него.
-  function assignPlace(item: FinalQueueItem, place: number) {
+  // Переставить участника на место — идёт через ту же офлайн-очередь
+  // (final-judge-score-queue.ts), что и обычная оценка: один "PATCH" на
+  // (drawParticipantId, criterionId). Если место уже занято другим
+  // участником той же роли — сервер (final-scoring.ts) сам атомарно
+  // освобождает прежнего обладателя в одной транзакции с записью нового
+  // значения (промт пользователя, 2026-09-07); клиенту достаточно один раз
+  // сказать "хочу вот это место", свап целиком на сервере. holderId, если
+  // передан, — только для мгновенной оптимистичной подсказки в UI (см.
+  // optimisticallyCleared), к самой отправке отношения не имеет.
+  function assignPlace(item: FinalQueueItem, place: number, holderId?: string) {
     if (!placementCriterion || confirmed) return;
+    if (holderId) setOptimisticallyCleared((prev) => new Set(prev).add(holderId));
     enqueueFinalJudgeScore(item.drawParticipantId, placementCriterion.id, place);
   }
   const rolesPresent = (["LEADER", "FOLLOWER"] as const).filter((r) => items.some((it) => it.role === r));
@@ -405,11 +419,7 @@ export function FinalJudgingScreen({
                         setPlaceSheetFor(null);
                         return;
                       }
-                      if (holder) {
-                        setPlaceSheetFor(holder.drawParticipantId);
-                        return;
-                      }
-                      assignPlace(sheetItem, place);
+                      assignPlace(sheetItem, place, holder?.drawParticipantId);
                       setPlaceSheetFor(null);
                     }}
                     className="flex min-h-[64px] flex-col items-center justify-center gap-0.5 rounded-app-sm border border-night-border px-1 py-2 text-center text-night-muted"
@@ -423,7 +433,7 @@ export function FinalJudgingScreen({
                 );
               })}
             </div>
-            <p className="m-0 mt-3 text-xs text-night-muted">Занятое место откроет карточку того участника — сначала переставьте его.</p>
+            <p className="m-0 mt-3 text-xs text-night-muted">Если место занято — прежний обладатель освободится автоматически.</p>
             <Button
               type="button"
               variant="outline"

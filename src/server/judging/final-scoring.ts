@@ -109,6 +109,19 @@ export async function submitFinalJudgeScore(
     // ожидает на входе честную расстановку 1..N без повторов). Обычные
     // критериальные форматы такого ограничения не имеют — там равные баллы
     // у разных участников — нормальная ситуация.
+    //
+    // Атомарная подмена (промт пользователя, 2026-09-07): если запрошенное
+    // место уже занято другим участником той же роли, прежний обладатель
+    // МЕСТА НЕ отклоняет отправку ошибкой — он атомарно освобождается
+    // (запись удаляется, участник становится "без места") в ТОЙ ЖЕ
+    // транзакции, что и назначение нового значения. Судья видит освобождение
+    // сразу в своём списке (оптимистично на клиенте, FinalJudgingScreen.tsx,
+    // и подтверждённо — после router.refresh()). Полный обмен местами между
+    // двумя участниками (101↔102) — не отдельная операция, а естественный
+    // результат применения этой же атомарной подмены дважды подряд: первый
+    // вызов освобождает место, которое тут же занимает второй вызов; на
+    // каждом шаге данные остаются полностью консистентны (нет транзитного
+    // состояния с двумя обладателями одного места).
     if (finalFormat === "RELATIVE_PLACEMENT") {
       const heats = await tx.heat.findMany({
         where: { roundId: round.id },
@@ -129,7 +142,16 @@ export async function submitFinalJudgeScore(
           where: { judgeAssignmentId: assignment.id, criterionId, value, drawParticipantId: { in: sameRoleIds } },
         });
         if (clash) {
-          throw new ValidationFailedError(`Вы уже поставили место ${value} другому участнику — в относительных местах места не могут повторяться.`);
+          await tx.finalJudgeScore.delete({ where: { id: clash.id } });
+          await writeAudit(tx, {
+            actor,
+            action: "final_score.displace",
+            entityType: "FinalJudgeScore",
+            entityId: clash.drawParticipantId,
+            before: { criterionId, value: clash.value },
+            after: null,
+            reason: `Место ${value} переставлено участнику ${drawParticipantId}`,
+          });
         }
       }
     }

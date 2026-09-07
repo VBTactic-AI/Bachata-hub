@@ -22,14 +22,26 @@ const judgeRoundConfirmationFindUnique = vi.fn();
 const roundFindUniqueOrThrow = vi.fn();
 const heatFindMany = vi.fn();
 const txFinalJudgeScoreFindUnique = vi.fn();
+const txFinalJudgeScoreFindFirst = vi.fn();
 const txFinalJudgeScoreUpsert = vi.fn();
+const txFinalJudgeScoreDelete = vi.fn();
+const txHeatFindMany = vi.fn();
 const txFinalResultFindUnique = vi.fn();
 const txJudgeRoundConfirmationFindUnique = vi.fn();
 const txJudgeRoundConfirmationCreate = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  finalJudgeScore: { findUnique: txFinalJudgeScoreFindUnique, upsert: txFinalJudgeScoreUpsert },
+  finalJudgeScore: {
+    findUnique: txFinalJudgeScoreFindUnique,
+    findFirst: txFinalJudgeScoreFindFirst,
+    upsert: txFinalJudgeScoreUpsert,
+    delete: txFinalJudgeScoreDelete,
+  },
+  // RELATIVE_PLACEMENT (скейтинг) — submitFinalJudgeScore ищет участников той
+  // же роли через tx.heat.findMany (снимок текущего draw раунда), не через
+  // top-level prisma.heat — отдельный мок именно для транзакционного клиента.
+  heat: { findMany: txHeatFindMany },
   // SCORE-001: submitFinalJudgeScore теперь проверяет, не посчитан ли уже
   // FinalResult этого участника, ДО апдейта оценки — тот же случай, что и
   // обычные раунды (scoring.ts).
@@ -90,7 +102,10 @@ beforeEach(() => {
   txJudgeRoundConfirmationFindUnique.mockReset();
   txJudgeRoundConfirmationCreate.mockReset();
   txFinalJudgeScoreFindUnique.mockReset().mockResolvedValue(null);
+  txFinalJudgeScoreFindFirst.mockReset().mockResolvedValue(null);
   txFinalJudgeScoreUpsert.mockReset();
+  txFinalJudgeScoreDelete.mockReset();
+  txHeatFindMany.mockReset().mockResolvedValue([]);
   txFinalResultFindUnique.mockReset().mockResolvedValue(null);
   auditCreate.mockReset();
 });
@@ -119,6 +134,96 @@ describe("submitFinalJudgeScore() — SCORE-001", () => {
 
     expect(txFinalJudgeScoreUpsert).not.toHaveBeenCalled();
     expect(auditCreate).not.toHaveBeenCalled();
+  });
+});
+
+// RELATIVE_PLACEMENT (скейтинг) — атомарная подмена места (промт
+// пользователя, 2026-09-07): вместо отклонения отправки при конфликте места
+// сервер сам, в одной транзакции, освобождает прежнего обладателя и
+// назначает новое значение запрашивающему. CLAUDE.md §28/§29 — освобождение
+// обязано попасть в audit, иначе результат "тихо" меняется у ТРЕТЬЕГО
+// участника, о котором сервер никого не уведомил явно.
+describe("submitFinalJudgeScore() — RELATIVE_PLACEMENT, атомарная подмена места", () => {
+  const skatingCriteria = [{ id: "place", name: "Место", priority: 1, minScore: 1, maxScore: 8, step: 1 }];
+  const skatingParticipant = {
+    id: "dp1",
+    scored: true,
+    role: "LEADER" as const,
+    registrationId: "reg1",
+    draw: {
+      heat: {
+        status: "RUNNING",
+        round: {
+          id: "round1",
+          status: "SCORING",
+          division: { id: "div1", competitionId: "comp1" },
+          finalSession: { format: "RELATIVE_PLACEMENT", config: {}, criteriaSnapshot: skatingCriteria },
+        },
+      },
+    },
+  };
+
+  function withSameRoleParticipants(...ids: string[]) {
+    txHeatFindMany.mockResolvedValue([{ draws: [{ participants: ids.map((id) => ({ id })) }] }]);
+  }
+
+  it("если место уже занято другим участником той же роли — освобождает его (delete + audit) и назначает новое значение", async () => {
+    participantFindUniqueOrThrow.mockResolvedValue(skatingParticipant);
+    withSameRoleParticipants("dp1", "dp2"); // dp2 — прежний обладатель места 2
+    txFinalJudgeScoreFindFirst.mockResolvedValue({ id: "score-dp2", drawParticipantId: "dp2", value: 2 });
+
+    await submitFinalJudgeScore("dp1", "place", 2, "sub-1");
+
+    expect(txFinalJudgeScoreDelete).toHaveBeenCalledWith({ where: { id: "score-dp2" } });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "final_score.displace",
+          entityId: "dp2",
+          before: { criterionId: "place", value: 2 },
+          after: null,
+        }),
+      })
+    );
+    expect(txFinalJudgeScoreUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ drawParticipantId: "dp1", criterionId: "place", value: 2 }),
+      })
+    );
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "final_score.submit", entityId: "dp1" }) }));
+  });
+
+  it("если конфликта нет — просто назначает место, чужие записи не трогает", async () => {
+    participantFindUniqueOrThrow.mockResolvedValue(skatingParticipant);
+    withSameRoleParticipants("dp1", "dp2");
+    txFinalJudgeScoreFindFirst.mockResolvedValue(null); // место 3 никем не занято
+
+    await submitFinalJudgeScore("dp1", "place", 3, "sub-1");
+
+    expect(txFinalJudgeScoreDelete).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "final_score.displace" }) }));
+    expect(txFinalJudgeScoreUpsert).toHaveBeenCalled();
+  });
+
+  it("полный обмен местами между двумя участниками — результат двух последовательных атомарных подмен, без транзитного дубликата", async () => {
+    // Было: dp1=1, dp2=2. Судья хочет dp1=2, dp2=1 — ровно сценарий из промта
+    // пользователя ("101-2, 102-1, хотя было 101-1, 102-2").
+    participantFindUniqueOrThrow.mockResolvedValue(skatingParticipant);
+    withSameRoleParticipants("dp1", "dp2");
+
+    // Шаг 1: dp1 забирает место 2 — оно занято dp2.
+    txFinalJudgeScoreFindFirst.mockResolvedValueOnce({ id: "score-dp2", drawParticipantId: "dp2", value: 2 });
+    await submitFinalJudgeScore("dp1", "place", 2, "sub-1");
+    expect(txFinalJudgeScoreDelete).toHaveBeenCalledWith({ where: { id: "score-dp2" } });
+
+    // Шаг 2: dp2 (теперь без места) забирает место 1 — оно уже свободно
+    // (dp1 его покинул на шаге 1), конфликта нет.
+    txFinalJudgeScoreFindFirst.mockResolvedValueOnce(null);
+    await submitFinalJudgeScore("dp2", "place", 1, "sub-2");
+
+    expect(txFinalJudgeScoreDelete).toHaveBeenCalledTimes(1); // только dp2 на шаге 1, больше освобождений не было
+    expect(txFinalJudgeScoreUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ drawParticipantId: "dp1", value: 2 }) }));
+    expect(txFinalJudgeScoreUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ drawParticipantId: "dp2", value: 1 }) }));
   });
 });
 
