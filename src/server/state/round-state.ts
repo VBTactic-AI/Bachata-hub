@@ -179,8 +179,22 @@ export async function transitionRound(
       // сформируется ДО того, как Advancement Engine определит, кто прошёл
       // (пул тогда пришлось бы тянуть из ещё не посчитанного раунда).
       if (to === "RUNNING" || to === "DRAWING") {
+        // Раунд-перетанцовка (TIE_BREAK) создаётся ИМЕННО ПОТОМУ, что его
+        // родительский раунд (tieBreakOfRoundId) остаётся незавершённым, пока
+        // перетанцовка не решена (docs/00_DECISIONS.md, §19-21) — без этого
+        // исключения запуск любой перетанцовки был бы всегда заблокирован
+        // этой же самой проверкой "раунды по очереди": родитель по order
+        // всегда меньше и всегда не COMPLETED на этот момент (найдено вживую
+        // на реальном соревновании, 2026-09-07 — перетанцовка в финале не
+        // запускалась вообще). Другие по-настоящему незавершённые более
+        // ранние раунды по-прежнему блокируют запуск.
         const earlierUnfinished = await tx.round.findFirst({
-          where: { divisionId: round.division.id, order: { lt: round.order }, status: { not: "COMPLETED" } },
+          where: {
+            divisionId: round.division.id,
+            order: { lt: round.order },
+            status: { not: "COMPLETED" },
+            ...(round.tieBreakOfRoundId ? { id: { not: round.tieBreakOfRoundId } } : {}),
+          },
           orderBy: { order: "asc" },
           include: { stage: { select: { name: true } } },
         });

@@ -280,6 +280,44 @@ describe("transitionRound() — раунды дивизиона по очере�
     const whereArg = txRoundFindFirst.mock.calls[0][0].where;
     expect(whereArg.divisionId).toBe("div1");
   });
+
+  // Найдено вживую на реальном соревновании (2026-09-07): перетанцовка в
+  // финале не запускалась вообще — родительский раунд (tieBreakOfRoundId)
+  // всегда не COMPLETED в этот момент (именно поэтому перетанцовка и
+  // существует), и без исключения эта же проверка блокировала САМА СЕБЯ.
+  describe("исключение для перетанцовки (TIE_BREAK) — не блокируется своим же родительским раундом", () => {
+    beforeEach(() => {
+      roundFindUniqueOrThrow.mockResolvedValue({
+        id: "round3",
+        order: 3,
+        status: "DRAW_LOCKED",
+        statusVersion: 1,
+        type: "TIE_BREAK",
+        tieBreakOfRoundId: "round2",
+        division: { id: "div1", competitionId: "comp1" },
+      });
+    });
+
+    it("запускает перетанцовку, даже если её родительский раунд ещё не COMPLETED", async () => {
+      txRoundFindFirst.mockResolvedValue(null);
+
+      await transitionRound("round3", "RUNNING");
+
+      expect(txRoundFindFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { divisionId: "div1", order: { lt: 3 }, status: { not: "COMPLETED" }, id: { not: "round2" } },
+        })
+      );
+      expect(txRoundUpdateMany).toHaveBeenCalledOnce();
+    });
+
+    it("всё равно блокирует, если не завершён какой-то ДРУГОЙ (не родительский) более ранний раунд", async () => {
+      txRoundFindFirst.mockResolvedValue({ id: "round1", order: 1, type: null, stage: { name: "Отборочный" } });
+
+      await expect(transitionRound("round3", "RUNNING")).rejects.toBeInstanceOf(ValidationFailedError);
+      expect(txRoundUpdateMany).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // Этап 7/8 (A13, закрывает известное ограничение A9): нельзя начать
