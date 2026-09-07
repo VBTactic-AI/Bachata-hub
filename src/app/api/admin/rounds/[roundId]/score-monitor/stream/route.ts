@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/server/rbac/authorize";
 import { respondToDomainError } from "@/server/http";
 import { subscribeToRoundScoreEvents } from "@/server/realtime/score-relay";
+import { measureServerOperation } from "@/lib/performance-debug/server";
 
 // SSE-раздача live-событий live-таблицы head judge/admin (score-monitor.ts
 // отдаёт первичный снимок при загрузке страницы, этот роут — только
@@ -25,12 +26,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ rou
 
   let competitionId: string;
   try {
-    const round = await prisma.round.findUniqueOrThrow({
-      where: { id: roundId },
-      select: { division: { select: { competitionId: true } } },
+    await measureServerOperation("score_monitor.stream_open", async () => {
+      const round = await prisma.round.findUniqueOrThrow({
+        where: { id: roundId },
+        select: { division: { select: { competitionId: true } } },
+      });
+      competitionId = round.division.competitionId;
+      await requirePermission("score:view_all", competitionId);
     });
-    competitionId = round.division.competitionId;
-    await requirePermission("score:view_all", competitionId);
   } catch (e) {
     return respondToDomainError(e);
   }
