@@ -499,10 +499,19 @@ export type RotationView = {
 };
 
 export async function getRotationView(heatId: string): Promise<RotationView> {
-  const heat = await loadHeatForRotation(heatId);
+  // Самый частый запрос всего приложения: каждый открытый экран (судья, DJ,
+  // табло) опрашивает его раз в ~2.5 сек — 65 тыс. вызовов в
+  // pg_stat_statements на момент замера (2026-09-08). Заход и RBAC-данные
+  // друг от друга не зависят, поэтому идут одной волной: раньше getActor()
+  // ждал ответа по заходу, добавляя лишний сетевой барьер к каждому опросу.
+  //
+  // Порядок ПРОВЕРОК не изменился — ниже по-прежнему сначала аутентификация,
+  // потом членство в соревновании, и наружу ничего не отдаётся, пока обе не
+  // пройдены (CLAUDE.md §31). Параллельно идёт только чтение данных, без
+  // побочных эффектов.
+  const [heat, actor] = await Promise.all([loadHeatForRotation(heatId), getActor()]);
   const competitionId = heat.round.division.competitionId;
 
-  const actor = await getActor();
   if (!actor) throw new AuthenticationRequiredError();
   const isMember = actor.permissionsByCompetition.has(competitionId) || actor.globalPermissions.size > 0;
   if (!isMember) throw new PermissionDeniedError("timer:control");

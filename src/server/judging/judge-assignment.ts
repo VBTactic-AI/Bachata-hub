@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Prisma, RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
@@ -80,6 +81,20 @@ export type DivisionJudge = {
   judgeUserId: string;
   judgeEmail: string;
 };
+
+// Назначения ТЕКУЩЕГО судьи в этом соревновании. Нужны и судейской очереди
+// обычных раундов (getJudgeQueue), и списку активных финалов
+// (listMyActiveFinalRounds) — на загрузке /judging/[competitionId] это был
+// один и тот же SELECT дважды за запрос (замерено, 2026-09-08).
+// cache() дедуплицирует его в пределах одного HTTP-запроса — как это уже
+// сделано для getActor()/getCurrentUser()/getMyDancerRef().
+//
+// Прав здесь не проверяем: вызывающие сервисы уже сделали
+// requirePermission("score:submit", competitionId) до обращения сюда, и сам
+// запрос отфильтрован по judgeUserId переданного actor'а.
+export const getMyJudgeAssignments = cache(async (judgeUserId: string, competitionId: string) =>
+  prisma.judgeAssignment.findMany({ where: { judgeUserId, division: { competitionId } } })
+);
 
 export async function listDivisionJudges(divisionId: string): Promise<DivisionJudge[]> {
   const division = await prisma.division.findUniqueOrThrow({ where: { id: divisionId }, select: { competitionId: true } });

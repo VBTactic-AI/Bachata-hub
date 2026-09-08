@@ -27,7 +27,7 @@ import { assertNoOtherHeatActive } from "./final-judges-dance";
 // участников для новой пары больше нет — просто завершает последний заход
 // обычным transitionHeat (запускает подсчёт результата).
 export async function advanceRandomCouples(roundId: string, trackName?: string): Promise<{ pairNumber: number | null }> {
-  const round = await prisma.round.findUniqueOrThrow({
+  const round = await prisma.round.findFirstOrThrow({
     where: { id: roundId },
     relationLoadStrategy: "join",
     include: {

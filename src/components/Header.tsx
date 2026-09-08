@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
 import { getCurrentUser, canCreateEvents, isModerator, isAdmin } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getActiveCities } from "@/lib/cities";
+import { getMyDancerRef } from "@/lib/dancer";
 import { getPreferredCity } from "@/lib/city-preference";
 import { CitySwitcher } from "./CitySwitcher";
 import { HeaderVisibility } from "./HeaderVisibility";
@@ -9,11 +10,15 @@ import { HeaderVisibility } from "./HeaderVisibility";
 export async function Header() {
   const user = await getCurrentUser();
   const [cities, preferredCity, dancer] = await Promise.all([
-    prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
+    // Кэшированный справочник (src/lib/cities.ts) вместо запроса к БД на
+    // каждой загрузке любой страницы сайта.
+    getActiveCities(),
     getPreferredCity(),
     // У служебных аккаунтов (админ/модератор) профиля танцора нет — ссылку
     // "Профиль" им не показываем, а не молча редиректим при клике.
-    user ? prisma.dancer.findUnique({ where: { userId: user.id }, select: { id: true } }) : null,
+    // Общий cache()-хелпер: тот же самый Dancer нужен DarkTopNav и страницам
+    // — раньше это были три отдельных одинаковых запроса (src/lib/dancer.ts).
+    getMyDancerRef(),
   ]);
   // "Соревнования" — любому залогиненному, не только тем, у кого уже есть
   // роль в движке: иначе танцор, который никуда ещё не регистрировался, не

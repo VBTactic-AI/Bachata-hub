@@ -24,7 +24,7 @@ vi.mock("@/lib/prisma", () => ({
     round: { count: (...a: unknown[]) => roundCount(...a) },
     heat: { count: (...a: unknown[]) => heatCount(...a) },
     judgeAssignment: { findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a) },
-    competition: { findUniqueOrThrow: (...a: unknown[]) => competitionFindUniqueOrThrow(...a) },
+    competition: { findUniqueOrThrow: (...a: unknown[]) => competitionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => competitionFindUniqueOrThrow(...a) },
   },
 }));
 

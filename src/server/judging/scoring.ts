@@ -1,9 +1,11 @@
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getActor } from "../rbac/actor";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { isFinalStageInTx, maybeFinalizeAfterScoreInTx, rolesNotNeedingJudging } from "./advancement";
+import { getMyJudgeAssignments } from "./judge-assignment";
 
 // Судья ставит оценку (0..Round.judgingMaxScore) одному вызванному
 // (scored=true) участнику. Помощников (scored=false) оценивать нельзя —
@@ -20,17 +22,35 @@ import { isFinalStageInTx, maybeFinalizeAfterScoreInTx, rolesNotNeedingJudging }
 // Новое значение от судьи (реальное ручное исправление) всегда приходит с
 // новым clientSubmissionId и обрабатывается как обычно.
 export async function submitJudgeScore(drawParticipantId: string, value: number, clientSubmissionId: string): Promise<void> {
-  const participant = await prisma.drawParticipant.findUniqueOrThrow({
-    where: { id: drawParticipantId },
-    relationLoadStrategy: "join",
-    include: {
-      draw: {
-        include: {
-          heat: { include: { round: { include: { division: { select: { id: true, competitionId: true } } } } } },
+  // Участник и RBAC-данные грузятся одной волной: getActor() не нужен
+  // competitionId (он читает только сессию и права пользователя), поэтому
+  // ждать участника, чтобы лишь потом начать запрос прав, было незачем —
+  // это добавляло целый сетевой барьер каждой отправке оценки. Судья на
+  // живом конкурсе жмёт эти кнопки десятки раз подряд, а офлайн-очередь
+  // отправляет строго по одной, дожидаясь ответа на предыдущую (чтобы
+  // ретрай не перезаписал более новую оценку) — то есть задержка каждой
+  // отправки складывается в задержку всей очереди (жалоба судьи "ждёт
+  // отправки… секунд 10", docs/PROGRESS.md, 2026-09-07).
+  //
+  // Проверка права по-прежнему выполняется ДО любых изменений и до выдачи
+  // каких-либо данных (CLAUDE.md §31) — параллельно идёт только чтение.
+  const [participant] = await Promise.all([
+    prisma.drawParticipant.findFirstOrThrow({
+      where: { id: drawParticipantId },
+      relationLoadStrategy: "join",
+      include: {
+        draw: {
+          include: {
+            heat: { include: { round: { include: { division: { select: { id: true, competitionId: true } } } } } },
+          },
         },
       },
-    },
-  });
+    }),
+    // Результат не нужен здесь напрямую — важно, что запрос стартовал
+    // параллельно. requirePermission() ниже возьмёт actor'а из того же
+    // cache() без второго обращения к БД.
+    getActor(),
+  ]);
   const heat = participant.draw.heat;
   const round = heat.round;
   const competitionId = round.division.competitionId;
@@ -49,10 +69,15 @@ export async function submitJudgeScore(drawParticipantId: string, value: number,
     throw new ValidationFailedError(`Оценка должна быть целым числом от 0 до ${round.judgingMaxScore}.`);
   }
 
+  // Назначение судьи и его подтверждение "Готово" по этому раунду берутся
+  // ОДНИМ запросом: раньше это были два последовательных round-trip'а
+  // (сначала назначение, потом по его id — подтверждение), хотя второе
+  // всегда висит на первом как связь.
   const assignment = await prisma.judgeAssignment.findUnique({
     where: {
       divisionId_judgeUserId_role: { divisionId: round.division.id, judgeUserId: actor.userId, role: participant.role },
     },
+    include: { confirmations: { where: { roundId: round.id }, select: { id: true } } },
   });
   if (!assignment) {
     throw new ValidationFailedError("Вы не назначены судить эту роль в этой категории.");
@@ -60,10 +85,7 @@ export async function submitJudgeScore(drawParticipantId: string, value: number,
 
   // Судья уже нажал "Готово" по этому раунду (формат "Да/Нет") — его оценки
   // зафиксированы, даже если раунд ещё ждёт других судей (2026-09-04).
-  const myConfirmation = await prisma.judgeRoundConfirmation.findUnique({
-    where: { roundId_judgeAssignmentId: { roundId: round.id, judgeAssignmentId: assignment.id } },
-  });
-  if (myConfirmation) {
+  if (assignment.confirmations.length > 0) {
     throw new ValidationFailedError('Вы уже нажали "Готово" по этому раунду — оценки зафиксированы, менять их больше нельзя.');
   }
 
@@ -260,9 +282,7 @@ export type JudgeQueue = {
 export async function getJudgeQueue(competitionId: string): Promise<JudgeQueue> {
   const actor = await requirePermission("score:submit", competitionId);
 
-  const myAssignments = await prisma.judgeAssignment.findMany({
-    where: { judgeUserId: actor.userId, division: { competitionId } },
-  });
+  const myAssignments = await getMyJudgeAssignments(actor.userId, competitionId);
   if (myAssignments.length === 0) return { items: [], skippedNotices: [], confirmedRoundIds: [] };
   const assignmentByKey = new Map(myAssignments.map((a) => [`${a.divisionId}:${a.role}`, a]));
   const divisionIds = [...new Set(myAssignments.map((a) => a.divisionId))];

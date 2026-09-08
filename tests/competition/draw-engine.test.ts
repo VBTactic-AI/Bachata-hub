@@ -33,7 +33,7 @@ const fakeTx = {
   draw: { findFirst: drawFindFirst, create: drawCreate },
   heat: { findMany: heatFindMany, findFirst: heatFindFirstTx, create: heatCreateTx },
   registration: { findMany: registrationFindMany },
-  division: { findUniqueOrThrow: divisionFindUniqueOrThrow, findMany: divisionFindMany },
+  division: { findUniqueOrThrow: divisionFindUniqueOrThrow, findFirstOrThrow: divisionFindUniqueOrThrow, findMany: divisionFindMany },
   round: { findFirst: roundFindFirstTx },
   roundResult: { findMany: roundResultFindMany },
   drawParticipant: { create: drawParticipantCreate, createMany: drawParticipantCreateMany, deleteMany: drawParticipantDeleteMany },
@@ -42,7 +42,7 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
+    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
     draw: { findFirst: (...a: unknown[]) => topDrawFindFirst(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },

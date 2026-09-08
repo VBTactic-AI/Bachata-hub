@@ -51,26 +51,26 @@ const fakeTx = {
   // SCORE-001: submitFinalJudgeScore теперь проверяет, не посчитан ли уже
   // FinalResult этого участника, ДО апдейта оценки — тот же случай, что и
   // обычные раунды (scoring.ts).
-  finalResult: { findUnique: txFinalResultFindUnique },
-  judgeRoundConfirmation: { findUnique: txJudgeRoundConfirmationFindUnique, create: txJudgeRoundConfirmationCreate },
+  finalResult: { findUnique: txFinalResultFindUnique, findFirst: txFinalResultFindUnique },
+  judgeRoundConfirmation: { findUnique: txJudgeRoundConfirmationFindUnique, findFirst: txJudgeRoundConfirmationFindUnique, create: txJudgeRoundConfirmationCreate },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    drawParticipant: { findUniqueOrThrow: (...a: unknown[]) => participantFindUniqueOrThrow(...a) },
+    drawParticipant: { findUniqueOrThrow: (...a: unknown[]) => participantFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => participantFindUniqueOrThrow(...a) },
     judgeAssignment: {
-      findUnique: (...a: unknown[]) => judgeAssignmentFindUnique(...a),
+      findUnique: (...a: unknown[]) => judgeAssignmentFindUnique(...a), findFirst: (...a: unknown[]) => judgeAssignmentFindUnique(...a),
       findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a),
     },
     round: {
-      findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a),
+      findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a),
       findMany: (...a: unknown[]) => roundFindMany(...a),
     },
     heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
     // "Готово" по финалу (confirmFinalJudgeRoundDone, 2026-09-07) — та же
     // проверка "судья уже подтвердил", что и в обычных раундах (scoring.ts).
-    judgeRoundConfirmation: { findUnique: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a) },
+    judgeRoundConfirmation: { findUnique: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a), findFirst: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

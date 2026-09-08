@@ -21,7 +21,7 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
+    division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
     judgeAssignment: { findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a) },
     judgeScore: { findMany: (...a: unknown[]) => judgeScoreFindMany(...a) },
     finalJudgeScore: { findMany: (...a: unknown[]) => finalJudgeScoreFindMany(...a) },

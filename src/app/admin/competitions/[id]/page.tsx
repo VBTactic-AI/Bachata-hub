@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getMyDancerRef } from "@/lib/dancer";
 import { measureServerOperation } from "@/lib/performance-debug/server";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
@@ -43,10 +44,7 @@ import { DivisionResultsPanel } from "@/components/admin/DivisionResultsPanel";
 import { CompetitionResultsPanel } from "@/components/admin/CompetitionResultsPanel";
 import { RoundAdvancementPublish } from "@/components/admin/RoundAdvancementPublish";
 import { getCurrentDivisionResults } from "@/server/results/results";
-import { CompetitionStatisticsPanel } from "@/components/admin/CompetitionStatisticsPanel";
-import { JudgeStatisticsPanel } from "@/components/admin/JudgeStatisticsPanel";
-import { getCompetitionStatistics } from "@/server/statistics/competition-statistics";
-import { getJudgeStatisticsForCompetition } from "@/server/statistics/judge-statistics";
+import { StatisticsSection } from "@/components/admin/StatisticsSection";
 import { PublicInfoPanel } from "@/components/admin/PublicInfoPanel";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
@@ -67,7 +65,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // ~150мс, без всякой причины ждать).
   const [competition, activeCategories, activeStages, myDancer] = await measureServerOperation("admin.open_competition", () =>
     Promise.all([
-    prisma.competition.findUnique({
+    prisma.competition.findFirst({
       where: { id },
       // relationLoadStrategy: "join" — глубоко вложенный include (5 уровней)
       // без этого выполняется отдельным SQL-запросом на каждый уровень
@@ -138,7 +136,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     }),
     prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
     prisma.roundStageCatalog.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
-    prisma.dancer.findUnique({ where: { userId: actor.userId }, select: { id: true, gender: true } }),
+    getMyDancerRef(),
     ])
   );
   if (!competition) notFound();
@@ -173,27 +171,41 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // должен видеть чужие регистрации — только свою собственную, ниже.
   const canViewAllRegistrations = can(actor, "registration:view", competition.id);
 
+  // Всё, что нужно странице после дерева соревнования, грузится ОДНОЙ
+  // волной. Раньше это были 7 последовательных `await` подряд (счётчики
+  // ролей → прогресс судейства → протоколы дивизионов → статистика →
+  // регистрации → своя регистрация → "уже зарегистрирован?"), хотя между
+  // собой они не связаны: каждому нужен только competition/actor, уже
+  // известные выше. На удалённой БД (Supabase pooler) каждый такой
+  // `await` — отдельный сетевой барьер: пока не ответил предыдущий, следующий
+  // даже не начинается. Замер 2026-09-08: страница делала 29 SQL-запросов
+  // при 40мс суммарной работы БД и ~1.8с стены — время уходило именно в
+  // последовательные round-trip'ы, а не в сами запросы.
+  //
+  // Порядок вычислений внутри волны сохранён ровно тот же, что и был; ниже
+  // только распаковка результатов.
+
   // Сколько ведущих/ведомых в каждом дивизионе — нужно организатору ДО
   // генерации сетки раундов (та же логика, что использует generateRounds()),
   // поэтому считаем и показываем сразу на карточке дивизиона.
-  const [registeredCounts, checkedInCounts] = canManageRounds
-    ? await Promise.all([
-        prisma.registration.groupBy({
-          by: ["divisionId", "role"],
-          where: { competitionId: competition.id, status: "REGISTERED" },
-          _count: { _all: true },
-        }),
-        prisma.registration.groupBy({
-          by: ["divisionId", "role"],
-          where: {
-            competitionId: competition.id,
-            status: "REGISTERED",
-            checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
-          },
-          _count: { _all: true },
-        }),
-      ])
-    : [[], []];
+  const registeredCountsPromise = canManageRounds
+    ? prisma.registration.groupBy({
+        by: ["divisionId", "role"],
+        where: { competitionId: competition.id, status: "REGISTERED" },
+        _count: { _all: true },
+      })
+    : Promise.resolve([]);
+  const checkedInCountsPromise = canManageRounds
+    ? prisma.registration.groupBy({
+        by: ["divisionId", "role"],
+        where: {
+          competitionId: competition.id,
+          status: "REGISTERED",
+          checkIn: { is: { status: { in: ["CHECKED_IN", "LATE"] } } },
+        },
+        _count: { _all: true },
+      })
+    : Promise.resolve([]);
   const countFor = (rows: { divisionId: string; role: string; _count: { _all: number } }[], divisionId: string, role: string) =>
     rows.find((r) => r.divisionId === divisionId && r.role === role)?._count._all ?? 0;
 
@@ -216,11 +228,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     .filter((r) => r.status === "SCORING" && r.type !== "TIE_BREAK");
   // Финал (FinalSession уже начата) считается своим прогрессом (критерий ×
   // судья), обычные раунды — старым (одна оценка на участника).
-  const scoringProgressByRoundId = new Map(
-    await Promise.all(
-      scoringRounds.map(
-        async (r) => [r.id, r.finalSession ? await getFinalScoringProgress(r.id) : await getRoundScoringProgress(r.id)] as const
-      )
+  const scoringProgressPromise = Promise.all(
+    scoringRounds.map(
+      async (r) => [r.id, r.finalSession ? await getFinalScoringProgress(r.id) : await getRoundScoringProgress(r.id)] as const
     )
   );
 
@@ -253,19 +263,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     const regularRounds = d.rounds.filter((r) => r.type === null).sort((a, b) => b.order - a.order);
     finalRoundCompletedByDivisionId.set(d.id, regularRounds[0]?.status === "COMPLETED");
   }
-  const divisionResultsById: Map<string, Awaited<ReturnType<typeof getCurrentDivisionResults>>> = canCalculateResults
-    ? new Map(
-        await Promise.all(
-          competition.divisions
-            .filter((d) => finalRoundCompletedByDivisionId.get(d.id))
-            .map(async (d) => [d.id, await getCurrentDivisionResults(d.id)] as const)
-        )
+  const divisionResultsPromise = canCalculateResults
+    ? Promise.all(
+        competition.divisions
+          .filter((d) => finalRoundCompletedByDivisionId.get(d.id))
+          .map(async (d) => [d.id, await getCurrentDivisionResults(d.id)] as const)
       )
-    : new Map();
-
-  const [competitionStatistics, judgeStatistics] = canViewStatistics
-    ? await Promise.all([getCompetitionStatistics(competition.id), getJudgeStatisticsForCompetition(competition.id)])
-    : [null, []];
+    : Promise.resolve([] as (readonly [string, Awaited<ReturnType<typeof getCurrentDivisionResults>>])[]);
 
   // DB-002: раньше без `take` вообще — на маленьких тестовых соревнованиях
   // (до ~30 регистраций) незаметно, но на реальном крупном турнире с
@@ -275,37 +279,62 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // роста: организатор явно видит, если список обрезан, вместо того чтобы
   // молча получать "первые N по порядку без предупреждения".
   const REGISTRATIONS_DISPLAY_LIMIT = 300;
-  const [registrations, registrationsTotalCount] = canViewAllRegistrations
-    ? await Promise.all([
-        prisma.registration.findMany({
-          where: { competitionId: competition.id },
-          relationLoadStrategy: "join",
-          include: { dancer: true, checkIn: true, division: { include: { category: true } } },
-          orderBy: { createdAt: "asc" },
-          take: REGISTRATIONS_DISPLAY_LIMIT,
-        }),
-        prisma.registration.count({ where: { competitionId: competition.id } }),
-      ])
-    : [[], 0];
-  const myRegistration =
+  const registrationsPromise = canViewAllRegistrations
+    ? prisma.registration.findMany({
+        where: { competitionId: competition.id },
+        relationLoadStrategy: "join",
+        include: { dancer: true, checkIn: true, division: { include: { category: true } } },
+        orderBy: { createdAt: "asc" },
+        take: REGISTRATIONS_DISPLAY_LIMIT,
+      })
+    : Promise.resolve([]);
+  const registrationsTotalCountPromise = canViewAllRegistrations
+    ? prisma.registration.count({ where: { competitionId: competition.id } })
+    : Promise.resolve(0);
+  const myRegistrationPromise =
     !canViewAllRegistrations && myDancer
-      ? await prisma.registration.findFirst({
+      ? prisma.registration.findFirst({
           where: { competitionId: competition.id, dancerId: myDancer.id },
           relationLoadStrategy: "join",
           include: { checkIn: true, division: { include: { category: true } } },
         })
-      : null;
-
-  const isRegistrationOpen = competition.status === "REGISTRATION_OPEN";
-  // DB-002: точечный запрос, а не registrations.some(...) — тот список теперь
+      : Promise.resolve(null);
+  // DB-002: точечный запрос, а не registrations.some(...) — тот список
   // может быть обрезан лимитом отображения, а эта проверка обязана быть
   // верной независимо от того, попала ли конкретная регистрация в первые
   // REGISTRATIONS_DISPLAY_LIMIT.
-  const alreadyRegistered = canViewAllRegistrations
-    ? myDancer
-      ? (await prisma.registration.count({ where: { competitionId: competition.id, dancerId: myDancer.id } })) > 0
-      : false
-    : myRegistration !== null;
+  const myRegistrationCountPromise =
+    canViewAllRegistrations && myDancer
+      ? prisma.registration.count({ where: { competitionId: competition.id, dancerId: myDancer.id } })
+      : Promise.resolve(0);
+
+  const [
+    registeredCounts,
+    checkedInCounts,
+    scoringProgressEntries,
+    divisionResultEntries,
+    registrations,
+    registrationsTotalCount,
+    myRegistration,
+    myRegistrationCount,
+  ] = await measureServerOperation("admin.open_competition.rest", () =>
+    Promise.all([
+      registeredCountsPromise,
+      checkedInCountsPromise,
+      scoringProgressPromise,
+      divisionResultsPromise,
+      registrationsPromise,
+      registrationsTotalCountPromise,
+      myRegistrationPromise,
+      myRegistrationCountPromise,
+    ])
+  );
+
+  const scoringProgressByRoundId = new Map(scoringProgressEntries);
+  const divisionResultsById: Map<string, Awaited<ReturnType<typeof getCurrentDivisionResults>>> = new Map(divisionResultEntries);
+
+  const isRegistrationOpen = competition.status === "REGISTRATION_OPEN";
+  const alreadyRegistered = canViewAllRegistrations ? myRegistrationCount > 0 : myRegistration !== null;
 
   // Формы регистрации ждут { id, name } — категория дивизиона теперь и есть
   // его "имя" для пользователя.
@@ -334,8 +363,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         />
       )}
       {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
-      {competitionStatistics && <CompetitionStatisticsPanel statistics={competitionStatistics} />}
-      {judgeStatistics.length > 0 && <JudgeStatisticsPanel judges={judgeStatistics} />}
+      {canViewStatistics && <StatisticsSection competitionId={competition.id} />}
       {isJudge && (
         <p>
           <a href={`/judging/${competition.id}`}>Моё судейство →</a>

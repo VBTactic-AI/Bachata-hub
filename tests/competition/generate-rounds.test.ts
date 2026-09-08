@@ -30,7 +30,7 @@ const fakeTx = {
 // больше не существуют, план/раунды приходят полями stagePlan/rounds.
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
+    division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
     registration: { count: (...a: unknown[]) => registrationCount(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },

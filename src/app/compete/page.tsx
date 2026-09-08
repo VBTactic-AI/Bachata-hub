@@ -16,10 +16,13 @@ export const metadata = { title: "Соревнования" };
 export default async function CompeteListPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab = "all" } = await searchParams;
   const user = await getCurrentUser();
-  const dancer = user ? await prisma.dancer.findUnique({ where: { userId: user.id }, select: { id: true } }) : null;
 
-  const myRegistrations = dancer
-    ? await prisma.registration.findMany({ where: { dancerId: dancer.id }, select: { competitionId: true } })
+  // "Мои регистрации" ищем сразу по userId через связь dancer — раньше это
+  // была цепочка из трёх последовательных запросов (user → dancer → его
+  // регистрации), хотя dancer.id нужен был только как посредник. На
+  // удалённой БД каждый шаг цепочки — отдельный round-trip.
+  const myRegistrations = user
+    ? await prisma.registration.findMany({ where: { dancer: { userId: user.id } }, select: { competitionId: true } })
     : [];
   const myCompetitionIds = new Set(myRegistrations.map((r) => r.competitionId));
 

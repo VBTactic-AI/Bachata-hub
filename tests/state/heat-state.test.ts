@@ -34,7 +34,7 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
+    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

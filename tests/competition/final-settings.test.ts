@@ -17,16 +17,16 @@ const txFinalCriterionCreate = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  finalSettings: { findUnique: txFinalSettingsFindUnique, upsert: txFinalSettingsUpsert },
+  finalSettings: { findUnique: txFinalSettingsFindUnique, findFirst: txFinalSettingsFindUnique, upsert: txFinalSettingsUpsert },
   finalCriterion: { deleteMany: txFinalCriterionDeleteMany, update: txFinalCriterionUpdate, create: txFinalCriterionCreate },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
+    division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
     finalSession: { findFirst: (...a: unknown[]) => finalSessionFindFirst(...a) },
-    finalSettings: { findUnique: (...a: unknown[]) => finalSettingsFindUnique(...a) },
+    finalSettings: { findUnique: (...a: unknown[]) => finalSettingsFindUnique(...a), findFirst: (...a: unknown[]) => finalSettingsFindUnique(...a) },
     finalCriterion: { findMany: (...a: unknown[]) => finalCriterionFindMany(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },

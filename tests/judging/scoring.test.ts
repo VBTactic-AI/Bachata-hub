@@ -4,6 +4,14 @@ import type { Actor } from "@/server/rbac/actor";
 const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
+// submitJudgeScore стартует getActor() параллельно с загрузкой участника
+// (чтобы RBAC-запрос не ждал ответа по участнику — оптимизация задержки,
+// 2026-09-08). Настоящий getActor() читает cookies(), которых вне
+// HTTP-запроса нет, поэтому мокаем ту же границу RBAC, что и
+// requirePermission выше. Результат этого вызова код не использует —
+// прогревается только cache().
+vi.mock("@/server/rbac/actor", () => ({ getActor: () => Promise.resolve(null) }));
+
 const maybeFinalizeAfterScoreInTxMock = vi.fn();
 const isFinalStageInTxMock = vi.fn();
 // Частичный мок: isFinalStageInTx/maybeFinalizeAfterScoreInTx подменяем (не
@@ -35,27 +43,27 @@ const txRoundResultFindUnique = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  judgeScore: { findUnique: txJudgeScoreFindUnique, upsert: txJudgeScoreUpsert, count: txJudgeScoreCount },
-  judgeRoundConfirmation: { findUnique: txJudgeRoundConfirmationFindUnique, create: txJudgeRoundConfirmationCreate },
+  judgeScore: { findUnique: txJudgeScoreFindUnique, findFirst: txJudgeScoreFindUnique, upsert: txJudgeScoreUpsert, count: txJudgeScoreCount },
+  judgeRoundConfirmation: { findUnique: txJudgeRoundConfirmationFindUnique, findFirst: txJudgeRoundConfirmationFindUnique, create: txJudgeRoundConfirmationCreate },
   // SCORE-001: submitJudgeScore теперь проверяет, не посчитан ли уже
   // результат этого участника, ДО апдейта самой оценки.
-  roundResult: { findUnique: txRoundResultFindUnique },
+  roundResult: { findUnique: txRoundResultFindUnique, findFirst: txRoundResultFindUnique },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    drawParticipant: { findUniqueOrThrow: (...a: unknown[]) => participantFindUniqueOrThrow(...a) },
+    drawParticipant: { findUniqueOrThrow: (...a: unknown[]) => participantFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => participantFindUniqueOrThrow(...a) },
     judgeAssignment: {
-      findUnique: (...a: unknown[]) => judgeAssignmentFindUnique(...a),
+      findUnique: (...a: unknown[]) => judgeAssignmentFindUnique(...a), findFirst: (...a: unknown[]) => judgeAssignmentFindUnique(...a),
       findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a),
     },
     heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
-    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
+    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
     // Проверка "судья уже нажал Готово" в submitJudgeScore, и список
     // подтверждений для getJudgeQueue — обе идут ВНЕ транзакции.
     judgeRoundConfirmation: {
-      findUnique: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a),
+      findUnique: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a), findFirst: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a),
       findMany: (...a: unknown[]) => judgeRoundConfirmationFindMany(...a),
     },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
@@ -89,7 +97,11 @@ beforeEach(() => {
   maybeFinalizeAfterScoreInTxMock.mockReset();
   isFinalStageInTxMock.mockReset().mockResolvedValue(false);
   participantFindUniqueOrThrow.mockReset().mockResolvedValue(participant);
-  judgeAssignmentFindUnique.mockReset().mockResolvedValue({ id: "assign1" });
+  // confirmations — подтверждение "Готово" этого судьи по этому раунду
+  // теперь приходит вложенным в тот же запрос назначения (раньше это был
+  // отдельный round-trip judgeRoundConfirmation.findUnique). Пустой массив =
+  // "Готово" ещё не нажимал.
+  judgeAssignmentFindUnique.mockReset().mockResolvedValue({ id: "assign1", confirmations: [] });
   judgeAssignmentFindMany.mockReset();
   heatFindMany.mockReset();
   roundFindUniqueOrThrow.mockReset();
@@ -150,6 +162,19 @@ describe("submitJudgeScore() — идемпотентность офлайн-о�
   // изменить оценку должна отклоняться явно, а не молча ни на что не влиять.
   it("отклоняет отправку, если RoundResult для этого участника уже посчитан (round всё ещё SCORING из-за другой роли)", async () => {
     txRoundResultFindUnique.mockResolvedValue({ roundId: "round1", registrationId: "reg1", status: "ADVANCED" });
+
+    await expect(submitJudgeScore("dp1", 1, "sub-1")).rejects.toBeInstanceOf(ValidationFailedError);
+
+    expect(txJudgeScoreUpsert).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  // Guard существовал и раньше, но тестом покрыт не был; при оптимизации
+  // задержек (2026-09-08) он стал читать подтверждение вложенным в запрос
+  // назначения, а не отдельным round-trip'ом — поведение обязано остаться
+  // тем же: судья, нажавший "Готово", оценки уже не меняет (A21).
+  it("отклоняет отправку, если этот судья уже нажал «Готово» по раунду", async () => {
+    judgeAssignmentFindUnique.mockResolvedValue({ id: "assign1", confirmations: [{ id: "conf1" }] });
 
     await expect(submitJudgeScore("dp1", 1, "sub-1")).rejects.toBeInstanceOf(ValidationFailedError);
 

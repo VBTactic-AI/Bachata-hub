@@ -90,7 +90,7 @@ export type AdvanceJudgesDanceResult = { stage: number | null };
 // это уже действительно последний заход раунда, дальше работает
 // стандартный каскад (round FINISHED->SCORING->подсчёт результата).
 export async function advanceJudgesDanceStage(roundId: string): Promise<AdvanceJudgesDanceResult> {
-  const round = await prisma.round.findUniqueOrThrow({
+  const round = await prisma.round.findFirstOrThrow({
     where: { id: roundId },
     relationLoadStrategy: "join",
     include: { division: { select: { id: true, competitionId: true } }, finalSession: true, heats: { orderBy: { number: "asc" } } },

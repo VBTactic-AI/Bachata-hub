@@ -85,7 +85,7 @@ export async function calculateRoundResultsInTx(tx: PrismaTx, roundId: string, a
   const already = await tx.roundResult.count({ where: { roundId } });
   if (already > 0) return;
 
-  const round = await tx.round.findUniqueOrThrow({
+  const round = await tx.round.findFirstOrThrow({
     where: { id: roundId },
     relationLoadStrategy: "join",
     include: { division: { select: { id: true, competitionId: true, category: { select: { order: true } } } } },

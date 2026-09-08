@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
 import { getCurrentUser, canCreateEvents, isModerator } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getMyDancerRef } from "@/lib/dancer";
 
 const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-underline";
 
@@ -17,9 +17,7 @@ const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-u
 // canCreateEvents, не выдумываем новые.
 export async function DarkTopNav() {
   const user = await getCurrentUser();
-  const dancer = user
-    ? await prisma.dancer.findUnique({ where: { userId: user.id }, select: { id: true } })
-    : null;
+  const dancer = await getMyDancerRef();
   // "Соревнования" (управление) — любому залогиненному, не только тем, у
   // кого уже есть роль в движке (тот же комментарий, что и в Header.tsx).
   const hasCompetitionAccess = !!user;

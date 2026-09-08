@@ -433,7 +433,7 @@ export async function rerollHeatDraw(
   heatId: string,
   reason: string
 ): Promise<{ id: string; leaderCount: number; followerCount: number }> {
-  const heat = await prisma.heat.findUniqueOrThrow({
+  const heat = await prisma.heat.findFirstOrThrow({
     where: { id: heatId },
     relationLoadStrategy: "join",
     include: { round: { include: { division: { select: { id: true, competitionId: true, heatCapacity: true } } } } },
@@ -473,7 +473,7 @@ export async function rerollHeatDraw(
 // свои, только что освободившиеся из первого выхода, потом категории выше
 // (docs/00_DECISIONS.md, A10, уточнено 2026-09-04).
 export async function splitHeatOverflow(heatId: string): Promise<{ newHeatId: string }> {
-  const heat = await prisma.heat.findUniqueOrThrow({
+  const heat = await prisma.heat.findFirstOrThrow({
     where: { id: heatId },
     relationLoadStrategy: "join",
     include: {

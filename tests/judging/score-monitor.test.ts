@@ -12,7 +12,7 @@ const judgeRoundConfirmationFindMany = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), count: (...a: unknown[]) => roundCount(...a) },
+    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), count: (...a: unknown[]) => roundCount(...a) },
     heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
     judgeAssignment: { findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a) },
     judgeRoundConfirmation: { findMany: (...a: unknown[]) => judgeRoundConfirmationFindMany(...a) },

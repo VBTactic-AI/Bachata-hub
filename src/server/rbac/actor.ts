@@ -40,7 +40,7 @@ export const getActor = cache(async (): Promise<Actor | null> => {
   // запрашивал getCurrentUser() — экономит ещё один round-trip: Role сама
   // становится известна из ЭТОГО же запроса, не нужно ждать её из
   // getCurrentUser(), чтобы решить, нужен ли SUPER_ADMIN-мост ниже.
-  const userWithRbac = await prisma.user.findUnique({
+  const userWithRbac = await prisma.user.findFirst({
     where: { id: userId },
     relationLoadStrategy: "join",
     select: {
@@ -64,7 +64,7 @@ export const getActor = cache(async (): Promise<Actor | null> => {
   // запроса выше, ждать её отдельно не нужно.
   const isSiteAdmin = userWithRbac.role === "ADMIN";
   const superAdminRole = isSiteAdmin
-    ? await prisma.role.findUnique({
+    ? await prisma.role.findFirst({
         where: { code: "SUPER_ADMIN" },
         relationLoadStrategy: "join",
         include: { permissions: { include: { permission: true } } },

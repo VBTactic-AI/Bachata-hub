@@ -65,7 +65,7 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
   // сетевая цена — не сложность запроса). Найдено вживую в Performance
   // Diagnostic Mode (docs/PROGRESS.md). Данные и порядок те же, что и раньше
   // — только способ получения.
-  const division = await prisma.division.findUniqueOrThrow({
+  const division = await prisma.division.findFirstOrThrow({
     where: { id: divisionId },
     select: {
       id: true,

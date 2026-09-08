@@ -17,7 +17,7 @@ const fakeTx = {
 };
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    role: { findUniqueOrThrow: (...a: unknown[]) => roleFindUniqueOrThrow(...a) },
+    role: { findUniqueOrThrow: (...a: unknown[]) => roleFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roleFindUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

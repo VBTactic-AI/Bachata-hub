@@ -11,7 +11,7 @@ const registrationFindMany = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    competition: { findUnique: (...a: unknown[]) => competitionFindUnique(...a) },
+    competition: { findUnique: (...a: unknown[]) => competitionFindUnique(...a), findFirst: (...a: unknown[]) => competitionFindUnique(...a) },
     division: { findMany: (...a: unknown[]) => divisionFindMany(...a) },
     judgeAssignment: { findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a) },
     heat: { findFirst: (...a: unknown[]) => heatFindFirst(...a) },

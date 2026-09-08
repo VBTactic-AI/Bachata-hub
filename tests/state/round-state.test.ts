@@ -22,7 +22,7 @@ const txRegistrationFindMany = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  round: { findFirst: txRoundFindFirst, findUniqueOrThrow: txRoundFindUniqueOrThrow, updateMany: txRoundUpdateMany },
+  round: { findFirst: txRoundFindFirst, findUniqueOrThrow: txRoundFindUniqueOrThrow, findFirstOrThrow: txRoundFindUniqueOrThrow, updateMany: txRoundUpdateMany },
   heat: { findFirst: txHeatFindFirst, findMany: txHeatFindMany, count: txHeatCount },
   registration: { findMany: txRegistrationFindMany },
   auditLog: { create: auditCreate },
@@ -34,7 +34,7 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
+    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

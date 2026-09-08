@@ -10,7 +10,7 @@ const roundFindUniqueOrThrow = vi.fn();
 const heatFindMany = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
+    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
     heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
   },
 }));

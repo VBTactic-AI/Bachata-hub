@@ -12,7 +12,7 @@ const fakeTx = { registration: { update: registrationUpdate }, auditLog: { creat
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    registration: { findUniqueOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a) },
+    registration: { findUniqueOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

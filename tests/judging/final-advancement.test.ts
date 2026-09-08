@@ -31,7 +31,7 @@ const auditCreate = vi.fn();
 
 const fakeTx = {
   round: {
-    findUniqueOrThrow: txRoundFindUniqueOrThrow,
+    findUniqueOrThrow: txRoundFindUniqueOrThrow, findFirstOrThrow: txRoundFindUniqueOrThrow,
     findMany: txRoundFindMany,
     create: txRoundCreate,
     update: txRoundUpdate,
@@ -58,7 +58,7 @@ const prismaJudgeRoundConfirmationCount = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    round: { findUniqueOrThrow: prismaRoundFindUniqueOrThrow },
+    round: { findUniqueOrThrow: prismaRoundFindUniqueOrThrow, findFirstOrThrow: prismaRoundFindUniqueOrThrow },
     heat: { findFirstOrThrow: prismaHeatFindFirstOrThrow, findMany: (...a: unknown[]) => prismaHeatFindMany(...a) },
     draw: { findFirstOrThrow: prismaDrawFindFirstOrThrow },
     finalResult: { findMany: prismaFinalResultFindMany },

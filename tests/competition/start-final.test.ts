@@ -22,9 +22,9 @@ const fakeTx = { finalSession: { create: txFinalSessionCreate }, auditLog: { cre
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
-    finalSession: { findUnique: (...a: unknown[]) => finalSessionFindUnique(...a) },
-    finalSettings: { findUnique: (...a: unknown[]) => finalSettingsFindUnique(...a) },
+    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
+    finalSession: { findUnique: (...a: unknown[]) => finalSessionFindUnique(...a), findFirst: (...a: unknown[]) => finalSessionFindUnique(...a) },
+    finalSettings: { findUnique: (...a: unknown[]) => finalSettingsFindUnique(...a), findFirst: (...a: unknown[]) => finalSettingsFindUnique(...a) },
     finalCriterion: { findMany: (...a: unknown[]) => finalCriterionFindMany(...a) },
     judgeAssignment: { findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a) },
     $transaction: (fn: (tx: unknown) => unknown) => fn(fakeTx),

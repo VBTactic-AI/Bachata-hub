@@ -29,13 +29,13 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findMany: (...a: unknown[]) => heatFindMany(...a) },
-    registration: { findUniqueOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a), findMany: (...a: unknown[]) => registrationFindMany(...a) },
+    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findMany: (...a: unknown[]) => heatFindMany(...a) },
+    registration: { findUniqueOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a), findMany: (...a: unknown[]) => registrationFindMany(...a) },
     division: { findMany: (...a: unknown[]) => divisionFindMany(...a) },
     drawParticipant: {
       findFirst: (...a: unknown[]) => drawParticipantFindFirst(...a),
       findUnique: (...a: unknown[]) => drawParticipantFindUnique(...a),
-      findUniqueOrThrow: (...a: unknown[]) => drawParticipantFindUniqueOrThrow(...a),
+      findUniqueOrThrow: (...a: unknown[]) => drawParticipantFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => drawParticipantFindUniqueOrThrow(...a),
       aggregate: (...a: unknown[]) => drawParticipantAggregate(...a),
       findMany: (...a: unknown[]) => drawParticipantFindMany(...a),
     },

@@ -5,7 +5,7 @@ const heatFindFirst = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    competition: { findUnique: (...a: unknown[]) => competitionFindUnique(...a) },
+    competition: { findUnique: (...a: unknown[]) => competitionFindUnique(...a), findFirst: (...a: unknown[]) => competitionFindUnique(...a) },
     heat: { findFirst: (...a: unknown[]) => heatFindFirst(...a) },
   },
 }));

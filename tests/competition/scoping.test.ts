@@ -21,8 +21,8 @@ const fakeTx = {
 };
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    divisionCategory: { findUnique: (...a: unknown[]) => divisionCategoryFindUnique(...a) },
-    division: { findUnique: (...a: unknown[]) => divisionFindUnique(...a) },
+    divisionCategory: { findUnique: (...a: unknown[]) => divisionCategoryFindUnique(...a), findFirst: (...a: unknown[]) => divisionCategoryFindUnique(...a) },
+    division: { findUnique: (...a: unknown[]) => divisionFindUnique(...a), findFirst: (...a: unknown[]) => divisionFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

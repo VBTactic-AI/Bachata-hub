@@ -25,20 +25,26 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const { id } = await params;
   const user = await getCurrentUser();
 
-  const [view, dancer] = await Promise.all([
-    getPublicCompetitionView(id),
-    user ? prisma.dancer.findUnique({ where: { userId: user.id }, select: { id: true } }) : null,
-  ]);
-  if (!view) notFound();
-
-  const myRegistration = dancer ? await prisma.registration.findFirst({ where: { competitionId: id, dancerId: dancer.id } }) : null;
   // Ссылка на судейский экран — раньше её нигде не было в интерфейсе
   // (только прямой URL /judging/[competitionId], найдено на живом
   // тестировании 2026-09-05): судья, которого назначили в админке, не мог
   // сам найти дорогу на свой экран оценок.
-  const myJudgeAssignment = user
-    ? await prisma.judgeAssignment.findFirst({ where: { judgeUserId: user.id, division: { competitionId: id } } })
-    : null;
+  //
+  // Все четыре запроса идут одной волной. "Моя регистрация" раньше ждала
+  // dancer, а назначение судьёй — ещё и её, хотя обоим нужен только
+  // user.id/competitionId: получалось три сетевых барьера подряд там, где
+  // достаточно одного. Регистрацию ищем по userId через связь dancer, чтобы
+  // не зависеть от dancer.id, полученного отдельным запросом.
+  const [view, myRegistration, myJudgeAssignment] = await Promise.all([
+    getPublicCompetitionView(id),
+    user
+      ? prisma.registration.findFirst({ where: { competitionId: id, dancer: { userId: user.id } } })
+      : Promise.resolve(null),
+    user
+      ? prisma.judgeAssignment.findFirst({ where: { judgeUserId: user.id, division: { competitionId: id } } })
+      : Promise.resolve(null),
+  ]);
+  if (!view) notFound();
 
   const isOpen = view.status === "REGISTRATION_OPEN";
   const place = [view.cityName, view.venue].filter(Boolean).join(", ");

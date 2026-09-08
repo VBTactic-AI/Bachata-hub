@@ -11,7 +11,7 @@ const fakeTx = { competition: { update: txCompetitionUpdate }, auditLog: { creat
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    competition: { findUniqueOrThrow: (...a: unknown[]) => competitionFindUniqueOrThrow(...a) },
+    competition: { findUniqueOrThrow: (...a: unknown[]) => competitionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => competitionFindUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

@@ -24,15 +24,15 @@ const txCompetitionEventCreate = vi.fn();
 const txAuditCreate = vi.fn();
 
 const fakeTx = {
-  heatRotation: { updateMany: txHeatRotationUpdateMany, findUnique: txHeatRotationFindUnique },
+  heatRotation: { updateMany: txHeatRotationUpdateMany, findUnique: txHeatRotationFindUnique, findFirst: txHeatRotationFindUnique },
   competitionEvent: { create: txCompetitionEventCreate },
   auditLog: { create: txAuditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
-    heatRotation: { create: (...a: unknown[]) => heatRotationCreate(...a), findUnique: (...a: unknown[]) => heatRotationFindUnique(...a) },
+    heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
+    heatRotation: { create: (...a: unknown[]) => heatRotationCreate(...a), findUnique: (...a: unknown[]) => heatRotationFindUnique(...a), findFirst: (...a: unknown[]) => heatRotationFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

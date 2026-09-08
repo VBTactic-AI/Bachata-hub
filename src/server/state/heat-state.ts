@@ -25,7 +25,7 @@ function permissionFor(to: HeatStatus): Permission {
 // оптимистичная блокировка в machine.transition() ловит гонку двух
 // одновременных попыток запуска (03 §27).
 export async function transitionHeat(heatId: string, to: HeatStatus, opts?: { reason?: string }): Promise<void> {
-  const heat = await prisma.heat.findUniqueOrThrow({
+  const heat = await prisma.heat.findFirstOrThrow({
     where: { id: heatId },
     relationLoadStrategy: "join",
     include: { round: { include: { division: { select: { competitionId: true } } } } },

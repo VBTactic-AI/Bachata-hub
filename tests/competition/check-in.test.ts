@@ -11,13 +11,13 @@ const checkInCreate = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  checkIn: { findUnique: checkInFindUnique, count: checkInCount, create: checkInCreate },
+  checkIn: { findUnique: checkInFindUnique, findFirst: checkInFindUnique, count: checkInCount, create: checkInCreate },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    registration: { findUniqueOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a) },
+    registration: { findUniqueOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => registrationFindUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));

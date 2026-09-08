@@ -36,7 +36,7 @@ const auditCreate = vi.fn();
 
 const fakeTx = {
   round: {
-    findUniqueOrThrow: txRoundFindUniqueOrThrow,
+    findUniqueOrThrow: txRoundFindUniqueOrThrow, findFirstOrThrow: txRoundFindUniqueOrThrow,
     findMany: txRoundFindMany,
     create: txRoundCreate,
     update: txRoundUpdate,
@@ -67,7 +67,7 @@ const prismaDrawFindFirstOrThrow = vi.fn();
 // реальной изоляции между "внутри/вне транзакции" в этих тестах не требуется.
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    round: { findUniqueOrThrow: txRoundFindUniqueOrThrow },
+    round: { findUniqueOrThrow: txRoundFindUniqueOrThrow, findFirstOrThrow: txRoundFindUniqueOrThrow },
     heat: { findFirstOrThrow: prismaHeatFindFirstOrThrow },
     draw: { findFirstOrThrow: prismaDrawFindFirstOrThrow },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => prismaTransaction(fn),

@@ -23,10 +23,10 @@ const fakeTx = {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     division: {
-      findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a),
-      findUnique: (...a: unknown[]) => divisionFindUnique(...a),
+      findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a),
+      findUnique: (...a: unknown[]) => divisionFindUnique(...a), findFirst: (...a: unknown[]) => divisionFindUnique(...a),
     },
-    divisionCategory: { findUnique: (...a: unknown[]) => divisionCategoryFindUnique(...a) },
+    divisionCategory: { findUnique: (...a: unknown[]) => divisionCategoryFindUnique(...a), findFirst: (...a: unknown[]) => divisionCategoryFindUnique(...a) },
     roundStageCatalog: { findMany: (...a: unknown[]) => roundStageCatalogFindMany(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },

@@ -21,13 +21,13 @@ const userFindUnique = vi.fn();
 const userCreate = vi.fn();
 
 const fakeTx = {
-  dancer: { findUnique: dancerFindUnique, create: dancerCreate },
+  dancer: { findUnique: dancerFindUnique, findFirst: dancerFindUnique, create: dancerCreate },
   division: { findFirst: divisionFindFirst },
-  role: { findUniqueOrThrow: roleFindUniqueOrThrow },
+  role: { findUniqueOrThrow: roleFindUniqueOrThrow, findFirstOrThrow: roleFindUniqueOrThrow },
   registration: { create: registrationCreate },
   competitionMember: { upsert: competitionMemberUpsert },
   auditLog: { create: auditCreate },
-  user: { findUnique: userFindUnique, create: userCreate },
+  user: { findUnique: userFindUnique, findFirst: userFindUnique, create: userCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({

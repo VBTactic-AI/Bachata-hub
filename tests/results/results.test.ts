@@ -37,12 +37,12 @@ const fakeTx = {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     division: {
-      findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a),
+      findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a),
       findMany: (...a: unknown[]) => divisionFindMany(...a),
     },
     result: {
       count: (...a: unknown[]) => resultCount(...a),
-      findUniqueOrThrow: (...a: unknown[]) => resultFindUniqueOrThrow(...a),
+      findUniqueOrThrow: (...a: unknown[]) => resultFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => resultFindUniqueOrThrow(...a),
       findMany: (...a: unknown[]) => resultFindMany(...a),
     },
     round: { findMany: (...a: unknown[]) => roundFindMany(...a) },

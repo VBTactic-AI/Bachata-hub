@@ -5,6 +5,7 @@ import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { maybeFinalizeFinalAfterScoreInTx } from "./final-advancement";
 import { allowedJudgeRole, countRequiredForJudgeRole } from "./final-scoring-matrix";
+import { getMyJudgeAssignments } from "./judge-assignment";
 
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
 
@@ -25,7 +26,7 @@ export async function submitFinalJudgeScore(
   value: number,
   clientSubmissionId: string
 ): Promise<void> {
-  const participant = await prisma.drawParticipant.findUniqueOrThrow({
+  const participant = await prisma.drawParticipant.findFirstOrThrow({
     where: { id: drawParticipantId },
     relationLoadStrategy: "join",
     include: {
@@ -317,7 +318,7 @@ export type FinalJudgeQueue = {
 export async function getFinalJudgeQueue(competitionId: string, roundId: string): Promise<FinalJudgeQueue | null> {
   const actor = await requirePermission("score:submit", competitionId);
 
-  const round = await prisma.round.findUniqueOrThrow({
+  const round = await prisma.round.findFirstOrThrow({
     where: { id: roundId },
     relationLoadStrategy: "join",
     include: {
@@ -428,7 +429,7 @@ export type MyActiveFinalRound = { roundId: string; divisionName: string };
 export async function listMyActiveFinalRounds(competitionId: string): Promise<MyActiveFinalRound[]> {
   const actor = await requirePermission("score:submit", competitionId);
 
-  const myAssignments = await prisma.judgeAssignment.findMany({ where: { judgeUserId: actor.userId, division: { competitionId } } });
+  const myAssignments = await getMyJudgeAssignments(actor.userId, competitionId);
   if (myAssignments.length === 0) return [];
   const divisionIds = [...new Set(myAssignments.map((a) => a.divisionId))];
 

@@ -101,7 +101,7 @@ export async function calculateFinalResultsInTx(tx: PrismaTx, roundId: string, a
   const already = await tx.finalResult.count({ where: { roundId } });
   if (already > 0) return;
 
-  const round = await tx.round.findUniqueOrThrow({
+  const round = await tx.round.findFirstOrThrow({
     where: { id: roundId },
     relationLoadStrategy: "join",
     include: {

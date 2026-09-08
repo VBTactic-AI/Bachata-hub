@@ -15,8 +15,8 @@ const userFindUnique = vi.fn();
 const roleFindUnique = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
-    role: { findUnique: (...a: unknown[]) => roleFindUnique(...a) },
+    user: { findUnique: (...a: unknown[]) => userFindUnique(...a), findFirst: (...a: unknown[]) => userFindUnique(...a) },
+    role: { findUnique: (...a: unknown[]) => roleFindUnique(...a), findFirst: (...a: unknown[]) => roleFindUnique(...a) },
   },
 }));
 
