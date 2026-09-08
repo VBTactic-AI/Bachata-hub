@@ -5,16 +5,31 @@ import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
 import { maybeFinalizeAfterScoreInTx } from "./advancement";
+import { suggestedRoleForGender } from "../competition/register-competitor";
 
-// Судья закреплён на дивизион и РОЛЬ (LEADER/FOLLOWER) — не на пол участника.
-// Пол судьи по умолчанию совпадает с ролью, которую он судит, но это только
-// подсказка при назначении (кто именно смотрит на ведущих/ведомых решает
-// EVENT_ADMIN/HEAD_JUDGE вручную) — уточняет прежнюю формулировку A6
-// (docs/00_DECISIONS.md, 2026-09-04).
+// Роль судьи определяется его полом автоматически ("мужской судит
+// партнёров, женский — партнёрш") — по прямому запросу пользователя,
+// 2026-09-09, разворот прежней формулировки A6/A13 ("пол — только
+// подсказка, роль выбирает организатор вручную"). Один судья — всегда одна
+// роль (нельзя вручную назначить и вторую, даже при нехватке судей —
+// пользователь подтвердил это ограничение осознанно). Ручной выбор роли
+// остаётся ЕДИНСТВЕННЫМ запасным путём — когда у судьи вообще нет данных о
+// поле (нет профиля танцора или пол не указан, поле необязательное),
+// автоопределение невозможно.
+//
+// Переиспользует suggestedRoleForGender (та же логика уже применяется как
+// подсказка роли участника при регистрации, D8) — то же соответствие
+// пол→роль, специально не дублируем отдельной функцией.
+
+// Судья закреплён на дивизион и РОЛЬ (LEADER/FOLLOWER) — не на пол участника,
+// но САМА роль вычисляется из пола судьи (см. выше). judgeUserId — реальный
+// id пользователя (найден через поиск по имени на клиенте), не email: после
+// redesign 2026-09-09 email нигде в интерфейсе судейства не показывается и
+// не запрашивается.
 export async function assignJudge(
   divisionId: string,
-  judgeEmail: string,
-  role: RegistrationRole
+  judgeUserId: string,
+  manualRole?: RegistrationRole
 ): Promise<{ id: string }> {
   const division = await prisma.division.findUniqueOrThrow({
     where: { id: divisionId },
@@ -22,13 +37,24 @@ export async function assignJudge(
   });
   const actor = await requirePermission("judge:assign", division.competitionId);
 
-  const judge = await prisma.user.findUnique({ where: { email: judgeEmail.trim().toLowerCase() } });
+  const judge = await prisma.user.findUnique({ where: { id: judgeUserId }, include: { dancer: { select: { gender: true } } } });
   if (!judge) {
-    throw new ValidationFailedError("Пользователь с таким email не найден — судья должен сначала завести аккаунт на сайте.");
+    throw new ValidationFailedError("Судья не найден.");
+  }
+
+  // Пол известен — роль всегда из него, ручной manualRole в этом случае
+  // игнорируется (не даём переопределить, это осознанное решение
+  // пользователя). Пол неизвестен — используем то, что явно прислал клиент
+  // (форма показывает выбор роли только в этом случае), а если и этого нет —
+  // понятная ошибка вместо тихого падения в NULL.
+  const genderRole = suggestedRoleForGender(judge.dancer?.gender ?? null);
+  const role = genderRole ?? manualRole;
+  if (!role) {
+    throw new ValidationFailedError("Не удалось определить роль автоматически — у судьи не указан пол в профиле. Укажите роль вручную.");
   }
 
   const existing = await prisma.judgeAssignment.findUnique({
-    where: { divisionId_judgeUserId_role: { divisionId, judgeUserId: judge.id, role } },
+    where: { divisionId_judgeUserId_role: { divisionId, judgeUserId, role } },
   });
   if (existing) {
     throw new ValidationFailedError("Этот судья уже назначен на эту роль в этой категории.");
@@ -36,17 +62,45 @@ export async function assignJudge(
 
   return prisma.$transaction(async (tx) => {
     const assignment = await tx.judgeAssignment.create({
-      data: { divisionId, judgeUserId: judge.id, role, assignedById: actor.userId },
+      data: { divisionId, judgeUserId, role, assignedById: actor.userId },
     });
-    await grantJudgeCompetitionMembership(tx, division.competitionId, judge.id, actor.userId);
+    await grantJudgeCompetitionMembership(tx, division.competitionId, judgeUserId, actor.userId);
     await writeAudit(tx, {
       actor,
       action: "judge.assign",
       entityType: "JudgeAssignment",
       entityId: assignment.id,
-      after: { divisionId, judgeUserId: judge.id, judgeEmail: judge.email, role },
+      after: { divisionId, judgeUserId, judgeEmail: judge.email, role },
     });
     return { id: assignment.id };
+  });
+}
+
+// Добавление человека в общий ростер судей СОРЕВНОВАНИЯ (CompetitionMember,
+// роль JUDGE) — без привязки к конкретной категории (по прямому запросу
+// пользователя, 2026-09-09: "Общий список судей" наверху вкладки "Судьи"
+// пополняется отдельно от "присвоения к категориям" ниже, которое лишь
+// выбирает уже добавленных сюда людей). Идемпотентно — тот же upsert, что
+// grantJudgeCompetitionMembership уже делает как побочный эффект assignJudge;
+// вызов дважды для одного и того же человека не создаёт дубликат и не ошибка.
+export async function addCompetitionJudge(competitionId: string, judgeUserId: string): Promise<{ id: string }> {
+  const actor = await requirePermission("judge:assign", competitionId);
+
+  const judge = await prisma.user.findUnique({ where: { id: judgeUserId } });
+  if (!judge) {
+    throw new ValidationFailedError("Судья не найден.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const member = await grantJudgeCompetitionMembership(tx, competitionId, judgeUserId, actor.userId);
+    await writeAudit(tx, {
+      actor,
+      action: "competition_member.add_judge",
+      entityType: "CompetitionMember",
+      entityId: member.id,
+      after: { competitionId, judgeUserId, judgeEmail: judge.email },
+    });
+    return { id: member.id };
   });
 }
 
@@ -67,9 +121,9 @@ async function grantJudgeCompetitionMembership(
   competitionId: string,
   judgeUserId: string,
   addedById: string
-): Promise<void> {
+): Promise<{ id: string }> {
   const judgeRole = await tx.role.findUniqueOrThrow({ where: { code: "JUDGE" } });
-  await tx.competitionMember.upsert({
+  return tx.competitionMember.upsert({
     where: { competitionId_userId_roleId: { competitionId, userId: judgeUserId, roleId: judgeRole.id } },
     update: {},
     create: { competitionId, userId: judgeUserId, roleId: judgeRole.id, addedById },

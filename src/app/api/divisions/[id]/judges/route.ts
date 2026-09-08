@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    const result = await assignJudge(id, parsed.data.judgeEmail, parsed.data.role);
+    const result = await assignJudge(id, parsed.data.judgeUserId, parsed.data.role);
     return NextResponse.json(result, { status: 201 });
   } catch (e) {
     return respondToDomainError(e);

@@ -266,11 +266,23 @@ export type ChooseShiftInput = z.infer<typeof chooseShiftSchema>;
 
 // --- Судейство и определение проходящих (Этапы 7-8) ---
 
+// role — необязательна: сервер сам определяет её по полу судьи
+// (suggestedRoleForGender, judge-assignment.ts). Клиент присылает её только
+// запасным путём, когда у судьи пол не указан — тогда сервер вернёт понятную
+// ошибку без role, и форма покажет выбор вручную (2026-09-09).
 export const assignJudgeSchema = z.object({
-  judgeEmail: z.string().email(),
-  role: registrationRoleSchema,
+  judgeUserId: z.string().min(1),
+  role: registrationRoleSchema.optional(),
 });
 export type AssignJudgeInput = z.infer<typeof assignJudgeSchema>;
+
+// Добавление человека в общий ростер судей соревнования (CompetitionMember,
+// роль JUDGE), без привязки к категории — "Общий список судей" на вкладке
+// "Судьи" (2026-09-09).
+export const addCompetitionJudgeSchema = z.object({
+  judgeUserId: z.string().min(1),
+});
+export type AddCompetitionJudgeInput = z.infer<typeof addCompetitionJudgeSchema>;
 
 // Судейская сетка дивизиона одним "Сохранить" (две таблички — кто судит
 // ведущих/ведомых, галочки из общего пула судей соревнования) — по запросу

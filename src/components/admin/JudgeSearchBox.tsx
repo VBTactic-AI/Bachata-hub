@@ -70,10 +70,9 @@ export function JudgeSearchBox({ competitionId, onSelect }: { competitionId: str
                   setResults(null);
                   setQuery(j.displayName);
                 }}
-                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-app-sm border border-admin-border bg-admin-card px-3 py-2 text-left hover:border-admin-primary"
+                className="flex w-full items-center rounded-app-sm border border-admin-border bg-admin-card px-3 py-2 text-left hover:border-admin-primary"
               >
                 <span className="font-semibold text-night-text">{j.displayName}</span>
-                <span className="text-sm text-admin-muted">{j.email}</span>
               </button>
             ))
           )}

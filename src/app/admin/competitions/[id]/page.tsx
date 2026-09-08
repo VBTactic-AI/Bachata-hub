@@ -26,6 +26,7 @@ import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
 import { RotationPanel } from "@/components/admin/RotationPanel";
 import type { PoolJudge } from "@/components/admin/DivisionJudgesPanel";
 import { JudgesWorkspace, type JudgingDivision } from "@/components/admin/JudgesWorkspace";
+import { AddCompetitionJudgeForm } from "@/components/admin/AddCompetitionJudgeForm";
 import { KebabIcon } from "@/components/admin/icons";
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
@@ -129,7 +130,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               orderBy: { order: "asc" },
             },
             judgeAssignments: {
-              include: { judge: { select: { email: true, dancer: { select: { displayName: true } } } } },
+              select: { judgeUserId: true, role: true },
               orderBy: { createdAt: "asc" },
             },
             stagePlan: { include: { stage: { select: { name: true } } }, orderBy: { stage: { order: "asc" } } },
@@ -140,6 +141,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           orderBy: { category: { order: "asc" } },
         },
         city: true,
+        // Общий ростер судей соревнования (CompetitionMember, роль JUDGE) —
+        // источник "Общий список судей" (может включать людей, ещё НЕ
+        // назначенных ни на одну категорию, 2026-09-09) и общего pool'а для
+        // DivisionJudgesPanel (выбор "из уже добавленных").
+        members: {
+          where: { role: { code: "JUDGE" } },
+          include: { user: { select: { email: true, dancer: { select: { displayName: true } } } } },
+          orderBy: { addedAt: "asc" },
+        },
       },
     }),
     prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
@@ -218,33 +228,27 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const countFor = (rows: { divisionId: string; role: string; _count: { _all: number } }[], divisionId: string, role: string) =>
     rows.find((r) => r.divisionId === divisionId && r.role === role)?._count._all ?? 0;
 
-  // Общий пул судей всего соревнования (по всем дивизионам) — источник
-  // выбора в DivisionJudgesPanel; уже загружен вместе с деревом соревнования
-  // выше, отдельным запросом не тянем (docs/00_DECISIONS.md, A13 — один
-  // судья может судить несколько дивизионов). displayName — из профиля
-  // танцора судьи, если он у него есть (у судей без профиля танцора его нет
-  // — тогда в таблице показывается email, реальных данных не выдумываем).
-  const competitionJudgePoolMap = new Map<string, PoolJudge>();
+  // Общий ростер судей соревнования — из CompetitionMember(role=JUDGE), а не
+  // из назначений на категории (2026-09-09): судья появляется здесь сразу
+  // после добавления в "Общий список судей" (AddCompetitionJudgeForm), даже
+  // если ещё не назначен ни на одну категорию — это и есть тот самый список,
+  // из которого DivisionJudgesPanel ниже выбирает, кого добавить. displayName
+  // — из профиля танцора судьи, если он у него есть (у судей без профиля его
+  // нет — тогда показывается email, реальных данных не выдумываем).
+  const competitionJudgePool: PoolJudge[] = competition.members
+    .map((m) => ({ judgeUserId: m.userId, judgeEmail: m.user.email, displayName: m.user.dancer?.displayName ?? null }))
+    .sort((a, b) => (a.displayName ?? a.judgeEmail).localeCompare(b.displayName ?? b.judgeEmail, "ru"));
+
   // Только для отображения в "Общий список судей" (какие категории судит
   // каждый) — не часть контракта DivisionJudgesPanel, отдельная структура.
   const judgeDivisionNames = new Map<string, string[]>();
   for (const d of competition.divisions) {
     for (const ja of d.judgeAssignments) {
-      if (!competitionJudgePoolMap.has(ja.judgeUserId)) {
-        competitionJudgePoolMap.set(ja.judgeUserId, {
-          judgeUserId: ja.judgeUserId,
-          judgeEmail: ja.judge.email,
-          displayName: ja.judge.dancer?.displayName ?? null,
-        });
-      }
       const names = judgeDivisionNames.get(ja.judgeUserId) ?? [];
       if (!names.includes(d.category.name)) names.push(d.category.name);
       judgeDivisionNames.set(ja.judgeUserId, names);
     }
   }
-  const competitionJudgePool = [...competitionJudgePoolMap.values()].sort((a, b) =>
-    (a.displayName ?? a.judgeEmail).localeCompare(b.displayName ?? b.judgeEmail, "ru")
-  );
 
   // Соревнование ещё не началось — то же понятие, что и в
   // updateDivisionSettings() (COMPETITION_NOT_STARTED_STATUSES): метод
@@ -544,61 +548,69 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
   const judgesContent = (
     <div className="flex flex-col gap-4">
-      {competitionJudgePool.length > 0 && (
+      {canAssignJudges && (
         <Card className="border-admin-border bg-admin-card">
-          <p className="m-0 mb-1 font-semibold text-night-text">Общий список судей</p>
-          <p className="m-0 mb-3 text-sm text-admin-muted">Все судьи, зарегистрированные на соревнование.</p>
-          <div className="overflow-x-auto rounded-app border border-admin-border">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
-                <tr>
-                  <th className="px-3 py-2.5 font-semibold">№</th>
-                  <th className="px-3 py-2.5 font-semibold">Судья</th>
-                  <th className="px-3 py-2.5 font-semibold">Категории</th>
-                  <th className="px-3 py-2.5 font-semibold">Статус</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {competitionJudgePool.map((j, i) => {
-                  const names = judgeDivisionNames.get(j.judgeUserId) ?? [];
-                  return (
-                    <tr key={j.judgeUserId} className="border-t border-admin-border">
-                      <td className="px-3 py-2.5 align-middle text-admin-muted">{i + 1}</td>
-                      <td className="px-3 py-2.5 align-middle font-medium text-night-text">
-                        {j.displayName ?? j.judgeEmail}
-                        {j.displayName && <p className="m-0 text-xs font-normal text-admin-muted">{j.judgeEmail}</p>}
-                      </td>
-                      <td className="px-3 py-2.5 align-middle text-admin-muted">{names.length > 0 ? names.join(", ") : "—"}</td>
-                      <td className="px-3 py-2.5 align-middle">
-                        <StatusBadge label="Активен" variant="success" />
-                      </td>
-                      <td className="px-3 py-2.5 align-middle">
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            disabled
-                            title="Скоро"
-                            aria-label="Дополнительные действия — пока недоступно"
-                            className="cursor-not-allowed text-admin-disabled opacity-60"
-                          >
-                            <KebabIcon />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="m-0 mb-1 font-semibold text-night-text">Общий список судей</p>
+              <p className="m-0 text-sm text-admin-muted">Все судьи, зарегистрированные на соревнование.</p>
+            </div>
+            <AddButton label="Добавить судью" gradientClassName="bg-gradient-admin-cta">
+              <AddCompetitionJudgeForm competitionId={competition.id} />
+            </AddButton>
           </div>
+          {competitionJudgePool.length === 0 ? (
+            <p className="m-0 mt-3 text-sm text-admin-muted">Судьи пока не добавлены.</p>
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-app border border-admin-border">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
+                  <tr>
+                    <th className="px-3 py-2.5 font-semibold">№</th>
+                    <th className="px-3 py-2.5 font-semibold">Судья</th>
+                    <th className="px-3 py-2.5 font-semibold">Категории</th>
+                    <th className="px-3 py-2.5 font-semibold">Статус</th>
+                    <th className="px-3 py-2.5 text-right font-semibold">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {competitionJudgePool.map((j, i) => {
+                    const names = judgeDivisionNames.get(j.judgeUserId) ?? [];
+                    return (
+                      <tr key={j.judgeUserId} className="border-t border-admin-border">
+                        <td className="px-3 py-2.5 align-middle text-admin-muted">{i + 1}</td>
+                        <td className="px-3 py-2.5 align-middle font-medium text-night-text">{j.displayName ?? j.judgeEmail}</td>
+                        <td className="px-3 py-2.5 align-middle text-admin-muted">{names.length > 0 ? names.join(", ") : "—"}</td>
+                        <td className="px-3 py-2.5 align-middle">
+                          <StatusBadge label="Активен" variant="success" />
+                        </td>
+                        <td className="px-3 py-2.5 align-middle">
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              disabled
+                              title="Скоро"
+                              aria-label="Дополнительные действия — пока недоступно"
+                              className="cursor-not-allowed text-admin-disabled opacity-60"
+                            >
+                              <KebabIcon />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
       {canAssignJudges ? (
         competition.divisions.length === 0 ? (
           <p className="text-sm text-admin-muted">Категорий пока нет.</p>
         ) : (
-          <JudgesWorkspace divisions={judgingDivisions} pool={competitionJudgePool} competitionId={competition.id} />
+          <JudgesWorkspace divisions={judgingDivisions} pool={competitionJudgePool} />
         )
       ) : (
         <p className="text-sm text-admin-muted">Нет прав на назначение судей.</p>

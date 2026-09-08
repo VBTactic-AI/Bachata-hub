@@ -15,10 +15,12 @@ vi.mock("@/server/judging/advancement", async (importOriginal) => {
 
 const divisionFindUniqueOrThrow = vi.fn();
 const judgeAssignmentFindMany = vi.fn();
+const judgeAssignmentFindUnique = vi.fn();
 const judgeScoreFindMany = vi.fn();
 const finalJudgeScoreFindMany = vi.fn();
 const judgeRoundConfirmationFindMany = vi.fn();
 const userFindMany = vi.fn();
+const userFindUnique = vi.fn();
 const txJudgeAssignmentDelete = vi.fn();
 const txJudgeAssignmentCreate = vi.fn();
 const auditCreate = vi.fn();
@@ -41,16 +43,19 @@ const fakeTx = {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     division: { findUniqueOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => divisionFindUniqueOrThrow(...a) },
-    judgeAssignment: { findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a) },
+    judgeAssignment: {
+      findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a),
+      findUnique: (...a: unknown[]) => judgeAssignmentFindUnique(...a),
+    },
     judgeScore: { findMany: (...a: unknown[]) => judgeScoreFindMany(...a) },
     finalJudgeScore: { findMany: (...a: unknown[]) => finalJudgeScoreFindMany(...a) },
     judgeRoundConfirmation: { findMany: (...a: unknown[]) => judgeRoundConfirmationFindMany(...a) },
-    user: { findMany: (...a: unknown[]) => userFindMany(...a) },
+    user: { findMany: (...a: unknown[]) => userFindMany(...a), findUnique: (...a: unknown[]) => userFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { setDivisionJudges } = await import("@/server/judging/judge-assignment");
+const { setDivisionJudges, assignJudge, addCompetitionJudge } = await import("@/server/judging/judge-assignment");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -63,6 +68,8 @@ beforeEach(() => {
   finalJudgeScoreFindMany.mockReset().mockResolvedValue([]);
   judgeRoundConfirmationFindMany.mockReset().mockResolvedValue([]);
   userFindMany.mockReset().mockResolvedValue([{ email: "old@judge.by" }]);
+  userFindUnique.mockReset();
+  judgeAssignmentFindUnique.mockReset().mockResolvedValue(null);
   txJudgeAssignmentDelete.mockReset();
   txJudgeAssignmentCreate.mockReset().mockResolvedValue({ id: "asg-new" });
   txRoundFindMany.mockReset().mockResolvedValue([]);
@@ -147,5 +154,99 @@ describe("setDivisionJudges() — снятие судьи перепроверя
     expect(txJudgeAssignmentCreate).toHaveBeenCalled();
     expect(txJudgeAssignmentDelete).not.toHaveBeenCalled();
     expect(maybeFinalizeAfterScoreInTxMock).not.toHaveBeenCalled();
+  });
+});
+
+// Роль судьи вычисляется из его пола автоматически (по прямому запросу
+// пользователя, 2026-09-09) — разворот прежнего A6/A13 ("пол — только
+// подсказка"). Ручной выбор роли остаётся только запасным путём, когда пол в
+// профиле не указан вовсе.
+describe("assignJudge() — роль по полу судьи", () => {
+  it("мужской пол → роль LEADER (судит партнёров)", async () => {
+    userFindUnique.mockResolvedValue({ id: "judge1", email: "j1@x.by", dancer: { gender: "MALE" } });
+    txJudgeAssignmentCreate.mockResolvedValue({ id: "asg1" });
+
+    const result = await assignJudge("div1", "judge1");
+
+    expect(txJudgeAssignmentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ divisionId: "div1", judgeUserId: "judge1", role: "LEADER" }) })
+    );
+    expect(result).toEqual({ id: "asg1" });
+  });
+
+  it("женский пол → роль FOLLOWER (судит партнёрш)", async () => {
+    userFindUnique.mockResolvedValue({ id: "judge2", email: "j2@x.by", dancer: { gender: "FEMALE" } });
+    txJudgeAssignmentCreate.mockResolvedValue({ id: "asg2" });
+
+    await assignJudge("div1", "judge2");
+
+    expect(txJudgeAssignmentCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ role: "FOLLOWER" }) }));
+  });
+
+  it("пол известен — явно переданная роль игнорируется, используется вычисленная", async () => {
+    userFindUnique.mockResolvedValue({ id: "judge1", email: "j1@x.by", dancer: { gender: "MALE" } });
+    txJudgeAssignmentCreate.mockResolvedValue({ id: "asg1" });
+
+    await assignJudge("div1", "judge1", "FOLLOWER");
+
+    expect(txJudgeAssignmentCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ role: "LEADER" }) }));
+  });
+
+  it("пол не указан и роль не передана — понятная ошибка, а не молчаливый провал", async () => {
+    userFindUnique.mockResolvedValue({ id: "judge3", email: "j3@x.by", dancer: null });
+
+    await expect(assignJudge("div1", "judge3")).rejects.toThrow(/Укажите роль вручную/);
+    expect(txJudgeAssignmentCreate).not.toHaveBeenCalled();
+  });
+
+  it("пол не указан, но роль передана явно — использует её (запасной путь)", async () => {
+    userFindUnique.mockResolvedValue({ id: "judge3", email: "j3@x.by", dancer: null });
+    txJudgeAssignmentCreate.mockResolvedValue({ id: "asg3" });
+
+    await assignJudge("div1", "judge3", "FOLLOWER");
+
+    expect(txJudgeAssignmentCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ role: "FOLLOWER" }) }));
+  });
+
+  it("судья не найден — понятная ошибка", async () => {
+    userFindUnique.mockResolvedValue(null);
+
+    await expect(assignJudge("div1", "ghost")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("отклоняет повторное назначение той же роли в той же категории", async () => {
+    userFindUnique.mockResolvedValue({ id: "judge1", email: "j1@x.by", dancer: { gender: "MALE" } });
+    judgeAssignmentFindUnique.mockResolvedValue({ id: "existing" });
+
+    await expect(assignJudge("div1", "judge1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txJudgeAssignmentCreate).not.toHaveBeenCalled();
+  });
+});
+
+// "Общий список судей" (вкладка "Судьи") — судья появляется в ростере
+// соревнования сразу после добавления, ещё не будучи назначен ни на одну
+// категорию (2026-09-09) — переиспользует тот же upsert, что и
+// grantJudgeCompetitionMembership внутри assignJudge, поэтому идемпотентен.
+describe("addCompetitionJudge()", () => {
+  it("добавляет судью в общий ростер соревнования", async () => {
+    userFindUnique.mockResolvedValue({ id: "judge1", email: "j1@x.by" });
+    txCompetitionMemberUpsert.mockResolvedValue({ id: "member1" });
+
+    const result = await addCompetitionJudge("comp1", "judge1");
+
+    expect(txCompetitionMemberUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { competitionId_userId_roleId: { competitionId: "comp1", userId: "judge1", roleId: "role-judge" } },
+        update: {},
+      })
+    );
+    expect(result).toEqual({ id: "member1" });
+  });
+
+  it("судья не найден — понятная ошибка", async () => {
+    userFindUnique.mockResolvedValue(null);
+
+    await expect(addCompetitionJudge("comp1", "ghost")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txCompetitionMemberUpsert).not.toHaveBeenCalled();
   });
 });

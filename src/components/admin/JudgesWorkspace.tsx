@@ -37,7 +37,7 @@ const DOT_COLORS = ["#3b82f6", "#22c55e", "#a78bfa", "#fb923c", "#f87171", "#fac
 // судей, справа — состав судей выбранной категории и её методики оценки.
 // "Порядок судей" (drag-список из референса) сознательно не реализован — по
 // прямому запросу пользователя, не нужен.
-export function JudgesWorkspace({ divisions, pool, competitionId }: { divisions: JudgingDivision[]; pool: PoolJudge[]; competitionId: string }) {
+export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivision[]; pool: PoolJudge[] }) {
   const [selectedId, setSelectedId] = useState(divisions[0]?.id ?? "");
   const selected = divisions.find((d) => d.id === selectedId) ?? divisions[0];
   if (!selected) return null;
@@ -68,13 +68,12 @@ export function JudgesWorkspace({ divisions, pool, competitionId }: { divisions:
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
+      <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <Card className="border-admin-border bg-admin-card">
           <p className="m-0 mb-1 font-semibold text-night-text">Судейская панель</p>
           <p className="m-0 mb-3 text-sm text-admin-muted">Настройка состава судей для категории «{selected.categoryName}».</p>
           <DivisionJudgesPanel
             divisionId={selected.id}
-            competitionId={competitionId}
             pool={pool}
             leaderJudgeUserIds={selected.leaderJudgeUserIds}
             followerJudgeUserIds={selected.followerJudgeUserIds}
