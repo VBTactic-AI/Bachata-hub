@@ -16,7 +16,7 @@ export function AddButton({
   const [open, setOpen] = useState(false);
 
   if (open) {
-    return <div className="rounded-app border border-night-border bg-night-card p-4">{children}</div>;
+    return <div className="rounded-app border border-admin-border bg-admin-card p-4">{children}</div>;
   }
 
   return (

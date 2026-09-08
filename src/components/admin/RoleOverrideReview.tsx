@@ -28,7 +28,7 @@ export function RoleOverrideReview({ registrationId }: { registrationId: string 
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <Button type="button" size="sm" disabled={loading} onClick={() => decide("APPROVE")} className="border-none bg-gradient-night-cta">
+      <Button type="button" size="sm" disabled={loading} onClick={() => decide("APPROVE")} className="border-none bg-gradient-admin-cta">
         Подтвердить роль
       </Button>
       <Button
@@ -37,7 +37,7 @@ export function RoleOverrideReview({ registrationId }: { registrationId: string 
         variant="secondary"
         disabled={loading}
         onClick={() => decide("REJECT")}
-        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+        className="border-admin-border bg-transparent text-night-text hover:bg-admin-card2"
       >
         Отклонить (оставить по полу)
       </Button>

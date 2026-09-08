@@ -32,7 +32,7 @@ export function CompetitionHeader({
   return (
     <div className="flex flex-col gap-1.5">
       <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">{name}</h1>
-      <div className="flex flex-wrap items-center gap-2 text-sm text-night-muted">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-admin-muted">
         <Badge variant="community" className="bg-admin-primary/15 text-admin-primaryHover">
           {STATUS_LABELS[status] ?? status}
         </Badge>

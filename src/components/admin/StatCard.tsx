@@ -5,8 +5,8 @@ import { Card } from "@/components/ui/card";
 // "Участники" страницы соревнования.
 export function StatCard({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
-    <Card className="border-night-border bg-night-card">
-      <p className="m-0 text-sm text-night-muted">{label}</p>
+    <Card className="border-admin-border bg-admin-card">
+      <p className="m-0 text-sm text-admin-muted">{label}</p>
       <p className={`m-0 mt-1 text-2xl font-extrabold ${accent ? "text-admin-primaryHover" : "text-night-text"}`}>{value}</p>
     </Card>
   );

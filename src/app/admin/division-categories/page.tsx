@@ -21,22 +21,22 @@ export default async function DivisionCategoriesPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Категории соревнований</h1>
-          <p className="m-0 mt-1 text-sm text-night-muted">Порядок отображения категорий</p>
+          <p className="m-0 mt-1 text-sm text-admin-muted">Порядок отображения категорий</p>
         </div>
         <AddButton label="Добавить категорию" gradientClassName="bg-gradient-admin-cta">
           <CreateDivisionCategoryForm />
         </AddButton>
       </div>
 
-      <div className="rounded-app border border-night-border bg-night-card p-2 sm:p-3">
-        <div className="grid grid-cols-[32px_1fr_auto] gap-3 px-3 pb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-night-disabled sm:grid-cols-[48px_1fr_140px]">
+      <div className="rounded-app border border-admin-border bg-admin-card p-2 sm:p-3">
+        <div className="grid grid-cols-[32px_1fr_auto] gap-3 px-3 pb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-admin-disabled sm:grid-cols-[48px_1fr_140px]">
           <span>#</span>
           <span>Название</span>
           <span className="text-right">Видимость</span>
         </div>
         <CategoryList categories={active.map((c) => ({ id: c.id, name: c.name, order: c.order }))} />
         {hidden.length > 0 && (
-          <div className="mt-1 flex flex-col gap-0.5 border-t border-night-border pt-1">
+          <div className="mt-1 flex flex-col gap-0.5 border-t border-admin-border pt-1">
             {hidden.map((c) => (
               <CategoryRow key={c.id} categoryId={c.id} name={c.name} />
             ))}
@@ -44,7 +44,7 @@ export default async function DivisionCategoriesPage() {
         )}
       </div>
 
-      <p className="m-0 text-xs leading-relaxed text-night-muted">
+      <p className="m-0 text-xs leading-relaxed text-admin-muted">
         Организаторы выбирают категории из этого списка — сами названия не придумывают. «Скрыть» не удаляет
         саму категорию, а лишь убирает её из выбора при добавлении в новое соревнование; уже добавленные
         категории и регистрации не меняются. Порядок определяет иерархию уровней (по нему движок ищет «категорию выше» для помощников при

@@ -22,13 +22,13 @@ export function JudgingCriterionRow({ criterionId, name, minScore, maxScore }: {
   }
 
   return (
-    <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 border-transparent px-3 py-2.5 transition-colors hover:border-admin-primary hover:bg-night-card2 sm:grid-cols-[48px_1fr_140px]">
+    <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 border-transparent px-3 py-2.5 transition-colors hover:border-admin-primary hover:bg-admin-card2 sm:grid-cols-[48px_1fr_140px]">
       <span />
-      <span className="min-w-0 truncate text-left text-sm font-medium text-night-muted">
+      <span className="min-w-0 truncate text-left text-sm font-medium text-admin-muted">
         {name} <span className="font-normal">({minScore}–{maxScore})</span>
       </span>
       <span className="flex items-center justify-end">
-        <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={unhide} className="text-xs text-night-disabled hover:text-night-muted hover:underline">
+        <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={unhide} className="text-xs text-admin-disabled hover:text-admin-muted hover:underline">
           скрыт — вернуть
         </Button>
       </span>

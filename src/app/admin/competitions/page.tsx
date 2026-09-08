@@ -38,7 +38,7 @@ export default async function CompetitionsPage() {
       </div>
 
       {competitions.length === 0 ? (
-        <p className="text-sm text-night-muted">Пока нет ни одного соревнования.</p>
+        <p className="text-sm text-admin-muted">Пока нет ни одного соревнования.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {competitions.map((c) => (
@@ -47,12 +47,12 @@ export default async function CompetitionsPage() {
               href={`/admin/competitions/${c.id}`}
               className={cn(
                 cardVariants({ interactive: true }),
-                "border-night-border bg-night-card no-underline hover:border-admin-primary/60 hover:shadow-none"
+                "border-admin-border bg-admin-card no-underline hover:border-admin-primary/60 hover:shadow-none"
               )}
             >
               <strong className="text-night-text">{c.name}</strong>
               <p className="mt-1.5">
-                <Badge variant="community" className="bg-night-card2 text-admin-primaryHover">
+                <Badge variant="community" className="bg-admin-card2 text-admin-primaryHover">
                   {STATUS_LABELS[c.status] ?? c.status}
                 </Badge>
               </p>

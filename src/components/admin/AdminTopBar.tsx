@@ -13,26 +13,26 @@ export async function AdminTopBar() {
   const dancer = await getMyDancerRef();
 
   return (
-    <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-night-border bg-night-bg/95 px-4 py-3 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-admin-border bg-admin-bg/95 px-4 py-3 backdrop-blur-md sm:px-6">
       <Link
         href="/"
-        className="font-night text-sm font-medium text-night-muted no-underline hover:text-night-text hover:no-underline"
+        className="font-night text-sm font-medium text-admin-muted no-underline hover:text-night-text hover:no-underline"
       >
         ← На сайт
       </Link>
       {user ? (
         <div className="flex flex-wrap items-center gap-3 font-night text-sm sm:gap-4">
           {isModerator(user) && (
-            <Link href="/moderation" className="text-night-muted no-underline hover:text-night-text hover:no-underline">
+            <Link href="/moderation" className="text-admin-muted no-underline hover:text-night-text hover:no-underline">
               {t.nav.admin}
             </Link>
           )}
           {dancer && (
-            <Link href="/profile" className="text-night-muted no-underline hover:text-night-text hover:no-underline">
+            <Link href="/profile" className="text-admin-muted no-underline hover:text-night-text hover:no-underline">
               {t.nav.profile}
             </Link>
           )}
-          <span className="hidden text-night-disabled sm:inline">{user.email}</span>
+          <span className="hidden text-admin-disabled sm:inline">{user.email}</span>
           <form action="/api/auth/logout" method="post">
             <button
               type="submit"
@@ -45,7 +45,7 @@ export async function AdminTopBar() {
       ) : (
         <Link
           href="/login"
-          className="rounded-full border border-night-border px-4 py-1.5 text-sm font-medium text-night-text no-underline hover:border-admin-primary hover:no-underline"
+          className="rounded-full border border-admin-border px-4 py-1.5 text-sm font-medium text-night-text no-underline hover:border-admin-primary hover:no-underline"
         >
           {t.nav.login}
         </Link>

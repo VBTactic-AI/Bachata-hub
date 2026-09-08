@@ -42,11 +42,11 @@ export function CreateCompetitionForm({ cities }: { cities: City[] }) {
     router.push(`/admin/competitions/${data.competition.id}`);
   }
 
-  const fieldClass = "border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20";
+  const fieldClass = "border-admin-border bg-admin-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[560px]">
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Название
         <Input
           required
@@ -56,7 +56,7 @@ export function CreateCompetitionForm({ cities }: { cities: City[] }) {
           className={fieldClass}
         />
       </Label>
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Город
         <Select value={cityId} onChange={(e) => setCityId(e.target.value)} className={fieldClass}>
           <option value="">—</option>
@@ -67,20 +67,20 @@ export function CreateCompetitionForm({ cities }: { cities: City[] }) {
           ))}
         </Select>
       </Label>
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Площадка
         <Input value={venue} onChange={(e) => setVenue(e.target.value)} className={fieldClass} />
       </Label>
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Дата и время начала
         <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className={fieldClass} />
       </Label>
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Описание
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} className={fieldClass} />
       </Label>
       {error && <p className="text-sm text-red-400">{error}</p>}
-      <Button type="submit" disabled={loading} className="border-none bg-gradient-night-cta">
+      <Button type="submit" disabled={loading} className="border-none bg-gradient-admin-cta">
         Создать
       </Button>
     </FormRoot>

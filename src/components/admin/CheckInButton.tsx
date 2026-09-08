@@ -37,7 +37,7 @@ export function CheckInButton({ registrationId }: { registrationId: string }) {
         variant="secondary"
         disabled={loading}
         onClick={onClick}
-        className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
+        className="border-admin-border bg-transparent text-night-text hover:bg-admin-card2"
       >
         Check-in
       </Button>

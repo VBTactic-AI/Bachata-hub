@@ -32,14 +32,14 @@ export function CreateDivisionCategoryForm() {
 
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[420px]">
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Название новой категории
         <Input
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Юниоры"
-          className="border-night-border bg-night-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          className="border-admin-border bg-admin-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
         />
       </Label>
       {error && <p className="text-sm text-red-400">{error}</p>}

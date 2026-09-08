@@ -48,11 +48,11 @@ export function CategoryRow({ categoryId, name: initialName }: { categoryId: str
   }
 
   const fieldClass =
-    "!w-auto border-night-border bg-night-card2 py-1 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+    "!w-auto border-admin-border bg-admin-card2 py-1 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   if (editing) {
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-app-sm bg-night-card2 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 rounded-app-sm bg-admin-card2 px-3 py-2.5">
         <Input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} />
         {changed && !!name.trim() && (
           <Button type="button" size="sm" disabled={loading} onClick={save} className="border-none bg-gradient-admin-cta">
@@ -65,7 +65,7 @@ export function CategoryRow({ categoryId, name: initialName }: { categoryId: str
           variant="secondary"
           disabled={loading}
           onClick={() => setEditing(false)}
-          className="border-night-border bg-transparent text-night-text hover:bg-night-card"
+          className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
         >
           Отмена
         </Button>
@@ -75,13 +75,13 @@ export function CategoryRow({ categoryId, name: initialName }: { categoryId: str
   }
 
   return (
-    <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 border-transparent px-3 py-2.5 transition-colors hover:border-admin-primary hover:bg-night-card2 sm:grid-cols-[48px_1fr_140px]">
+    <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 border-transparent px-3 py-2.5 transition-colors hover:border-admin-primary hover:bg-admin-card2 sm:grid-cols-[48px_1fr_140px]">
       <span />
-      <button type="button" onClick={() => setEditing(true)} className="min-w-0 truncate text-left text-sm font-medium text-night-muted">
+      <button type="button" onClick={() => setEditing(true)} className="min-w-0 truncate text-left text-sm font-medium text-admin-muted">
         {initialName}
       </button>
       <span className="flex items-center justify-end">
-        <button type="button" disabled={loading} onClick={unhide} title="Вернуть в список" className="text-xs text-night-disabled hover:text-night-muted hover:underline">
+        <button type="button" disabled={loading} onClick={unhide} title="Вернуть в список" className="text-xs text-admin-disabled hover:text-admin-muted hover:underline">
           скрыта
         </button>
       </span>

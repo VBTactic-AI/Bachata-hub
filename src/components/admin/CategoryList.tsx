@@ -108,14 +108,14 @@ export function CategoryList({ categories }: { categories: Category[] }) {
   }
 
   const fieldClass =
-    "!w-auto border-night-border bg-night-card2 py-1 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+    "!w-auto border-admin-border bg-admin-card2 py-1 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   return (
     <div className="flex flex-col gap-0.5">
       {error && <p className="m-0 mb-1 text-xs text-red-400">{error}</p>}
       {items.map((c, i) =>
         editingId === c.id ? (
-          <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-app-sm bg-night-card2 px-3 py-2.5">
+          <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-app-sm bg-admin-card2 px-3 py-2.5">
             <Input value={editName} onChange={(e) => setEditName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
             {editName.trim() && editName !== c.name && (
               <Button type="button" size="sm" onClick={() => saveName(c.id)} className="border-none bg-gradient-admin-cta">
@@ -127,7 +127,7 @@ export function CategoryList({ categories }: { categories: Category[] }) {
               size="sm"
               variant="secondary"
               onClick={() => setEditingId(null)}
-              className="border-night-border bg-transparent text-night-text hover:bg-night-card"
+              className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
             >
               Отмена
             </Button>
@@ -140,10 +140,10 @@ export function CategoryList({ categories }: { categories: Category[] }) {
               else rowRefs.current.delete(c.id);
             }}
             className={`grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 px-3 py-2.5 transition-colors sm:grid-cols-[48px_1fr_140px] ${
-              draggingId === c.id ? "border-admin-primary bg-night-card2 opacity-70" : "border-transparent hover:border-admin-primary hover:bg-night-card2"
+              draggingId === c.id ? "border-admin-primary bg-admin-card2 opacity-70" : "border-transparent hover:border-admin-primary hover:bg-admin-card2"
             }`}
           >
-            <span className="text-sm font-semibold text-night-muted">{i + 1}</span>
+            <span className="text-sm font-semibold text-admin-muted">{i + 1}</span>
             <button
               type="button"
               onClick={() => {
@@ -159,7 +159,7 @@ export function CategoryList({ categories }: { categories: Category[] }) {
                 type="button"
                 onClick={() => hide(c.id)}
                 title="Скрыть"
-                className="text-night-muted hover:text-night-text"
+                className="text-admin-muted hover:text-night-text"
                 aria-label={`Скрыть категорию ${c.name}`}
               >
                 👁
@@ -171,7 +171,7 @@ export function CategoryList({ categories }: { categories: Category[] }) {
                 onPointerUp={onHandlePointerUp}
                 onPointerCancel={onHandlePointerUp}
                 aria-label={`Перетащить, чтобы изменить порядок категории ${c.name}`}
-                className="touch-none cursor-grab select-none border-none bg-transparent p-1 text-night-disabled hover:text-night-muted active:cursor-grabbing"
+                className="touch-none cursor-grab select-none border-none bg-transparent p-1 text-admin-disabled hover:text-admin-muted active:cursor-grabbing"
               >
                 ⠿
               </button>

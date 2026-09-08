@@ -32,15 +32,15 @@ export function CreateRoundStageForm() {
     router.refresh();
   }
 
-  const fieldClass = "border-night-border bg-night-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+  const fieldClass = "border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[420px]">
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Название нового этапа
         <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Четвертьфинал" className={fieldClass} />
       </Label>
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Сколько проходит дальше по умолчанию
         <Input
           required

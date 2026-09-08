@@ -69,10 +69,10 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
       className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium no-underline transition-colors hover:no-underline sm:w-full ${
         active
           ? "bg-admin-primary/15 text-night-text before:hidden sm:relative sm:before:absolute sm:before:-left-3 sm:before:top-1/2 sm:before:block sm:before:h-5 sm:before:w-[3px] sm:before:-translate-y-1/2 sm:before:rounded-full sm:before:bg-admin-primary"
-          : "text-night-muted hover:bg-night-card2 hover:text-night-text"
+          : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
       }`}
     >
-      <span className={active ? "text-admin-primary" : "text-night-disabled"}>{item.icon}</span>
+      <span className={active ? "text-admin-primary" : "text-admin-disabled"}>{item.icon}</span>
       {item.label}
     </Link>
   );
@@ -89,7 +89,7 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
 
   return (
     <nav
-      className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-night-border bg-night-bg pb-3 font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:flex-col sm:overflow-x-visible sm:overflow-y-auto sm:border-b-0 sm:border-r sm:bg-night-card/30 sm:px-3 sm:pb-6 sm:pt-6"
+      className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-admin-border bg-admin-bg pb-3 font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:flex-col sm:overflow-x-visible sm:overflow-y-auto sm:border-b-0 sm:border-r sm:bg-admin-card/30 sm:px-3 sm:pb-6 sm:pt-6"
       aria-label="Разделы админки"
     >
       <Link
@@ -110,7 +110,7 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
 
       {isAdminUser && (
         <div className="mt-0 flex shrink-0 items-center gap-1.5 sm:mt-5 sm:flex-col sm:items-stretch sm:gap-0.5">
-          <span className="hidden px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wide text-night-disabled sm:block">
+          <span className="hidden px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wide text-admin-disabled sm:block">
             {t.nav.references}
           </span>
           {referenceItems().map((item) => (

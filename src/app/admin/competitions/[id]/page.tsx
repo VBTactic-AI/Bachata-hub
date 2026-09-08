@@ -390,14 +390,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
       {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
       {canManageRounds && (
-        <Card className="border-night-border bg-night-card">
+        <Card className="border-admin-border bg-admin-card">
           <p className="m-0 mb-2 font-semibold text-night-text">Текущий этап</p>
           {currentActiveStages.length === 0 ? (
-            <p className="m-0 text-sm text-night-muted">Нет активных этапов.</p>
+            <p className="m-0 text-sm text-admin-muted">Нет активных этапов.</p>
           ) : (
             <ul className="m-0 flex flex-col gap-1 pl-4">
               {currentActiveStages.map((s, i) => (
-                <li key={i} className="text-sm text-night-muted">
+                <li key={i} className="text-sm text-admin-muted">
                   <span className="font-medium text-night-text">{s.divisionName}</span> · {s.stageName} —{" "}
                   {ROUND_STATUS_LABELS[s.status] ?? s.status}
                 </li>
@@ -435,16 +435,16 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const chartsContent = (
     <div className="flex flex-col gap-4">
       {canManageRounds && advancementFunnels.length > 0 && (
-        <Card className="border-night-border bg-night-card">
+        <Card className="border-admin-border bg-admin-card">
           <p className="m-0 mb-2 font-semibold text-night-text">Прохождение участников по этапам</p>
           <div className="flex flex-col gap-2">
             {advancementFunnels.map((f) => (
               <div key={f.categoryName} className="flex flex-wrap items-center gap-1.5 text-sm">
                 <span className="mr-1 font-medium text-night-text">{f.categoryName}:</span>
                 {f.stages.map((s, i) => (
-                  <span key={i} className="flex items-center gap-1.5 text-night-muted">
-                    {i > 0 && <span className="text-night-disabled">→</span>}
-                    <span className="rounded-full bg-night-card2 px-2.5 py-1">
+                  <span key={i} className="flex items-center gap-1.5 text-admin-muted">
+                    {i > 0 && <span className="text-admin-disabled">→</span>}
+                    <span className="rounded-full bg-admin-card2 px-2.5 py-1">
                       {s.name} <span className="font-semibold text-night-text">{s.calledCount}</span>
                     </span>
                   </span>
@@ -457,7 +457,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {canViewStatistics ? (
         <StatisticsSection competitionId={competition.id} />
       ) : (
-        <p className="text-sm text-night-muted">Нет доступа к статистике.</p>
+        <p className="text-sm text-admin-muted">Нет доступа к статистике.</p>
       )}
     </div>
   );
@@ -465,7 +465,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const settingsContent = (
     <div className="flex flex-col gap-4">
       {canEditPublicInfo ? (
-        <Card className="border-night-border bg-night-card">
+        <Card className="border-admin-border bg-admin-card">
           <p className="m-0 mb-1 font-semibold text-night-text">Публичная информация</p>
           <PublicInfoPanel
             competitionId={competition.id}
@@ -477,10 +477,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           />
         </Card>
       ) : (
-        <p className="text-sm text-night-muted">Нет доступных настроек.</p>
+        <p className="text-sm text-admin-muted">Нет доступных настроек.</p>
       )}
       {canManage && (
-        <p className="m-0 text-xs text-night-muted">
+        <p className="m-0 text-xs text-admin-muted">
           Настройки конкретной категории (вместимость захода, ротация, метод судейства, критерии финала) — на вкладке
           «Категории», у каждой категории отдельно.
         </p>
@@ -494,16 +494,16 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const judgesContent = (
     <div className="flex flex-col gap-4">
       {competitionJudgePool.length > 0 && (
-        <Card className="border-night-border bg-night-card">
+        <Card className="border-admin-border bg-admin-card">
           <p className="m-0 mb-2 font-semibold text-night-text">Общий список судей</p>
           <ul className="m-0 flex flex-col gap-2 pl-0">
             {competitionJudgePool.map((j) => {
               const categoriesCount = judgeDivisionCounts.get(j.judgeUserId)?.size ?? 0;
               return (
-                <li key={j.judgeUserId} className="flex flex-wrap items-center justify-between gap-2 border-t border-night-border pt-2 first:border-t-0 first:pt-0">
+                <li key={j.judgeUserId} className="flex flex-wrap items-center justify-between gap-2 border-t border-admin-border pt-2 first:border-t-0 first:pt-0">
                   <span className="text-sm text-night-text">{j.judgeEmail}</span>
                   <span className="flex items-center gap-2">
-                    <span className="text-xs text-night-muted">
+                    <span className="text-xs text-admin-muted">
                       {categoriesCount} {categoriesCount === 1 ? "категория" : "категории(й)"}
                     </span>
                     <StatusBadge label="Активен" variant="success" />
@@ -516,10 +516,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       )}
       {canAssignJudges ? (
         competition.divisions.length === 0 ? (
-          <p className="text-sm text-night-muted">Категорий пока нет.</p>
+          <p className="text-sm text-admin-muted">Категорий пока нет.</p>
         ) : (
           competition.divisions.map((d) => (
-            <Card key={d.id} className="border-night-border bg-night-card">
+            <Card key={d.id} className="border-admin-border bg-admin-card">
               <p className="m-0 mb-1 font-semibold text-night-text">{d.category.name}</p>
               <DivisionJudgesPanel
                 divisionId={d.id}
@@ -532,7 +532,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           ))
         )
       ) : (
-        <p className="text-sm text-night-muted">Нет прав на назначение судей.</p>
+        <p className="text-sm text-admin-muted">Нет прав на назначение судей.</p>
       )}
     </div>
   );
@@ -558,7 +558,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             </p>
           )}
           {registrations.length === 0 ? (
-            <p className="text-sm text-night-muted">Пока никто не зарегистрирован.</p>
+            <p className="text-sm text-admin-muted">Пока никто не зарегистрирован.</p>
           ) : (
             <ParticipantsPanel
               registrations={registrations.map((r) => ({

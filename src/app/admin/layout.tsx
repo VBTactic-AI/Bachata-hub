@@ -19,7 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const user = await getCurrentUser();
 
   return (
-    <div className="mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-night-bg font-night text-night-text">
+    <div className="mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-admin-bg font-night text-night-text">
       <div className="flex min-h-[100dvh] flex-col sm:flex-row">
         <AdminSidebar isAdminUser={isAdmin(user)} />
         <div className="flex min-w-0 flex-1 flex-col">

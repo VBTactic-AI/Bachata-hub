@@ -46,7 +46,7 @@ export function ChangeDivisionControl({
       <Select
         value={divisionId}
         onChange={(e) => setDivisionId(e.target.value)}
-        className="!w-auto border-night-border bg-night-card2 py-1.5 text-sm text-night-text focus:border-night-primary focus:ring-night-primary/20"
+        className="!w-auto border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
       >
         {divisions.map((d) => (
           <option key={d.id} value={d.id}>
@@ -55,7 +55,7 @@ export function ChangeDivisionControl({
         ))}
       </Select>
       {divisionId !== currentDivisionId && (
-        <Button type="button" size="sm" disabled={loading} onClick={apply} className="border-none bg-gradient-night-cta">
+        <Button type="button" size="sm" disabled={loading} onClick={apply} className="border-none bg-gradient-admin-cta">
           Сохранить категорию
         </Button>
       )}

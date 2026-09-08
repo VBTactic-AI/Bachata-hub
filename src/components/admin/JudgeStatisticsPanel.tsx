@@ -11,11 +11,11 @@ function pct(value: number | null): string {
 export function JudgeStatisticsPanel({ judges }: { judges: JudgeStatistics[] }) {
   if (judges.length === 0) return null;
   return (
-    <div className="mt-2 rounded-app border border-night-border bg-night-card p-3">
+    <div className="mt-2 rounded-app border border-admin-border bg-admin-card p-3">
       <p className="m-0 mb-2 font-semibold text-night-text">Статистика судей</p>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs font-semibold uppercase tracking-wide text-night-disabled">
+          <thead className="text-xs font-semibold uppercase tracking-wide text-admin-disabled">
             <tr>
               <th className="px-1 py-1.5 font-semibold">Судья</th>
               <th className="px-1 py-1.5 text-right font-semibold">Оценок</th>
@@ -27,13 +27,13 @@ export function JudgeStatisticsPanel({ judges }: { judges: JudgeStatistics[] }) 
           </thead>
           <tbody>
             {judges.map((j) => (
-              <tr key={j.judgeUserId} className="border-t border-night-border">
+              <tr key={j.judgeUserId} className="border-t border-admin-border">
                 <td className="px-1 py-1.5 text-night-text">{j.judgeEmail}</td>
-                <td className="px-1 py-1.5 text-right text-night-muted">{j.scoresCount}</td>
-                <td className="px-1 py-1.5 text-right text-night-muted">{pct(j.averageScore)}</td>
-                <td className="px-1 py-1.5 text-right text-night-muted">{j.scoreStdDev !== null ? j.scoreStdDev.toFixed(2) : "—"}</td>
-                <td className="px-1 py-1.5 text-right text-night-muted">{j.panelAgreement !== null ? j.panelAgreement.toFixed(2) : "—"}</td>
-                <td className="px-1 py-1.5 text-right text-night-muted">{pct(j.outlierRate)}</td>
+                <td className="px-1 py-1.5 text-right text-admin-muted">{j.scoresCount}</td>
+                <td className="px-1 py-1.5 text-right text-admin-muted">{pct(j.averageScore)}</td>
+                <td className="px-1 py-1.5 text-right text-admin-muted">{j.scoreStdDev !== null ? j.scoreStdDev.toFixed(2) : "—"}</td>
+                <td className="px-1 py-1.5 text-right text-admin-muted">{j.panelAgreement !== null ? j.panelAgreement.toFixed(2) : "—"}</td>
+                <td className="px-1 py-1.5 text-right text-admin-muted">{pct(j.outlierRate)}</td>
               </tr>
             ))}
           </tbody>

@@ -54,16 +54,27 @@ export default {
           muted: "#8d7c85",
           disabled: "#5f5158",
         },
-        // Акцент ТОЛЬКО для /admin (redesign по dark-SaaS reference,
-        // 2026-09-08) — по решению пользователя не заменяет фирменную
-        // маджента (night-primary) на остальном тёмном сайте (/compete,
-        // /judging, /login и т.д.), сознательно расходится с ним только в
-        // разделе администратора. База поверхностей (bg/card/border/text/
-        // muted) остаётся общей night-* — меняется только акцентный цвет.
+        // Палитра ТОЛЬКО для /admin (redesign по dark-SaaS reference,
+        // 2026-09-08 — изначально только акцент; 2026-09-09 — референс
+        // "Этапы отбора" явно потребовал navy-базу вместо тёплого
+        // маджента-оттенка night-bg/card/border, "минимум фиолетового").
+        // По решению пользователя НЕ заменяет остальной тёмный сайт
+        // (/compete, /judging, /login и т.д.) — тот остаётся на night-*
+        // (маджента). Judge UI (/judging/**), даже те файлы, что физически
+        // лежат в src/components/admin/ (JudgeScoreButtons.tsx,
+        // judging/FinalJudgingScreen.tsx), тоже НЕ используют этот namespace
+        // — узнаваемый по CLAUDE.md §40 принцип "не применять admin UI к
+        // интерфейсу судьи" распространяется и на цвет.
         admin: {
-          primary: "#6366f1",
-          primaryHover: "#818cf8",
+          primary: "#3b82f6",
+          primaryHover: "#60a5fa",
           violet: "#8b5cf6",
+          bg: "#05070d",
+          card: "#0d1220",
+          card2: "#131a2c",
+          border: "#1f2a44",
+          muted: "#8b95b3",
+          disabled: "#4b5573",
         },
       },
       fontFamily: {
@@ -101,7 +112,7 @@ export default {
         "gradient-primary": "linear-gradient(135deg, #a8296b 0%, #c9376f 100%)",
         "gradient-school": "linear-gradient(135deg, #f6d9e6, #fdf0e0)",
         "gradient-night-cta": "linear-gradient(100deg, #ff2d8a, #d6006c)",
-        "gradient-admin-cta": "linear-gradient(100deg, #6366f1, #4f46e5)",
+        "gradient-admin-cta": "linear-gradient(100deg, #3b82f6, #2563eb)",
         "gradient-night-hero":
           "radial-gradient(120% 90% at 25% 10%, rgba(255,45,138,0.4) 0%, transparent 58%), radial-gradient(100% 80% at 85% 95%, rgba(108,43,255,0.35) 0%, transparent 62%), linear-gradient(165deg, #331629, #120a12)",
       },

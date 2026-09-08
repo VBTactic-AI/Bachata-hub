@@ -29,7 +29,7 @@ export function CompetitionStatisticsPanel({ statistics }: { statistics: Competi
         ))}
       </div>
       {statistics.durationMinutes !== null && (
-        <p className="m-0 text-sm text-night-muted">
+        <p className="m-0 text-sm text-admin-muted">
           Длительность: {Math.round(statistics.durationMinutes / 60)} ч {statistics.durationMinutes % 60} мин
         </p>
       )}

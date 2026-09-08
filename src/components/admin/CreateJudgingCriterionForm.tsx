@@ -33,24 +33,24 @@ export function CreateJudgingCriterionForm() {
     router.refresh();
   }
 
-  const fieldClass = "border-night-border bg-night-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+  const fieldClass = "border-admin-border bg-admin-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   return (
     <FormRoot onSubmit={onSubmit} className="max-w-[420px]">
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         Название критерия
         <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Музыкальность" className={fieldClass} />
       </Label>
       <div className="flex flex-wrap items-end gap-2">
-        <Label className="text-night-muted">
+        <Label className="text-admin-muted">
           От
           <Input type="number" required value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className={fieldClass} style={{ maxWidth: 90 }} />
         </Label>
-        <Label className="text-night-muted">
+        <Label className="text-admin-muted">
           До
           <Input type="number" required value={maxScore} onChange={(e) => setMaxScore(Number(e.target.value))} className={fieldClass} style={{ maxWidth: 90 }} />
         </Label>
-        <Label className="text-night-muted">
+        <Label className="text-admin-muted">
           Шаг
           <Input type="number" min={1} required value={step} onChange={(e) => setStep(Number(e.target.value))} className={fieldClass} style={{ maxWidth: 90 }} />
         </Label>

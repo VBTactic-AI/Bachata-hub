@@ -7,7 +7,7 @@ const DOT_VARIANTS = {
   success: "bg-night-success",
   danger: "bg-red-400",
   warning: "bg-night-warning",
-  neutral: "bg-night-disabled",
+  neutral: "bg-admin-disabled",
 } as const;
 
 export function StatusBadge({
@@ -20,7 +20,7 @@ export function StatusBadge({
   className?: string;
 }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full bg-night-card2 px-2.5 py-1 text-xs font-semibold text-night-text", className)}>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full bg-admin-card2 px-2.5 py-1 text-xs font-semibold text-night-text", className)}>
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT_VARIANTS[variant])} aria-hidden="true" />
       {label}
     </span>

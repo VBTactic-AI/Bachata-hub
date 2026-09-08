@@ -24,7 +24,7 @@ export function CompetitionWorkspaceTabs({ tabs, defaultTab }: { tabs: Workspace
       <div
         role="tablist"
         aria-label="Разделы соревнования"
-        className="flex gap-1 overflow-x-auto rounded-app border border-night-border bg-night-card/50 p-1"
+        className="flex gap-1 overflow-x-auto rounded-app border border-admin-border bg-admin-card/50 p-1"
       >
         {tabs.map((tab) => {
           const isActive = tab.id === active;
@@ -36,7 +36,7 @@ export function CompetitionWorkspaceTabs({ tabs, defaultTab }: { tabs: Workspace
               aria-selected={isActive}
               onClick={() => setActive(tab.id)}
               className={`shrink-0 whitespace-nowrap rounded-app-sm px-4 py-2 text-sm font-semibold transition-colors ${
-                isActive ? "bg-admin-primary text-white shadow-sm" : "text-night-muted hover:bg-night-card2 hover:text-night-text"
+                isActive ? "bg-admin-primary text-white shadow-sm" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
               }`}
             >
               {tab.label}
