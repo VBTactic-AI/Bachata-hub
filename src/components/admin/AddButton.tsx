@@ -17,7 +17,12 @@ export function AddButton({
 
   if (open) {
     return (
-      <div className="rounded-app border border-admin-border bg-admin-card p-4">
+      // Ширина зафиксирована (w-full + max-w) — иначе панель меняет размер
+      // вместе с содержимым (например, когда после поиска появляется строка
+      // "Выбран: …") и, будучи прижатой к правому краю родительского flex-
+      // ряда (justify-between в page.tsx), визуально "уезжает" влево при
+      // каждом таком изменении содержимого (найдено пользователем, 2026-09-09).
+      <div className="w-full max-w-[480px] rounded-app border border-admin-border bg-admin-card p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <p className="m-0 text-sm font-semibold text-night-text">{label}</p>
           <button
@@ -29,7 +34,7 @@ export function AddButton({
             ✕
           </button>
         </div>
-        {children}
+        <div className="break-words">{children}</div>
       </div>
     );
   }

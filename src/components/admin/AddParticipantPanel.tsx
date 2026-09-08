@@ -54,7 +54,7 @@ export function AddParticipantPanel({ competitionId, divisions }: { competitionI
 
       {selected && (
         <div className="rounded-app-sm border border-admin-border bg-admin-card2/60 px-3 py-2 text-sm text-night-text">
-          Выбран: <strong>{selected.displayName}</strong> <span className="text-admin-muted">({selected.email})</span>
+          Выбран: <strong>{selected.displayName}</strong>
         </div>
       )}
 
