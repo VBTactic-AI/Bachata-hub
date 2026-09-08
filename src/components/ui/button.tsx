@@ -17,6 +17,13 @@ export const buttonVariants = cva(
           "border border-line bg-surface text-ink hover:border-primary hover:text-primary hover:-translate-y-px",
         ghost:
           "border-none bg-transparent p-0 shadow-none text-ink hover:text-primary",
+        // /admin-only variants (redesign, 2026-09-08) — раньше каждый тёмный
+        // экран навешивал className="border-none bg-gradient-night-cta" (или
+        // похожий) поверх variant="default" вручную, в каждом файле заново.
+        // Эти два — то же самое один раз, здесь, для нового admin-primary
+        // акцента (см. tailwind.config.ts).
+        admin: "border-none bg-gradient-admin-cta text-white shadow-sm hover:brightness-[1.06] active:scale-[0.97]",
+        adminOutline: "border border-night-border bg-transparent text-night-text hover:border-admin-primary hover:text-night-text",
       },
       size: {
         default: "px-[22px] py-2.5 text-[0.95rem]",

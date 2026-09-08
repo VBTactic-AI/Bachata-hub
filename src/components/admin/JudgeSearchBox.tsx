@@ -32,8 +32,8 @@ export function JudgeSearchBox({ competitionId, onSelect }: { competitionId: str
   }
 
   return (
-    <div className="rounded-app-sm border border-line bg-primary-light/40 p-3">
-      <label className="flex flex-col gap-1.5 text-[0.9rem] font-semibold">
+    <div className="rounded-app-sm border border-night-border bg-night-card2/60 p-3">
+      <label className="flex flex-col gap-1.5 text-[0.9rem] font-semibold text-night-text">
         Найти судью по имени
         <div className="flex gap-2">
           <Input
@@ -46,19 +46,20 @@ export function JudgeSearchBox({ competitionId, onSelect }: { competitionId: str
               }
             }}
             placeholder="Иван* — подстановка в начале/конце имени"
+            className="border-night-border bg-night-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
           />
-          <Button type="button" size="sm" variant="secondary" disabled={loading || query.trim().length < 2} onClick={search}>
+          <Button type="button" size="sm" variant="adminOutline" disabled={loading || query.trim().length < 2} onClick={search}>
             Найти
           </Button>
         </div>
       </label>
 
-      {error && <p className="error-text mt-2">{error}</p>}
+      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
 
       {results && (
-        <div className="mt-2 stack gap-1.5">
+        <div className="mt-2 flex flex-col gap-1.5">
           {results.length === 0 ? (
-            <p className="hint-text">Никого не нашлось — впишите email вручную ниже.</p>
+            <p className="text-sm text-night-muted">Никого не нашлось — впишите email вручную ниже.</p>
           ) : (
             results.map((j) => (
               <button
@@ -69,10 +70,10 @@ export function JudgeSearchBox({ competitionId, onSelect }: { competitionId: str
                   setResults(null);
                   setQuery(j.displayName);
                 }}
-                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-app-sm border border-line bg-surface px-3 py-2 text-left hover:border-primary"
+                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-left hover:border-admin-primary"
               >
-                <span className="font-semibold text-ink">{j.displayName}</span>
-                <span className="hint-text">{j.email}</span>
+                <span className="font-semibold text-night-text">{j.displayName}</span>
+                <span className="text-sm text-night-muted">{j.email}</span>
               </button>
             ))
           )}

@@ -46,6 +46,7 @@ import { CompetitionHeader } from "@/components/admin/CompetitionHeader";
 import { CompetitionWorkspaceTabs } from "@/components/admin/CompetitionWorkspaceTabs";
 import { ParticipantsPanel } from "@/components/admin/ParticipantsPanel";
 import { StatCard } from "@/components/admin/StatCard";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -216,9 +217,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // соревнования выше, отдельным запросом не тянем (docs/00_DECISIONS.md,
   // A13 — один судья может судить несколько дивизионов).
   const competitionJudgePoolMap = new Map<string, PoolJudge>();
+  // Только для отображения в "Общий список судей" (сколько категорий судит
+  // каждый) — не часть контракта DivisionJudgesPanel, отдельная структура.
+  const judgeDivisionCounts = new Map<string, Set<string>>();
   for (const d of competition.divisions) {
     for (const ja of d.judgeAssignments) {
       competitionJudgePoolMap.set(ja.judgeUserId, { judgeUserId: ja.judgeUserId, judgeEmail: ja.judge.email });
+      const set = judgeDivisionCounts.get(ja.judgeUserId) ?? new Set<string>();
+      set.add(d.id);
+      judgeDivisionCounts.set(ja.judgeUserId, set);
     }
   }
   const competitionJudgePool = [...competitionJudgePoolMap.values()].sort((a, b) => a.judgeEmail.localeCompare(b.judgeEmail));
@@ -434,12 +441,21 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {competitionJudgePool.length > 0 && (
         <Card className="border-night-border bg-night-card">
           <p className="m-0 mb-2 font-semibold text-night-text">Общий список судей</p>
-          <ul className="m-0 flex flex-col gap-1 pl-4">
-            {competitionJudgePool.map((j) => (
-              <li key={j.judgeUserId} className="text-sm text-night-muted">
-                {j.judgeEmail}
-              </li>
-            ))}
+          <ul className="m-0 flex flex-col gap-2 pl-0">
+            {competitionJudgePool.map((j) => {
+              const categoriesCount = judgeDivisionCounts.get(j.judgeUserId)?.size ?? 0;
+              return (
+                <li key={j.judgeUserId} className="flex flex-wrap items-center justify-between gap-2 border-t border-night-border pt-2 first:border-t-0 first:pt-0">
+                  <span className="text-sm text-night-text">{j.judgeEmail}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs text-night-muted">
+                      {categoriesCount} {categoriesCount === 1 ? "категория" : "категории(й)"}
+                    </span>
+                    <StatusBadge label="Активен" variant="success" />
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}
