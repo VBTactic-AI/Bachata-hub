@@ -63,7 +63,11 @@ export type AddDivisionInput = z.infer<typeof addDivisionSchema>;
 // здесь (для этого — смена дивизиона у конкретной регистрации,
 // change-registration-division.ts, другой смысл).
 export const updateDivisionSettingsSchema = z.object({
-  heatCapacity: z.coerce.number().int().positive(),
+  // Необязательное — присылается только панелью категории (вкладка
+  // "Категории"), не панелью ротации (вкладка "Раунды", временное
+  // расположение, 2026-09-09). updateDivisionSettings() дополнительно
+  // проверяет, что для категории ещё не сгенерированы раунды.
+  heatCapacity: z.coerce.number().int().positive().optional(),
   rotationMode: rotationModeSchema,
   rotationIntervalSec: z.coerce.number().int().positive(),
   rotationShiftMin: z.coerce.number().int().positive(),
@@ -73,6 +77,13 @@ export const updateDivisionSettingsSchema = z.object({
   // updateDivisionSettings() дополнительно проверяет, что соревнование ещё
   // не началось (см. там же).
   judgingMaxScore: judgingMaxScoreSchema.optional(),
+  // Необязательное — присылается только панелью категории (вкладка
+  // "Категории", 2026-09-09), не при создании (там — addDivisionSchema).
+  // Разворот A14: план по этапам стал редактируемым, но ТОЛЬКО пока для
+  // категории не сгенерированы раунды (см. updateDivisionSettings()) —
+  // после генерации план уже "зафиксирован" в Round.finalistsCount, дальше
+  // менять его без пересборки раундов не имеет смысла.
+  stagePlan: z.array(divisionStagePlanEntrySchema).optional(),
 });
 export type UpdateDivisionSettingsInput = z.infer<typeof updateDivisionSettingsSchema>;
 

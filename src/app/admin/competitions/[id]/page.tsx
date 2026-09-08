@@ -8,9 +8,8 @@ import { measureServerOperation } from "@/lib/performance-debug/server";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
 import { Card } from "@/components/ui/card";
-import { AddDivisionForm } from "@/components/admin/AddDivisionForm";
 import { DivisionSettingsPanel } from "@/components/admin/DivisionSettingsPanel";
-import { DeleteDivisionButton } from "@/components/admin/DeleteDivisionButton";
+import { DivisionsOverviewTable, type DivisionOverviewRow } from "@/components/admin/DivisionsOverviewTable";
 import { CompetitionStatusControls } from "@/components/admin/CompetitionStatusControls";
 import { RegisterSelfForm } from "@/components/admin/RegisterSelfForm";
 import { AddParticipantPanel } from "@/components/admin/AddParticipantPanel";
@@ -59,6 +58,8 @@ import {
   ROUND_TYPE_LABELS,
   ROUND_STATUS_LABELS,
   HEAT_STATUS_LABELS,
+  JUDGING_MAX_SCORE_LABELS,
+  FINAL_FORMAT_LABELS,
 } from "@/lib/competition-labels";
 
 export default async function CompetitionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -739,7 +740,39 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     </div>
   );
 
-  const categoriesContent = (
+  // "Категории" (redesign 2026-09-09, по референсу пользователя) — только
+  // сводная таблица + добавление/редактирование (DivisionsOverviewTable).
+  // Раунды/жеребьёвка/финал/ротация партнёров переехали на вкладку "Раунды"
+  // ниже (roundsContent) — пользователь ещё не решил их окончательное
+  // расположение (возможно, отдельная вкладка "Монитор" или под-вкладки по
+  // категориям), поэтому пока это временный, явно обозначенный дом для этой
+  // функциональности, а не изменение самой функциональности.
+  const divisionOverviewRows: DivisionOverviewRow[] = competition.divisions.map((d) => ({
+    id: d.id,
+    categoryName: d.category.name,
+    heatCapacity: d.heatCapacity,
+    rotationMode: d.rotationMode,
+    rotationIntervalSec: d.rotationIntervalSec,
+    rotationShiftMin: d.rotationShiftMin,
+    rotationShiftMax: d.rotationShiftMax,
+    judgingMaxScoreLabel: JUDGING_MAX_SCORE_LABELS[d.judgingMaxScore] ?? String(d.judgingMaxScore),
+    finalFormatLabel: FINAL_FORMAT_LABELS[d.finalSettings?.format ?? "NORMAL"],
+    stagePlan: d.stagePlan.map((p) => ({ stageId: p.stageId, participantCount: p.participantCount })),
+    locked: d.rounds.length > 0,
+  }));
+
+  const categoriesContent = canManage ? (
+    <DivisionsOverviewTable
+      competitionId={competition.id}
+      divisions={divisionOverviewRows}
+      availableCategories={activeCategories.filter((c) => !competition.divisions.some((d) => d.categoryId === c.id))}
+      stages={activeStages}
+    />
+  ) : (
+    <p className="text-sm text-admin-muted">Нет прав на управление категориями.</p>
+  );
+
+  const roundsContent = (
     <div>
         {competition.divisions.length === 0 ? (
           <p className="hint-text">Категорий пока нет.</p>
@@ -747,21 +780,16 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           <div className="stack gap-3">
             {competition.divisions.map((d) => (
               <Card key={d.id}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <strong>{d.category.name}</strong>
-                  {canManage && <DeleteDivisionButton divisionId={d.id} hasRegistrations={d._count.registrations > 0} />}
-                </div>
+                <p className="m-0 font-semibold text-night-text">{d.category.name}</p>
                 {canManage && (
                   <DivisionSettingsPanel
                     divisionId={d.id}
                     settings={{
-                      heatCapacity: d.heatCapacity,
                       rotationMode: d.rotationMode,
                       rotationIntervalSec: d.rotationIntervalSec,
                       rotationShiftMin: d.rotationShiftMin,
                       rotationShiftMax: d.rotationShiftMax,
                     }}
-                    judgingMaxScore={d.judgingMaxScore}
                   />
                 )}
                 {canManageRounds && (
@@ -1100,15 +1128,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             ))}
           </div>
         )}
-        {canManage && (
-          <AddDivisionForm
-            competitionId={competition.id}
-            categories={activeCategories.filter(
-              (c) => !competition.divisions.some((d) => d.categoryId === c.id)
-            )}
-            stages={activeStages}
-          />
-        )}
     </div>
   );
 
@@ -1125,6 +1144,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         tabs={[
           { id: "overview", label: "Основное", content: overviewContent },
           { id: "categories", label: "Категории", content: categoriesContent },
+          { id: "rounds", label: "Раунды", content: roundsContent },
           { id: "participants", label: "Участники", content: participantsContent },
           { id: "judges", label: "Судьи", content: judgesContent },
           { id: "charts", label: "Графики", content: chartsContent },

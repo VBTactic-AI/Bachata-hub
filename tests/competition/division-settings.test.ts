@@ -12,11 +12,12 @@ const txDivisionUpdate = vi.fn();
 const txDivisionDelete = vi.fn();
 const txDivisionCreate = vi.fn();
 const txDivisionStagePlanCreateMany = vi.fn();
+const txDivisionStagePlanDeleteMany = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
   division: { update: txDivisionUpdate, delete: txDivisionDelete, create: txDivisionCreate },
-  divisionStagePlan: { createMany: txDivisionStagePlanCreateMany },
+  divisionStagePlan: { createMany: txDivisionStagePlanCreateMany, deleteMany: txDivisionStagePlanDeleteMany },
   auditLog: { create: auditCreate },
 };
 
@@ -44,6 +45,10 @@ const currentSettings = {
   rotationIntervalSec: 30,
   rotationShiftMin: 1,
   rotationShiftMax: 3,
+  judgingMaxScore: 1,
+  competition: { status: "DRAFT" },
+  _count: { rounds: 0 },
+  stagePlan: [] as { stageId: string; participantCount: number }[],
 };
 
 const validInput = {
@@ -64,6 +69,7 @@ beforeEach(() => {
   txDivisionDelete.mockReset();
   txDivisionCreate.mockReset().mockResolvedValue({ id: "div1", categoryId: "cat1" });
   txDivisionStagePlanCreateMany.mockReset();
+  txDivisionStagePlanDeleteMany.mockReset();
   auditCreate.mockReset();
 });
 
@@ -89,6 +95,50 @@ describe("updateDivisionSettings() — вместимость/ротация у�
       updateDivisionSettings("div1", { ...validInput, rotationShiftMin: 5, rotationShiftMax: 2 })
     ).rejects.toBeInstanceOf(ValidationFailedError);
     expect(txDivisionUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// Вместимость паркета и план по этапам стали редактируемыми через панель
+// категории (2026-09-09, разворот A14), но только пока для категории не
+// сгенерированы раунды — организатор сам назвал это границей "категория
+// стартовала".
+describe("updateDivisionSettings() — вместимость и план по этапам заблокированы после генерации раундов", () => {
+  it("разрешает менять вместимость, если раундов ещё нет", async () => {
+    await updateDivisionSettings("div1", validInput);
+    expect(txDivisionUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ heatCapacity: 12 }) }));
+  });
+
+  it("отклоняет изменение вместимости, если раунды уже сгенерированы", async () => {
+    divisionFindUniqueOrThrow.mockResolvedValue({ ...currentSettings, _count: { rounds: 2 } });
+
+    await expect(updateDivisionSettings("div1", validInput)).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txDivisionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("разрешает менять план по этапам, если раундов ещё нет", async () => {
+    roundStageCatalogFindMany.mockResolvedValue([{ id: "st-final", isActive: true }]);
+
+    await updateDivisionSettings("div1", { ...validInput, stagePlan: [{ stageId: "st-final", participantCount: 6 }] });
+
+    expect(txDivisionStagePlanDeleteMany).toHaveBeenCalledWith({ where: { divisionId: "div1" } });
+    expect(txDivisionStagePlanCreateMany).toHaveBeenCalledWith({
+      data: [{ divisionId: "div1", stageId: "st-final", participantCount: 6 }],
+    });
+  });
+
+  it("отклоняет изменение плана по этапам, если раунды уже сгенерированы", async () => {
+    divisionFindUniqueOrThrow.mockResolvedValue({ ...currentSettings, _count: { rounds: 1 } });
+
+    await expect(
+      updateDivisionSettings("div1", { ...validInput, stagePlan: [{ stageId: "st-final", participantCount: 6 }] })
+    ).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txDivisionStagePlanDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("не трогает divisionStagePlan вовсе, если stagePlan не передан", async () => {
+    await updateDivisionSettings("div1", validInput);
+    expect(txDivisionStagePlanDeleteMany).not.toHaveBeenCalled();
+    expect(txDivisionStagePlanCreateMany).not.toHaveBeenCalled();
   });
 });
 

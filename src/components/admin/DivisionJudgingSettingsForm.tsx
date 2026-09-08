@@ -20,15 +20,15 @@ const FIELD_CLASS = "border-admin-border bg-admin-card2 text-sm text-night-text 
 // "Сохранить", без полной формы финала (критерии по-прежнему настраиваются
 // там же, на "Категории").
 //
-// PATCH/PUT — те же самые full-object эндпоинты, что уже использует
-// DivisionSettingsPanel/FinalSettingsPanel: недостающие поля отправляются
-// как есть, без изменений, чтобы не задеть настройки, о которых эта форма
-// не знает (вместимость заезда/ротация, критерии/scoring-matrix финала).
+// PATCH/PUT — те же самые эндпоинты, что уже используют DivisionSettingsPanel
+// (ротация)/FinalSettingsPanel (критерии): ротация отправляется как есть, без
+// изменений (heatCapacity сюда больше не входит — теперь редактируется
+// отдельно, панелью категории на вкладке "Категории", 2026-09-09), чтобы не
+// задеть настройки, о которых эта форма не знает.
 export function DivisionJudgingSettingsForm({
   divisionId,
   judgingMaxScore: initialJudgingMaxScore,
   judgingMaxScoreDisabledReason,
-  heatCapacity,
   rotationMode,
   rotationIntervalSec,
   rotationShiftMin,
@@ -42,7 +42,6 @@ export function DivisionJudgingSettingsForm({
   divisionId: string;
   judgingMaxScore: number;
   judgingMaxScoreDisabledReason: string | null;
-  heatCapacity: number;
   rotationMode: "TRACK_AUTO_SHIFT" | "SEGMENT_MANUAL_SHIFT";
   rotationIntervalSec: number;
   rotationShiftMin: number;
@@ -72,7 +71,7 @@ export function DivisionJudgingSettingsForm({
         fetch(`/api/divisions/${divisionId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ heatCapacity, rotationMode, rotationIntervalSec, rotationShiftMin, rotationShiftMax, judgingMaxScore }),
+          body: JSON.stringify({ rotationMode, rotationIntervalSec, rotationShiftMin, rotationShiftMax, judgingMaxScore }),
         })
       );
     }

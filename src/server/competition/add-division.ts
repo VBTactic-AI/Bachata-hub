@@ -123,6 +123,8 @@ export async function updateDivisionSettings(divisionId: string, input: UpdateDi
       rotationShiftMax: true,
       judgingMaxScore: true,
       competition: { select: { status: true } },
+      _count: { select: { rounds: true } },
+      stagePlan: { select: { stageId: true, participantCount: true } },
     },
   });
   const actor = await requirePermission("competition:update", division.competitionId);
@@ -135,16 +137,66 @@ export async function updateDivisionSettings(divisionId: string, input: UpdateDi
     throw new ValidationFailedError("Метод оценки раундов до финала можно менять только до старта соревнования.");
   }
 
+  // Вместимость паркета и план по этапам — по прямому запросу пользователя
+  // (2026-09-09) стали редактируемыми через панель категории, но ТОЛЬКО пока
+  // для категории ещё не сгенерированы раунды ("категория стартовала" —
+  // организатор сам это назвал границей: как только раунды есть, менять
+  // ничего нельзя, кнопка редактирования на экране становится неактивной).
+  // Раунды уже хранят свой снимок (Round.finalistsCount/heatCapacity) —
+  // задним числом им это не грозит (CLAUDE.md §50-51), но дальше план и
+  // вместимость применяются только через "Перегенерировать раунды".
+  const hasRounds = division._count.rounds > 0;
+  if (input.heatCapacity !== undefined && hasRounds) {
+    throw new ValidationFailedError("Вместимость паркета можно менять только пока для категории не сгенерированы раунды.");
+  }
+  if (input.stagePlan !== undefined) {
+    if (hasRounds) {
+      throw new ValidationFailedError("План по этапам можно менять только пока для категории не сгенерированы раунды.");
+    }
+    const stageIds = input.stagePlan.map((s) => s.stageId);
+    if (new Set(stageIds).size !== stageIds.length) {
+      throw new ValidationFailedError("В плане по этапам один и тот же этап указан дважды.");
+    }
+    if (stageIds.length > 0) {
+      const stages = await prisma.roundStageCatalog.findMany({ where: { id: { in: stageIds }, isActive: true } });
+      if (stages.length !== stageIds.length) {
+        throw new ValidationFailedError("В плане по этапам есть недоступный этап.");
+      }
+    }
+  }
+
+  const { stagePlan, ...divisionFields } = input;
+
   await prisma.$transaction(async (tx) => {
-    await tx.division.update({ where: { id: divisionId }, data: input });
+    await tx.division.update({ where: { id: divisionId }, data: divisionFields });
     await writeAudit(tx, {
       actor,
       action: "division.update_settings",
       entityType: "Division",
       entityId: divisionId,
       before: division,
-      after: input,
+      after: divisionFields,
     });
+
+    if (stagePlan !== undefined) {
+      // Реконсиляция полной заменой (как и при создании нет частичного
+      // patch-а на один этап) — старый план целиком снимается, новый
+      // создаётся заново; безопасно, т.к. hasRounds уже проверен выше.
+      await tx.divisionStagePlan.deleteMany({ where: { divisionId } });
+      if (stagePlan.length > 0) {
+        await tx.divisionStagePlan.createMany({
+          data: stagePlan.map((s) => ({ divisionId, stageId: s.stageId, participantCount: s.participantCount })),
+        });
+      }
+      await writeAudit(tx, {
+        actor,
+        action: "division.update_stage_plan",
+        entityType: "Division",
+        entityId: divisionId,
+        before: { stagePlan: division.stagePlan },
+        after: { stagePlan },
+      });
+    }
   });
 }
 

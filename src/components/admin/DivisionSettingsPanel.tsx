@@ -3,45 +3,30 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label, Input, Select } from "@/components/ui/field";
-import { ROTATION_MODE_LABELS, JUDGING_MAX_SCORE_LABELS } from "@/lib/competition-labels";
+import { ROTATION_MODE_LABELS } from "@/lib/competition-labels";
 
 type RotationMode = "TRACK_AUTO_SHIFT" | "SEGMENT_MANUAL_SHIFT";
 
 export type DivisionSettings = {
-  heatCapacity: number;
   rotationMode: RotationMode;
   rotationIntervalSec: number;
   rotationShiftMin: number;
   rotationShiftMax: number;
 };
 
-// Вместимость/ротация по умолчанию меняются НЕ голым полем на виду — только
-// через явный "режим редактирования" (по запросу пользователя, 2026-09-04):
-// обычно просто текст, форма для правки открывается кнопкой, чтобы не задеть
-// значение, которое уже используется в расчётах, случайным кликом.
+// Ротация партнёров по умолчанию — временное расположение (вкладка "Раунды",
+// 2026-09-09): вместимость паркета и метод оценки переехали в панель
+// категории/"Настройки судейства" соответственно, здесь остаётся только
+// ротация. Пользователь ещё не решил, где эта настройка будет жить
+// окончательно — размещение может снова поменяться.
 //
-// После сохранения обновляем только текст на этой карточке (`current`), а не
-// всю страницу соревнования через router.refresh() — сервер уже подтвердил,
-// что записал ИМЕННО те значения, что мы отправили (updateDivisionSettings
-// не пересчитывает и не отклоняет их частично), значит переспрашивать всю
-// карточку соревнования заново ради одной строки текста не нужно. Остальной
-// странице (расчёты раундов и т.п.) актуальное значение придёт при следующей
-// её собственной перезагрузке — здесь важна только эта надпись.
-// judgingMaxScore передаётся отдельным пропом, а не частью DivisionSettings
-// — это поле не входит в форму редактирования (фиксируется один раз при
-// создании дивизиона, docs/00_DECISIONS.md), здесь только отображается.
-export function DivisionSettingsPanel({
-  divisionId,
-  settings,
-  judgingMaxScore,
-}: {
-  divisionId: string;
-  settings: DivisionSettings;
-  judgingMaxScore: number;
-}) {
+// Меняется НЕ голым полем на виду — только через явный "режим редактирования"
+// (по запросу пользователя, 2026-09-04): форма для правки открывается
+// кнопкой, чтобы не задеть значение, которое уже используется в расчётах,
+// случайным кликом.
+export function DivisionSettingsPanel({ divisionId, settings }: { divisionId: string; settings: DivisionSettings }) {
   const [current, setCurrent] = useState(settings);
   const [editing, setEditing] = useState(false);
-  const [heatCapacity, setHeatCapacity] = useState(String(settings.heatCapacity));
   const [rotationMode, setRotationMode] = useState<RotationMode>(settings.rotationMode);
   const [rotationIntervalSec, setRotationIntervalSec] = useState(String(settings.rotationIntervalSec));
   const [rotationShiftMin, setRotationShiftMin] = useState(String(settings.rotationShiftMin));
@@ -50,7 +35,6 @@ export function DivisionSettingsPanel({
   const [error, setError] = useState<string | null>(null);
 
   function resetToCurrent() {
-    setHeatCapacity(String(current.heatCapacity));
     setRotationMode(current.rotationMode);
     setRotationIntervalSec(String(current.rotationIntervalSec));
     setRotationShiftMin(String(current.rotationShiftMin));
@@ -62,7 +46,6 @@ export function DivisionSettingsPanel({
     setLoading(true);
     setError(null);
     const next: DivisionSettings = {
-      heatCapacity: Number(heatCapacity),
       rotationMode,
       rotationIntervalSec: Number(rotationIntervalSec),
       rotationShiftMin: Number(rotationShiftMin),
@@ -87,11 +70,9 @@ export function DivisionSettingsPanel({
     return (
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <p className="hint-text">
-          Вместимость захода: {current.heatCapacity} · Ротация: {ROTATION_MODE_LABELS[current.rotationMode] ?? current.rotationMode}
+          Ротация: {ROTATION_MODE_LABELS[current.rotationMode] ?? current.rotationMode}
           {current.rotationMode === "SEGMENT_MANUAL_SHIFT" && ` (${current.rotationShiftMin}–${current.rotationShiftMax} партнёров)`}
           {current.rotationMode === "TRACK_AUTO_SHIFT" && ` (каждые ${current.rotationIntervalSec} сек)`}
-          {" · Оценка: "}
-          {JUDGING_MAX_SCORE_LABELS[judgingMaxScore] ?? judgingMaxScore}
         </p>
         <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(true)}>
           изменить настройки
@@ -102,19 +83,13 @@ export function DivisionSettingsPanel({
 
   return (
     <div className="stack gap-2 mt-2 rounded-app-sm border border-line p-3">
-      <div className="flex flex-wrap gap-3">
-        <Label>
-          Вместимость захода
-          <Input type="number" min={1} value={heatCapacity} onChange={(e) => setHeatCapacity(e.target.value)} />
-        </Label>
-        <Label>
-          Ротация партнёров по умолчанию
-          <Select value={rotationMode} onChange={(e) => setRotationMode(e.target.value as RotationMode)}>
-            <option value="TRACK_AUTO_SHIFT">{ROTATION_MODE_LABELS.TRACK_AUTO_SHIFT}</option>
-            <option value="SEGMENT_MANUAL_SHIFT">{ROTATION_MODE_LABELS.SEGMENT_MANUAL_SHIFT}</option>
-          </Select>
-        </Label>
-      </div>
+      <Label>
+        Ротация партнёров по умолчанию
+        <Select value={rotationMode} onChange={(e) => setRotationMode(e.target.value as RotationMode)}>
+          <option value="TRACK_AUTO_SHIFT">{ROTATION_MODE_LABELS.TRACK_AUTO_SHIFT}</option>
+          <option value="SEGMENT_MANUAL_SHIFT">{ROTATION_MODE_LABELS.SEGMENT_MANUAL_SHIFT}</option>
+        </Select>
+      </Label>
       {rotationMode === "TRACK_AUTO_SHIFT" ? (
         <Label className="max-w-[220px]">
           Интервал смены внутри трека (сек)
