@@ -414,10 +414,52 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     </div>
   );
 
-  const chartsContent = canViewStatistics ? (
-    <StatisticsSection competitionId={competition.id} />
-  ) : (
-    <p className="text-sm text-night-muted">Нет доступа к статистике.</p>
+  // Прохождение участников по этапам — сколько реальных (scored=true)
+  // участников было вызвано на паркет в каждом обычном раунде дивизиона, по
+  // порядку. Из уже загруженного дерева competition.divisions, без новых
+  // запросов; TIE_BREAK-раунды сюда не входят (это не основной путь по
+  // сетке, а отдельная развязка ничьей).
+  const advancementFunnels = competition.divisions
+    .map((d) => ({
+      categoryName: d.category.name,
+      stages: d.rounds
+        .filter((r) => r.type === null)
+        .sort((a, b) => a.order - b.order)
+        .map((r) => ({
+          name: r.stage?.name ?? "—",
+          calledCount: r.heats.reduce((sum, h) => sum + (h.draws[0]?.participants.filter((p) => p.scored).length ?? 0), 0),
+        })),
+    }))
+    .filter((f) => f.stages.length > 0);
+
+  const chartsContent = (
+    <div className="flex flex-col gap-4">
+      {canManageRounds && advancementFunnels.length > 0 && (
+        <Card className="border-night-border bg-night-card">
+          <p className="m-0 mb-2 font-semibold text-night-text">Прохождение участников по этапам</p>
+          <div className="flex flex-col gap-2">
+            {advancementFunnels.map((f) => (
+              <div key={f.categoryName} className="flex flex-wrap items-center gap-1.5 text-sm">
+                <span className="mr-1 font-medium text-night-text">{f.categoryName}:</span>
+                {f.stages.map((s, i) => (
+                  <span key={i} className="flex items-center gap-1.5 text-night-muted">
+                    {i > 0 && <span className="text-night-disabled">→</span>}
+                    <span className="rounded-full bg-night-card2 px-2.5 py-1">
+                      {s.name} <span className="font-semibold text-night-text">{s.calledCount}</span>
+                    </span>
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {canViewStatistics ? (
+        <StatisticsSection competitionId={competition.id} />
+      ) : (
+        <p className="text-sm text-night-muted">Нет доступа к статистике.</p>
+      )}
+    </div>
   );
 
   const settingsContent = canEditPublicInfo ? (

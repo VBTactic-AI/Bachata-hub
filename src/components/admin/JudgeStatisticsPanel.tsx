@@ -11,29 +11,29 @@ function pct(value: number | null): string {
 export function JudgeStatisticsPanel({ judges }: { judges: JudgeStatistics[] }) {
   if (judges.length === 0) return null;
   return (
-    <div className="rounded-app-sm border border-line p-3 mt-2">
-      <p className="m-0 font-semibold">Статистика судей</p>
+    <div className="mt-2 rounded-app border border-night-border bg-night-card p-3">
+      <p className="m-0 mb-2 font-semibold text-night-text">Статистика судей</p>
       <div className="overflow-x-auto">
-        <table className="w-full mt-1 text-sm">
-          <thead>
+        <table className="w-full text-left text-sm">
+          <thead className="text-xs font-semibold uppercase tracking-wide text-night-disabled">
             <tr>
-              <th className="text-left">Судья</th>
-              <th className="text-right px-1">Оценок</th>
-              <th className="text-right px-1">Средний балл</th>
-              <th className="text-right px-1">Разброс</th>
-              <th className="text-right px-1">Согласие с панелью</th>
-              <th className="text-right px-1">Доля выбросов</th>
+              <th className="px-1 py-1.5 font-semibold">Судья</th>
+              <th className="px-1 py-1.5 text-right font-semibold">Оценок</th>
+              <th className="px-1 py-1.5 text-right font-semibold">Средний балл</th>
+              <th className="px-1 py-1.5 text-right font-semibold">Разброс</th>
+              <th className="px-1 py-1.5 text-right font-semibold">Согласие с панелью</th>
+              <th className="px-1 py-1.5 text-right font-semibold">Доля выбросов</th>
             </tr>
           </thead>
           <tbody>
             {judges.map((j) => (
-              <tr key={j.judgeUserId}>
-                <td>{j.judgeEmail}</td>
-                <td className="text-right px-1">{j.scoresCount}</td>
-                <td className="text-right px-1">{pct(j.averageScore)}</td>
-                <td className="text-right px-1">{j.scoreStdDev !== null ? j.scoreStdDev.toFixed(2) : "—"}</td>
-                <td className="text-right px-1">{j.panelAgreement !== null ? j.panelAgreement.toFixed(2) : "—"}</td>
-                <td className="text-right px-1">{pct(j.outlierRate)}</td>
+              <tr key={j.judgeUserId} className="border-t border-night-border">
+                <td className="px-1 py-1.5 text-night-text">{j.judgeEmail}</td>
+                <td className="px-1 py-1.5 text-right text-night-muted">{j.scoresCount}</td>
+                <td className="px-1 py-1.5 text-right text-night-muted">{pct(j.averageScore)}</td>
+                <td className="px-1 py-1.5 text-right text-night-muted">{j.scoreStdDev !== null ? j.scoreStdDev.toFixed(2) : "—"}</td>
+                <td className="px-1 py-1.5 text-right text-night-muted">{j.panelAgreement !== null ? j.panelAgreement.toFixed(2) : "—"}</td>
+                <td className="px-1 py-1.5 text-right text-night-muted">{pct(j.outlierRate)}</td>
               </tr>
             ))}
           </tbody>

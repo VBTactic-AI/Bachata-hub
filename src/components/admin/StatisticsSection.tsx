@@ -46,11 +46,11 @@ export function StatisticsSection({ competitionId }: { competitionId: string }) 
   }
 
   return (
-    <div className="rounded-app-sm border border-line p-3">
-      <Button type="button" size="sm" variant="outline" onClick={load} disabled={loading}>
+    <div className="rounded-app border border-night-border bg-night-card p-4">
+      <Button type="button" size="sm" variant="adminOutline" onClick={load} disabled={loading}>
         {loading ? "Считаю статистику…" : "Показать статистику соревнования и судей"}
       </Button>
-      {error && <span className="error-text ml-2">{error}</span>}
+      {error && <span className="ml-2 text-sm text-red-400">{error}</span>}
     </div>
   );
 }
