@@ -97,36 +97,36 @@ export function DivisionsOverviewTable({
           <p className="m-0 text-sm text-admin-muted">Категорий пока нет.</p>
         ) : (
           <div className="overflow-x-auto rounded-app border border-admin-border">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-admin-card2 text-[0.7rem] font-semibold uppercase tracking-wide text-admin-disabled">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
                 <tr>
-                  <th className="px-2 py-2 font-semibold">№</th>
-                  <th className="px-2 py-2 font-semibold">Категория</th>
-                  <th className="px-2 py-2 font-semibold">Мест</th>
-                  <th className="px-2 py-2 font-semibold">Метод судейства</th>
-                  <th className="px-2 py-2 font-semibold">Финал</th>
-                  <th className="px-2 py-2 font-semibold">Этапы</th>
-                  <th className="px-2 py-2 text-right font-semibold">Действия</th>
+                  <th className="px-3 py-2.5 font-semibold">№</th>
+                  <th className="px-3 py-2.5 font-semibold">Категория</th>
+                  <th className="px-3 py-2.5 font-semibold">Мест на паркете</th>
+                  <th className="px-3 py-2.5 font-semibold">Метод судейства</th>
+                  <th className="px-3 py-2.5 font-semibold">Финал</th>
+                  <th className="px-3 py-2.5 font-semibold">Этапы</th>
+                  <th className="px-3 py-2.5 text-right font-semibold">Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {divisions.map((d, i) => (
                   <tr key={d.id} className="border-t border-admin-border">
-                    <td className="px-2 py-1.5 align-middle text-admin-muted">{i + 1}</td>
-                    <td className="px-2 py-1.5 align-middle font-medium text-night-text">
-                      <span className="flex items-center gap-1.5 whitespace-nowrap">
-                        <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: DOT_COLORS[i % DOT_COLORS.length] }} aria-hidden="true" />
+                    <td className="px-3 py-3 align-middle text-admin-muted">{i + 1}</td>
+                    <td className="px-3 py-3 align-middle font-medium text-night-text">
+                      <span className="flex items-center gap-2 whitespace-nowrap">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: DOT_COLORS[i % DOT_COLORS.length] }} aria-hidden="true" />
                         {d.categoryName}
                       </span>
                     </td>
-                    <td className="px-2 py-1.5 align-middle text-admin-muted">{d.heatCapacity}</td>
-                    <td className="px-2 py-1.5 align-middle whitespace-nowrap text-admin-muted">{d.judgingMaxScoreLabel}</td>
-                    <td className="px-2 py-1.5 align-middle whitespace-nowrap text-admin-muted">{d.finalFormatLabel}</td>
-                    <td className="px-2 py-1.5 align-middle whitespace-nowrap text-admin-muted">
-                      {d.stagePlan.length > 0 ? d.stagePlan.map((p) => p.participantCount).join("/") : "—"}
+                    <td className="px-3 py-3 align-middle text-admin-muted">{d.heatCapacity}</td>
+                    <td className="px-3 py-3 align-middle text-admin-muted">{d.judgingMaxScoreLabel}</td>
+                    <td className="px-3 py-3 align-middle text-admin-muted">{d.finalFormatLabel}</td>
+                    <td className="px-3 py-3 align-middle text-admin-muted">
+                      {d.stagePlan.length > 0 ? d.stagePlan.map((p) => p.participantCount).join(" / ") : "—"}
                     </td>
-                    <td className="px-2 py-1.5 align-middle">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-3 py-3 align-middle">
+                      <div className="flex items-center justify-end gap-3">
                         <button
                           type="button"
                           disabled={d.locked}
