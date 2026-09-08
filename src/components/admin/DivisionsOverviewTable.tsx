@@ -72,21 +72,85 @@ export function DivisionsOverviewTable({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="m-0 mb-1 font-semibold text-night-text">Категории соревнования</p>
-          <p className="m-0 text-sm text-admin-muted">Настройте категории, которые будут участвовать в этом соревновании.</p>
+    // Панель добавления/редактирования — компактным блоком СПРАВА от таблицы
+    // (по референсу пользователя, 2026-09-09), не растянута сверху во всю
+    // ширину. Грид вместо flex-row, чтобы на мобильном (grid-cols-1) панель
+    // естественно уходила под таблицу, а не сжимала её.
+    <div className={`grid grid-cols-1 gap-4 ${panel !== null ? "lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start" : ""}`}>
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="m-0 mb-1 font-semibold text-night-text">Категории соревнования</p>
+            <p className="m-0 text-sm text-admin-muted">Настройте категории, которые будут участвовать в этом соревновании.</p>
+          </div>
+          {panel === null && (
+            <Button type="button" size="sm" variant="admin" onClick={() => setPanel({ mode: "add" })}>
+              + Добавить категорию
+            </Button>
+          )}
         </div>
-        {panel === null && (
-          <Button type="button" size="sm" variant="admin" onClick={() => setPanel({ mode: "add" })}>
-            + Добавить категорию
-          </Button>
+
+        {divisions.length === 0 ? (
+          <p className="m-0 text-sm text-admin-muted">Категорий пока нет.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-app border border-admin-border">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-admin-card2 text-[0.7rem] font-semibold uppercase tracking-wide text-admin-disabled">
+                <tr>
+                  <th className="px-2 py-2 font-semibold">№</th>
+                  <th className="px-2 py-2 font-semibold">Категория</th>
+                  <th className="px-2 py-2 font-semibold">Мест</th>
+                  <th className="px-2 py-2 font-semibold">Метод судейства</th>
+                  <th className="px-2 py-2 font-semibold">Финал</th>
+                  <th className="px-2 py-2 font-semibold">Этапы</th>
+                  <th className="px-2 py-2 text-right font-semibold">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {divisions.map((d, i) => (
+                  <tr key={d.id} className="border-t border-admin-border">
+                    <td className="px-2 py-1.5 align-middle text-admin-muted">{i + 1}</td>
+                    <td className="px-2 py-1.5 align-middle font-medium text-night-text">
+                      <span className="flex items-center gap-1.5 whitespace-nowrap">
+                        <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: DOT_COLORS[i % DOT_COLORS.length] }} aria-hidden="true" />
+                        {d.categoryName}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 align-middle text-admin-muted">{d.heatCapacity}</td>
+                    <td className="px-2 py-1.5 align-middle whitespace-nowrap text-admin-muted">{d.judgingMaxScoreLabel}</td>
+                    <td className="px-2 py-1.5 align-middle whitespace-nowrap text-admin-muted">{d.finalFormatLabel}</td>
+                    <td className="px-2 py-1.5 align-middle whitespace-nowrap text-admin-muted">
+                      {d.stagePlan.length > 0 ? d.stagePlan.map((p) => p.participantCount).join("/") : "—"}
+                    </td>
+                    <td className="px-2 py-1.5 align-middle">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          disabled={d.locked}
+                          onClick={() => setPanel({ mode: "edit", division: d })}
+                          title={d.locked ? "Для категории уже сгенерированы раунды — редактирование недоступно" : "Редактировать"}
+                          aria-label={`Редактировать категорию ${d.categoryName}`}
+                          className="text-admin-muted hover:text-night-text disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-admin-muted"
+                        >
+                          <PencilIcon />
+                        </button>
+                        <DeleteIconButton
+                          url={`/api/divisions/${d.id}`}
+                          confirmMessage={`Удалить категорию «${d.categoryName}»? Это необратимо.`}
+                          label={`Удалить категорию ${d.categoryName}`}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       {panel !== null && (
-        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+        <div className="rounded-app border border-admin-border bg-admin-card p-4 lg:sticky lg:top-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="m-0 text-sm font-semibold text-night-text">
               {panel.mode === "add" ? "Добавить категорию" : `Редактировать «${panel.division.categoryName}»`}
@@ -96,64 +160,6 @@ export function DivisionsOverviewTable({
             </button>
           </div>
           <DivisionForm competitionId={competitionId} panel={panel} availableCategories={availableCategories} stages={stages} onDone={onDone} onCancel={close} />
-        </div>
-      )}
-
-      {divisions.length === 0 ? (
-        <p className="m-0 text-sm text-admin-muted">Категорий пока нет.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-app border border-admin-border">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
-              <tr>
-                <th className="px-3 py-2.5 font-semibold">№</th>
-                <th className="px-3 py-2.5 font-semibold">Категория</th>
-                <th className="px-3 py-2.5 font-semibold">Мест на паркете</th>
-                <th className="px-3 py-2.5 font-semibold">Метод судейства</th>
-                <th className="px-3 py-2.5 font-semibold">Судейство в финале</th>
-                <th className="px-3 py-2.5 font-semibold">Этапы</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {divisions.map((d, i) => (
-                <tr key={d.id} className="border-t border-admin-border">
-                  <td className="px-3 py-2.5 align-middle text-admin-muted">{i + 1}</td>
-                  <td className="px-3 py-2.5 align-middle font-medium text-night-text">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: DOT_COLORS[i % DOT_COLORS.length] }} aria-hidden="true" />
-                      {d.categoryName}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 align-middle text-admin-muted">{d.heatCapacity}</td>
-                  <td className="px-3 py-2.5 align-middle text-admin-muted">{d.judgingMaxScoreLabel}</td>
-                  <td className="px-3 py-2.5 align-middle text-admin-muted">{d.finalFormatLabel}</td>
-                  <td className="px-3 py-2.5 align-middle text-admin-muted">
-                    {d.stagePlan.length > 0 ? d.stagePlan.map((p) => p.participantCount).join(" / ") : "—"}
-                  </td>
-                  <td className="px-3 py-2.5 align-middle">
-                    <div className="flex items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        disabled={d.locked}
-                        onClick={() => setPanel({ mode: "edit", division: d })}
-                        title={d.locked ? "Для категории уже сгенерированы раунды — редактирование недоступно" : "Редактировать"}
-                        aria-label={`Редактировать категорию ${d.categoryName}`}
-                        className="text-admin-muted hover:text-night-text disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-admin-muted"
-                      >
-                        <PencilIcon />
-                      </button>
-                      <DeleteIconButton
-                        url={`/api/divisions/${d.id}`}
-                        confirmMessage={`Удалить категорию «${d.categoryName}»? Это необратимо.`}
-                        label={`Удалить категорию ${d.categoryName}`}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
     </div>
