@@ -46,6 +46,8 @@ import { RoundAdvancementPublish } from "@/components/admin/RoundAdvancementPubl
 import { getCurrentDivisionResults } from "@/server/results/results";
 import { StatisticsSection } from "@/components/admin/StatisticsSection";
 import { PublicInfoPanel } from "@/components/admin/PublicInfoPanel";
+import { CompetitionHeader } from "@/components/admin/CompetitionHeader";
+import { CompetitionWorkspaceTabs } from "@/components/admin/CompetitionWorkspaceTabs";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -341,38 +343,210 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // его "имя" для пользователя.
   const divisionOptions = competition.divisions.map((d) => ({ id: d.id, name: d.category.name }));
 
-  return (
-    <div className="stack">
-      <div>
-        <h1 className="page-title">{competition.name}</h1>
-        <p className="page-subtitle">
-          <Badge variant="community">{STATUS_LABELS[competition.status] ?? competition.status}</Badge>
-          {competition.city ? ` · ${competition.city.nameRu}` : ""}
-          {competition.venue ? ` · ${competition.venue}` : ""}
-        </p>
-      </div>
+  // Основное — статус/публикация/KPI. Числа берутся из уже загруженных выше
+  // данных (без новых запросов): checkedInCount точен только пока список
+  // регистраций не обрезан лимитом отображения (REGISTRATIONS_DISPLAY_LIMIT,
+  // тот же известный компромисс, что и у самого списка "Участники" ниже).
+  const checkedInCount = registrations.filter((r) => r.checkIn !== null).length;
+  const kpis = [
+    { label: "Участники", value: canViewAllRegistrations ? registrationsTotalCount : registrations.length },
+    { label: "Check-in", value: checkedInCount },
+    { label: "Категории", value: competition.divisions.length },
+    { label: "Судьи", value: competitionJudgePool.length },
+  ];
 
-      {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
-      {canEditPublicInfo && (
-        <PublicInfoPanel
-          competitionId={competition.id}
-          info={{
-            rulesText: competition.rulesText ?? "",
-            rulesUrl: competition.rulesUrl ?? "",
-            mediaUrl: competition.mediaUrl ?? "",
-          }}
-        />
+  const overviewContent = (
+    <div className="flex flex-col gap-4">
+      {canManage && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {kpis.map((k) => (
+            <Card key={k.label} className="border-night-border bg-night-card">
+              <p className="m-0 text-sm text-night-muted">{k.label}</p>
+              <p className="m-0 mt-1 text-2xl font-extrabold text-night-text">{k.value}</p>
+            </Card>
+          ))}
+        </div>
       )}
+      {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
       {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
-      {canViewStatistics && <StatisticsSection competitionId={competition.id} />}
       {isJudge && (
         <p>
           <a href={`/judging/${competition.id}`}>Моё судейство →</a>
         </p>
       )}
+    </div>
+  );
 
-      <div>
-        <h2 className="page-title">Категории</h2>
+  const chartsContent = canViewStatistics ? (
+    <StatisticsSection competitionId={competition.id} />
+  ) : (
+    <p className="text-sm text-night-muted">Нет доступа к статистике.</p>
+  );
+
+  const settingsContent = canEditPublicInfo ? (
+    <PublicInfoPanel
+      competitionId={competition.id}
+      info={{
+        rulesText: competition.rulesText ?? "",
+        rulesUrl: competition.rulesUrl ?? "",
+        mediaUrl: competition.mediaUrl ?? "",
+      }}
+    />
+  ) : (
+    <p className="text-sm text-night-muted">Нет доступных настроек.</p>
+  );
+
+  // Судьи — общий пул (справочно, кто вообще назначен хоть куда-то) и, ниже,
+  // назначение по каждой категории (сама панель — DivisionJudgesPanel — не
+  // изменилась, только вынесена из карточки категории в свою вкладку).
+  const judgesContent = (
+    <div className="flex flex-col gap-4">
+      {competitionJudgePool.length > 0 && (
+        <Card className="border-night-border bg-night-card">
+          <p className="m-0 mb-2 font-semibold text-night-text">Общий список судей</p>
+          <ul className="m-0 flex flex-col gap-1 pl-4">
+            {competitionJudgePool.map((j) => (
+              <li key={j.judgeUserId} className="text-sm text-night-muted">
+                {j.judgeEmail}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+      {canAssignJudges ? (
+        competition.divisions.length === 0 ? (
+          <p className="text-sm text-night-muted">Категорий пока нет.</p>
+        ) : (
+          competition.divisions.map((d) => (
+            <Card key={d.id} className="border-night-border bg-night-card">
+              <p className="m-0 mb-1 font-semibold text-night-text">{d.category.name}</p>
+              <DivisionJudgesPanel
+                divisionId={d.id}
+                competitionId={competition.id}
+                pool={competitionJudgePool}
+                leaderJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ja.judgeUserId)}
+                followerJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ja.judgeUserId)}
+              />
+            </Card>
+          ))
+        )
+      ) : (
+        <p className="text-sm text-night-muted">Нет прав на назначение судей.</p>
+      )}
+    </div>
+  );
+
+  const participantsContent = (
+    <div className="flex flex-col gap-4">
+      {isRegistrationOpen && !alreadyRegistered && divisionOptions.length > 0 && (
+        <div>
+          <h2 className="page-title">Регистрация</h2>
+          <RegisterSelfForm
+            competitionId={competition.id}
+            divisions={divisionOptions}
+            suggestedRole={suggestedRoleForGender(myDancer?.gender ?? null)}
+          />
+        </div>
+      )}
+
+      {canViewAllRegistrations ? (
+        <div>
+          {registrationsTotalCount > registrations.length && (
+            <p className="m-0 mb-2 text-sm text-amber-400">
+              Показаны первые {registrations.length} из {registrationsTotalCount} — список обрезан.
+            </p>
+          )}
+          {registrations.length === 0 ? (
+            <p className="text-sm text-night-muted">Пока никто не зарегистрирован.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {registrations.map((r) => {
+                const noShow = isNoShow({
+                  registrationStatus: r.status,
+                  hasCheckIn: r.checkIn !== null,
+                  competitionStatus: competition.status,
+                });
+                return (
+                  <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-night-border bg-night-card">
+                    <div>
+                      <strong className="text-night-text">{r.dancer.displayName}</strong>
+                      <p className="mt-1 text-sm text-night-muted">
+                        {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
+                        {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
+                        {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
+                      </p>
+                      {r.roleOverrideStatus === "PENDING" && (
+                        <p className="mt-1 text-sm text-night-pink">
+                          Просит роль «{ROLE_LABELS[r.requestedRole ?? ""] ?? r.requestedRole}» вместо подсказки по
+                          полу — ждёт подтверждения.
+                        </p>
+                      )}
+                      {r.roleOverrideStatus === "REJECTED" && (
+                        <p className="mt-1 text-sm text-night-muted">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canChangeDivision && (
+                        <ChangeDivisionControl
+                          registrationId={r.id}
+                          currentDivisionId={r.divisionId}
+                          divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))}
+                        />
+                      )}
+                      {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
+                        <RoleOverrideReview registrationId={r.id} />
+                      )}
+                      {noShow && (
+                        <Badge variant="pending" className="bg-night-card2 text-night-muted">
+                          Не явился
+                        </Badge>
+                      )}
+                      {canCheckIn && r.status === "REGISTERED" && !r.checkIn && (
+                        <CheckInButton registrationId={r.id} />
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+          {canManageRegistrations && divisionOptions.length > 0 && (
+            <div className="mt-4">
+              <h3 className="mb-2 text-sm font-bold text-night-text">Добавить участника вручную</h3>
+              <AdminRegisterForm competitionId={competition.id} divisions={divisionOptions} />
+            </div>
+          )}
+        </div>
+      ) : (
+        myRegistration && (
+          <div>
+            <h2 className="page-title">Моя регистрация</h2>
+            <Card>
+              <p className="m-0">
+                {myRegistration.division.category.name} · {ROLE_LABELS[myRegistration.role] ?? myRegistration.role} ·{" "}
+                {REGISTRATION_STATUS_LABELS[myRegistration.status] ?? myRegistration.status}
+                {myRegistration.checkIn && ` · номер ${myRegistration.checkIn.bibNumber}`}
+                {isNoShow({
+                  registrationStatus: myRegistration.status,
+                  hasCheckIn: myRegistration.checkIn !== null,
+                  competitionStatus: competition.status,
+                }) && " · не явился"}
+              </p>
+              {myRegistration.roleOverrideStatus === "PENDING" && (
+                <p className="hint-text mt-1 text-accent">
+                  Вы запросили роль «{ROLE_LABELS[myRegistration.requestedRole ?? ""] ?? myRegistration.requestedRole}»
+                  вместо подсказки по полу — организатор ещё не подтвердил.
+                </p>
+              )}
+            </Card>
+          </div>
+        )
+      )}
+    </div>
+  );
+
+  const categoriesContent = (
+    <div>
         {competition.divisions.length === 0 ? (
           <p className="hint-text">Категорий пока нет.</p>
         ) : (
@@ -411,16 +585,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       ? "не задан"
                       : d.stagePlan.map((p) => `${p.stage.name} ${p.participantCount}`).join(" · ")}
                   </p>
-                )}
-
-                {canAssignJudges && (
-                  <DivisionJudgesPanel
-                    divisionId={d.id}
-                    competitionId={competition.id}
-                    pool={competitionJudgePool}
-                    leaderJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ja.judgeUserId)}
-                    followerJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ja.judgeUserId)}
-                  />
                 )}
 
                 {canConfigureFinal && (
@@ -751,113 +915,28 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             stages={activeStages}
           />
         )}
-      </div>
+    </div>
+  );
 
-      {isRegistrationOpen && !alreadyRegistered && divisionOptions.length > 0 && (
-        <div>
-          <h2 className="page-title">Регистрация</h2>
-          <RegisterSelfForm
-            competitionId={competition.id}
-            divisions={divisionOptions}
-            suggestedRole={suggestedRoleForGender(myDancer?.gender ?? null)}
-          />
-        </div>
-      )}
-
-      {canViewAllRegistrations ? (
-        <div>
-          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Участники</h2>
-          {registrationsTotalCount > registrations.length && (
-            <p className="m-0 mb-2 text-sm text-amber-400">
-              Показаны первые {registrations.length} из {registrationsTotalCount} — список обрезан.
-            </p>
-          )}
-          {registrations.length === 0 ? (
-            <p className="text-sm text-night-muted">Пока никто не зарегистрирован.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {registrations.map((r) => {
-                const noShow = isNoShow({
-                  registrationStatus: r.status,
-                  hasCheckIn: r.checkIn !== null,
-                  competitionStatus: competition.status,
-                });
-                return (
-                  <Card key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-night-border bg-night-card">
-                    <div>
-                      <strong className="text-night-text">{r.dancer.displayName}</strong>
-                      <p className="mt-1 text-sm text-night-muted">
-                        {r.division.category.name} · {ROLE_LABELS[r.role] ?? r.role} ·{" "}
-                        {REGISTRATION_STATUS_LABELS[r.status] ?? r.status}
-                        {r.checkIn && ` · номер ${r.checkIn.bibNumber}`}
-                      </p>
-                      {r.roleOverrideStatus === "PENDING" && (
-                        <p className="mt-1 text-sm text-night-pink">
-                          Просит роль «{ROLE_LABELS[r.requestedRole ?? ""] ?? r.requestedRole}» вместо подсказки по
-                          полу — ждёт подтверждения.
-                        </p>
-                      )}
-                      {r.roleOverrideStatus === "REJECTED" && (
-                        <p className="mt-1 text-sm text-night-muted">Запрошенная роль отклонена, оставлена подсказка по полу.</p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {canChangeDivision && (
-                        <ChangeDivisionControl
-                          registrationId={r.id}
-                          currentDivisionId={r.divisionId}
-                          divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))}
-                        />
-                      )}
-                      {r.roleOverrideStatus === "PENDING" && canReviewRoleOverride && (
-                        <RoleOverrideReview registrationId={r.id} />
-                      )}
-                      {noShow && (
-                        <Badge variant="pending" className="bg-night-card2 text-night-muted">
-                          Не явился
-                        </Badge>
-                      )}
-                      {canCheckIn && r.status === "REGISTERED" && !r.checkIn && (
-                        <CheckInButton registrationId={r.id} />
-                      )}
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-          {canManageRegistrations && divisionOptions.length > 0 && (
-            <div className="mt-4">
-              <h3 className="mb-2 text-sm font-bold text-night-text">Добавить участника вручную</h3>
-              <AdminRegisterForm competitionId={competition.id} divisions={divisionOptions} />
-            </div>
-          )}
-        </div>
-      ) : (
-        myRegistration && (
-          <div>
-            <h2 className="page-title">Моя регистрация</h2>
-            <Card>
-              <p className="m-0">
-                {myRegistration.division.category.name} · {ROLE_LABELS[myRegistration.role] ?? myRegistration.role} ·{" "}
-                {REGISTRATION_STATUS_LABELS[myRegistration.status] ?? myRegistration.status}
-                {myRegistration.checkIn && ` · номер ${myRegistration.checkIn.bibNumber}`}
-                {isNoShow({
-                  registrationStatus: myRegistration.status,
-                  hasCheckIn: myRegistration.checkIn !== null,
-                  competitionStatus: competition.status,
-                }) && " · не явился"}
-              </p>
-              {myRegistration.roleOverrideStatus === "PENDING" && (
-                <p className="hint-text mt-1 text-accent">
-                  Вы запросили роль «{ROLE_LABELS[myRegistration.requestedRole ?? ""] ?? myRegistration.requestedRole}»
-                  вместо подсказки по полу — организатор ещё не подтвердил.
-                </p>
-              )}
-            </Card>
-          </div>
-        )
-      )}
+  return (
+    <div className="flex flex-col gap-6">
+      <CompetitionHeader
+        name={competition.name}
+        status={competition.status}
+        cityName={competition.city?.nameRu ?? null}
+        venue={competition.venue}
+        startAt={competition.startAt}
+      />
+      <CompetitionWorkspaceTabs
+        tabs={[
+          { id: "overview", label: "Основное", content: overviewContent },
+          { id: "categories", label: "Категории", content: categoriesContent },
+          { id: "participants", label: "Участники", content: participantsContent },
+          { id: "judges", label: "Судьи", content: judgesContent },
+          { id: "charts", label: "Графики", content: chartsContent },
+          { id: "settings", label: "Настройки", content: settingsContent },
+        ]}
+      />
     </div>
   );
 }
