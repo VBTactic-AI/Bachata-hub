@@ -24,7 +24,9 @@ import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
 import { SplitHeatButton } from "@/components/admin/SplitHeatButton";
 import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
 import { RotationPanel } from "@/components/admin/RotationPanel";
-import { DivisionJudgesPanel, type PoolJudge } from "@/components/admin/DivisionJudgesPanel";
+import type { PoolJudge } from "@/components/admin/DivisionJudgesPanel";
+import { JudgesWorkspace, type JudgingDivision } from "@/components/admin/JudgesWorkspace";
+import { KebabIcon } from "@/components/admin/icons";
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
@@ -126,7 +128,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               },
               orderBy: { order: "asc" },
             },
-            judgeAssignments: { include: { judge: { select: { email: true } } }, orderBy: { createdAt: "asc" } },
+            judgeAssignments: {
+              include: { judge: { select: { email: true, dancer: { select: { displayName: true } } } } },
+              orderBy: { createdAt: "asc" },
+            },
             stagePlan: { include: { stage: { select: { name: true } } }, orderBy: { stage: { order: "asc" } } },
             finalSettings: true,
             finalCriteria: { orderBy: { sortOrder: "asc" } },
@@ -214,22 +219,40 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     rows.find((r) => r.divisionId === divisionId && r.role === role)?._count._all ?? 0;
 
   // Общий пул судей всего соревнования (по всем дивизионам) — источник
-  // галочек в DivisionJudgesPanel; уже загружен вместе с деревом
-  // соревнования выше, отдельным запросом не тянем (docs/00_DECISIONS.md,
-  // A13 — один судья может судить несколько дивизионов).
+  // выбора в DivisionJudgesPanel; уже загружен вместе с деревом соревнования
+  // выше, отдельным запросом не тянем (docs/00_DECISIONS.md, A13 — один
+  // судья может судить несколько дивизионов). displayName — из профиля
+  // танцора судьи, если он у него есть (у судей без профиля танцора его нет
+  // — тогда в таблице показывается email, реальных данных не выдумываем).
   const competitionJudgePoolMap = new Map<string, PoolJudge>();
-  // Только для отображения в "Общий список судей" (сколько категорий судит
+  // Только для отображения в "Общий список судей" (какие категории судит
   // каждый) — не часть контракта DivisionJudgesPanel, отдельная структура.
-  const judgeDivisionCounts = new Map<string, Set<string>>();
+  const judgeDivisionNames = new Map<string, string[]>();
   for (const d of competition.divisions) {
     for (const ja of d.judgeAssignments) {
-      competitionJudgePoolMap.set(ja.judgeUserId, { judgeUserId: ja.judgeUserId, judgeEmail: ja.judge.email });
-      const set = judgeDivisionCounts.get(ja.judgeUserId) ?? new Set<string>();
-      set.add(d.id);
-      judgeDivisionCounts.set(ja.judgeUserId, set);
+      if (!competitionJudgePoolMap.has(ja.judgeUserId)) {
+        competitionJudgePoolMap.set(ja.judgeUserId, {
+          judgeUserId: ja.judgeUserId,
+          judgeEmail: ja.judge.email,
+          displayName: ja.judge.dancer?.displayName ?? null,
+        });
+      }
+      const names = judgeDivisionNames.get(ja.judgeUserId) ?? [];
+      if (!names.includes(d.category.name)) names.push(d.category.name);
+      judgeDivisionNames.set(ja.judgeUserId, names);
     }
   }
-  const competitionJudgePool = [...competitionJudgePoolMap.values()].sort((a, b) => a.judgeEmail.localeCompare(b.judgeEmail));
+  const competitionJudgePool = [...competitionJudgePoolMap.values()].sort((a, b) =>
+    (a.displayName ?? a.judgeEmail).localeCompare(b.displayName ?? b.judgeEmail, "ru")
+  );
+
+  // Соревнование ещё не началось — то же понятие, что и в
+  // updateDivisionSettings() (COMPETITION_NOT_STARTED_STATUSES): метод
+  // оценки раундов до финала можно менять только до этой границы
+  // (docs/00_DECISIONS.md, вкладка "Судьи" → "Настройки судейства",
+  // 2026-09-09).
+  const COMPETITION_NOT_STARTED_STATUSES = new Set(["DRAFT", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "CHECK_IN", "READY"]);
+  const competitionNotStarted = COMPETITION_NOT_STARTED_STATUSES.has(competition.status);
 
   // Прогресс подсчёта баллов считается заранее (не внутри .map()) — реальные
   // цифры "сколько оценок собрано / сколько нужно", не выдуманный прогресс.
@@ -489,48 +512,93 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     </div>
   );
 
-  // Судьи — общий пул (справочно, кто вообще назначен хоть куда-то) и, ниже,
-  // назначение по каждой категории (сама панель — DivisionJudgesPanel — не
-  // изменилась, только вынесена из карточки категории в свою вкладку).
+  // Судьи — общий пул (справочно, кто вообще назначен хоть куда-то, теперь
+  // настоящая <table> — redesign 2026-09-09, единый табличный стиль с
+  // "Участники"/справочниками, CLAUDE.md §64) и, ниже, "Судейская панель" +
+  // "Настройки судейства" на общем сайдбаре категорий (JudgesWorkspace).
+  const judgingDivisions: JudgingDivision[] = competition.divisions.map((d) => {
+    const finalLocked = d.rounds.some((r) => r.finalSession);
+    return {
+      id: d.id,
+      categoryName: d.category.name,
+      leaderJudgeUserIds: d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ja.judgeUserId),
+      followerJudgeUserIds: d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ja.judgeUserId),
+      judgingMaxScore: d.judgingMaxScore,
+      judgingMaxScoreDisabledReason: !canManage
+        ? "Нет прав на изменение."
+        : !competitionNotStarted
+          ? "Соревнование уже началось — метод менять нельзя."
+          : null,
+      heatCapacity: d.heatCapacity,
+      rotationMode: d.rotationMode,
+      rotationIntervalSec: d.rotationIntervalSec,
+      rotationShiftMin: d.rotationShiftMin,
+      rotationShiftMax: d.rotationShiftMax,
+      finalFormat: d.finalSettings?.format ?? "NORMAL",
+      finalFormatDisabledReason: !canConfigureFinal ? "Нет прав на изменение." : finalLocked ? "Финал уже начат — формат менять нельзя." : null,
+      finalTracksCount: d.finalSettings?.tracksCount ?? 1,
+      finalPartnerChangeEnabled: d.finalSettings?.partnerChangeEnabled ?? false,
+      finalConfig: d.finalSettings?.config ?? {},
+    };
+  });
+
   const judgesContent = (
     <div className="flex flex-col gap-4">
       {competitionJudgePool.length > 0 && (
         <Card className="border-admin-border bg-admin-card">
-          <p className="m-0 mb-2 font-semibold text-night-text">Общий список судей</p>
-          <ul className="m-0 flex flex-col gap-2 pl-0">
-            {competitionJudgePool.map((j) => {
-              const categoriesCount = judgeDivisionCounts.get(j.judgeUserId)?.size ?? 0;
-              return (
-                <li key={j.judgeUserId} className="flex flex-wrap items-center justify-between gap-2 border-t border-admin-border pt-2 first:border-t-0 first:pt-0">
-                  <span className="text-sm text-night-text">{j.judgeEmail}</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs text-admin-muted">
-                      {categoriesCount} {categoriesCount === 1 ? "категория" : "категории(й)"}
-                    </span>
-                    <StatusBadge label="Активен" variant="success" />
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+          <p className="m-0 mb-1 font-semibold text-night-text">Общий список судей</p>
+          <p className="m-0 mb-3 text-sm text-admin-muted">Все судьи, зарегистрированные на соревнование.</p>
+          <div className="overflow-x-auto rounded-app border border-admin-border">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">№</th>
+                  <th className="px-3 py-2.5 font-semibold">Судья</th>
+                  <th className="px-3 py-2.5 font-semibold">Категории</th>
+                  <th className="px-3 py-2.5 font-semibold">Статус</th>
+                  <th className="px-3 py-2.5 text-right font-semibold">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {competitionJudgePool.map((j, i) => {
+                  const names = judgeDivisionNames.get(j.judgeUserId) ?? [];
+                  return (
+                    <tr key={j.judgeUserId} className="border-t border-admin-border">
+                      <td className="px-3 py-2.5 align-middle text-admin-muted">{i + 1}</td>
+                      <td className="px-3 py-2.5 align-middle font-medium text-night-text">
+                        {j.displayName ?? j.judgeEmail}
+                        {j.displayName && <p className="m-0 text-xs font-normal text-admin-muted">{j.judgeEmail}</p>}
+                      </td>
+                      <td className="px-3 py-2.5 align-middle text-admin-muted">{names.length > 0 ? names.join(", ") : "—"}</td>
+                      <td className="px-3 py-2.5 align-middle">
+                        <StatusBadge label="Активен" variant="success" />
+                      </td>
+                      <td className="px-3 py-2.5 align-middle">
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            disabled
+                            title="Скоро"
+                            aria-label="Дополнительные действия — пока недоступно"
+                            className="cursor-not-allowed text-admin-disabled opacity-60"
+                          >
+                            <KebabIcon />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
       {canAssignJudges ? (
         competition.divisions.length === 0 ? (
           <p className="text-sm text-admin-muted">Категорий пока нет.</p>
         ) : (
-          competition.divisions.map((d) => (
-            <Card key={d.id} className="border-admin-border bg-admin-card">
-              <p className="m-0 mb-1 font-semibold text-night-text">{d.category.name}</p>
-              <DivisionJudgesPanel
-                divisionId={d.id}
-                competitionId={competition.id}
-                pool={competitionJudgePool}
-                leaderJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ja.judgeUserId)}
-                followerJudgeUserIds={d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ja.judgeUserId)}
-              />
-            </Card>
-          ))
+          <JudgesWorkspace divisions={judgingDivisions} pool={competitionJudgePool} competitionId={competition.id} />
         )
       ) : (
         <p className="text-sm text-admin-muted">Нет прав на назначение судей.</p>

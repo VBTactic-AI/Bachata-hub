@@ -29,8 +29,12 @@ export const divisionStagePlanEntrySchema = z.object({
 });
 
 // Метод оценки раундов ДО финала (1 = "Да/Нет", 2 = "0/1/2" с квотой по
-// числу проходящих) — задаётся один раз при создании дивизиона, дальше не
-// меняется (см. addDivisionSchema, не входит в updateDivisionSettingsSchema).
+// числу проходящих) — задаётся при создании дивизиона (addDivisionSchema).
+// Можно поменять и позже, но только до старта соревнования (competition.status
+// раньше LIVE) — см. updateDivisionSettings() и вкладку "Судьи" → "Настройки
+// судейства" (по запросу пользователя, 2026-09-09). У уже созданных раундов
+// свой снимок значения (Round.judgingMaxScore) — задним числом не меняется
+// (CLAUDE.md §50-51).
 export const judgingMaxScoreSchema = z.coerce.number().int().refine((v) => v === 1 || v === 2, {
   message: 'Метод оценки должен быть "Да/Нет" (1) или "0/1/2" (2).',
 });
@@ -64,6 +68,11 @@ export const updateDivisionSettingsSchema = z.object({
   rotationIntervalSec: z.coerce.number().int().positive(),
   rotationShiftMin: z.coerce.number().int().positive(),
   rotationShiftMax: z.coerce.number().int().positive(),
+  // Необязательное — присылается только формой "Настройки судейства"
+  // (вкладка "Судьи"), обычная DivisionSettingsPanel его не трогает.
+  // updateDivisionSettings() дополнительно проверяет, что соревнование ещё
+  // не началось (см. там же).
+  judgingMaxScore: judgingMaxScoreSchema.optional(),
 });
 export type UpdateDivisionSettingsInput = z.infer<typeof updateDivisionSettingsSchema>;
 

@@ -76,3 +76,14 @@ export const RESULT_STATUS_LABELS: Record<string, string> = {
   FINALIST: "Финалист",
   ELIMINATED: "Выбыл",
 };
+
+// Формат финала (FinalSettings.format) — те же подписи, что и в
+// FinalSettingsPanel.tsx (там своя локальная копия под критерии/scoring-matrix
+// UI); вынесено сюда отдельно для вкладки "Судьи" → "Настройки судейства",
+// которой нужны только сами подписи, без остального формы финала.
+export const FINAL_FORMAT_LABELS: Record<string, string> = {
+  NORMAL: "Обычный J&J",
+  JUDGES_DANCE: "Танец с судьями",
+  RANDOM_COUPLES: "Случайные пары",
+  RELATIVE_PLACEMENT: "Относительные места (скейтинг)",
+};

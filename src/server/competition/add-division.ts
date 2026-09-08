@@ -91,19 +91,48 @@ export async function addDivision(competitionId: string, input: AddDivisionInput
   return { id: division.id };
 }
 
+// Соревнование ещё не началось — то же понятие, что уже используют
+// generateRounds()/round-state.ts неявно (раунды не могут стартовать раньше
+// LIVE): судейский метод раундов до финала завязан на расчёт cutoff
+// (Advancement Engine), поэтому пользователь явно ограничил его правку этим
+// окном (2026-09-09), а не только тем, что ни один раунд ещё не стартовал.
+const COMPETITION_NOT_STARTED_STATUSES = new Set(["DRAFT", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "CHECK_IN", "READY"]);
+
 // Изменение вместимости/ротации уже созданного дивизиона — по запросу
 // пользователя (2026-09-04): доступно в любой момент через явный "режим
 // редактирования" на экране (кнопка "Изменить настройки"), не голое поле,
 // которое можно случайно задеть. Категория не меняется здесь.
+//
+// judgingMaxScore (метод оценки раундов до финала) — раньше вообще не входил
+// в эту форму (фиксировался один раз при создании дивизиона). По запросу
+// пользователя (2026-09-09, вкладка "Судьи" → "Настройки судейства") стал
+// редактируемым, но ТОЛЬКО до старта соревнования (см.
+// COMPETITION_NOT_STARTED_STATUSES выше) — уже созданные раунды хранят свой
+// снимок значения (Round.judgingMaxScore) и им эта правка не грозит
+// (CLAUDE.md §50-51), но менять "правила игры" на живом соревновании всё
+// равно не должно быть возможно.
 export async function updateDivisionSettings(divisionId: string, input: UpdateDivisionSettingsInput): Promise<void> {
   const division = await prisma.division.findUniqueOrThrow({
     where: { id: divisionId },
-    select: { competitionId: true, heatCapacity: true, rotationMode: true, rotationIntervalSec: true, rotationShiftMin: true, rotationShiftMax: true },
+    select: {
+      competitionId: true,
+      heatCapacity: true,
+      rotationMode: true,
+      rotationIntervalSec: true,
+      rotationShiftMin: true,
+      rotationShiftMax: true,
+      judgingMaxScore: true,
+      competition: { select: { status: true } },
+    },
   });
   const actor = await requirePermission("competition:update", division.competitionId);
 
   if (input.rotationShiftMin > input.rotationShiftMax) {
     throw new ValidationFailedError("Минимальное число партнёров для смены не может быть больше максимального.");
+  }
+
+  if (input.judgingMaxScore !== undefined && !COMPETITION_NOT_STARTED_STATUSES.has(division.competition.status)) {
+    throw new ValidationFailedError("Метод оценки раундов до финала можно менять только до старта соревнования.");
   }
 
   await prisma.$transaction(async (tx) => {
