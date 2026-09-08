@@ -40,39 +40,42 @@ export function PublicInfoPanel({ competitionId, info }: { competitionId: string
   if (!editing) {
     return (
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        <p className="hint-text m-0">
+        <p className="m-0 text-sm text-night-muted">
           Правила: {current.rulesText || current.rulesUrl ? "заданы" : "не заданы"} · Фотоальбом: {current.mediaUrl ? "заданы" : "не задан"}
         </p>
-        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(true)}>
+        <Button type="button" size="sm" variant="adminOutline" onClick={() => setEditing(true)}>
           изменить публичную информацию
         </Button>
       </div>
     );
   }
 
+  const fieldClass = "border-night-border bg-night-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+
   return (
-    <div className="stack gap-2 mt-2 rounded-app-sm border border-line p-3">
-      <p className="hint-text m-0">Видно всем на публичной странице соревнования — на работу движка не влияет.</p>
-      <Label>
+    <div className="mt-2 flex flex-col gap-2 rounded-app-sm border border-night-border p-3">
+      <p className="m-0 text-sm text-night-muted">Видно всем на публичной странице соревнования — на работу движка не влияет.</p>
+      <Label className="text-night-muted">
         Правила (текст)
-        <Textarea value={rulesText} onChange={(e) => setRulesText(e.target.value)} rows={4} placeholder="Можно оставить пустым" />
+        <Textarea value={rulesText} onChange={(e) => setRulesText(e.target.value)} rows={4} placeholder="Можно оставить пустым" className={fieldClass} />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         Правила (ссылка на внешний источник)
-        <Input value={rulesUrl} onChange={(e) => setRulesUrl(e.target.value)} placeholder="https://…" />
+        <Input value={rulesUrl} onChange={(e) => setRulesUrl(e.target.value)} placeholder="https://…" className={fieldClass} />
       </Label>
-      <Label>
+      <Label className="text-night-muted">
         Ссылка на фотоальбом/видео
-        <Input value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} placeholder="https://…" />
+        <Input value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} placeholder="https://…" className={fieldClass} />
       </Label>
       <div className="flex items-center gap-2">
-        <Button type="button" size="sm" disabled={loading} onClick={onSave}>
+        <Button type="button" size="sm" variant="admin" disabled={loading} onClick={onSave}>
           Сохранить
         </Button>
         <Button
           type="button"
           size="sm"
           variant="ghost"
+          className="text-night-muted hover:text-night-text"
           disabled={loading}
           onClick={() => {
             setRulesText(current.rulesText);
@@ -84,7 +87,7 @@ export function PublicInfoPanel({ competitionId, info }: { competitionId: string
         >
           отмена
         </Button>
-        {error && <span className="error-text">{error}</span>}
+        {error && <span className="text-sm text-red-400">{error}</span>}
       </div>
     </div>
   );

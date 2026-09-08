@@ -462,17 +462,30 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     </div>
   );
 
-  const settingsContent = canEditPublicInfo ? (
-    <PublicInfoPanel
-      competitionId={competition.id}
-      info={{
-        rulesText: competition.rulesText ?? "",
-        rulesUrl: competition.rulesUrl ?? "",
-        mediaUrl: competition.mediaUrl ?? "",
-      }}
-    />
-  ) : (
-    <p className="text-sm text-night-muted">Нет доступных настроек.</p>
+  const settingsContent = (
+    <div className="flex flex-col gap-4">
+      {canEditPublicInfo ? (
+        <Card className="border-night-border bg-night-card">
+          <p className="m-0 mb-1 font-semibold text-night-text">Публичная информация</p>
+          <PublicInfoPanel
+            competitionId={competition.id}
+            info={{
+              rulesText: competition.rulesText ?? "",
+              rulesUrl: competition.rulesUrl ?? "",
+              mediaUrl: competition.mediaUrl ?? "",
+            }}
+          />
+        </Card>
+      ) : (
+        <p className="text-sm text-night-muted">Нет доступных настроек.</p>
+      )}
+      {canManage && (
+        <p className="m-0 text-xs text-night-muted">
+          Настройки конкретной категории (вместимость захода, ротация, метод судейства, критерии финала) — на вкладке
+          «Категории», у каждой категории отдельно.
+        </p>
+      )}
+    </div>
   );
 
   // Судьи — общий пул (справочно, кто вообще назначен хоть куда-то) и, ниже,
