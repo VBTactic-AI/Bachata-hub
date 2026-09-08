@@ -80,3 +80,32 @@ export async function checkInRegistration(registrationId: string, opts?: { late?
     return created;
   });
 }
+
+// Отмена check-in (redesign вкладки "Участники", 2026-09-09 — тумблер
+// должен реально работать в обе стороны). Физически удаляет запись CheckIn
+// (bib-номер освобождается — следующий check-in получит новый, по тому же
+// принципу, что и первый check-in выше), но история не теряется: audit-запись
+// с before/after остаётся в AuditLog (CLAUDE.md §18 — теряется только сама
+// строка таблицы, не факт "кто/когда отменил").
+export async function cancelCheckIn(registrationId: string): Promise<void> {
+  const registration = await prisma.registration.findUniqueOrThrow({
+    where: { id: registrationId },
+    select: { id: true, competitionId: true, checkIn: true },
+  });
+  const actor = await requirePermission("checkin:manage", registration.competitionId);
+
+  if (!registration.checkIn) {
+    throw new ValidationFailedError("Участник ещё не прошёл check-in — отменять нечего.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await writeAudit(tx, {
+      actor,
+      action: "checkin.cancel",
+      entityType: "CheckIn",
+      entityId: registration.checkIn!.id,
+      before: { registrationId, bibNumber: registration.checkIn!.bibNumber, status: registration.checkIn!.status },
+    });
+    await tx.checkIn.delete({ where: { registrationId } });
+  });
+}

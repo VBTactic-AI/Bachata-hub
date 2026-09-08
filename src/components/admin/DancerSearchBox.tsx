@@ -39,8 +39,8 @@ export function DancerSearchBox({
   }
 
   return (
-    <div className="rounded-app-sm border border-line bg-primary-light/40 p-3">
-      <label className="flex flex-col gap-1.5 text-[0.9rem] font-semibold">
+    <div className="rounded-app-sm border border-admin-border bg-admin-card2/60 p-3">
+      <label className="flex flex-col gap-1.5 text-[0.9rem] font-semibold text-night-text">
         Найти существующего участника по имени
         <div className="flex gap-2">
           <Input
@@ -53,19 +53,20 @@ export function DancerSearchBox({
               }
             }}
             placeholder="Тихон* — подстановка в начале/конце имени"
+            className="border-admin-border bg-admin-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
           />
-          <Button type="button" size="sm" variant="secondary" disabled={loading || query.trim().length < 2} onClick={search}>
+          <Button type="button" size="sm" variant="adminOutline" disabled={loading || query.trim().length < 2} onClick={search}>
             Найти
           </Button>
         </div>
       </label>
 
-      {error && <p className="error-text mt-2">{error}</p>}
+      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
 
       {results && (
-        <div className="mt-2 stack gap-1.5">
+        <div className="mt-2 flex flex-col gap-1.5">
           {results.length === 0 ? (
-            <p className="hint-text">Никого не нашлось — впишите email вручную ниже, создастся новый аккаунт.</p>
+            <p className="text-sm text-admin-muted">Никого не нашлось.</p>
           ) : (
             results.map((d) => (
               <button
@@ -76,10 +77,10 @@ export function DancerSearchBox({
                   setResults(null);
                   setQuery(d.displayName);
                 }}
-                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-app-sm border border-line bg-surface px-3 py-2 text-left hover:border-primary"
+                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-app-sm border border-admin-border bg-admin-card px-3 py-2 text-left hover:border-admin-primary"
               >
-                <span className="font-semibold text-ink">{d.displayName}</span>
-                <span className="hint-text">
+                <span className="font-semibold text-night-text">{d.displayName}</span>
+                <span className="text-sm text-admin-muted">
                   {d.gender ? t.dancer.gender[d.gender] : "пол не указан"} · {d.email}
                 </span>
               </button>

@@ -8,10 +8,11 @@ const registrationFindUniqueOrThrow = vi.fn();
 const checkInFindUnique = vi.fn();
 const checkInCount = vi.fn();
 const checkInCreate = vi.fn();
+const checkInDelete = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  checkIn: { findUnique: checkInFindUnique, findFirst: checkInFindUnique, count: checkInCount, create: checkInCreate },
+  checkIn: { findUnique: checkInFindUnique, findFirst: checkInFindUnique, count: checkInCount, create: checkInCreate, delete: checkInDelete },
   auditLog: { create: auditCreate },
 };
 
@@ -22,7 +23,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { checkInRegistration } = await import("@/server/competition/check-in");
+const { checkInRegistration, cancelCheckIn } = await import("@/server/competition/check-in");
 const { ValidationFailedError } = await import("@/server/errors");
 const { Prisma } = await import("@prisma/client");
 
@@ -34,6 +35,7 @@ beforeEach(() => {
   checkInFindUnique.mockReset().mockResolvedValue(null);
   checkInCount.mockReset().mockResolvedValue(0);
   checkInCreate.mockReset().mockResolvedValue({ id: "ci1", status: "CHECKED_IN", bibNumber: "1" });
+  checkInDelete.mockReset();
   auditCreate.mockReset();
 });
 
@@ -104,5 +106,41 @@ describe("checkInRegistration()", () => {
     );
 
     await expect(checkInRegistration("reg1")).rejects.toThrow("Не удалось выдать номер участника");
+  });
+});
+
+describe("cancelCheckIn() — 2026-09-09 (тумблер в обе стороны)", () => {
+  it("проверяет checkin:manage ИМЕННО для этого competitionId", async () => {
+    registrationFindUniqueOrThrow.mockResolvedValue({
+      id: "reg1",
+      competitionId: "comp1",
+      checkIn: { id: "ci1", bibNumber: "1", status: "CHECKED_IN" },
+    });
+
+    await cancelCheckIn("reg1");
+
+    expect(requirePermissionMock).toHaveBeenCalledWith("checkin:manage", "comp1");
+  });
+
+  it("удаляет CheckIn, с audit-записью до/после", async () => {
+    registrationFindUniqueOrThrow.mockResolvedValue({
+      id: "reg1",
+      competitionId: "comp1",
+      checkIn: { id: "ci1", bibNumber: "3", status: "CHECKED_IN" },
+    });
+
+    await cancelCheckIn("reg1");
+
+    expect(checkInDelete).toHaveBeenCalledWith({ where: { registrationId: "reg1" } });
+    const entry = auditCreate.mock.calls[0][0].data;
+    expect(entry.action).toBe("checkin.cancel");
+    expect(entry.before).toEqual({ registrationId: "reg1", bibNumber: "3", status: "CHECKED_IN" });
+  });
+
+  it("отклоняет отмену, если check-in ещё не пройден", async () => {
+    registrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", competitionId: "comp1", checkIn: null });
+
+    await expect(cancelCheckIn("reg1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(checkInDelete).not.toHaveBeenCalled();
   });
 });

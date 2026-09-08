@@ -22,6 +22,43 @@ export function KebabIcon() {
   );
 }
 
+// KPI-иконки вкладки "Участники" (redesign, 2026-09-09).
+export function PeopleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" strokeLinecap="round" />
+      <path d="M16 4.5a3 3 0 0 1 0 6M19.5 20c0-2.8-1.8-5.1-4.3-5.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+export function CheckCircleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M8.5 12.5l2.3 2.3 4.7-5.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+export function CardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="3" y="5.5" width="18" height="13" rx="2" />
+      <path d="M3 9.5h18" />
+      <path d="M6 14.5h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+export function AlertIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M12 3.5 21.5 20h-19L12 3.5Z" strokeLinejoin="round" />
+      <path d="M12 9.5v4.5" strokeLinecap="round" />
+      <circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

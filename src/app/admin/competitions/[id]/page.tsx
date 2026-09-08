@@ -12,7 +12,8 @@ import { DivisionSettingsPanel } from "@/components/admin/DivisionSettingsPanel"
 import { DeleteDivisionButton } from "@/components/admin/DeleteDivisionButton";
 import { CompetitionStatusControls } from "@/components/admin/CompetitionStatusControls";
 import { RegisterSelfForm } from "@/components/admin/RegisterSelfForm";
-import { AdminRegisterForm } from "@/components/admin/AdminRegisterForm";
+import { AddParticipantPanel } from "@/components/admin/AddParticipantPanel";
+import { AddButton } from "@/components/admin/AddButton";
 import { GenerateRoundsButton } from "@/components/admin/GenerateRoundsButton";
 import { RoundStatusControls } from "@/components/admin/RoundStatusControls";
 import { AddHeatButton } from "@/components/admin/AddHeatButton";
@@ -551,7 +552,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       )}
 
       {canViewAllRegistrations ? (
-        <div>
+        <div className="flex flex-col gap-3">
+          {canManageRegistrations && divisionOptions.length > 0 && (
+            <div className="flex justify-end">
+              <AddButton label="Добавить участника" gradientClassName="bg-gradient-admin-cta">
+                <AddParticipantPanel competitionId={competition.id} divisions={divisionOptions} />
+              </AddButton>
+            </div>
+          )}
           {registrationsTotalCount > registrations.length && (
             <p className="m-0 mb-2 text-sm text-amber-400">
               Показаны первые {registrations.length} из {registrationsTotalCount} — список обрезан.
@@ -568,9 +576,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 categoryName: r.division.category.name,
                 roleLabel: ROLE_LABELS[r.role] ?? r.role,
                 status: r.status,
-                statusLabel: REGISTRATION_STATUS_LABELS[r.status] ?? r.status,
                 bibNumber: r.checkIn?.bibNumber ?? null,
                 checkedIn: r.checkIn !== null,
+                isPaid: r.isPaid,
                 noShow: isNoShow({ registrationStatus: r.status, hasCheckIn: r.checkIn !== null, competitionStatus: competition.status }),
                 roleOverrideStatus: r.roleOverrideStatus === "PENDING" || r.roleOverrideStatus === "REJECTED" ? r.roleOverrideStatus : null,
                 requestedRoleLabel: r.requestedRole ? ROLE_LABELS[r.requestedRole] ?? r.requestedRole : null,
@@ -579,13 +587,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               canChangeDivision={canChangeDivision}
               canReviewRoleOverride={canReviewRoleOverride}
               canCheckIn={canCheckIn}
+              canManagePayment={canManageRegistrations}
             />
-          )}
-          {canManageRegistrations && divisionOptions.length > 0 && (
-            <div className="mt-4">
-              <h3 className="mb-2 text-sm font-bold text-night-text">Добавить участника вручную</h3>
-              <AdminRegisterForm competitionId={competition.id} divisions={divisionOptions} />
-            </div>
           )}
         </div>
       ) : (

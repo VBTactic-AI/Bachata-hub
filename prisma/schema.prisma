@@ -1491,6 +1491,13 @@ model Registration {
   roleOverrideReviewedBy   User?                           @relation("RegistrationRoleOverrideReviewer", fields: [roleOverrideReviewedById], references: [id])
   roleOverrideReviewedAt   DateTime?
 
+  // Оплата (redesign, 2026-09-09) — только факт оплачено/не оплачено, без
+  // сумм/валюты/интеграции с платёжной системой (по решению пользователя —
+  // расширится позже отдельной задачей). Переключается вручную организатором
+  // (registration:manage), не автоматически ничем.
+  isPaid Boolean   @default(false)
+  paidAt DateTime?
+
   checkIn              CheckIn?
   drawParticipations   DrawParticipant[]
   roundResults         RoundResult[]
