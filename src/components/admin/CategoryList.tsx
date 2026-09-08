@@ -4,8 +4,26 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 
 type Category = { id: string; name: string; order: number };
+
+function PencilIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function KebabIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="5" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="12" cy="19" r="1.6" />
+    </svg>
+  );
+}
 
 // Активные категории — порядок задаётся перетаскиванием (по запросу
 // пользователя, 07.09.2026: "менять местами, приоритет вручную вводить не
@@ -14,6 +32,9 @@ type Category = { id: string; name: string; order: number };
 // зависимости без необходимости). Порядок при отпускании пересчитывается
 // как позиция в списке (1..N) и сохраняется только для реально изменившихся
 // категорий — не переписываем весь справочник ради одной перестановки.
+// Таблица (redesign, 2026-09-09) — тот же визуальный язык, что и на
+// вкладках "Этапы отбора"/"Оценочные показатели": StatusBadge, карандаш,
+// редактирование по клику на строку И по карандашу.
 export function CategoryList({ categories }: { categories: Category[] }) {
   const router = useRouter();
   const [items, setItems] = useState(categories);
@@ -21,7 +42,7 @@ export function CategoryList({ categories }: { categories: Category[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
 
   useEffect(() => {
     setItems(categories);
@@ -111,74 +132,97 @@ export function CategoryList({ categories }: { categories: Category[] }) {
     "!w-auto border-admin-border bg-admin-card2 py-1 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   return (
-    <div className="flex flex-col gap-0.5">
-      {error && <p className="m-0 mb-1 text-xs text-red-400">{error}</p>}
+    <>
+      {error && (
+        <tr>
+          <td colSpan={4} className="px-3 py-1 text-xs text-red-400">
+            {error}
+          </td>
+        </tr>
+      )}
       {items.map((c, i) =>
         editingId === c.id ? (
-          <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-app-sm bg-admin-card2 px-3 py-2.5">
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
-            {editName.trim() && editName !== c.name && (
-              <Button type="button" size="sm" onClick={() => saveName(c.id)} className="border-none bg-gradient-admin-cta">
-                Сохранить
-              </Button>
-            )}
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => setEditingId(null)}
-              className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
-            >
-              Отмена
-            </Button>
-          </div>
+          <tr key={c.id} className="border-t border-admin-border bg-admin-card2/40">
+            <td className="px-3 py-2 align-middle text-sm font-semibold text-admin-muted">{i + 1}</td>
+            <td className="px-3 py-2 align-middle">
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
+            </td>
+            <td className="px-3 py-2 align-middle" colSpan={2}>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {editName.trim() && editName !== c.name && (
+                  <Button type="button" size="sm" variant="admin" onClick={() => saveName(c.id)}>
+                    Сохранить
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setEditingId(null)}
+                  className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
+                >
+                  Отмена
+                </Button>
+              </div>
+            </td>
+          </tr>
         ) : (
-          <div
+          <tr
             key={c.id}
             ref={(el) => {
               if (el) rowRefs.current.set(c.id, el);
               else rowRefs.current.delete(c.id);
             }}
-            className={`grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 px-3 py-2.5 transition-colors sm:grid-cols-[48px_1fr_140px] ${
-              draggingId === c.id ? "border-admin-primary bg-admin-card2 opacity-70" : "border-transparent hover:border-admin-primary hover:bg-admin-card2"
+            onClick={() => {
+              setEditingId(c.id);
+              setEditName(c.name);
+            }}
+            className={`cursor-pointer border-t border-admin-border transition-colors ${
+              draggingId === c.id ? "bg-admin-card2/70" : "hover:bg-admin-card2/50"
             }`}
           >
-            <span className="text-sm font-semibold text-admin-muted">{i + 1}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingId(c.id);
-                setEditName(c.name);
-              }}
-              className="min-w-0 truncate text-left text-sm font-medium text-night-text"
-            >
-              {c.name}
-            </button>
-            <span className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => hide(c.id)}
-                title="Скрыть"
-                className="text-admin-muted hover:text-night-text"
-                aria-label={`Скрыть категорию ${c.name}`}
-              >
-                👁
-              </button>
-              <button
-                type="button"
-                onPointerDown={(e) => onHandlePointerDown(c.id, e)}
-                onPointerMove={onHandlePointerMove}
-                onPointerUp={onHandlePointerUp}
-                onPointerCancel={onHandlePointerUp}
-                aria-label={`Перетащить, чтобы изменить порядок категории ${c.name}`}
-                className="touch-none cursor-grab select-none border-none bg-transparent p-1 text-admin-disabled hover:text-admin-muted active:cursor-grabbing"
-              >
-                ⠿
-              </button>
-            </span>
-          </div>
+            <td className="px-3 py-2.5 align-middle">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-app-sm bg-admin-card2 text-xs font-semibold text-admin-muted">
+                {i + 1}
+              </span>
+            </td>
+            <td className="px-3 py-2.5 align-middle text-sm font-medium text-night-text">{c.name}</td>
+            <td className="px-3 py-2.5 align-middle">
+              <StatusBadge label="Активна" variant="success" />
+            </td>
+            <td className="px-3 py-2.5 align-middle" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(c.id);
+                    setEditName(c.name);
+                  }}
+                  title="Редактировать"
+                  aria-label={`Редактировать категорию ${c.name}`}
+                  className="text-admin-muted hover:text-night-text"
+                >
+                  <PencilIcon />
+                </button>
+                <button type="button" onClick={() => hide(c.id)} title="Скрыть" aria-label={`Скрыть категорию ${c.name}`} className="text-admin-muted hover:text-night-text">
+                  <KebabIcon />
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={(e) => onHandlePointerDown(c.id, e)}
+                  onPointerMove={onHandlePointerMove}
+                  onPointerUp={onHandlePointerUp}
+                  onPointerCancel={onHandlePointerUp}
+                  aria-label={`Перетащить, чтобы изменить порядок категории ${c.name}`}
+                  className="hidden touch-none cursor-grab select-none border-none bg-transparent p-1 text-admin-disabled hover:text-admin-muted active:cursor-grabbing sm:inline-flex"
+                >
+                  ⠿
+                </button>
+              </div>
+            </td>
+          </tr>
         )
       )}
-    </div>
+    </>
   );
 }

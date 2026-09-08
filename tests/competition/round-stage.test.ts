@@ -97,6 +97,14 @@ describe("updateRoundStage()", () => {
     expect(auditData.after).toEqual({ name: "1/4 финала", defaultAdvanceCount: 6, isActive: true });
   });
 
+  it("позволяет поменять порядок перетаскиванием (2026-09-09, как у DivisionCategory)", async () => {
+    stageUpdate.mockResolvedValue({ id: "st1", name: "Четвертьфинал", defaultAdvanceCount: 8, order: 2, isActive: true });
+
+    await updateRoundStage("st1", { order: 2 });
+
+    expect(stageUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "st1" }, data: expect.objectContaining({ order: 2 }) }));
+  });
+
   it("отклоняет переименование в уже занятое название понятной ошибкой", async () => {
     const { ValidationFailedError } = await import("@/server/errors");
     stageUpdate.mockRejectedValue(

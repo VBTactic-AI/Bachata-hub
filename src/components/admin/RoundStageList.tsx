@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 
-type Criterion = { id: string; name: string; minScore: number; maxScore: number; step: number; order: number };
+type Stage = { id: string; name: string; defaultAdvanceCount: number; order: number };
 
 function PencilIcon() {
   return (
@@ -25,32 +25,32 @@ function KebabIcon() {
   );
 }
 
-// Активные критерии справочника — тот же паттерн drag-reorder, что и
-// CategoryList.tsx (Pointer Events, порядок пересчитывается как позиция
-// 1..N при отпускании), плюс инлайн-редактирование диапазона/шага — которых
-// у категорий нет, но у критерия оценки это основные значения, не только
-// название. Таблица (redesign, 2026-09-09) — тот же визуальный язык, что и
-// на вкладке "Этапы отбора": название и диапазон — отдельные столбцы (были
-// склеены в один), редактирование — по клику на строку И по карандашу.
-export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
+// Активные этапы — таблица строк <tr>/<td> (redesign, 2026-09-09, тот же
+// визуальный язык, что и на вкладках "Категории"/"Оценочные показатели") с
+// перетаскиванием для смены порядка (Pointer Events, как в CategoryList.tsx —
+// раньше у этапов отбора такой возможности не было вообще, только у
+// категорий; добавлено по прямому запросу пользователя вместе с
+// order в updateRoundStageSchema/updateRoundStage). Редактирование — по
+// клику на строку И по карандашу одновременно.
+export function RoundStageList({ stages }: { stages: Stage[] }) {
   const router = useRouter();
-  const [items, setItems] = useState(criteria);
+  const [items, setItems] = useState(stages);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ name: string; minScore: number; maxScore: number; step: number } | null>(null);
+  const [draft, setDraft] = useState<{ name: string; defaultAdvanceCount: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
 
   useEffect(() => {
-    setItems(criteria);
-  }, [criteria]);
+    setItems(stages);
+  }, [stages]);
 
   function reorderOver(overId: string) {
     setItems((prev) => {
       if (!draggingId || draggingId === overId) return prev;
-      const from = prev.findIndex((c) => c.id === draggingId);
-      const to = prev.findIndex((c) => c.id === overId);
+      const from = prev.findIndex((s) => s.id === draggingId);
+      const to = prev.findIndex((s) => s.id === overId);
       if (from === -1 || to === -1) return prev;
       const next = [...prev];
       const [moved] = next.splice(from, 1);
@@ -79,20 +79,20 @@ export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
   async function onHandlePointerUp() {
     if (!draggingId) return;
     setDraggingId(null);
-    const changed = items.map((c, i) => ({ id: c.id, newOrder: i + 1, changed: c.order !== i + 1 })).filter((c) => c.changed);
+    const changed = items.map((s, i) => ({ id: s.id, newOrder: i + 1, changed: s.order !== i + 1 })).filter((s) => s.changed);
     if (changed.length === 0) return;
     setError(null);
     try {
       const results = await Promise.all(
-        changed.map((c) =>
-          fetch(`/api/judging-criteria/${c.id}`, {
+        changed.map((s) =>
+          fetch(`/api/round-stages/${s.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ order: c.newOrder }),
+            body: JSON.stringify({ order: s.newOrder }),
           })
         )
       );
-      if (results.some((r) => !r.ok)) setError("Не удалось сохранить новый порядок для всех критериев.");
+      if (results.some((r) => !r.ok)) setError("Не удалось сохранить новый порядок для всех этапов.");
     } catch {
       setError("Не удалось сохранить новый порядок — проверьте соединение.");
     }
@@ -100,18 +100,18 @@ export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
   }
 
   async function hide(id: string) {
-    await fetch(`/api/judging-criteria/${id}`, {
+    await fetch(`/api/round-stages/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: false }),
     });
-    setItems((prev) => prev.filter((c) => c.id !== id));
+    setItems((prev) => prev.filter((s) => s.id !== id));
     router.refresh();
   }
 
-  function startEdit(c: Criterion) {
-    setEditingId(c.id);
-    setDraft({ name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step });
+  function startEdit(s: Stage) {
+    setEditingId(s.id);
+    setDraft({ name: s.name, defaultAdvanceCount: String(s.defaultAdvanceCount) });
     setError(null);
   }
 
@@ -119,10 +119,10 @@ export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
     if (!draft) return;
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/judging-criteria/${id}`, {
+    const res = await fetch(`/api/round-stages/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draft),
+      body: JSON.stringify({ name: draft.name, defaultAdvanceCount: Number(draft.defaultAdvanceCount) }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -146,29 +146,42 @@ export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
           </td>
         </tr>
       )}
-      {items.map((c, i) =>
-        editingId === c.id && draft ? (
-          <tr key={c.id} className="border-t border-admin-border bg-admin-card2/40">
+      {items.map((s, i) =>
+        editingId === s.id && draft ? (
+          <tr key={s.id} className="border-t border-admin-border bg-admin-card2/40">
             <td className="px-3 py-2 align-middle text-sm font-semibold text-admin-muted">{i + 1}</td>
-            <td className="px-3 py-2 align-middle">
-              <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
-            </td>
-            <td className="px-3 py-2 align-middle">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-admin-muted">от</span>
-                <Input type="number" value={draft.minScore} onChange={(e) => setDraft({ ...draft, minScore: Number(e.target.value) })} className={fieldClass} style={{ maxWidth: 70 }} />
-                <span className="text-xs text-admin-muted">до</span>
-                <Input type="number" value={draft.maxScore} onChange={(e) => setDraft({ ...draft, maxScore: Number(e.target.value) })} className={fieldClass} style={{ maxWidth: 70 }} />
-                <span className="text-xs text-admin-muted">шаг</span>
-                <Input type="number" min={1} value={draft.step} onChange={(e) => setDraft({ ...draft, step: Number(e.target.value) })} className={fieldClass} style={{ maxWidth: 70 }} />
+            <td className="px-3 py-2 align-middle" colSpan={2}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
+                <Input
+                  type="number"
+                  min={1}
+                  value={draft.defaultAdvanceCount}
+                  onChange={(e) => setDraft({ ...draft, defaultAdvanceCount: e.target.value })}
+                  className={fieldClass}
+                  style={{ maxWidth: 90 }}
+                />
               </div>
             </td>
             <td className="px-3 py-2 align-middle" colSpan={2}>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button type="button" size="sm" variant="admin" disabled={loading || !draft.name.trim() || draft.maxScore <= draft.minScore} onClick={() => save(c.id)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="admin"
+                  disabled={loading || !draft.name.trim() || !draft.defaultAdvanceCount}
+                  onClick={() => save(s.id)}
+                >
                   Сохранить
                 </Button>
-                <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={() => setEditingId(null)} className="border-admin-border bg-transparent text-night-text hover:bg-admin-card">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={loading}
+                  onClick={() => setEditingId(null)}
+                  className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
+                >
                   Отмена
                 </Button>
               </div>
@@ -176,14 +189,14 @@ export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
           </tr>
         ) : (
           <tr
-            key={c.id}
+            key={s.id}
             ref={(el) => {
-              if (el) rowRefs.current.set(c.id, el);
-              else rowRefs.current.delete(c.id);
+              if (el) rowRefs.current.set(s.id, el);
+              else rowRefs.current.delete(s.id);
             }}
-            onClick={() => startEdit(c)}
+            onClick={() => startEdit(s)}
             className={`cursor-pointer border-t border-admin-border transition-colors ${
-              draggingId === c.id ? "bg-admin-card2/70" : "hover:bg-admin-card2/50"
+              draggingId === s.id ? "bg-admin-card2/70" : "hover:bg-admin-card2/50"
             }`}
           >
             <td className="px-3 py-2.5 align-middle">
@@ -191,28 +204,26 @@ export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
                 {i + 1}
               </span>
             </td>
-            <td className="px-3 py-2.5 align-middle text-sm font-medium text-night-text">{c.name}</td>
-            <td className="px-3 py-2.5 align-middle text-sm text-admin-muted">
-              {c.minScore}–{c.maxScore}
-            </td>
+            <td className="px-3 py-2.5 align-middle text-sm font-medium text-night-text">{s.name}</td>
+            <td className="px-3 py-2.5 align-middle text-sm text-admin-muted">{s.defaultAdvanceCount}</td>
             <td className="px-3 py-2.5 align-middle">
-              <StatusBadge label="Активен" variant="success" />
+              <StatusBadge label="Активна" variant="success" />
             </td>
             <td className="px-3 py-2.5 align-middle" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-end gap-3">
-                <button type="button" onClick={() => startEdit(c)} title="Редактировать" aria-label={`Редактировать критерий ${c.name}`} className="text-admin-muted hover:text-night-text">
+                <button type="button" onClick={() => startEdit(s)} title="Редактировать" aria-label={`Редактировать этап ${s.name}`} className="text-admin-muted hover:text-night-text">
                   <PencilIcon />
                 </button>
-                <button type="button" onClick={() => hide(c.id)} title="Скрыть" aria-label={`Скрыть критерий ${c.name}`} className="text-admin-muted hover:text-night-text">
+                <button type="button" onClick={() => hide(s.id)} title="Скрыть" aria-label={`Скрыть этап ${s.name}`} className="text-admin-muted hover:text-night-text">
                   <KebabIcon />
                 </button>
                 <button
                   type="button"
-                  onPointerDown={(e) => onHandlePointerDown(c.id, e)}
+                  onPointerDown={(e) => onHandlePointerDown(s.id, e)}
                   onPointerMove={onHandlePointerMove}
                   onPointerUp={onHandlePointerUp}
                   onPointerCancel={onHandlePointerUp}
-                  aria-label={`Перетащить, чтобы изменить порядок критерия ${c.name}`}
+                  aria-label={`Перетащить, чтобы изменить порядок этапа ${s.name}`}
                   className="hidden touch-none cursor-grab select-none border-none bg-transparent p-1 text-admin-disabled hover:text-admin-muted active:cursor-grabbing sm:inline-flex"
                 >
                   ⠿

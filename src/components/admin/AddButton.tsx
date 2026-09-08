@@ -16,7 +16,22 @@ export function AddButton({
   const [open, setOpen] = useState(false);
 
   if (open) {
-    return <div className="rounded-app border border-admin-border bg-admin-card p-4">{children}</div>;
+    return (
+      <div className="rounded-app border border-admin-border bg-admin-card p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="m-0 text-sm font-semibold text-night-text">{label}</p>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Закрыть форму"
+            className="text-admin-muted hover:text-night-text"
+          >
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
+    );
   }
 
   return (

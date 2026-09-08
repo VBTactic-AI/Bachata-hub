@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
 import { RoundStageRow } from "@/components/admin/RoundStageRow";
+import { RoundStageList } from "@/components/admin/RoundStageList";
 import { AddButton } from "@/components/admin/AddButton";
 import { CreateRoundStageForm } from "@/components/admin/CreateRoundStageForm";
 
@@ -39,11 +40,9 @@ export default async function RoundStagesPage() {
             </tr>
           </thead>
           <tbody>
-            {active.map((s, i) => (
-              <RoundStageRow key={s.id} stageId={s.id} name={s.name} defaultAdvanceCount={s.defaultAdvanceCount} isActive order={i + 1} />
-            ))}
+            <RoundStageList stages={active.map((s, i) => ({ id: s.id, name: s.name, defaultAdvanceCount: s.defaultAdvanceCount, order: i + 1 }))} />
             {hidden.map((s) => (
-              <RoundStageRow key={s.id} stageId={s.id} name={s.name} defaultAdvanceCount={s.defaultAdvanceCount} isActive={false} order={null} />
+              <RoundStageRow key={s.id} stageId={s.id} name={s.name} defaultAdvanceCount={s.defaultAdvanceCount} />
             ))}
           </tbody>
         </table>
@@ -51,9 +50,9 @@ export default async function RoundStagesPage() {
 
       <p className="m-0 text-xs leading-relaxed text-admin-muted">
         Общий справочник для всех соревнований. Организаторы выбирают раунды из этого списка, а не придумывают
-        названия сами. «Сколько проходит дальше» — число по умолчанию, при создании конкретного раунда его можно
-        поправить под размер категории. «Скрыть» не удаляет этап, а просто убирает его из выбора для новых раундов;
-        уже созданные раунды не меняются.
+        названия сами. «Количество мест (по умолчанию)» — число по умолчанию, при создании конкретного раунда его
+        можно поправить под размер категории. «Скрыть» не удаляет этап, а просто убирает его из выбора для новых
+        раундов; уже созданные раунды не меняются. Порядок — перетащите строку за ⠿.
       </p>
     </div>
   );

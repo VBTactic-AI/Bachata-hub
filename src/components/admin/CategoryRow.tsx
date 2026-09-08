@@ -4,6 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { StatusBadge } from "@/components/admin/StatusBadge";
+
+function PencilIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 // Строка скрытой категории (список активных — см. CategoryList.tsx, там
 // порядок задаётся перетаскиванием). У скрытых категорий позиции в
@@ -52,39 +61,52 @@ export function CategoryRow({ categoryId, name: initialName }: { categoryId: str
 
   if (editing) {
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-app-sm bg-admin-card2 px-3 py-2.5">
-        <Input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} />
-        {changed && !!name.trim() && (
-          <Button type="button" size="sm" disabled={loading} onClick={save} className="border-none bg-gradient-admin-cta">
-            Сохранить
-          </Button>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={loading}
-          onClick={() => setEditing(false)}
-          className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
-        >
-          Отмена
-        </Button>
-        {error && <span className="w-full text-xs text-red-400">{error}</span>}
-      </div>
+      <tr className="border-t border-admin-border bg-admin-card2/40">
+        <td className="px-3 py-2 align-middle" />
+        <td className="px-3 py-2 align-middle">
+          <Input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
+          {error && <p className="m-0 mt-1 text-xs text-red-400">{error}</p>}
+        </td>
+        <td className="px-3 py-2 align-middle" colSpan={2}>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {changed && !!name.trim() && (
+              <Button type="button" size="sm" variant="admin" disabled={loading} onClick={save}>
+                Сохранить
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={loading}
+              onClick={() => setEditing(false)}
+              className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
+            >
+              Отмена
+            </Button>
+          </div>
+        </td>
+      </tr>
     );
   }
 
   return (
-    <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 border-transparent px-3 py-2.5 transition-colors hover:border-admin-primary hover:bg-admin-card2 sm:grid-cols-[48px_1fr_140px]">
-      <span />
-      <button type="button" onClick={() => setEditing(true)} className="min-w-0 truncate text-left text-sm font-medium text-admin-muted">
-        {initialName}
-      </button>
-      <span className="flex items-center justify-end">
-        <button type="button" disabled={loading} onClick={unhide} title="Вернуть в список" className="text-xs text-admin-disabled hover:text-admin-muted hover:underline">
-          скрыта
-        </button>
-      </span>
-    </div>
+    <tr onClick={() => setEditing(true)} className="cursor-pointer border-t border-admin-border transition-colors hover:bg-admin-card2/50">
+      <td className="px-3 py-2.5 align-middle" />
+      <td className="px-3 py-2.5 align-middle text-sm font-medium text-admin-muted">{initialName}</td>
+      <td className="px-3 py-2.5 align-middle">
+        <StatusBadge label="Скрыта" variant="neutral" />
+      </td>
+      <td className="px-3 py-2.5 align-middle" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-3">
+          <button type="button" onClick={() => setEditing(true)} title="Редактировать" aria-label={`Редактировать категорию ${initialName}`} className="text-admin-muted hover:text-night-text">
+            <PencilIcon />
+          </button>
+          <button type="button" disabled={loading} onClick={unhide} title="Вернуть в список" className="text-xs text-admin-disabled hover:text-admin-muted hover:underline">
+            вернуть
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }

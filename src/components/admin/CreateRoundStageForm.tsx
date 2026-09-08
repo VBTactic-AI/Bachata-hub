@@ -41,7 +41,7 @@ export function CreateRoundStageForm() {
         <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Четвертьфинал" className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
-        Сколько проходит дальше по умолчанию
+        Количество мест (по умолчанию)
         <Input
           required
           type="number"

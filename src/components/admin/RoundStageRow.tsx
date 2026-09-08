@@ -14,35 +14,18 @@ function PencilIcon() {
   );
 }
 
-function KebabIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="5" r="1.6" />
-      <circle cx="12" cy="12" r="1.6" />
-      <circle cx="12" cy="19" r="1.6" />
-    </svg>
-  );
-}
-
-// Строка таблицы этапов отбора (redesign, 2026-09-09 — приведено к стилю
-// UI-референса пользователя: настоящая <tr>/<td> строка вместо CSS-grid,
-// StatusBadge вместо текстовой подписи, карандаш/кебаб вместо эмодзи. Те же
-// самые действия, что и раньше: карандаш — переименовать/поменять число
-// (было по клику на само название), кебаб — скрыть/вернуть (было 👁), ⠿ —
-// перетащить для смены порядка (не показано в референсе, но без этого
-// исчезла бы работающая функция ручной сортировки этапов).
+// Строка СКРЫТОГО этапа (активные — см. RoundStageList.tsx, там же
+// перетаскивание). У скрытых позиции в видимом списке нет, поэтому здесь
+// только переименование/число и возврат в список — без drag (как и
+// CategoryRow.tsx для скрытых категорий).
 export function RoundStageRow({
   stageId,
   name: initialName,
   defaultAdvanceCount: initialCount,
-  isActive,
-  order,
 }: {
   stageId: string;
   name: string;
   defaultAdvanceCount: number;
-  isActive: boolean;
-  order: number | null;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -70,12 +53,12 @@ export function RoundStageRow({
     router.refresh();
   }
 
-  async function toggleActive() {
+  async function unhide() {
     setLoading(true);
     await fetch(`/api/round-stages/${stageId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !isActive }),
+      body: JSON.stringify({ isActive: true }),
     });
     setLoading(false);
     router.refresh();
@@ -87,7 +70,7 @@ export function RoundStageRow({
   if (editing) {
     return (
       <tr className="border-t border-admin-border bg-admin-card2/40">
-        <td className="px-3 py-2 align-middle text-sm font-semibold text-admin-muted">{order ?? ""}</td>
+        <td className="px-3 py-2 align-middle" />
         <td className="px-3 py-2 align-middle" colSpan={2}>
           <div className="flex flex-wrap items-center gap-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
@@ -102,7 +85,14 @@ export function RoundStageRow({
                 Сохранить
               </Button>
             )}
-            <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={() => setEditing(false)} className="border-admin-border bg-transparent text-night-text hover:bg-admin-card">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={loading}
+              onClick={() => setEditing(false)}
+              className="border-admin-border bg-transparent text-night-text hover:bg-admin-card"
+            >
               Отмена
             </Button>
           </div>
@@ -112,43 +102,27 @@ export function RoundStageRow({
   }
 
   return (
-    <tr className="border-t border-admin-border transition-colors hover:bg-admin-card2/50">
-      <td className="px-3 py-2.5 align-middle">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-app-sm bg-admin-card2 text-xs font-semibold text-admin-muted">
-          {order ?? "—"}
-        </span>
-      </td>
-      <td className={`px-3 py-2.5 align-middle text-sm font-medium ${isActive ? "text-night-text" : "text-admin-muted"}`}>{initialName}</td>
+    <tr onClick={() => setEditing(true)} className="cursor-pointer border-t border-admin-border transition-colors hover:bg-admin-card2/50">
+      <td className="px-3 py-2.5 align-middle" />
+      <td className="px-3 py-2.5 align-middle text-sm font-medium text-admin-muted">{initialName}</td>
       <td className="px-3 py-2.5 align-middle text-sm text-admin-muted">{initialCount}</td>
       <td className="px-3 py-2.5 align-middle">
-        <StatusBadge label={isActive ? "Активна" : "Скрыта"} variant={isActive ? "success" : "neutral"} />
+        <StatusBadge label="Скрыта" variant="neutral" />
       </td>
-      <td className="px-3 py-2.5 align-middle">
+      <td className="px-3 py-2.5 align-middle" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            title="Редактировать"
-            aria-label={`Редактировать этап ${initialName}`}
-            className="text-admin-muted hover:text-night-text"
-          >
+          <button type="button" onClick={() => setEditing(true)} title="Редактировать" aria-label={`Редактировать этап ${initialName}`} className="text-admin-muted hover:text-night-text">
             <PencilIcon />
           </button>
           <button
             type="button"
             disabled={loading}
-            onClick={toggleActive}
-            title={isActive ? "Скрыть" : "Вернуть в список"}
-            aria-label={isActive ? `Скрыть этап ${initialName}` : `Вернуть этап ${initialName} в список`}
-            className="text-admin-muted hover:text-night-text"
+            onClick={unhide}
+            title="Вернуть в список"
+            className="text-xs text-admin-disabled hover:text-admin-muted hover:underline"
           >
-            <KebabIcon />
+            вернуть
           </button>
-          {isActive && (
-            <span className="hidden cursor-grab select-none text-admin-disabled sm:inline" aria-hidden="true">
-              ⠿
-            </span>
-          )}
         </div>
       </td>
     </tr>

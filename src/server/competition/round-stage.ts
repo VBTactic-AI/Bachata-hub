@@ -60,6 +60,7 @@ export async function updateRoundStage(stageId: string, input: UpdateRoundStageI
         data: {
           name: input.name,
           defaultAdvanceCount: input.defaultAdvanceCount,
+          order: input.order,
           isActive: input.isActive,
         },
       });
@@ -69,8 +70,8 @@ export async function updateRoundStage(stageId: string, input: UpdateRoundStageI
         action: "round_stage.update",
         entityType: "RoundStageCatalog",
         entityId: stageId,
-        before: { name: before.name, defaultAdvanceCount: before.defaultAdvanceCount, isActive: before.isActive },
-        after: { name: after.name, defaultAdvanceCount: after.defaultAdvanceCount, isActive: after.isActive },
+        before: { name: before.name, defaultAdvanceCount: before.defaultAdvanceCount, order: before.order, isActive: before.isActive },
+        after: { name: after.name, defaultAdvanceCount: after.defaultAdvanceCount, order: after.order, isActive: after.isActive },
       });
     });
   } catch (e) {

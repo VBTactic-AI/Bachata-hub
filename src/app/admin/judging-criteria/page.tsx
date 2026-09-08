@@ -30,22 +30,26 @@ export default async function JudgingCriteriaPage() {
         </AddButton>
       </div>
 
-      <div className="rounded-app border border-admin-border bg-admin-card p-2 sm:p-3">
-        <div className="grid grid-cols-[32px_1fr_auto] gap-3 px-3 pb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-admin-disabled sm:grid-cols-[48px_1fr_140px]">
-          <span>#</span>
-          <span>Название · диапазон</span>
-          <span className="text-right">Видимость</span>
-        </div>
-        <JudgingCriterionList
-          criteria={active.map((c) => ({ id: c.id, name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step, order: c.order }))}
-        />
-        {hidden.length > 0 && (
-          <div className="mt-1 flex flex-col gap-0.5 border-t border-admin-border pt-1">
+      <div className="overflow-x-auto rounded-app border border-admin-border bg-admin-card">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
+            <tr>
+              <th className="px-3 py-2.5 font-semibold">№</th>
+              <th className="px-3 py-2.5 font-semibold">Показатель</th>
+              <th className="px-3 py-2.5 font-semibold">Диапазон оценок</th>
+              <th className="px-3 py-2.5 font-semibold">Статус</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <JudgingCriterionList
+              criteria={active.map((c) => ({ id: c.id, name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step, order: c.order }))}
+            />
             {hidden.map((c) => (
               <JudgingCriterionRow key={c.id} criterionId={c.id} name={c.name} minScore={c.minScore} maxScore={c.maxScore} />
             ))}
-          </div>
-        )}
+          </tbody>
+        </table>
       </div>
 
       <p className="m-0 text-xs leading-relaxed text-admin-muted">
