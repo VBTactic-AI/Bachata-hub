@@ -5,25 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { PencilIcon, KebabIcon } from "@/components/admin/icons";
+import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
 
 type Criterion = { id: string; name: string; minScore: number; maxScore: number; step: number; order: number };
-
-function PencilIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function KebabIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="5" r="1.6" />
-      <circle cx="12" cy="12" r="1.6" />
-      <circle cx="12" cy="19" r="1.6" />
-    </svg>
-  );
-}
 
 // Активные критерии справочника — тот же паттерн drag-reorder, что и
 // CategoryList.tsx (Pointer Events, порядок пересчитывается как позиция
@@ -206,6 +191,11 @@ export function JudgingCriterionList({ criteria }: { criteria: Criterion[] }) {
                 <button type="button" onClick={() => hide(c.id)} title="Скрыть" aria-label={`Скрыть критерий ${c.name}`} className="text-admin-muted hover:text-night-text">
                   <KebabIcon />
                 </button>
+                <DeleteIconButton
+                  url={`/api/judging-criteria/${c.id}`}
+                  confirmMessage={`Удалить показатель «${c.name}»? Это необратимо.`}
+                  label={`Удалить показатель ${c.name}`}
+                />
                 <button
                   type="button"
                   onPointerDown={(e) => onHandlePointerDown(c.id, e)}

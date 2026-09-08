@@ -72,6 +72,37 @@ export async function updateDivisionCategory(categoryId: string, input: UpdateDi
   }
 }
 
+// Физическое удаление — только пока категорию НИКТО не использует (ни один
+// Division на неё не ссылается). Если используется, категория остаётся
+// только "скрываемой" (setDivisionCategoryActive выше) — CLAUDE.md §18 не
+// разрешает терять историю уже созданных дивизионов/регистраций молча.
+// По запросу пользователя (2026-09-09): "добавь кнопочку удаления, чтобы
+// можно было удалить ненужное в справочниках".
+export async function deleteDivisionCategory(categoryId: string): Promise<void> {
+  const actor = await requirePermission("division_category:manage");
+
+  const category = await prisma.divisionCategory.findUniqueOrThrow({
+    where: { id: categoryId },
+    include: { _count: { select: { divisions: true } } },
+  });
+  if (category._count.divisions > 0) {
+    throw new ValidationFailedError(
+      "Нельзя удалить категорию — она уже используется в одном или нескольких соревнований. Скройте её вместо удаления."
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await writeAudit(tx, {
+      actor,
+      action: "division_category.delete",
+      entityType: "DivisionCategory",
+      entityId: categoryId,
+      before: { name: category.name, order: category.order, isActive: category.isActive },
+    });
+    await tx.divisionCategory.delete({ where: { id: categoryId } });
+  });
+}
+
 // Не физическое удаление (CLAUDE.md §18) — деактивированная категория
 // пропадает из списка выбора для НОВЫХ дивизионов, но остаётся у всех уже
 // созданных Division/Registration без изменений.

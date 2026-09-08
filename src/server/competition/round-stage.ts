@@ -81,3 +81,32 @@ export async function updateRoundStage(stageId: string, input: UpdateRoundStageI
     throw e;
   }
 }
+
+// Физическое удаление — только пока этап НИКТО не использует: ни один Round
+// на него не ссылается (stageId), и ни один DivisionStagePlan его не
+// выбрал в план по этапам. Иначе — только "скрыть" (CLAUDE.md §18, тот же
+// принцип, что и у DivisionCategory). По запросу пользователя (2026-09-09).
+export async function deleteRoundStage(stageId: string): Promise<void> {
+  const actor = await requirePermission("round_stage:manage");
+
+  const stage = await prisma.roundStageCatalog.findUniqueOrThrow({
+    where: { id: stageId },
+    include: { _count: { select: { rounds: true, divisionPlans: true } } },
+  });
+  if (stage._count.rounds > 0 || stage._count.divisionPlans > 0) {
+    throw new ValidationFailedError(
+      "Нельзя удалить этап — он уже используется в плане или раундах одного или нескольких соревнований. Скройте его вместо удаления."
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await writeAudit(tx, {
+      actor,
+      action: "round_stage.delete",
+      entityType: "RoundStageCatalog",
+      entityId: stageId,
+      before: { name: stage.name, order: stage.order, defaultAdvanceCount: stage.defaultAdvanceCount, isActive: stage.isActive },
+    });
+    await tx.roundStageCatalog.delete({ where: { id: stageId } });
+  });
+}

@@ -5,14 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-
-function PencilIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+import { PencilIcon } from "@/components/admin/icons";
+import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
 
 // Строка СКРЫТОГО критерия справочника (активные — см.
 // JudgingCriterionList.tsx, там же перетаскивание). Редактирование доступно
@@ -115,6 +109,11 @@ export function JudgingCriterionRow({
           <button type="button" disabled={loading} onClick={unhide} title="Вернуть в список" className="text-xs text-admin-disabled hover:text-admin-muted hover:underline">
             вернуть
           </button>
+          <DeleteIconButton
+            url={`/api/judging-criteria/${criterionId}`}
+            confirmMessage={`Удалить показатель «${initialName}»? Это необратимо.`}
+            label={`Удалить показатель ${initialName}`}
+          />
         </div>
       </td>
     </tr>

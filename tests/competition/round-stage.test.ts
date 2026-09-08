@@ -8,21 +8,22 @@ const findFirst = vi.fn();
 const findUniqueOrThrow = vi.fn();
 const stageCreate = vi.fn();
 const stageUpdate = vi.fn();
+const stageDelete = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  roundStageCatalog: { create: stageCreate, findUniqueOrThrow, update: stageUpdate },
+  roundStageCatalog: { create: stageCreate, findUniqueOrThrow, update: stageUpdate, delete: stageDelete },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    roundStageCatalog: { findFirst: (...a: unknown[]) => findFirst(...a) },
+    roundStageCatalog: { findFirst: (...a: unknown[]) => findFirst(...a), findUniqueOrThrow: (...a: unknown[]) => findUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { createRoundStage, updateRoundStage } = await import("@/server/competition/round-stage");
+const { createRoundStage, updateRoundStage, deleteRoundStage } = await import("@/server/competition/round-stage");
 const { Prisma } = await import("@prisma/client");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -33,6 +34,7 @@ beforeEach(() => {
   findUniqueOrThrow.mockReset();
   stageCreate.mockReset();
   stageUpdate.mockReset();
+  stageDelete.mockReset();
   auditCreate.mockReset();
 });
 
@@ -112,5 +114,53 @@ describe("updateRoundStage()", () => {
     );
 
     await expect(updateRoundStage("st1", { name: "Полуфинал" })).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+});
+
+describe("deleteRoundStage() — 2026-09-09", () => {
+  it("удаляет неиспользуемый этап, с аудитом", async () => {
+    findUniqueOrThrow.mockResolvedValue({
+      id: "st1",
+      name: "Четвертьфинал",
+      order: 1,
+      defaultAdvanceCount: 8,
+      isActive: true,
+      _count: { rounds: 0, divisionPlans: 0 },
+    });
+
+    await deleteRoundStage("st1");
+
+    expect(stageDelete).toHaveBeenCalledWith({ where: { id: "st1" } });
+    expect(auditCreate.mock.calls[0][0].data.action).toBe("round_stage.delete");
+  });
+
+  it("отклоняет удаление этапа, уже используемого раундом", async () => {
+    const { ValidationFailedError } = await import("@/server/errors");
+    findUniqueOrThrow.mockResolvedValue({
+      id: "st1",
+      name: "Четвертьфинал",
+      order: 1,
+      defaultAdvanceCount: 8,
+      isActive: true,
+      _count: { rounds: 1, divisionPlans: 0 },
+    });
+
+    await expect(deleteRoundStage("st1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(stageDelete).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет удаление этапа, уже выбранного в плане дивизиона", async () => {
+    const { ValidationFailedError } = await import("@/server/errors");
+    findUniqueOrThrow.mockResolvedValue({
+      id: "st1",
+      name: "Четвертьфинал",
+      order: 1,
+      defaultAdvanceCount: 8,
+      isActive: true,
+      _count: { rounds: 0, divisionPlans: 1 },
+    });
+
+    await expect(deleteRoundStage("st1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(stageDelete).not.toHaveBeenCalled();
   });
 });

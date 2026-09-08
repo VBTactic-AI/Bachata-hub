@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateDivisionCategory } from "@/server/competition/division-category";
+import { updateDivisionCategory, deleteDivisionCategory } from "@/server/competition/division-category";
 import { updateDivisionCategorySchema } from "@/server/competition/schemas";
 import { respondToDomainError } from "@/server/http";
 
@@ -13,6 +13,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   try {
     await updateDivisionCategory(id, parsed.data);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return respondToDomainError(e);
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
+    await deleteDivisionCategory(id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return respondToDomainError(e);

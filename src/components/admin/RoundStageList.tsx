@@ -5,25 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { PencilIcon, KebabIcon } from "@/components/admin/icons";
+import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
 
 type Stage = { id: string; name: string; defaultAdvanceCount: number; order: number };
-
-function PencilIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function KebabIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="5" r="1.6" />
-      <circle cx="12" cy="12" r="1.6" />
-      <circle cx="12" cy="19" r="1.6" />
-    </svg>
-  );
-}
 
 // Активные этапы — таблица строк <tr>/<td> (redesign, 2026-09-09, тот же
 // визуальный язык, что и на вкладках "Категории"/"Оценочные показатели") с
@@ -217,6 +202,11 @@ export function RoundStageList({ stages }: { stages: Stage[] }) {
                 <button type="button" onClick={() => hide(s.id)} title="Скрыть" aria-label={`Скрыть этап ${s.name}`} className="text-admin-muted hover:text-night-text">
                   <KebabIcon />
                 </button>
+                <DeleteIconButton
+                  url={`/api/round-stages/${s.id}`}
+                  confirmMessage={`Удалить этап «${s.name}»? Это необратимо.`}
+                  label={`Удалить этап ${s.name}`}
+                />
                 <button
                   type="button"
                   onPointerDown={(e) => onHandlePointerDown(s.id, e)}

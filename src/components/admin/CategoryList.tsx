@@ -5,25 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { PencilIcon, KebabIcon } from "@/components/admin/icons";
+import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
 
 type Category = { id: string; name: string; order: number };
-
-function PencilIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function KebabIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="5" r="1.6" />
-      <circle cx="12" cy="12" r="1.6" />
-      <circle cx="12" cy="19" r="1.6" />
-    </svg>
-  );
-}
 
 // Активные категории — порядок задаётся перетаскиванием (по запросу
 // пользователя, 07.09.2026: "менять местами, приоритет вручную вводить не
@@ -207,6 +192,11 @@ export function CategoryList({ categories }: { categories: Category[] }) {
                 <button type="button" onClick={() => hide(c.id)} title="Скрыть" aria-label={`Скрыть категорию ${c.name}`} className="text-admin-muted hover:text-night-text">
                   <KebabIcon />
                 </button>
+                <DeleteIconButton
+                  url={`/api/division-categories/${c.id}`}
+                  confirmMessage={`Удалить категорию «${c.name}»? Это необратимо.`}
+                  label={`Удалить категорию ${c.name}`}
+                />
                 <button
                   type="button"
                   onPointerDown={(e) => onHandlePointerDown(c.id, e)}

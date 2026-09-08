@@ -76,3 +76,33 @@ export async function updateJudgingCriterionCatalog(id: string, input: UpdateJud
     throw e;
   }
 }
+
+// Физическое удаление — только пока критерий НИКТО не выбрал на дивизионе
+// (FinalCriterion.catalogId). В схеме это ON DELETE SET NULL (сам выбор не
+// сломался бы), но для предсказуемости — то же правило "скрыть вместо
+// удаления", что и у DivisionCategory/RoundStageCatalog (CLAUDE.md §18). По
+// запросу пользователя (2026-09-09).
+export async function deleteJudgingCriterionCatalog(id: string): Promise<void> {
+  const actor = await requirePermission("judging_criteria:manage");
+
+  const criterion = await prisma.judgingCriterionCatalog.findUniqueOrThrow({
+    where: { id },
+    include: { _count: { select: { criteria: true } } },
+  });
+  if (criterion._count.criteria > 0) {
+    throw new ValidationFailedError(
+      "Нельзя удалить показатель — он уже выбран в критериях финала одной или нескольких категорий. Скройте его вместо удаления."
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await writeAudit(tx, {
+      actor,
+      action: "judging_criterion_catalog.delete",
+      entityType: "JudgingCriterionCatalog",
+      entityId: id,
+      before: { name: criterion.name, minScore: criterion.minScore, maxScore: criterion.maxScore, step: criterion.step, order: criterion.order, isActive: criterion.isActive },
+    });
+    await tx.judgingCriterionCatalog.delete({ where: { id } });
+  });
+}

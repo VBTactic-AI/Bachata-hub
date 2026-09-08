@@ -8,21 +8,22 @@ const findFirst = vi.fn();
 const findUniqueOrThrow = vi.fn();
 const categoryCreate = vi.fn();
 const categoryUpdate = vi.fn();
+const categoryDelete = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  divisionCategory: { create: categoryCreate, findUniqueOrThrow, update: categoryUpdate },
+  divisionCategory: { create: categoryCreate, findUniqueOrThrow, update: categoryUpdate, delete: categoryDelete },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    divisionCategory: { findFirst: (...a: unknown[]) => findFirst(...a) },
+    divisionCategory: { findFirst: (...a: unknown[]) => findFirst(...a), findUniqueOrThrow: (...a: unknown[]) => findUniqueOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { createDivisionCategory, setDivisionCategoryActive, updateDivisionCategory } = await import(
+const { createDivisionCategory, setDivisionCategoryActive, updateDivisionCategory, deleteDivisionCategory } = await import(
   "@/server/competition/division-category"
 );
 const { Prisma } = await import("@prisma/client");
@@ -35,6 +36,7 @@ beforeEach(() => {
   findUniqueOrThrow.mockReset();
   categoryCreate.mockReset();
   categoryUpdate.mockReset();
+  categoryDelete.mockReset();
   auditCreate.mockReset();
 });
 
@@ -112,5 +114,25 @@ describe("updateDivisionCategory()", () => {
     );
 
     await expect(updateDivisionCategory("cat1", { name: "Любители" })).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+});
+
+describe("deleteDivisionCategory() — 2026-09-09", () => {
+  it("удаляет неиспользуемую категорию, с аудитом", async () => {
+    findUniqueOrThrow.mockResolvedValue({ id: "cat1", name: "Юниоры", order: 1, isActive: true, _count: { divisions: 0 } });
+
+    await deleteDivisionCategory("cat1");
+
+    expect(categoryDelete).toHaveBeenCalledWith({ where: { id: "cat1" } });
+    const entry = auditCreate.mock.calls[0][0].data;
+    expect(entry.action).toBe("division_category.delete");
+  });
+
+  it("отклоняет удаление категории, уже используемой хотя бы одним Division", async () => {
+    const { ValidationFailedError } = await import("@/server/errors");
+    findUniqueOrThrow.mockResolvedValue({ id: "cat1", name: "Юниоры", order: 1, isActive: true, _count: { divisions: 2 } });
+
+    await expect(deleteDivisionCategory("cat1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(categoryDelete).not.toHaveBeenCalled();
   });
 });

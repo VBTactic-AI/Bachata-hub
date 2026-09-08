@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateRoundStage } from "@/server/competition/round-stage";
+import { updateRoundStage, deleteRoundStage } from "@/server/competition/round-stage";
 import { updateRoundStageSchema } from "@/server/competition/schemas";
 import { respondToDomainError } from "@/server/http";
 
@@ -13,6 +13,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   try {
     await updateRoundStage(id, parsed.data);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return respondToDomainError(e);
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
+    await deleteRoundStage(id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return respondToDomainError(e);

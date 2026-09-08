@@ -5,14 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-
-function PencilIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+import { PencilIcon } from "@/components/admin/icons";
+import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
 
 // Строка СКРЫТОГО этапа (активные — см. RoundStageList.tsx, там же
 // перетаскивание). У скрытых позиции в видимом списке нет, поэтому здесь
@@ -123,6 +117,11 @@ export function RoundStageRow({
           >
             вернуть
           </button>
+          <DeleteIconButton
+            url={`/api/round-stages/${stageId}`}
+            confirmMessage={`Удалить этап «${initialName}»? Это необратимо.`}
+            label={`Удалить этап ${initialName}`}
+          />
         </div>
       </td>
     </tr>
