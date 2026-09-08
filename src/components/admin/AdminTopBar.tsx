@@ -13,7 +13,7 @@ export async function AdminTopBar() {
   const dancer = await getMyDancerRef();
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-night-border bg-night-bg/95 px-4 py-3 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-night-border bg-night-bg/95 px-4 py-3 backdrop-blur-md sm:px-6">
       <Link
         href="/"
         className="font-night text-sm font-medium text-night-muted no-underline hover:text-night-text hover:no-underline"
@@ -21,7 +21,7 @@ export async function AdminTopBar() {
         ← На сайт
       </Link>
       {user ? (
-        <div className="flex items-center gap-4 font-night text-sm">
+        <div className="flex flex-wrap items-center gap-3 font-night text-sm sm:gap-4">
           {isModerator(user) && (
             <Link href="/moderation" className="text-night-muted no-underline hover:text-night-text hover:no-underline">
               {t.nav.admin}
