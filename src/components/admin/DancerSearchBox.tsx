@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
-import { t } from "@/lib/i18n/dictionary";
 
 type DancerResult = {
   dancerId: string;
@@ -77,12 +76,9 @@ export function DancerSearchBox({
                   setResults(null);
                   setQuery(d.displayName);
                 }}
-                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-app-sm border border-admin-border bg-admin-card px-3 py-2 text-left hover:border-admin-primary"
+                className="flex w-full items-center rounded-app-sm border border-admin-border bg-admin-card px-3 py-2 text-left hover:border-admin-primary"
               >
                 <span className="font-semibold text-night-text">{d.displayName}</span>
-                <span className="text-sm text-admin-muted">
-                  {d.gender ? t.dancer.gender[d.gender] : "пол не указан"} · {d.email}
-                </span>
               </button>
             ))
           )}

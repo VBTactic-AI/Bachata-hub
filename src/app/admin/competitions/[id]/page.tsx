@@ -553,13 +553,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
       {canViewAllRegistrations ? (
         <div className="flex flex-col gap-3">
-          {canManageRegistrations && divisionOptions.length > 0 && (
-            <div className="flex justify-end">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="m-0 text-xl font-extrabold text-night-text">Участники</h2>
+              <p className="m-0 mt-1 text-sm text-admin-muted">
+                Список всех участников текущего соревнования. Вы можете управлять категориями, отмечать check-in и
+                отслеживать оплату.
+              </p>
+            </div>
+            {canManageRegistrations && divisionOptions.length > 0 && (
               <AddButton label="Добавить участника" gradientClassName="bg-gradient-admin-cta">
                 <AddParticipantPanel competitionId={competition.id} divisions={divisionOptions} />
               </AddButton>
-            </div>
-          )}
+            )}
+          </div>
           {registrationsTotalCount > registrations.length && (
             <p className="m-0 mb-2 text-sm text-amber-400">
               Показаны первые {registrations.length} из {registrationsTotalCount} — список обрезан.

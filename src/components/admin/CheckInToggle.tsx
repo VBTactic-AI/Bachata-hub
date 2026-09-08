@@ -37,7 +37,7 @@ export function CheckInToggle({ registrationId, checkedIn, displayName }: { regi
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Switch checked={checkedIn} onChange={onChange} disabled={loading} label={`Check-in: ${displayName}`} />
+      <Switch checked={checkedIn} onChange={onChange} disabled={loading} label={`Check-in: ${displayName}`} tone="success" />
       {error && <span className="text-xs text-red-400">{error}</span>}
     </span>
   );

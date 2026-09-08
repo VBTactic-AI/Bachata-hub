@@ -95,8 +95,24 @@ export function ParticipantsPanel({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Всего участников" value={total} icon={<PeopleIcon />} tone="primary" />
         <StatCard label="Прошли check-in" value={checkedInCount} icon={<CheckCircleIcon />} tone="success" percent={pct(checkedInCount, total)} />
-        <StatCard label="Оплачено" value={paidCount} icon={<CardIcon />} tone="primary" percent={pct(paidCount, total)} />
-        <StatCard label="Не оплачено" value={total - paidCount} icon={<AlertIcon />} tone="danger" percent={pct(total - paidCount, total)} />
+        <StatCard
+          label="Оплачено"
+          value={paidCount}
+          icon={<CardIcon />}
+          tone="primary"
+          percent={pct(paidCount, total)}
+          active={paymentFilter === "yes"}
+          onClick={() => setPaymentFilter((v) => (v === "yes" ? "" : "yes"))}
+        />
+        <StatCard
+          label="Не оплачено"
+          value={total - paidCount}
+          icon={<AlertIcon />}
+          tone="danger"
+          percent={pct(total - paidCount, total)}
+          active={paymentFilter === "no"}
+          onClick={() => setPaymentFilter((v) => (v === "no" ? "" : "no"))}
+        />
       </div>
 
       <div className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
