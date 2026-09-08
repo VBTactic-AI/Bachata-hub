@@ -108,7 +108,7 @@ export function CategoryList({ categories }: { categories: Category[] }) {
   }
 
   const fieldClass =
-    "!w-auto border-night-border bg-night-card2 py-1 text-sm text-night-text focus:border-night-primary focus:ring-night-primary/20";
+    "!w-auto border-night-border bg-night-card2 py-1 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -118,7 +118,7 @@ export function CategoryList({ categories }: { categories: Category[] }) {
           <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-app-sm bg-night-card2 px-3 py-2.5">
             <Input value={editName} onChange={(e) => setEditName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} autoFocus />
             {editName.trim() && editName !== c.name && (
-              <Button type="button" size="sm" onClick={() => saveName(c.id)} className="border-none bg-gradient-night-cta">
+              <Button type="button" size="sm" onClick={() => saveName(c.id)} className="border-none bg-gradient-admin-cta">
                 Сохранить
               </Button>
             )}
@@ -140,7 +140,7 @@ export function CategoryList({ categories }: { categories: Category[] }) {
               else rowRefs.current.delete(c.id);
             }}
             className={`grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 px-3 py-2.5 transition-colors sm:grid-cols-[48px_1fr_140px] ${
-              draggingId === c.id ? "border-night-primary bg-night-card2 opacity-70" : "border-transparent hover:border-night-primary hover:bg-night-card2"
+              draggingId === c.id ? "border-admin-primary bg-night-card2 opacity-70" : "border-transparent hover:border-admin-primary hover:bg-night-card2"
             }`}
           >
             <span className="text-sm font-semibold text-night-muted">{i + 1}</span>

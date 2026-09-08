@@ -39,11 +39,11 @@ export function CreateDivisionCategoryForm() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Юниоры"
-          className="border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20"
+          className="border-night-border bg-night-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
         />
       </Label>
       {error && <p className="text-sm text-red-400">{error}</p>}
-      <Button type="submit" size="sm" disabled={loading} className="border-none bg-gradient-night-cta">
+      <Button type="submit" size="sm" disabled={loading} className="border-none bg-gradient-admin-cta">
         Добавить категорию
       </Button>
     </FormRoot>

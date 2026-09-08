@@ -31,10 +31,7 @@ export default async function CompetitionsPage() {
       <div className="flex items-center justify-between">
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Соревнования</h1>
         {isSuperAdmin && (
-          <Link
-            href="/admin/competitions/new"
-            className={cn(buttonVariants(), "border-none bg-gradient-night-cta no-underline")}
-          >
+          <Link href="/admin/competitions/new" className={cn(buttonVariants({ variant: "admin" }), "no-underline")}>
             + Новое соревнование
           </Link>
         )}
@@ -50,12 +47,12 @@ export default async function CompetitionsPage() {
               href={`/admin/competitions/${c.id}`}
               className={cn(
                 cardVariants({ interactive: true }),
-                "border-night-border bg-night-card no-underline hover:border-night-primary/60 hover:shadow-none"
+                "border-night-border bg-night-card no-underline hover:border-admin-primary/60 hover:shadow-none"
               )}
             >
               <strong className="text-night-text">{c.name}</strong>
               <p className="mt-1.5">
-                <Badge variant="community" className="bg-night-card2 text-night-pink">
+                <Badge variant="community" className="bg-night-card2 text-admin-primaryHover">
                   {STATUS_LABELS[c.status] ?? c.status}
                 </Badge>
               </p>

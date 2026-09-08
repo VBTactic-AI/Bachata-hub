@@ -58,7 +58,7 @@ export function RoundStageRow({
   }
 
   const fieldClass =
-    "!w-auto border-night-border bg-night-card2 py-1 text-sm text-night-text focus:border-night-primary focus:ring-night-primary/20";
+    "!w-auto border-night-border bg-night-card2 py-1 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
   if (editing) {
     return (
@@ -66,7 +66,7 @@ export function RoundStageRow({
         <Input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} style={{ maxWidth: 180 }} />
         <Input type="number" min={1} value={count} onChange={(e) => setCount(e.target.value)} className={fieldClass} style={{ maxWidth: 90 }} />
         {changed && !!name.trim() && (
-          <Button type="button" size="sm" disabled={loading} onClick={save} className="border-none bg-gradient-night-cta">
+          <Button type="button" size="sm" disabled={loading} onClick={save} className="border-none bg-gradient-admin-cta">
             Сохранить
           </Button>
         )}
@@ -86,7 +86,7 @@ export function RoundStageRow({
   }
 
   return (
-    <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 border-transparent px-3 py-2.5 transition-colors hover:border-night-primary hover:bg-night-card2 sm:grid-cols-[48px_1fr_140px]">
+    <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-app-sm border-l-4 border-transparent px-3 py-2.5 transition-colors hover:border-admin-primary hover:bg-night-card2 sm:grid-cols-[48px_1fr_140px]">
       <span className="text-sm font-semibold text-night-muted">{order ?? ""}</span>
       <button
         type="button"

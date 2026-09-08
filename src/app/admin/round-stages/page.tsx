@@ -22,7 +22,7 @@ export default async function RoundStagesPage() {
           <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Этапы отбора</h1>
           <p className="m-0 mt-1 text-sm text-night-muted">Раунды и их последовательность</p>
         </div>
-        <AddButton label="Добавить этап" gradientClassName="bg-gradient-night-cta">
+        <AddButton label="Добавить этап" gradientClassName="bg-gradient-admin-cta">
           <CreateRoundStageForm />
         </AddButton>
       </div>

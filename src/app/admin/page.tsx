@@ -5,11 +5,10 @@ import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
 import { buttonVariants } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { StatCard } from "@/components/admin/StatCard";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import { COMPETITION_STATUS_LABELS as STATUS_LABELS } from "@/lib/competition-labels";
 import { cn } from "@/lib/cn";
-
-const DARK_OUTLINE_LINK = "border-night-border bg-transparent text-night-text no-underline hover:border-night-primary hover:text-night-text";
 
 // Панель управления /admin — раньше в разделе не было общего "входа": сразу
 // список соревнований без сводки (найдено пользователем 07.09.2026). Та же
@@ -42,18 +41,9 @@ export default async function AdminDashboardPage() {
       <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Панель управления</h1>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Card className="border-night-border bg-night-card">
-          <p className="m-0 text-sm text-night-muted">Всего соревнований</p>
-          <p className="m-0 mt-1 text-3xl font-extrabold text-night-text">{competitions.length}</p>
-        </Card>
-        <Card className="border-night-border bg-night-card">
-          <p className="m-0 text-sm text-night-muted">Регистрация открыта</p>
-          <p className="m-0 mt-1 text-3xl font-extrabold text-night-primary">{open}</p>
-        </Card>
-        <Card className="border-night-border bg-night-card">
-          <p className="m-0 text-sm text-night-muted">Идут сейчас</p>
-          <p className="m-0 mt-1 text-3xl font-extrabold text-night-pink">{live}</p>
-        </Card>
+        <StatCard label="Всего соревнований" value={competitions.length} />
+        <StatCard label="Регистрация открыта" value={open} accent />
+        <StatCard label="Идут сейчас" value={live} accent />
       </div>
 
       {competitions.length > 0 && (
@@ -61,9 +51,7 @@ export default async function AdminDashboardPage() {
           <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">По статусам</h2>
           <div className="flex flex-wrap gap-2">
             {[...byStatus.entries()].map(([status, count]) => (
-              <span key={status} className="rounded-full bg-night-card2 px-3 py-1.5 text-sm font-semibold text-night-pink">
-                {STATUS_LABELS[status] ?? status}: {count}
-              </span>
+              <StatusBadge key={status} label={`${STATUS_LABELS[status] ?? status}: ${count}`} variant="neutral" />
             ))}
           </div>
         </div>
@@ -72,16 +60,19 @@ export default async function AdminDashboardPage() {
       <div>
         <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Разделы</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Link href="/admin/competitions" className={cn(buttonVariants({ variant: "outline" }), DARK_OUTLINE_LINK)}>
+          <Link href="/admin/competitions" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
             Соревнования →
           </Link>
           {isAdmin(user) && (
             <>
-              <Link href="/admin/division-categories" className={cn(buttonVariants({ variant: "outline" }), DARK_OUTLINE_LINK)}>
+              <Link href="/admin/division-categories" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
                 Категории →
               </Link>
-              <Link href="/admin/round-stages" className={cn(buttonVariants({ variant: "outline" }), DARK_OUTLINE_LINK)}>
+              <Link href="/admin/round-stages" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
                 Этапы отбора →
+              </Link>
+              <Link href="/admin/judging-criteria" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
+                Оценочные показатели →
               </Link>
             </>
           )}

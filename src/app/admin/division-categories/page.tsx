@@ -23,7 +23,7 @@ export default async function DivisionCategoriesPage() {
           <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Категории соревнований</h1>
           <p className="m-0 mt-1 text-sm text-night-muted">Порядок отображения категорий</p>
         </div>
-        <AddButton label="Добавить категорию" gradientClassName="bg-gradient-night-cta">
+        <AddButton label="Добавить категорию" gradientClassName="bg-gradient-admin-cta">
           <CreateDivisionCategoryForm />
         </AddButton>
       </div>
