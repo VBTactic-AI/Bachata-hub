@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { RegistrationRole } from "@prisma/client";
@@ -27,7 +28,7 @@ import { RotationPanel } from "@/components/admin/RotationPanel";
 import type { PoolJudge } from "@/components/admin/DivisionJudgesPanel";
 import { JudgesWorkspace, type JudgingDivision } from "@/components/admin/JudgesWorkspace";
 import { AddCompetitionJudgeForm } from "@/components/admin/AddCompetitionJudgeForm";
-import { KebabIcon } from "@/components/admin/icons";
+import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
@@ -147,7 +148,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         // DivisionJudgesPanel (выбор "из уже добавленных").
         members: {
           where: { role: { code: "JUDGE" } },
-          include: { user: { select: { email: true, dancer: { select: { displayName: true } } } } },
+          include: { user: { select: { email: true, dancer: { select: { displayName: true, gender: true } } } } },
           orderBy: { addedAt: "asc" },
         },
       },
@@ -236,7 +237,12 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // — из профиля танцора судьи, если он у него есть (у судей без профиля его
   // нет — тогда показывается email, реальных данных не выдумываем).
   const competitionJudgePool: PoolJudge[] = competition.members
-    .map((m) => ({ judgeUserId: m.userId, judgeEmail: m.user.email, displayName: m.user.dancer?.displayName ?? null }))
+    .map((m) => ({
+      judgeUserId: m.userId,
+      judgeEmail: m.user.email,
+      displayName: m.user.dancer?.displayName ?? null,
+      gender: m.user.dancer?.gender ?? null,
+    }))
     .sort((a, b) => (a.displayName ?? a.judgeEmail).localeCompare(b.displayName ?? b.judgeEmail, "ru"));
 
   // Только для отображения в "Общий список судей" (какие категории судит
@@ -546,6 +552,24 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     };
   });
 
+  // Группировка "Общий список судей" по полу (по запросу пользователя,
+  // 2026-09-09) — реальное поле Dancer.gender, не выдумываем недостающее:
+  // те, у кого пол не указан (или нет профиля танцора), — отдельной группой,
+  // а не молча в одной из двух. Нумерация "№" сквозная по всему списку.
+  const judgesByGender = {
+    MALE: competitionJudgePool.filter((j) => j.gender === "MALE"),
+    FEMALE: competitionJudgePool.filter((j) => j.gender === "FEMALE"),
+    UNKNOWN: competitionJudgePool.filter((j) => j.gender === null),
+  };
+  const JUDGE_GENDER_GROUP_LABELS: Record<keyof typeof judgesByGender, string> = {
+    MALE: "Мужчины",
+    FEMALE: "Женщины",
+    UNKNOWN: "Пол не указан",
+  };
+  const judgeNumberById = new Map(
+    [...judgesByGender.MALE, ...judgesByGender.FEMALE, ...judgesByGender.UNKNOWN].map((j, i) => [j.judgeUserId, i + 1])
+  );
+
   const judgesContent = (
     <div className="flex flex-col gap-4">
       {canAssignJudges && (
@@ -555,7 +579,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               <p className="m-0 mb-1 font-semibold text-night-text">Общий список судей</p>
               <p className="m-0 text-sm text-admin-muted">Все судьи, зарегистрированные на соревнование.</p>
             </div>
-            <AddButton label="Добавить судью" gradientClassName="bg-gradient-admin-cta">
+            <AddButton label="Добавить судью" gradientClassName="bg-gradient-admin-cta" wide>
               <AddCompetitionJudgeForm competitionId={competition.id} />
             </AddButton>
           </div>
@@ -574,30 +598,39 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                   </tr>
                 </thead>
                 <tbody>
-                  {competitionJudgePool.map((j, i) => {
-                    const names = judgeDivisionNames.get(j.judgeUserId) ?? [];
+                  {(Object.keys(judgesByGender) as (keyof typeof judgesByGender)[]).map((group) => {
+                    const list = judgesByGender[group];
+                    if (list.length === 0) return null;
                     return (
-                      <tr key={j.judgeUserId} className="border-t border-admin-border">
-                        <td className="px-3 py-2.5 align-middle text-admin-muted">{i + 1}</td>
-                        <td className="px-3 py-2.5 align-middle font-medium text-night-text">{j.displayName ?? j.judgeEmail}</td>
-                        <td className="px-3 py-2.5 align-middle text-admin-muted">{names.length > 0 ? names.join(", ") : "—"}</td>
-                        <td className="px-3 py-2.5 align-middle">
-                          <StatusBadge label="Активен" variant="success" />
-                        </td>
-                        <td className="px-3 py-2.5 align-middle">
-                          <div className="flex justify-end">
-                            <button
-                              type="button"
-                              disabled
-                              title="Скоро"
-                              aria-label="Дополнительные действия — пока недоступно"
-                              className="cursor-not-allowed text-admin-disabled opacity-60"
-                            >
-                              <KebabIcon />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                      <Fragment key={group}>
+                        <tr className="border-t border-admin-border bg-admin-card2/40">
+                          <td colSpan={5} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-admin-muted">
+                            {JUDGE_GENDER_GROUP_LABELS[group]} ({list.length})
+                          </td>
+                        </tr>
+                        {list.map((j) => {
+                          const names = judgeDivisionNames.get(j.judgeUserId) ?? [];
+                          return (
+                            <tr key={j.judgeUserId} className="border-t border-admin-border">
+                              <td className="px-3 py-2.5 align-middle text-admin-muted">{judgeNumberById.get(j.judgeUserId)}</td>
+                              <td className="px-3 py-2.5 align-middle font-medium text-night-text">{j.displayName ?? j.judgeEmail}</td>
+                              <td className="px-3 py-2.5 align-middle text-admin-muted">{names.length > 0 ? names.join(", ") : "—"}</td>
+                              <td className="px-3 py-2.5 align-middle">
+                                <StatusBadge label="Активен" variant="success" />
+                              </td>
+                              <td className="px-3 py-2.5 align-middle">
+                                <div className="flex justify-end">
+                                  <DeleteIconButton
+                                    url={`/api/competitions/${competition.id}/judges/${j.judgeUserId}`}
+                                    confirmMessage={`Убрать судью «${j.displayName ?? j.judgeEmail}» из соревнования? Снимет назначения по всем категориям.`}
+                                    label={`Убрать судью ${j.displayName ?? j.judgeEmail}`}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </tbody>

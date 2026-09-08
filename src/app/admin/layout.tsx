@@ -24,7 +24,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <AdminSidebar isAdminUser={isAdmin(user)} />
         <div className="flex min-w-0 flex-1 flex-col">
           <AdminTopBar />
-          <main className="min-w-0 flex-1 px-4 pb-24 pt-5 sm:pb-12 sm:pl-5 sm:pr-8 sm:pt-7">
+          <main className="min-w-0 flex-1 px-4 pb-24 pt-5 sm:pb-12 sm:pl-2 sm:pr-8 sm:pt-7">
             <div className="mx-auto w-full max-w-[1400px]">{children}</div>
           </main>
         </div>

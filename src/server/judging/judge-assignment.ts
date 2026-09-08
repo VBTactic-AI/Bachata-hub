@@ -104,6 +104,71 @@ export async function addCompetitionJudge(competitionId: string, judgeUserId: st
   });
 }
 
+// Удаление судьи из общего ростера соревнования (кнопка-корзина в "Общий
+// список судей", 2026-09-09) — снимает ВСЕ его назначения по всем категориям
+// этого соревнования разом, а не только сам CompetitionMember (иначе он
+// остался бы висеть в JudgeAssignment без права судить вообще, CLAUDE.md
+// §60 "не оставляй противоречивое состояние молча"). Тот же JUDGE-001-guard,
+// что и в setDivisionJudges — если судья уже что-то оценил хотя бы в одной
+// категории, удаление отклоняется целиком, историю нельзя стереть молча.
+export async function removeCompetitionJudge(competitionId: string, judgeUserId: string): Promise<void> {
+  const actor = await requirePermission("judge:assign", competitionId);
+
+  const assignments = await prisma.judgeAssignment.findMany({
+    where: { judgeUserId, division: { competitionId } },
+    select: { id: true, divisionId: true },
+  });
+  const assignmentIds = assignments.map((a) => a.id);
+
+  if (assignmentIds.length > 0) {
+    const [scored, finalScored, confirmed] = await Promise.all([
+      prisma.judgeScore.findFirst({ where: { judgeAssignmentId: { in: assignmentIds } } }),
+      prisma.finalJudgeScore.findFirst({ where: { judgeAssignmentId: { in: assignmentIds } } }),
+      prisma.judgeRoundConfirmation.findFirst({ where: { judgeAssignmentId: { in: assignmentIds } } }),
+    ]);
+    if (scored || finalScored || confirmed) {
+      throw new ValidationFailedError("Нельзя убрать судью — он уже выставлял оценки в одной из категорий этого соревнования.");
+    }
+  }
+
+  const judgeRole = await prisma.role.findUniqueOrThrow({ where: { code: "JUDGE" } });
+  const member = await prisma.competitionMember.findUnique({
+    where: { competitionId_userId_roleId: { competitionId, userId: judgeUserId, roleId: judgeRole.id } },
+  });
+  if (!member) {
+    throw new ValidationFailedError("Судья не найден в этом соревновании.");
+  }
+
+  const affectedDivisionIds = [...new Set(assignments.map((a) => a.divisionId))];
+
+  await prisma.$transaction(async (tx) => {
+    if (assignmentIds.length > 0) {
+      await tx.judgeAssignment.deleteMany({ where: { id: { in: assignmentIds } } });
+    }
+    await tx.competitionMember.delete({ where: { id: member.id } });
+    await writeAudit(tx, {
+      actor,
+      action: "competition_member.remove_judge",
+      entityType: "CompetitionMember",
+      entityId: member.id,
+      before: { competitionId, judgeUserId, removedFromDivisionIds: affectedDivisionIds },
+    });
+
+    // Как и в setDivisionJudges — снятие судьи меняет знаменатель готовности
+    // идущих раундов ("собрано X из N назначенных"), перепроверяем каждую
+    // затронутую категорию.
+    for (const divisionId of affectedDivisionIds) {
+      const roundsInProgress = await tx.round.findMany({
+        where: { divisionId, type: null, status: { in: ["RUNNING", "FINISHED", "SCORING"] } },
+        select: { id: true },
+      });
+      for (const r of roundsInProgress) {
+        await maybeFinalizeAfterScoreInTx(tx, r.id, actor);
+      }
+    }
+  });
+}
+
 // JudgeAssignment сама по себе не даёт права судить (score:submit) — это
 // закреплённость за дивизионом/ролью, а не запись в RBAC. Право приходит
 // только через CompetitionMember с ролью JUDGE, ровно как создатель
@@ -190,6 +255,29 @@ export async function setDivisionJudges(
   const toRemove = existing.filter((e) => !desiredKeys.has(`${e.role}:${e.judgeUserId}`));
   const toAdd = desired.filter((d) => !existingKeys.has(`${d.role}:${d.judgeUserId}`));
   if (toRemove.length === 0 && toAdd.length === 0) return;
+
+  // Роль вычисляется из пола (см. assignJudge) — этот путь batch-добавления
+  // (чекбоксы в DivisionJudgesPanel) собирает роль на клиенте ДО отправки, но
+  // критическая логика не может быть только на frontend (CLAUDE.md §1/§8-9):
+  // перепроверяем здесь, что для каждого добавляемого судьи с известным полом
+  // выбранная роль ему соответствует. Ручной выбор остаётся возможен только
+  // когда пол не указан (suggestedRoleForGender вернёт null).
+  if (toAdd.length > 0) {
+    const addedUsers = await prisma.user.findMany({
+      where: { id: { in: toAdd.map((d) => d.judgeUserId) } },
+      select: { id: true, email: true, dancer: { select: { gender: true } } },
+    });
+    const usersById = new Map(addedUsers.map((u) => [u.id, u]));
+    for (const d of toAdd) {
+      const user = usersById.get(d.judgeUserId);
+      const genderRole = suggestedRoleForGender(user?.dancer?.gender ?? null);
+      if (genderRole && genderRole !== d.role) {
+        throw new ValidationFailedError(
+          `Судья ${user?.email ?? d.judgeUserId} по полу судит другую роль — проверьте выбор в форме добавления.`
+        );
+      }
+    }
+  }
 
   // JUDGE-001: JudgeScore/FinalJudgeScore/JudgeRoundConfirmation ссылаются на
   // JudgeAssignment с ON DELETE RESTRICT — попытка удалить назначение, по

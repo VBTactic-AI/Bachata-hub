@@ -7,22 +7,29 @@ import { useState } from "react";
 export function AddButton({
   label,
   gradientClassName,
+  wide,
   children,
 }: {
   label: string;
   gradientClassName: string;
+  // Во всю ширину родителя, без max-w (по запросу пользователя, 2026-09-09,
+  // вкладка "Судьи" — панели поиска/состава судей должны растягиваться
+  // горизонтально, а не быть узкой колонкой). Обычные справочники (Категории/
+  // Этапы/Показатели) остаются на прежней узкой ширине — wide не передаётся.
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
 
   if (open) {
     return (
-      // Ширина зафиксирована (w-full + max-w) — иначе панель меняет размер
-      // вместе с содержимым (например, когда после поиска появляется строка
-      // "Выбран: …") и, будучи прижатой к правому краю родительского flex-
-      // ряда (justify-between в page.tsx), визуально "уезжает" влево при
-      // каждом таком изменении содержимого (найдено пользователем, 2026-09-09).
-      <div className="w-full max-w-[480px] rounded-app border border-admin-border bg-admin-card p-4">
+      // Ширина зафиксирована (w-full + max-w, если не wide) — иначе панель
+      // меняет размер вместе с содержимым (например, когда после поиска
+      // появляется строка "Выбран: …") и, будучи прижатой к правому краю
+      // родительского flex-ряда (justify-between в page.tsx), визуально
+      // "уезжает" влево при каждом таком изменении содержимого (найдено
+      // пользователем, 2026-09-09).
+      <div className={`w-full rounded-app border border-admin-border bg-admin-card p-4 ${wide ? "" : "max-w-[480px]"}`}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <p className="m-0 text-sm font-semibold text-night-text">{label}</p>
           <button
