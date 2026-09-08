@@ -350,7 +350,18 @@ export async function maybeCalculateOnEntryInTx(tx: PrismaTx, roundId: string, a
   const round = await tx.round.findUniqueOrThrow({ where: { id: roundId } });
   if (round.type === "TIE_BREAK") return;
   const progress = await getRoundScoringProgressInTx(tx, roundId);
-  if (progress.required === 0) {
+  // Раньше здесь было `progress.required === 0` — то есть при входе в SCORING
+  // раунд досчитывался только если оценивать было вообще нечего/некому. Но
+  // судьи могут закончить РАНЬШЕ, чем закроется последний заход (кнопка
+  // "Готово" доступна сразу, см. COMPLETABLE_FROM ниже): тогда на момент их
+  // подтверждения раунд ещё RUNNING, а на момент входа в SCORING новых
+  // оценок уже не будет — и пересчитать его больше было нечему. Раунд
+  // навсегда оставался в SCORING и блокировал следующий раунд дивизиона
+  // (найдено на живом конкурсе 2026-09-08).
+  //
+  // progress.complete — надмножество прежнего условия (при required === 0
+  // оно тоже true), так что прежнее поведение сохранено полностью.
+  if (progress.complete) {
     await calculateRoundResultsInTx(tx, roundId, actor);
   }
 }

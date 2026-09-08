@@ -4,6 +4,15 @@ import type { Actor } from "@/server/rbac/actor";
 const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
+// setDivisionJudges после снятия судьи перепроверяет готовность идущих
+// раундов (снятый судья меняет знаменатель "собрано X из N") — сам расчёт
+// проверяется в advancement.test.ts, здесь достаточно факта вызова.
+const maybeFinalizeAfterScoreInTxMock = vi.fn();
+vi.mock("@/server/judging/advancement", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/judging/advancement")>();
+  return { ...actual, maybeFinalizeAfterScoreInTx: (...a: unknown[]) => maybeFinalizeAfterScoreInTxMock(...a) };
+});
+
 const divisionFindUniqueOrThrow = vi.fn();
 const judgeAssignmentFindMany = vi.fn();
 const judgeScoreFindMany = vi.fn();
@@ -14,8 +23,18 @@ const txJudgeAssignmentDelete = vi.fn();
 const txJudgeAssignmentCreate = vi.fn();
 const auditCreate = vi.fn();
 
+const txRoundFindMany = vi.fn();
+// Добавление судьи попутно выдаёт ему членство в соревновании с ролью JUDGE
+// (grantJudgeCompetitionMembership) — до этих тестов путь добавления ни разу
+// не доходил до конца, поэтому этих двух моков в фейке не было.
+const txRoleFindUniqueOrThrow = vi.fn();
+const txCompetitionMemberUpsert = vi.fn();
+
 const fakeTx = {
   judgeAssignment: { delete: txJudgeAssignmentDelete, create: txJudgeAssignmentCreate },
+  round: { findMany: txRoundFindMany },
+  role: { findUniqueOrThrow: txRoleFindUniqueOrThrow, findFirstOrThrow: txRoleFindUniqueOrThrow },
+  competitionMember: { upsert: txCompetitionMemberUpsert },
   auditLog: { create: auditCreate },
 };
 
@@ -46,6 +65,10 @@ beforeEach(() => {
   userFindMany.mockReset().mockResolvedValue([{ email: "old@judge.by" }]);
   txJudgeAssignmentDelete.mockReset();
   txJudgeAssignmentCreate.mockReset().mockResolvedValue({ id: "asg-new" });
+  txRoundFindMany.mockReset().mockResolvedValue([]);
+  txRoleFindUniqueOrThrow.mockReset().mockResolvedValue({ id: "role-judge" });
+  txCompetitionMemberUpsert.mockReset();
+  maybeFinalizeAfterScoreInTxMock.mockReset();
   auditCreate.mockReset();
 });
 
@@ -87,5 +110,42 @@ describe("setDivisionJudges() — JUDGE-001", () => {
     await expect(setDivisionJudges("div1", ["judge-new"], [])).rejects.toBeInstanceOf(ValidationFailedError);
     // Ничего не применено частично — ни удаление, ни добавление.
     expect(txJudgeAssignmentCreate).not.toHaveBeenCalled();
+  });
+});
+
+// Реальный случай на конкурсе (2026-09-08): судья нажал "Готово", после чего
+// организатор снял двух лишних судей. Готовность раунда считается как
+// "подтвердили X из N назначенных" — снятие судьи уменьшает N, то есть может
+// сделать раунд готовым. Раньше это нигде не перепроверялось, и раунд
+// оставался в SCORING навсегда, блокируя следующий раунд дивизиона.
+describe("setDivisionJudges() — снятие судьи перепроверяет готовность идущих раундов", () => {
+  it("после снятия судьи вызывает пересчёт для каждого идущего обычного раунда дивизиона", async () => {
+    txRoundFindMany.mockResolvedValue([{ id: "round1" }, { id: "round2" }]);
+
+    await setDivisionJudges("div1", [], []);
+
+    expect(txRoundFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          divisionId: "div1",
+          type: null,
+          status: { in: ["RUNNING", "FINISHED", "SCORING"] },
+        }),
+      })
+    );
+    expect(maybeFinalizeAfterScoreInTxMock).toHaveBeenCalledTimes(2);
+    expect(maybeFinalizeAfterScoreInTxMock).toHaveBeenCalledWith(expect.anything(), "round1", actor);
+    expect(maybeFinalizeAfterScoreInTxMock).toHaveBeenCalledWith(expect.anything(), "round2", actor);
+  });
+
+  it("добавление судьи пересчёт не запускает — оно только увеличивает N", async () => {
+    // Текущий состав уже совпадает с желаемым по LEADER, добавляется только новый.
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "asg-old", role: "LEADER", judgeUserId: "judge-old" }]);
+
+    await setDivisionJudges("div1", ["judge-old", "judge-new"], []);
+
+    expect(txJudgeAssignmentCreate).toHaveBeenCalled();
+    expect(txJudgeAssignmentDelete).not.toHaveBeenCalled();
+    expect(maybeFinalizeAfterScoreInTxMock).not.toHaveBeenCalled();
   });
 });

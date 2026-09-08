@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
+import { maybeFinalizeAfterScoreInTx } from "./advancement";
 
 // Судья закреплён на дивизион и РОЛЬ (LEADER/FOLLOWER) — не на пол участника.
 // Пол судьи по умолчанию совпадает с ролью, которую он судит, но это только
@@ -182,6 +183,26 @@ export async function setDivisionJudges(
         entityId: created.id,
         after: { divisionId, judgeUserId: d.judgeUserId, role: d.role },
       });
+    }
+
+    // Снятие судьи меняет ЗНАМЕНАТЕЛЬ готовности раунда: "собрано X из N"
+    // считает N по числу назначенных судей, поэтому убранный судья может
+    // сделать уже идущий раунд полностью готовым к подсчёту. Раньше это
+    // нигде не перепроверялось — раунд оставался в SCORING навсегда и
+    // блокировал следующий раунд дивизиона (реальный случай на конкурсе
+    // 2026-09-08: судья нажал "Готово", после чего организатор снял двух
+    // лишних судей — раунд повис при 100% собранных оценок).
+    //
+    // Добавление судьи специально не обрабатываем: оно только увеличивает N,
+    // раунд от этого готовым стать не может — он просто ждёт нового судью.
+    if (toRemove.length > 0) {
+      const roundsInProgress = await tx.round.findMany({
+        where: { divisionId, type: null, status: { in: ["RUNNING", "FINISHED", "SCORING"] } },
+        select: { id: true },
+      });
+      for (const r of roundsInProgress) {
+        await maybeFinalizeAfterScoreInTx(tx, r.id, actor);
+      }
     }
   });
 }
