@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
@@ -45,6 +46,31 @@ function StarIcon() {
     </svg>
   );
 }
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M5 5a1.5 1.5 0 0 1 1.5-1.5H18a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H6.5A1.5 1.5 0 0 1 5 18.5V5Z" strokeLinejoin="round" />
+      <path d="M5 17.5A1.5 1.5 0 0 1 6.5 16H19" strokeLinecap="round" />
+      <path d="M8.5 7.5h7" strokeLinecap="round" />
+    </svg>
+  );
+}
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+      className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+    >
+      <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 type NavItem = { href: string; label: string; icon: React.ReactNode; match: (p: string) => boolean };
 
@@ -86,6 +112,12 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 // визуальных языка на переходный период.
 export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
   const pathname = usePathname() ?? "";
+  const referenceLinks = referenceItems();
+  const referenceActive = referenceLinks.some((item) => item.match(pathname));
+  // Открыт по умолчанию, если сейчас на одной из его страниц (по прямому
+  // запросу пользователя, 2026-09-09 — раньше список был всегда развёрнут
+  // безусловно, теперь сворачивается кликом по заголовку).
+  const [referencesOpen, setReferencesOpen] = useState(referenceActive);
 
   return (
     <nav
@@ -110,12 +142,29 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
 
       {isAdminUser && (
         <div className="mt-0 flex shrink-0 items-center gap-1.5 sm:mt-5 sm:flex-col sm:items-stretch sm:gap-0.5">
-          <span className="hidden px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wide text-admin-disabled sm:block">
-            {t.nav.references}
-          </span>
-          {referenceItems().map((item) => (
-            <NavLink key={item.href} item={item} active={item.match(pathname)} />
-          ))}
+          <button
+            type="button"
+            onClick={() => setReferencesOpen((v) => !v)}
+            aria-expanded={referencesOpen}
+            className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium transition-colors sm:w-full ${
+              referenceActive ? "text-night-text" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+            }`}
+          >
+            <span className={referenceActive ? "text-admin-primary" : "text-admin-disabled"}>
+              <BookIcon />
+            </span>
+            <span className="flex-1 text-left">{t.nav.references}</span>
+            <span className={referenceActive ? "text-admin-primary" : "text-admin-disabled"}>
+              <ChevronIcon open={referencesOpen} />
+            </span>
+          </button>
+          {referencesOpen && (
+            <div className="flex shrink-0 gap-1.5 sm:flex-col sm:gap-0.5 sm:pl-2">
+              {referenceLinks.map((item) => (
+                <NavLink key={item.href} item={item} active={item.match(pathname)} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </nav>
