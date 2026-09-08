@@ -92,14 +92,15 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
-      className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium no-underline transition-colors hover:no-underline sm:w-full ${
+      title={item.label}
+      className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium no-underline transition-colors hover:no-underline sm:w-full sm:min-w-0 sm:truncate ${
         active
           ? "bg-admin-primary/15 text-night-text before:hidden sm:relative sm:before:absolute sm:before:-left-3 sm:before:top-1/2 sm:before:block sm:before:h-5 sm:before:w-[3px] sm:before:-translate-y-1/2 sm:before:rounded-full sm:before:bg-admin-primary"
           : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
       }`}
     >
-      <span className={active ? "text-admin-primary" : "text-admin-disabled"}>{item.icon}</span>
-      {item.label}
+      <span className={`shrink-0 ${active ? "text-admin-primary" : "text-admin-disabled"}`}>{item.icon}</span>
+      <span className="sm:truncate">{item.label}</span>
     </Link>
   );
 }
@@ -121,7 +122,7 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
 
   return (
     <nav
-      className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-admin-border bg-admin-bg pb-3 font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:flex-col sm:overflow-x-visible sm:overflow-y-auto sm:border-b-0 sm:border-r sm:bg-admin-card/30 sm:px-3 sm:pb-6 sm:pt-6"
+      className="flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-admin-border bg-admin-bg pb-3 font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-b-0 sm:border-r sm:bg-admin-card/30 sm:px-3 sm:pb-6 sm:pt-6"
       aria-label="Разделы админки"
     >
       <Link
@@ -158,13 +159,23 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
               <ChevronIcon open={referencesOpen} />
             </span>
           </button>
-          {referencesOpen && (
-            <div className="flex shrink-0 gap-1.5 sm:flex-col sm:gap-0.5 sm:pl-2">
-              {referenceLinks.map((item) => (
-                <NavLink key={item.href} item={item} active={item.match(pathname)} />
-              ))}
+          {/* Плавное раскрытие "выезжающим" списком — CSS grid-track трюк
+              (0fr↔1fr вместо height:auto, которую CSS transition не умеет
+              анимировать напрямую): список всегда в DOM, не размонтируется
+              условным рендером, поэтому анимируется и открытие, и закрытие. */}
+          <div
+            className={`grid shrink-0 transition-[grid-template-rows] duration-300 ease-out sm:w-full ${
+              referencesOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            }`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex shrink-0 flex-col gap-0.5 pt-0.5 sm:pl-1">
+                {referenceLinks.map((item) => (
+                  <NavLink key={item.href} item={item} active={item.match(pathname)} />
+                ))}
+              </div>
             </div>
-          )}
+          </div>
         </div>
       )}
     </nav>
