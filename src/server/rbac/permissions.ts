@@ -18,6 +18,7 @@ export const PERMISSIONS = [
 
   "division_category:manage",
   "round_stage:manage",
+  "judging_criteria:manage",
 
   "checkin:manage",
   "checkin:self",

@@ -63,7 +63,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // в том же Promise.all, что и всё остальное на этой странице, а не
   // отдельным await после него (лишний round-trip к Supabase pooler,
   // ~150мс, без всякой причины ждать).
-  const [competition, activeCategories, activeStages, myDancer] = await measureServerOperation("admin.open_competition", () =>
+  const [competition, activeCategories, activeStages, criterionCatalog, myDancer] = await measureServerOperation("admin.open_competition", () =>
     Promise.all([
     prisma.competition.findFirst({
       where: { id },
@@ -136,6 +136,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     }),
     prisma.divisionCategory.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
     prisma.roundStageCatalog.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
+    prisma.judgingCriterionCatalog.findMany({ where: { isActive: true }, orderBy: { order: "asc" } }),
     getMyDancerRef(),
     ])
   );
@@ -436,7 +437,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                       minScore: c.minScore,
                       maxScore: c.maxScore,
                       step: c.step,
+                      catalogId: c.catalogId,
                     }))}
+                    catalog={criterionCatalog.map((c) => ({ id: c.id, name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step }))}
                     locked={d.rounds.some((r) => r.finalSession)}
                   />
                 )}

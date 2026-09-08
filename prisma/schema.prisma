@@ -743,6 +743,28 @@ model DivisionCategory {
   divisions Division[]
 }
 
+// Глобальный справочник критериев оценки (Справочники → Оценочные
+// показатели, judging_criteria:manage, только SUPER_ADMIN) — критерии
+// повторяются из соревнования в соревнование (пользователь, 2026-09-08), по
+// образцу DivisionCategory/RoundStageCatalog выше. isActive — мягкое
+// скрытие (CLAUDE.md §18), не физическое удаление. Выбор из справочника на
+// дивизионе КОПИРУЕТ значения в FinalCriterion на момент выбора — catalogId
+// там только след происхождения, не живая ссылка: правка каталога задним
+// числом не должна тихо менять уже настроенный/идущий финал (CLAUDE.md
+// §50-51).
+model JudgingCriterionCatalog {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  minScore  Int
+  maxScore  Int
+  step      Int      @default(1)
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  criteria FinalCriterion[]
+}
+
 model Division {
   id                  String           @id @default(cuid())
   competitionId       String
@@ -1176,6 +1198,11 @@ model FinalCriterion {
   sortOrder  Int      @default(0)
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
+  // Из какой записи справочника скопированы значения при выборе (не живая
+  // ссылка — см. комментарий у JudgingCriterionCatalog выше). Nullable —
+  // критерий мог быть введён вручную с нуля, без справочника.
+  catalogId  String?
+  catalog    JudgingCriterionCatalog? @relation(fields: [catalogId], references: [id])
 
   scores FinalJudgeScore[]
 

@@ -36,6 +36,8 @@ export const ru = {
     manageCompetitions: "Управление конкурсами",
     divisionCategories: "Категории",
     roundStages: "Этапы отбора",
+    judgingCriteria: "Оценочные показатели",
+    references: "Справочники",
   },
   city: {
     choose: "Выберите город",

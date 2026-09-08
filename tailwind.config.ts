@@ -45,9 +45,25 @@ export default {
           accent: "#ff2d8a",
           pink: "#ff9ac9",
           success: "#37d67a",
+          // Общие semantic-статусы, которых раньше не было токеном (места
+          // использования брали обычный Tailwind red-400/amber-400 мимо
+          // темы) — добавлены аддитивно, ничего существующего не переименовано.
+          warning: "#f59e0b",
+          danger: "#f87171",
           text: "#ffffff",
           muted: "#8d7c85",
           disabled: "#5f5158",
+        },
+        // Акцент ТОЛЬКО для /admin (redesign по dark-SaaS reference,
+        // 2026-09-08) — по решению пользователя не заменяет фирменную
+        // маджента (night-primary) на остальном тёмном сайте (/compete,
+        // /judging, /login и т.д.), сознательно расходится с ним только в
+        // разделе администратора. База поверхностей (bg/card/border/text/
+        // muted) остаётся общей night-* — меняется только акцентный цвет.
+        admin: {
+          primary: "#6366f1",
+          primaryHover: "#818cf8",
+          violet: "#8b5cf6",
         },
       },
       fontFamily: {
@@ -85,6 +101,7 @@ export default {
         "gradient-primary": "linear-gradient(135deg, #a8296b 0%, #c9376f 100%)",
         "gradient-school": "linear-gradient(135deg, #f6d9e6, #fdf0e0)",
         "gradient-night-cta": "linear-gradient(100deg, #ff2d8a, #d6006c)",
+        "gradient-admin-cta": "linear-gradient(100deg, #6366f1, #4f46e5)",
         "gradient-night-hero":
           "radial-gradient(120% 90% at 25% 10%, rgba(255,45,138,0.4) 0%, transparent 58%), radial-gradient(100% 80% at 85% 95%, rgba(108,43,255,0.35) 0%, transparent 62%), linear-gradient(165deg, #331629, #120a12)",
       },

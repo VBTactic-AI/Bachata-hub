@@ -136,4 +136,15 @@ describe("setFinalCriteria() — валидация приоритетов (пр
     expect(negativeUpdates.length).toBe(2);
     expect(txFinalCriterionCreate).toHaveBeenCalledTimes(1);
   });
+
+  it("сохраняет catalogId при выборе из справочника (2026-09-08) и null при ручном вводе", async () => {
+    await setFinalCriteria("div1", {
+      criteria: [
+        { id: undefined, name: "Музыкальность", priority: 1, minScore: 1, maxScore: 10, step: 1, catalogId: "jcrit_musicality" },
+        { id: undefined, name: "Своя", priority: 2, minScore: 0, maxScore: 10, step: 1 },
+      ],
+    });
+    expect(txFinalCriterionCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ catalogId: "jcrit_musicality" }) }));
+    expect(txFinalCriterionCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ catalogId: null }) }));
+  });
 });

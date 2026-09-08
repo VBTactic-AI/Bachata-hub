@@ -87,6 +87,33 @@ export const updateDivisionCategorySchema = z
   });
 export type UpdateDivisionCategoryInput = z.infer<typeof updateDivisionCategorySchema>;
 
+export const createJudgingCriterionCatalogSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    minScore: z.coerce.number().int(),
+    maxScore: z.coerce.number().int(),
+    step: z.coerce.number().int().positive().default(1),
+  })
+  .refine((v) => v.maxScore > v.minScore, { message: "Максимум должен быть больше минимума.", path: ["maxScore"] });
+export type CreateJudgingCriterionCatalogInput = z.infer<typeof createJudgingCriterionCatalogSchema>;
+
+// Все поля необязательны по отдельности (как updateDivisionCategorySchema) —
+// но хотя бы одно обязано присутствовать.
+export const updateJudgingCriterionCatalogSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    minScore: z.coerce.number().int().optional(),
+    maxScore: z.coerce.number().int().optional(),
+    step: z.coerce.number().int().positive().optional(),
+    order: z.coerce.number().int().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (v) => v.name !== undefined || v.minScore !== undefined || v.maxScore !== undefined || v.step !== undefined || v.order !== undefined || v.isActive !== undefined,
+    { message: "Нужно указать хотя бы одно поле для изменения." }
+  );
+export type UpdateJudgingCriterionCatalogInput = z.infer<typeof updateJudgingCriterionCatalogSchema>;
+
 export const createRoundStageSchema = z.object({
   name: z.string().min(1).max(100),
   defaultAdvanceCount: z.coerce.number().int().positive(),
@@ -276,6 +303,9 @@ export const finalCriterionInputSchema = z
     minScore: z.coerce.number().int(),
     maxScore: z.coerce.number().int(),
     step: z.coerce.number().int().positive().default(1),
+    // Откуда скопированы значения (справочник) — только след происхождения,
+    // не живая ссылка (см. JudgingCriterionCatalog в schema.prisma).
+    catalogId: z.string().optional().nullable(),
   })
   .refine((v) => v.maxScore > v.minScore, { message: "Максимум должен быть больше минимума.", path: ["maxScore"] });
 export type FinalCriterionInput = z.infer<typeof finalCriterionInputSchema>;

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 
 export type FinalFormatValue = "NORMAL" | "JUDGES_DANCE" | "RANDOM_COUPLES" | "RELATIVE_PLACEMENT";
-export type FinalCriterionRow = { id?: string; name: string; minScore: number; maxScore: number; step: number };
+export type FinalCriterionRow = { id?: string; name: string; minScore: number; maxScore: number; step: number; catalogId?: string | null };
+export type CatalogCriterion = { id: string; name: string; minScore: number; maxScore: number; step: number };
 
 const FORMAT_LABELS: Record<FinalFormatValue, string> = {
   NORMAL: "Обычный J&J",
@@ -27,6 +28,7 @@ export function FinalSettingsPanel({
   partnerChangeEnabled: initialPartnerChangeEnabled,
   config: initialConfig,
   criteria: initialCriteria,
+  catalog,
   locked,
 }: {
   divisionId: string;
@@ -35,6 +37,7 @@ export function FinalSettingsPanel({
   partnerChangeEnabled: boolean;
   config: unknown;
   criteria: (FinalCriterionRow & { priority: number })[];
+  catalog: CatalogCriterion[];
   locked: boolean;
 }) {
   const router = useRouter();
@@ -42,8 +45,9 @@ export function FinalSettingsPanel({
   const [tracksCount, setTracksCount] = useState(initialTracksCount);
   const [partnerChangeEnabled, setPartnerChangeEnabled] = useState(initialPartnerChangeEnabled);
   const [criteria, setCriteria] = useState<FinalCriterionRow[]>(() =>
-    [...initialCriteria].sort((a, b) => a.priority - b.priority).map(({ id, name, minScore, maxScore, step }) => ({ id, name, minScore, maxScore, step }))
+    [...initialCriteria].sort((a, b) => a.priority - b.priority).map(({ id, name, minScore, maxScore, step, catalogId }) => ({ id, name, minScore, maxScore, step, catalogId }))
   );
+  const [catalogPick, setCatalogPick] = useState(catalog[0]?.id ?? "");
   // JUDGES_DANCE — какие критерии оценивает "танцующий" (физически
   // партнёрящий, противоположной роли) судья, остальные — судья со стороны
   // (промт пользователя, п.22-23 "scoring matrix"). Ключ — id критерия,
@@ -69,7 +73,15 @@ export function FinalSettingsPanel({
     setCriteria((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   }
   function addCriterion() {
-    setCriteria((prev) => [...prev, { name: "", minScore: 0, maxScore: 10, step: 1 }]);
+    setCriteria((prev) => [...prev, { name: "", minScore: 0, maxScore: 10, step: 1, catalogId: null }]);
+  }
+  // Добавление из глобального справочника (Справочники → Оценочные
+  // показатели) — копирует значения на момент выбора, дальнейшая правка
+  // справочника не меняет уже добавленную строку (CLAUDE.md §50-51).
+  function addFromCatalog() {
+    const c = catalog.find((x) => x.id === catalogPick);
+    if (!c) return;
+    setCriteria((prev) => [...prev, { name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step, catalogId: c.id }]);
   }
   function removeCriterion(i: number) {
     setCriteria((prev) => prev.filter((_, idx) => idx !== i));
@@ -118,7 +130,7 @@ export function FinalSettingsPanel({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        criteria: criteria.map((c, i) => ({ id: c.id, name: c.name, priority: i + 1, minScore: c.minScore, maxScore: c.maxScore, step: c.step })),
+        criteria: criteria.map((c, i) => ({ id: c.id, name: c.name, priority: i + 1, minScore: c.minScore, maxScore: c.maxScore, step: c.step, catalogId: c.catalogId ?? null })),
       }),
     });
     setLoading(false);
@@ -214,7 +226,7 @@ export function FinalSettingsPanel({
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex flex-wrap items-center gap-2 mt-1">
           <Button
             type="button"
             size="sm"
@@ -222,8 +234,33 @@ export function FinalSettingsPanel({
             disabled={format === "RELATIVE_PLACEMENT" && criteria.length >= 1}
             onClick={addCriterion}
           >
-            + Критерий
+            + Критерий вручную
           </Button>
+          {catalog.length > 0 && (
+            <span className="flex items-center gap-1.5">
+              <Select
+                value={catalogPick}
+                onChange={(e) => setCatalogPick(e.target.value)}
+                className="max-w-[220px]"
+                disabled={format === "RELATIVE_PLACEMENT" && criteria.length >= 1}
+              >
+                {catalog.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.minScore}–{c.maxScore})
+                  </option>
+                ))}
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!catalogPick || (format === "RELATIVE_PLACEMENT" && criteria.length >= 1)}
+                onClick={addFromCatalog}
+              >
+                + Из справочника
+              </Button>
+            </span>
+          )}
           <Button type="button" size="sm" disabled={loading || criteria.length === 0 || criteria.some((c) => !c.name.trim())} onClick={onSaveCriteria}>
             Сохранить критерии
           </Button>

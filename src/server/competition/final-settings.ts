@@ -134,11 +134,11 @@ export async function setFinalCriteria(divisionId: string, input: SetFinalCriter
       if (c.id) {
         await tx.finalCriterion.update({
           where: { id: c.id },
-          data: { name: c.name, priority: c.priority, minScore: c.minScore, maxScore: c.maxScore, step: c.step, sortOrder },
+          data: { name: c.name, priority: c.priority, minScore: c.minScore, maxScore: c.maxScore, step: c.step, sortOrder, catalogId: c.catalogId ?? null },
         });
       } else {
         await tx.finalCriterion.create({
-          data: { divisionId, name: c.name, priority: c.priority, minScore: c.minScore, maxScore: c.maxScore, step: c.step, sortOrder },
+          data: { divisionId, name: c.name, priority: c.priority, minScore: c.minScore, maxScore: c.maxScore, step: c.step, sortOrder, catalogId: c.catalogId ?? null },
         });
       }
       sortOrder++;

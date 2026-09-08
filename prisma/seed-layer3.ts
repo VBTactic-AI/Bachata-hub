@@ -34,6 +34,7 @@ const PERMISSIONS = [
 
   ["division_category:manage", "Управление общим справочником категорий соревнований"],
   ["round_stage:manage", "Управление общим справочником этапов отбора"],
+  ["judging_criteria:manage", "Управление общим справочником критериев оценки"],
 
   ["checkin:manage", "Проведение check-in участников"],
   ["checkin:self", "Самостоятельный check-in"],
