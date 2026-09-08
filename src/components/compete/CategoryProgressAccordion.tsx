@@ -89,7 +89,9 @@ export function CategoryProgressAccordion({ items, progress }: { items: Category
                       </thead>
                       <tbody>
                         {(["LEADER", "FOLLOWER"] as const).flatMap((role) => {
-                          const rows = divisionProgress.rows.filter((r) => r.role === role);
+                          const rows = divisionProgress.rows
+                            .filter((r) => r.role === role)
+                            .sort((a, b) => a.displayName.localeCompare(b.displayName, "ru"));
                           if (rows.length === 0) return [];
                           return [
                             <tr key={`${role}-header`}>
