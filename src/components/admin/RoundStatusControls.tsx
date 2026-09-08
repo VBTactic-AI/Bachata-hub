@@ -75,12 +75,12 @@ export function RoundStatusControls({ roundId, status }: { roundId: string; stat
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {nextOptions.map((to) => (
-        <Button key={to} type="button" size="sm" variant="secondary" disabled={loading} onClick={() => go(to)}>
+        <Button key={to} type="button" size="sm" variant="admin" disabled={loading} onClick={() => go(to)}>
           {ACTION_LABELS[to]}
         </Button>
       ))}
-      {error && <span className="error-text">{error}</span>}
-      {nextOptions.length === 0 && <span className="hint-text">{ROUND_STATUS_LABELS[status]}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
+      {nextOptions.length === 0 && <span className="text-sm text-admin-muted">{ROUND_STATUS_LABELS[status]}</span>}
     </span>
   );
 }

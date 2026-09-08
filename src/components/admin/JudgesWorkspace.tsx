@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { DivisionJudgesPanel, type PoolJudge } from "@/components/admin/DivisionJudgesPanel";
 import { DivisionJudgingSettingsForm, type FinalFormatValue } from "@/components/admin/DivisionJudgingSettingsForm";
+import { categoryDotColor } from "@/components/admin/category-colors";
 
 export type JudgingDivision = {
   id: string;
@@ -27,8 +28,8 @@ export type JudgingDivision = {
 // пользователя, 2026-09-09), не токен темы и не поле в БД (у DivisionCategory
 // нет цвета) — фиксированный набор, тот же приём, что PLACE_COLORS в
 // FinalJudgingScreen.tsx (CLAUDE.md §64.4): назначается по порядку категорий,
-// не должен меняться со сменой темы/страницы.
-const DOT_COLORS = ["#3b82f6", "#22c55e", "#a78bfa", "#fb923c", "#f87171", "#facc15", "#22d3ee", "#f472b6"];
+// не должен меняться со сменой темы/страницы. Список общий с лентой категорий
+// в "Мониторе" — одна категория должна быть одного цвета на обоих экранах.
 
 // "Судейская панель" + "Настройки судейства" одной категории — общий сайдбар
 // категорий на оба блока (по прямому выбору пользователя, 2026-09-09), по
@@ -58,7 +59,7 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
                   active ? "bg-admin-primary/15 text-night-text" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
                 }`}
               >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: DOT_COLORS[i % DOT_COLORS.length] }} aria-hidden="true" />
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: categoryDotColor(i) }} aria-hidden="true" />
                 <span className="flex-1 truncate font-medium sm:truncate">{d.categoryName}</span>
                 <span className="shrink-0 text-xs text-admin-disabled">{count} суд.</span>
               </button>

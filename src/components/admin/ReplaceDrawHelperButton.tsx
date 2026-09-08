@@ -61,7 +61,13 @@ export function ReplaceDrawHelperButton({
 
   if (!open) {
     return (
-      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="text-admin-muted hover:text-admin-primaryHover"
+        onClick={() => setOpen(true)}
+      >
         заменить
       </Button>
     );
@@ -70,11 +76,15 @@ export function ReplaceDrawHelperButton({
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {loadingCandidates ? (
-        <span className="hint-text">Загрузка…</span>
+        <span className="text-sm text-admin-muted">Загрузка…</span>
       ) : groups.length === 0 ? (
-        <span className="hint-text">Нет доступных кандидатов.</span>
+        <span className="text-sm text-admin-muted">Нет доступных кандидатов.</span>
       ) : (
-        <Select value={registrationId} onChange={(e) => setRegistrationId(e.target.value)} className="!w-auto py-1.5 text-sm">
+        <Select
+          value={registrationId}
+          onChange={(e) => setRegistrationId(e.target.value)}
+          className="!w-auto border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+        >
           {groups.map((g) => (
             <optgroup key={g.divisionId} label={g.isOwnDivision ? `${g.categoryName} (своя категория)` : g.categoryName}>
               {g.registrations.map((r) => (
@@ -87,13 +97,13 @@ export function ReplaceDrawHelperButton({
           ))}
         </Select>
       )}
-      <Button type="button" size="sm" disabled={submitting || !registrationId} onClick={submit}>
+      <Button type="button" size="sm" variant="admin" disabled={submitting || !registrationId} onClick={submit}>
         Заменить
       </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+      <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
         Отмена
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </span>
   );
 }

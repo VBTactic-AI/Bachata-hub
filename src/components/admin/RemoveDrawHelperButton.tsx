@@ -28,7 +28,14 @@ export function RemoveDrawHelperButton({
   }
 
   return (
-    <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={remove}>
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="text-admin-muted hover:text-red-400"
+      disabled={loading}
+      onClick={remove}
+    >
       убрать
     </Button>
   );

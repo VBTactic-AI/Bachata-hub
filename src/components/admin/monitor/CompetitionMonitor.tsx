@@ -1,0 +1,491 @@
+"use client";
+
+import { useState } from "react";
+import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
+import { HEAT_STATUS_LABELS, REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL, ROUND_STATUS_LABELS } from "@/lib/competition-labels";
+import { categoryDotColor } from "../category-colors";
+import { AddDrawHelperForm } from "../AddDrawHelperForm";
+import { AddHeatButton } from "../AddHeatButton";
+import { HeatStatusControls } from "../HeatStatusControls";
+import { RemoveDrawHelperButton } from "../RemoveDrawHelperButton";
+import { ReplaceDrawHelperButton } from "../ReplaceDrawHelperButton";
+import { RerollDrawButton } from "../RerollDrawButton";
+import { RotationPanel } from "../RotationPanel";
+import { RoundStatusControls } from "../RoundStatusControls";
+import { SplitHeatButton } from "../SplitHeatButton";
+import { StartDrawingForm } from "../StartDrawingForm";
+import { JudgesLivePanel } from "./JudgesLivePanel";
+import { defaultCategoryId, defaultHeatId, defaultRoundId, hasActiveRound, resolveSelected } from "./selection";
+import type { MonitorCategory, MonitorHeat, MonitorParticipant, MonitorRound } from "./types";
+
+// Вкладка "Монитор" — единственное рабочее место организатора во время
+// прогона (заменила вкладку "Раунды", 2026-09-09): категория → этап → заход,
+// с номерами на паркете, жеребьёвкой, вызовом помощника и живым составом
+// судей на одном экране.
+//
+// Здесь НЕТ ни одного бизнес-правила (CLAUDE.md §48): что можно нажать,
+// решает сервер и уже посчитанные на нём флаги (canEditDraw, neededRole,
+// hasRealImbalance), а сами действия выполняют те же компоненты, что и
+// раньше. Монитор только выбирает, что показать, и раскладывает это.
+//
+// Данные обновляются НЕ опросом: заходы, жеребьёвка и статусы меняются
+// только действиями самого организатора, а те уже делают router.refresh().
+// Единственное, что меняется без его участия, — оценки судей: за ними
+// следит JudgesLivePanel по своей подписке, а таймер паркета — RotationPanel.
+
+const ROUND_STATUS_TONE: Record<RoundStatus, string> = {
+  DRAFT: "bg-admin-disabled",
+  READY: "bg-admin-disabled",
+  DRAWING: "bg-admin-primaryHover",
+  DRAW_LOCKED: "bg-admin-primaryHover",
+  RUNNING: "bg-night-success",
+  PAUSED: "bg-night-warning",
+  FINISHED: "bg-admin-primaryHover",
+  SCORING: "bg-night-warning",
+  COMPLETED: "bg-admin-disabled",
+};
+
+const HEAT_STATUS_TONE: Record<HeatStatus, string> = {
+  PENDING: "bg-admin-disabled",
+  RUNNING: "bg-night-success",
+  PAUSED: "bg-night-warning",
+  FINISHED: "bg-admin-primaryHover",
+};
+
+function StatusPill({ label, tone }: { label: string; tone: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-admin-card2 px-2.5 py-1 text-xs font-bold text-night-text">
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function ParticipantRow({
+  participant,
+  heatId,
+  role,
+  canEditDraw,
+}: {
+  participant: MonitorParticipant;
+  heatId: string;
+  role: RegistrationRole;
+  canEditDraw: boolean;
+}) {
+  const bibTone = role === "LEADER" ? "text-admin-primaryHover" : "text-[#a78bfa]";
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-app-sm px-2 py-1.5 transition-colors hover:bg-admin-card/70">
+      <span
+        className={`grid h-9 min-w-[48px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-base font-extrabold tabular-nums ${bibTone}`}
+      >
+        {participant.bibNumber ?? "—"}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-semibold text-night-text">{participant.displayName}</span>
+        {/* Помощник обычно из другой категории — сразу видно, кого позвали. */}
+        {participant.isHelper && participant.helperCategoryName && (
+          <span className="truncate text-[11px] text-admin-disabled">{participant.helperCategoryName}</span>
+        )}
+      </span>
+      {participant.isHelper && (
+        <span className="shrink-0 rounded-full bg-night-warning/15 px-2 py-0.5 text-[10px] font-bold text-night-warning">помощник</span>
+      )}
+      {/* Своя строка: колонка узкая (половина ширины), и в один ряд с именем
+          и бейджем «заменить/убрать» перекрывали бы имя. */}
+      {participant.isHelper && canEditDraw && (
+        <span className="flex w-full items-center justify-end gap-1">
+          <ReplaceDrawHelperButton heatId={heatId} participantId={participant.id} role={role} />
+          <RemoveDrawHelperButton participantId={participant.id} heatId={heatId} role={role} />
+        </span>
+      )}
+    </li>
+  );
+}
+
+function SideColumn({
+  heat,
+  role,
+  title,
+  deficit,
+}: {
+  heat: MonitorHeat;
+  role: RegistrationRole;
+  title: string;
+  deficit: number;
+}) {
+  const list = role === "LEADER" ? heat.leaders : heat.followers;
+  const isNeeded = heat.neededRole === role;
+  return (
+    <div className="flex flex-col rounded-app border border-admin-border bg-admin-card2">
+      <div className="flex items-center gap-2.5 border-b border-admin-border px-3.5 py-3">
+        <span className={`h-4 w-[3px] shrink-0 rounded-sm ${role === "LEADER" ? "bg-admin-primary" : "bg-admin-violet"}`} aria-hidden="true" />
+        <h4 className="m-0 text-[13px] font-extrabold uppercase tracking-wide text-night-text">{title}</h4>
+        <span className="ml-auto text-xl font-extrabold tabular-nums leading-none text-night-text">{list.length}</span>
+      </div>
+      {list.length === 0 ? (
+        <p className="m-0 px-3.5 py-3 text-sm text-admin-muted">Пусто.</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-1 p-2">
+          {list.map((p) => (
+            <ParticipantRow key={p.id} participant={p} heatId={heat.id} role={role} canEditDraw={heat.canEditDraw} />
+          ))}
+        </ul>
+      )}
+      <div
+        className={`mt-auto flex flex-wrap items-center gap-2.5 border-t border-admin-border px-3.5 py-2.5 text-xs ${
+          isNeeded ? "bg-night-warning/10" : ""
+        }`}
+      >
+        {isNeeded ? (
+          <span className="font-semibold text-night-warning">
+            Не хватает: {deficit} {REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL[role]}
+          </span>
+        ) : (
+          <span className="text-admin-muted">{heat.neededRole ? " " : "Стороны сходятся"}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HeatPanel({ heat, roundStatus }: { heat: MonitorHeat; roundStatus: RoundStatus }) {
+  const deficit = Math.abs(heat.leaders.length - heat.followers.length);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-app border border-admin-border bg-admin-card2/60 px-4 py-3">
+        <span className="text-sm font-bold text-night-text">Заход {heat.number}</span>
+        <StatusPill label={HEAT_STATUS_LABELS[heat.status] ?? heat.status} tone={HEAT_STATUS_TONE[heat.status]} />
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          <HeatStatusControls heatId={heat.id} status={heat.status} roundStatus={roundStatus} />
+        </span>
+      </div>
+
+      {heat.hasDraw ? (
+        <>
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <SideColumn heat={heat} role="LEADER" title="Партнёры" deficit={deficit} />
+            <SideColumn heat={heat} role="FOLLOWER" title="Партнёрши" deficit={deficit} />
+          </div>
+
+          {/* Вызов помощника — во всю ширину под обеими колонками, а не в
+              подвале одной из них: раскрытый список кандидатов с группами по
+              категориям в половину ширины не помещается. */}
+          {heat.canEditDraw && heat.neededRole && <AddDrawHelperForm heatId={heat.id} role={heat.neededRole} />}
+
+          <div className="flex flex-wrap items-center gap-3 rounded-app border border-admin-border bg-admin-card2 px-4 py-3">
+            <div>
+              <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">Жеребьёвка захода</p>
+              <p className="m-0 mt-1 text-xs tabular-nums text-admin-muted">
+                версия <span className="font-bold text-night-text">{heat.drawVersion}</span>
+                {heat.drawSeed && (
+                  <>
+                    {" · seed "}
+                    <span className="font-mono text-[11.5px] text-admin-primaryHover">{heat.drawSeed}</span>
+                  </>
+                )}
+              </p>
+            </div>
+            {heat.canEditDraw ? (
+              <span className="ml-auto flex flex-wrap items-center gap-2">
+                <RerollDrawButton heatId={heat.id} />
+                {heat.hasRealImbalance && <SplitHeatButton heatId={heat.id} />}
+              </span>
+            ) : (
+              <p className="m-0 ml-auto max-w-[340px] text-right text-[11.5px] text-admin-disabled">
+                Жеребьёвку можно менять только пока идёт жеребьёвка раунда и заход ещё не запущен. Любое изменение
+                попадает в журнал.
+              </p>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="m-0 rounded-app border border-dashed border-admin-border px-4 py-6 text-center text-sm text-admin-muted">
+          Жеребьёвка для этого захода ещё не проведена.
+        </p>
+      )}
+
+      {heat.status !== "PENDING" && <RotationPanel heatId={heat.id} />}
+    </div>
+  );
+}
+
+function AdvancementCard({ round }: { round: MonitorRound }) {
+  const called = round.calledLeaders + round.calledFollowers;
+  return (
+    <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">
+      <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">
+        {round.isFinalRound ? "Финал" : "Проходят дальше"}
+      </p>
+      {round.finalistsCount ? (
+        <>
+          <p className="m-0 mb-0.5 mt-1.5 flex items-baseline gap-2">
+            <span className="text-[44px] font-extrabold leading-none tracking-tight tabular-nums text-night-text">
+              {round.finalistsCount}
+            </span>
+            <span className="text-[15px] font-bold text-admin-muted">пар</span>
+          </p>
+          <p className="m-0 text-[12.5px] tabular-nums text-admin-muted">
+            из {round.calledLeaders} партнёров и {round.calledFollowers} партнёрш этого этапа
+          </p>
+          <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+            <div className="rounded-app-sm border border-admin-border bg-admin-card2 px-3 py-2.5">
+              <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">Партнёров</p>
+              <p className="m-0 mt-1 text-[17px] font-extrabold tabular-nums text-admin-primaryHover">{round.finalistsCount}</p>
+            </div>
+            <div className="rounded-app-sm border border-admin-border bg-admin-card2 px-3 py-2.5">
+              <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">Партнёрш</p>
+              <p className="m-0 mt-1 text-[17px] font-extrabold tabular-nums text-[#a78bfa]">{round.finalistsCount}</p>
+            </div>
+          </div>
+          {/* CLAUDE.md §19: на границе отсева система не выбирает за судей. */}
+          <p className="m-0 mt-3.5 rounded-app-sm border border-night-warning/30 bg-night-warning/[0.09] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#f8cf8d]">
+            <span className="font-bold text-night-warning">Ничья на границе — перетанцовка.</span> Если на последнем
+            проходящем месте окажется несколько участников, система не выберет за судей, а создаст дополнительный раунд.
+          </p>
+        </>
+      ) : (
+        <p className="m-0 mt-1.5 text-sm text-admin-muted">
+          {round.isFinalRound
+            ? "Финальный этап — дальше никто не проходит, определяются места."
+            : "Число проходящих для этого этапа не задано."}
+        </p>
+      )}
+      {called === 0 && <p className="m-0 mt-2 text-[11.5px] text-admin-disabled">Участники на паркет ещё не вызывались.</p>}
+    </section>
+  );
+}
+
+export function CompetitionMonitor({
+  categories,
+  canViewScoreMonitor,
+}: {
+  categories: MonitorCategory[];
+  canViewScoreMonitor: boolean;
+}) {
+  const fallbackCategoryId = defaultCategoryId(categories);
+  const [categoryId, setCategoryId] = useState<string | null>(fallbackCategoryId);
+  const [roundId, setRoundId] = useState<string | null>(null);
+  const [heatId, setHeatId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const category = resolveSelected(categories, categoryId, fallbackCategoryId);
+  if (!category) return <p className="text-sm text-admin-muted">Категорий пока нет.</p>;
+
+  const round = resolveSelected(category.rounds, roundId, defaultRoundId(category.rounds));
+  const heat = round ? resolveSelected(round.heats, heatId, defaultHeatId(round.heats)) : null;
+
+  function selectCategory(id: string) {
+    setCategoryId(id);
+    // Этап и заход принадлежат прежней категории — сбрасываем, чтобы
+    // сработало то же правило "показать то, что идёт сейчас".
+    setRoundId(null);
+    setHeatId(null);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* ── Категории ─────────────────────────────────────────── */}
+      {categories.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto rounded-app border border-admin-border bg-admin-card/50 p-1.5" role="tablist" aria-label="Категории">
+          {categories.map((c, i) => {
+            const isActive = c.id === category.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => selectCategory(c.id)}
+                className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm border px-4 py-2 text-sm font-semibold transition-colors ${
+                  isActive
+                    ? "border-admin-primary/40 bg-admin-primary/15 text-night-text"
+                    : "border-transparent text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+                }`}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: categoryDotColor(i) }} aria-hidden="true" />
+                {c.name}
+                {hasActiveRound(c.rounds) && <span className="text-[11px] font-bold text-night-success">идёт</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Этапы категории ───────────────────────────────────── */}
+      {category.rounds.length === 0 ? (
+        <div className="rounded-app border border-admin-border bg-admin-card p-5">
+          <p className="m-0 text-sm text-admin-muted">
+            У категории «{category.name}» ещё нет раундов.
+            {category.stagePlanLabel ? ` План по этапам: ${category.stagePlanLabel}.` : " План по этапам не задан."}
+          </p>
+          <p className="m-0 mt-1 text-sm text-admin-muted">
+            Партнёров: {category.registeredLeaders} ({category.checkedInLeaders} прошли check-in) · Партнёрш:{" "}
+            {category.registeredFollowers} ({category.checkedInFollowers} прошли check-in)
+          </p>
+          {category.generateRounds && <div className="mt-3">{category.generateRounds}</div>}
+        </div>
+      ) : (
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Этапы категории">
+          {category.rounds.map((r) => {
+            const isActive = r.id === round?.id;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => {
+                  setRoundId(r.id);
+                  setHeatId(null);
+                }}
+                className={`flex flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
+                  isActive
+                    ? "border-admin-primary bg-admin-primary/10"
+                    : "border-admin-border bg-admin-card hover:border-admin-disabled"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${ROUND_STATUS_TONE[r.status]}`} aria-hidden="true" />
+                  <span className={`text-sm font-bold ${isActive ? "text-night-text" : "text-admin-muted"}`}>{r.name}</span>
+                </span>
+                <span className="text-xs tabular-nums text-admin-disabled">
+                  {r.calledLeaders} / {r.calledFollowers}
+                  {r.finalistsCount ? ` · проходят ${r.finalistsCount} пар` : ""}
+                </span>
+                <span className="text-[10.5px] font-bold uppercase tracking-wide text-admin-disabled">
+                  {ROUND_STATUS_LABELS[r.status] ?? r.status}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Выбранный этап ────────────────────────────────────── */}
+      {round && (
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_336px]">
+          <div className="flex min-w-0 flex-col gap-4">
+            <section className="overflow-hidden rounded-app border border-admin-border bg-admin-card">
+              <div className="flex flex-wrap items-center gap-3 border-b border-admin-border px-[18px] py-4">
+                <h3 className="m-0 text-base font-extrabold text-night-text">{round.name}</h3>
+                <StatusPill label={ROUND_STATUS_LABELS[round.status] ?? round.status} tone={ROUND_STATUS_TONE[round.status]} />
+                <span className="ml-auto flex flex-wrap items-center gap-2">
+                  <RoundStatusControls roundId={round.id} status={round.status} />
+                </span>
+              </div>
+
+              <div className="p-[18px]">
+                {round.showsHeats ? (
+                  round.heats.length === 0 ? (
+                    <p className="m-0 text-sm text-admin-muted">Заходов пока нет.</p>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {round.heats.length > 1 && (
+                        <div className="flex gap-1.5 overflow-x-auto rounded-app-sm bg-admin-card2/50 p-1.5" role="tablist" aria-label="Заходы">
+                          {round.heats.map((h) => {
+                            const isActive = h.id === heat?.id;
+                            return (
+                              <button
+                                key={h.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={isActive}
+                                onClick={() => setHeatId(h.id)}
+                                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-app-sm px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                                  isActive ? "bg-admin-primary text-white" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+                                }`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? "bg-white" : HEAT_STATUS_TONE[h.status]}`}
+                                  aria-hidden="true"
+                                />
+                                Заход {h.number}
+                                <span className="text-[11.5px] tabular-nums opacity-75">
+                                  {h.leaders.length} / {h.followers.length}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {heat && <HeatPanel heat={heat} roundStatus={round.status} />}
+                    </div>
+                  )
+                ) : (
+                  <p className="m-0 text-sm text-admin-muted">
+                    Этот формат финала не использует обычную жеребьёвку — заходами управляет панель ниже.
+                  </p>
+                )}
+
+                {(round.canAddHeat || round.showStartDrawing) && (
+                  <div className="mt-4 flex flex-wrap items-start gap-3 border-t border-admin-border pt-4">
+                    {round.canAddHeat && <AddHeatButton roundId={round.id} />}
+                    {round.showStartDrawing && <StartDrawingForm roundId={round.id} />}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Панели этапа (старт финала, форматы финала, подсчёт, решения по
+                ничьей, протоколы) остаются на светлой поверхности — они ещё не
+                переведены на admin-* (tailwind.config.ts, "перенос не
+                завершён"), и на тёмном фоне их подписи были бы нечитаемы. */}
+            {round.panels.length > 0 && (
+              <section className="rounded-app border border-admin-border bg-surface p-[18px] text-ink">
+                <div className="flex flex-col gap-3">
+                  {round.panels.map((panel, i) => (
+                    <div key={i}>{panel}</div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+
+          <aside className="flex min-w-0 flex-col gap-4">
+            <AdvancementCard round={round} />
+            <JudgesLivePanel
+              roundId={round.id}
+              roundStatus={round.status}
+              leaders={category.judges.leaders}
+              followers={category.judges.followers}
+              canViewLive={canViewScoreMonitor}
+              scoreMonitorHref={round.scoreMonitorHref}
+            />
+          </aside>
+        </div>
+      )}
+
+      {/* ── Настройки и протокол категории ────────────────────── */}
+      {(category.settings.length > 0 || category.results || category.generateRounds) && category.rounds.length > 0 && (
+        <section className="rounded-app border border-admin-border bg-admin-card">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((v) => !v)}
+            aria-expanded={settingsOpen}
+            className="flex w-full items-center gap-2 px-[18px] py-3.5 text-left text-sm font-bold text-night-text"
+          >
+            Категория «{category.name}» — настройки и протокол
+            <span className="ml-auto text-xs font-semibold text-admin-muted">{settingsOpen ? "свернуть" : "развернуть"}</span>
+          </button>
+          {settingsOpen && (
+            <div className="border-t border-admin-border p-[18px]">
+              <p className="m-0 mb-3 text-sm text-admin-muted">
+                Партнёров: {category.registeredLeaders} ({category.checkedInLeaders} прошли check-in) · Партнёрш:{" "}
+                {category.registeredFollowers} ({category.checkedInFollowers} прошли check-in)
+                {category.stagePlanLabel ? ` · План по этапам: ${category.stagePlanLabel}` : ""}
+              </p>
+              <div className="flex flex-col gap-3 rounded-app border border-admin-border bg-surface p-[18px] text-ink">
+                {category.settings.map((node, i) => (
+                  <div key={i}>{node}</div>
+                ))}
+                {category.results}
+                {category.generateRounds}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}

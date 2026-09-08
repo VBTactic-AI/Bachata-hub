@@ -36,7 +36,7 @@ export function RerollDrawButton({ heatId }: { heatId: string }) {
 
   if (!open) {
     return (
-      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant="adminOutline" onClick={() => setOpen(true)}>
         Пересобрать
       </Button>
     );
@@ -48,16 +48,16 @@ export function RerollDrawButton({ heatId }: { heatId: string }) {
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Причина пересборки"
-        className="!w-auto py-1.5 text-sm"
+        className="!w-auto border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text placeholder:text-admin-disabled focus:border-admin-primary focus:ring-admin-primary/20"
         style={{ maxWidth: 220 }}
       />
-      <Button type="button" size="sm" disabled={loading || !reason.trim()} onClick={submit}>
+      <Button type="button" size="sm" variant="admin" disabled={loading || !reason.trim()} onClick={submit}>
         Подтвердить
       </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+      <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
         Отмена
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </span>
   );
 }

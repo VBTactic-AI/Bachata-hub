@@ -1,6 +1,5 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getMyDancerRef } from "@/lib/dancer";
@@ -15,15 +14,8 @@ import { RegisterSelfForm } from "@/components/admin/RegisterSelfForm";
 import { AddParticipantPanel } from "@/components/admin/AddParticipantPanel";
 import { AddButton } from "@/components/admin/AddButton";
 import { GenerateRoundsButton } from "@/components/admin/GenerateRoundsButton";
-import { RoundStatusControls } from "@/components/admin/RoundStatusControls";
-import { AddHeatButton } from "@/components/admin/AddHeatButton";
-import { HeatStatusControls } from "@/components/admin/HeatStatusControls";
-import { StartDrawingForm } from "@/components/admin/StartDrawingForm";
-import { RerollDrawButton } from "@/components/admin/RerollDrawButton";
-import { AddDrawHelperForm } from "@/components/admin/AddDrawHelperForm";
-import { SplitHeatButton } from "@/components/admin/SplitHeatButton";
-import { DrawParticipantsGrid } from "@/components/admin/DrawParticipantsGrid";
-import { RotationPanel } from "@/components/admin/RotationPanel";
+import { CompetitionMonitor } from "@/components/admin/monitor/CompetitionMonitor";
+import type { MonitorCategory, MonitorHeat, MonitorJudge, MonitorParticipant, MonitorRound } from "@/components/admin/monitor/types";
 import type { PoolJudge } from "@/components/admin/DivisionJudgesPanel";
 import { JudgesWorkspace, type JudgingDivision } from "@/components/admin/JudgesWorkspace";
 import { AddCompetitionJudgeForm } from "@/components/admin/AddCompetitionJudgeForm";
@@ -54,6 +46,7 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
+  REGISTRATION_ROLE_LABELS_PLURAL as ROLE_LABELS_PLURAL,
   REGISTRATION_STATUS_LABELS,
   ROUND_TYPE_LABELS,
   ROUND_STATUS_LABELS,
@@ -132,7 +125,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               orderBy: { order: "asc" },
             },
             judgeAssignments: {
-              select: { judgeUserId: true, role: true },
+              // id нужен монитору: live-итоги оценок приходят с сервера
+              // ключами по judgeAssignmentId (score-monitor.ts), и без него
+              // строку судьи не с чем было бы сопоставить.
+              select: { id: true, judgeUserId: true, role: true },
               orderBy: { createdAt: "asc" },
             },
             stagePlan: { include: { stage: { select: { name: true } } }, orderBy: { stage: { order: "asc" } } },
@@ -742,11 +738,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
   // "Категории" (redesign 2026-09-09, по референсу пользователя) — только
   // сводная таблица + добавление/редактирование (DivisionsOverviewTable).
-  // Раунды/жеребьёвка/финал/ротация партнёров переехали на вкладку "Раунды"
-  // ниже (roundsContent) — пользователь ещё не решил их окончательное
-  // расположение (возможно, отдельная вкладка "Монитор" или под-вкладки по
-  // категориям), поэтому пока это временный, явно обозначенный дом для этой
-  // функциональности, а не изменение самой функциональности.
+  // Раунды/жеребьёвка/финал/ротация партнёров живут на вкладке "Монитор"
+  // ниже (monitorContent) — их окончательный дом, выбранный пользователем
+  // 2026-09-09 взамен прежней временной вкладки "Раунды".
   const divisionOverviewRows: DivisionOverviewRow[] = competition.divisions.map((d) => ({
     id: d.id,
     categoryName: d.category.name,
@@ -772,362 +766,372 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     <p className="text-sm text-admin-muted">Нет прав на управление категориями.</p>
   );
 
-  const roundsContent = (
-    <div>
-        {competition.divisions.length === 0 ? (
-          <p className="hint-text">Категорий пока нет.</p>
-        ) : (
-          <div className="stack gap-3">
-            {competition.divisions.map((d) => (
-              <Card key={d.id}>
-                <p className="m-0 font-semibold text-night-text">{d.category.name}</p>
-                {canManage && (
-                  <DivisionSettingsPanel
-                    divisionId={d.id}
-                    settings={{
-                      rotationMode: d.rotationMode,
-                      rotationIntervalSec: d.rotationIntervalSec,
-                      rotationShiftMin: d.rotationShiftMin,
-                      rotationShiftMax: d.rotationShiftMax,
-                    }}
-                  />
-                )}
-                {canManageRounds && (
-                  <p className="hint-text mt-1">
-                    Партнёров: {countFor(registeredCounts, d.id, "LEADER")} (
-                    {countFor(checkedInCounts, d.id, "LEADER")} прошли check-in) · Партнёрш:{" "}
-                    {countFor(registeredCounts, d.id, "FOLLOWER")} ({countFor(checkedInCounts, d.id, "FOLLOWER")} прошли
-                    check-in)
-                  </p>
-                )}
-                {canManageRounds && (
+  // Монитор (2026-09-09, по решению пользователя) — единственное рабочее
+  // место организатора во время прогона, заменил вкладку "Раунды": вместо
+  // сплошного списка всех категорий и всех раундов сразу — выбор
+  // категория → этап → заход, с номерами на паркете, жеребьёвкой, вызовом
+  // помощника и живым составом судей на одном экране. Сама функциональность
+  // не изменилась: те же серверные операции и те же компоненты действий —
+  // здесь только собирается модель того, что монитор должен показать, из
+  // УЖЕ загруженного выше дерева (ни одного нового запроса).
+  const judgeNameByUserId = new Map(competitionJudgePool.map((j) => [j.judgeUserId, j.displayName ?? j.judgeEmail]));
+
+  const monitorCategories: MonitorCategory[] = competition.divisions.map((d) => {
+    const settings: ReactNode[] = [];
+    if (canManage) {
+      settings.push(
+        <DivisionSettingsPanel
+          key="division"
+          divisionId={d.id}
+          settings={{
+            rotationMode: d.rotationMode,
+            rotationIntervalSec: d.rotationIntervalSec,
+            rotationShiftMin: d.rotationShiftMin,
+            rotationShiftMax: d.rotationShiftMax,
+          }}
+        />
+      );
+    }
+    if (canConfigureFinal) {
+      settings.push(
+        <FinalSettingsPanel
+          key="final"
+          divisionId={d.id}
+          format={d.finalSettings?.format ?? "NORMAL"}
+          tracksCount={d.finalSettings?.tracksCount ?? 1}
+          partnerChangeEnabled={d.finalSettings?.partnerChangeEnabled ?? false}
+          config={d.finalSettings?.config ?? {}}
+          criteria={d.finalCriteria.map((c) => ({
+            id: c.id,
+            name: c.name,
+            priority: c.priority,
+            minScore: c.minScore,
+            maxScore: c.maxScore,
+            step: c.step,
+            catalogId: c.catalogId,
+          }))}
+          catalog={criterionCatalog.map((c) => ({ id: c.id, name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step }))}
+          locked={d.rounds.some((r) => r.finalSession)}
+        />
+      );
+    }
+
+    const rounds: MonitorRound[] = !canManageRounds
+      ? []
+      : d.rounds.map((round) => {
+          // Финал — последний по order обычный (не служебный) раунд дивизиона
+          // (тот же признак, что и isFinalStageInTx на сервере, advancement.ts).
+          const isFinalRound = round.type === null && !d.rounds.some((r) => r.type === null && r.order > round.order);
+          const tieGroupConfig = round.config as { finalTieGroupKey?: string; tieBreakKind?: string } | null;
+          const isFinalTieBreak = round.type === "TIE_BREAK" && !!tieGroupConfig?.finalTieGroupKey;
+          // TIEBREAK-001: перетанцовка "за место" в финале без критериальной
+          // системы (никого не отсеивают, нужен только порядок внутри группы).
+          const isFullRankTieBreak = round.type === "TIE_BREAK" && tieGroupConfig?.tieBreakKind === "FULL_RANK";
+          const isJudgesDance = round.finalSession?.format === "JUDGES_DANCE";
+          const isRandomCouples = round.finalSession?.format === "RANDOM_COUPLES";
+          const usesCustomFinalFlow = isJudgesDance || isRandomCouples;
+
+          const panels: ReactNode[] = [];
+
+          if (isFinalRound && round.status === "READY" && !round.finalSession && canManageFinal) {
+            panels.push(<StartFinalPanel key="start-final" roundId={round.id} />);
+          }
+
+          if (isJudgesDance && round.status !== "COMPLETED" && canManageFinal) {
+            panels.push(<JudgesDanceStagePanel key="judges-dance" roundId={round.id} currentStage={round.finalSession!.currentStage} />);
+          }
+
+          if (isRandomCouples && round.status !== "COMPLETED" && canManageFinal) {
+            panels.push(
+              <RandomCouplesPanel
+                key="random-couples"
+                roundId={round.id}
+                pairs={(round.finalSession!.pairs ?? []).map((p) => ({
+                  pairNumber: p.pairNumber,
+                  leaderName: p.leaderRegistration.dancer.displayName,
+                  leaderBib: p.leaderRegistration.checkIn?.bibNumber ?? null,
+                  followerName: p.followerRegistration.dancer.displayName,
+                  followerBib: p.followerRegistration.checkIn?.bibNumber ?? null,
+                  trackName: p.trackName,
+                }))}
+              />
+            );
+          }
+
+          if (round.status === "SCORING" && round.type !== "TIE_BREAK") {
+            panels.push(
+              <div key="scoring-progress">
+                {skippedRolesByRoundId.has(round.id) && (
                   <p className="hint-text">
-                    План по этапам:{" "}
-                    {d.stagePlan.length === 0
-                      ? "не задан"
-                      : d.stagePlan.map((p) => `${p.stage.name} ${p.participantCount}`).join(" · ")}
+                    {skippedRolesByRoundId
+                      .get(round.id)!
+                      .map((r) => ROLE_LABELS[r] ?? r)
+                      .join(", ")}{" "}
+                    не оценивается — участников не больше, чем мест, проходят автоматически.
                   </p>
                 )}
+                <ScoringProgress {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />
+              </div>
+            );
+          }
 
-                {canConfigureFinal && (
-                  <FinalSettingsPanel
-                    divisionId={d.id}
-                    format={d.finalSettings?.format ?? "NORMAL"}
-                    tracksCount={d.finalSettings?.tracksCount ?? 1}
-                    partnerChangeEnabled={d.finalSettings?.partnerChangeEnabled ?? false}
-                    config={d.finalSettings?.config ?? {}}
-                    criteria={d.finalCriteria.map((c) => ({
-                      id: c.id,
-                      name: c.name,
-                      priority: c.priority,
-                      minScore: c.minScore,
-                      maxScore: c.maxScore,
-                      step: c.step,
-                      catalogId: c.catalogId,
-                    }))}
-                    catalog={criterionCatalog.map((c) => ({ id: c.id, name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step }))}
-                    locked={d.rounds.some((r) => r.finalSession)}
-                  />
-                )}
+          if (round.status === "SCORING" && round.type === "TIE_BREAK" && isFinalTieBreak && canDecideTieBreak) {
+            panels.push(
+              <FinalTieBreakDecisionForm
+                key="final-tie-break"
+                tieBreakRoundId={round.id}
+                candidates={(round.heats[0]?.draws[0]?.participants ?? [])
+                  .filter((p) => p.scored)
+                  .map((p) => ({
+                    registrationId: p.registrationId,
+                    bibNumber: p.registration.checkIn?.bibNumber ?? null,
+                    displayName: p.registration.dancer.displayName,
+                  }))}
+              />
+            );
+          }
 
-                {canManageRounds && (
-                  <div className="stack gap-2 mt-3">
-                    {d.rounds.length === 0 ? (
-                      <p className="hint-text">Раундов пока нет.</p>
-                    ) : (
-                      d.rounds.map((round) => {
-                        // Финал — последний по order обычный (не служебный)
-                        // раунд дивизиона (тот же признак, что и
-                        // isFinalStageInTx на сервере, advancement.ts).
-                        const isFinalRound = round.type === null && !d.rounds.some((r) => r.type === null && r.order > round.order);
-                        const tieGroupConfig = round.config as { finalTieGroupKey?: string; tieBreakKind?: string } | null;
-                        const isFinalTieBreak = round.type === "TIE_BREAK" && !!tieGroupConfig?.finalTieGroupKey;
-                        // TIEBREAK-001: перетанцовка "за место" в финале без критериальной
-                        // системы (никого не отсеивают, нужен только порядок внутри группы).
-                        const isFullRankTieBreak = round.type === "TIE_BREAK" && tieGroupConfig?.tieBreakKind === "FULL_RANK";
-                        const isJudgesDance = round.finalSession?.format === "JUDGES_DANCE";
-                        const isRandomCouples = round.finalSession?.format === "RANDOM_COUPLES";
-                        const usesCustomFinalFlow = isJudgesDance || isRandomCouples;
-                        return (
-                        <div key={round.id} className="rounded-app-sm border border-line p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span>
-                              <strong>{round.stage?.name ?? (round.type ? (ROUND_TYPE_LABELS[round.type] ?? round.type) : "—")}</strong>
-                              {round.finalistsCount ? ` · проходят ${round.finalistsCount} пар` : ""}
-                            </span>
-                            <RoundStatusControls roundId={round.id} status={round.status} />
-                          </div>
-                          {/* Перетанцовка "за место" (FULL_RANK/RANK_ALL, TIEBREAK-001/A22) —
-                              судьи её больше не оценивают вовсе (rolesNotNeedingJudging,
-                              2026-09-07): решение вносит HEAD_JUDGE вручную (реордер-форма
-                              ниже), монитор судейских оценок для неё нечего показывать.
-                              Обычная перетанцовка на отсев (SELECT_N) — судьи по-прежнему
-                              реально ставят оценки, монитор остаётся. */}
-                          {canViewScoreMonitor && !(round.type === "TIE_BREAK" && (isFullRankTieBreak || isFinalTieBreak)) && (
-                            <Link href={`/admin/competitions/${competition.id}/score-monitor/${round.id}`} className="hint-text">
-                              Онлайн-монитор оценок судей →
-                            </Link>
-                          )}
+          if (round.status === "SCORING" && round.type === "TIE_BREAK" && !isFinalTieBreak && canDecideTieBreak) {
+            panels.push(
+              <TieBreakDecisionForm
+                key="tie-break"
+                tieBreakRoundId={round.id}
+                expectedCount={round.finalistsCount ?? 0}
+                fullRank={isFullRankTieBreak}
+                candidates={(round.heats[0]?.draws[0]?.participants ?? [])
+                  .filter((p) => p.scored)
+                  .map((p) => ({
+                    registrationId: p.registrationId,
+                    bibNumber: p.registration.checkIn?.bibNumber ?? null,
+                    displayName: p.registration.dancer.displayName,
+                    role: p.role,
+                  }))}
+              />
+            );
+          }
 
-                          {isFinalRound && round.status === "READY" && !round.finalSession && canManageFinal && (
-                            <StartFinalPanel roundId={round.id} />
-                          )}
+          if ((round.status === "SCORING" || round.status === "COMPLETED") && round.finalSession && round.finalResults.length > 0) {
+            panels.push(
+              <FinalResultsTable
+                key="final-results"
+                criteria={round.finalSession!.criteriaSnapshot as unknown as { id: string; name: string; priority: number }[]}
+                results={round.finalResults.map((r) => ({
+                  registrationId: r.registrationId,
+                  role: r.role,
+                  displayName: r.registration.dancer.displayName,
+                  bibNumber: r.registration.checkIn?.bibNumber ?? null,
+                  totalScore: r.totalScore,
+                  criteriaTotals: r.criteriaTotals as Record<string, number>,
+                  place: r.place,
+                  tieGroupKey: r.tieGroupKey,
+                }))}
+              />
+            );
+          }
 
-                          {isJudgesDance && round.status !== "COMPLETED" && canManageFinal && (
-                            <JudgesDanceStagePanel roundId={round.id} currentStage={round.finalSession!.currentStage} />
-                          )}
-
-                          {isRandomCouples && round.status !== "COMPLETED" && canManageFinal && (
-                            <RandomCouplesPanel
-                              roundId={round.id}
-                              pairs={(round.finalSession!.pairs ?? []).map((p) => ({
-                                pairNumber: p.pairNumber,
-                                leaderName: p.leaderRegistration.dancer.displayName,
-                                leaderBib: p.leaderRegistration.checkIn?.bibNumber ?? null,
-                                followerName: p.followerRegistration.dancer.displayName,
-                                followerBib: p.followerRegistration.checkIn?.bibNumber ?? null,
-                                trackName: p.trackName,
-                              }))}
-                            />
-                          )}
-
-                          {round.status === "SCORING" && round.type !== "TIE_BREAK" && (
-                            <>
-                              {skippedRolesByRoundId.has(round.id) && (
-                                <p className="hint-text">
-                                  {skippedRolesByRoundId
-                                    .get(round.id)!
-                                    .map((r) => ROLE_LABELS[r] ?? r)
-                                    .join(", ")}{" "}
-                                  не оценивается — участников не больше, чем мест, проходят автоматически.
-                                </p>
-                              )}
-                              <ScoringProgress {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />
-                            </>
-                          )}
-
-                          {round.status === "SCORING" && round.type === "TIE_BREAK" && isFinalTieBreak && canDecideTieBreak && (
-                            <FinalTieBreakDecisionForm
-                              tieBreakRoundId={round.id}
-                              candidates={(round.heats[0]?.draws[0]?.participants ?? [])
-                                .filter((p) => p.scored)
-                                .map((p) => ({
-                                  registrationId: p.registrationId,
-                                  bibNumber: p.registration.checkIn?.bibNumber ?? null,
-                                  displayName: p.registration.dancer.displayName,
-                                }))}
-                            />
-                          )}
-
-                          {round.status === "SCORING" && round.type === "TIE_BREAK" && !isFinalTieBreak && canDecideTieBreak && (
-                            <TieBreakDecisionForm
-                              tieBreakRoundId={round.id}
-                              expectedCount={round.finalistsCount ?? 0}
-                              fullRank={isFullRankTieBreak}
-                              candidates={(round.heats[0]?.draws[0]?.participants ?? [])
-                                .filter((p) => p.scored)
-                                .map((p) => ({
-                                  registrationId: p.registrationId,
-                                  bibNumber: p.registration.checkIn?.bibNumber ?? null,
-                                  displayName: p.registration.dancer.displayName,
-                                  role: p.role,
-                                }))}
-                            />
-                          )}
-
-                          {(round.status === "SCORING" || round.status === "COMPLETED") && round.finalSession && round.finalResults.length > 0 && (
-                            <FinalResultsTable
-                              criteria={round.finalSession!.criteriaSnapshot as unknown as { id: string; name: string; priority: number }[]}
-                              results={round.finalResults.map((r) => ({
-                                registrationId: r.registrationId,
-                                role: r.role,
-                                displayName: r.registration.dancer.displayName,
-                                bibNumber: r.registration.checkIn?.bibNumber ?? null,
-                                totalScore: r.totalScore,
-                                criteriaTotals: r.criteriaTotals as Record<string, number>,
-                                place: r.place,
-                                tieGroupKey: r.tieGroupKey,
-                              }))}
-                            />
-                          )}
-
-                          {round.status === "COMPLETED" && !round.finalSession && round.results.length > 0 && (
-                            <div className="mt-2 grid grid-cols-2 gap-3">
-                              {(["LEADER", "FOLLOWER"] as const).map((r) => (
-                                <div key={r}>
-                                  <p className="hint-text">{r === "LEADER" ? "Партнёры" : "Партнёрши"}</p>
-                                  <ul className="stack gap-0.5">
-                                    {round.results
-                                      .filter((res) => res.registration.role === r)
-                                      .map((res) => (
-                                        <li key={res.id} className={res.status === "ADVANCED" ? "" : "hint-text line-through"}>
-                                          №{res.registration.checkIn?.bibNumber ?? "—"} {res.registration.dancer.displayName} —{" "}
-                                          {res.status === "ADVANCED" ? "прошёл" : "не прошёл"} ({res.scoreSum})
-                                        </li>
-                                      ))}
-                                  </ul>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {round.status === "COMPLETED" && round.type !== "TIE_BREAK" && !isFinalRound && canPublishResults && (
-                            <RoundAdvancementPublish
-                              roundId={round.id}
-                              publishedAt={round.advancementPublishedAt ? round.advancementPublishedAt.toISOString() : null}
-                            />
-                          )}
-
-                          {isJudgesDance && (
-                            // JUDGES_DANCE не использует Draw Engine (партнёр
-                            // участника — судья, не другой финалист, A5) — заходы
-                            // управляются целиком через JudgesDanceStagePanel выше,
-                            // здесь только read-only список вызванных по стадиям.
-                            <div className="stack gap-1.5 mt-2">
-                              {round.heats.map((heat) => (
-                                <div key={heat.id} className="pl-3">
-                                  <p className="hint-text m-0">
-                                    Стадия {heat.number} ({heat.number === 1 ? "Партнёры" : "Партнёрши"}) · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
-                                  </p>
-                                  <ul className="stack gap-0.5 m-0 pl-4">
-                                    {(heat.draws[0]?.participants ?? []).map((p) => (
-                                      <li key={p.id}>
-                                        №{p.registration.checkIn?.bibNumber ?? "—"} {p.registration.dancer.displayName}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {isRandomCouples && (
-                            // Список пар уже виден в RandomCouplesPanel выше
-                            // (с именами/треком) — здесь только статус захода
-                            // каждой пары, для контроля "кто сейчас танцует".
-                            <div className="stack gap-1.5 mt-2">
-                              {round.heats.map((heat) => (
-                                <p key={heat.id} className="hint-text m-0 pl-3">
-                                  Пара {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
-                                </p>
-                              ))}
-                            </div>
-                          )}
-
-                          {!usesCustomFinalFlow && (
-                          <div className="stack gap-1.5 mt-2">
-                            {round.heats.map((heat) => {
-                              const draw = heat.draws[0];
-                              const canEditDraw = round.status === "DRAWING" && heat.status === "PENDING" && !!draw;
-                              // Кого звать в помощь — определяется по факту
-                              // (какой стороны сейчас меньше в списке), а не
-                              // выбором организатора: если уже поровну,
-                              // помощь не нужна вообще (docs/00_DECISIONS.md,
-                              // 2026-09-04).
-                              const leaderCount = draw?.participants.filter((p) => p.role === "LEADER").length ?? 0;
-                              const followerCount = draw?.participants.filter((p) => p.role === "FOLLOWER").length ?? 0;
-                              const neededRole =
-                                leaderCount === followerCount ? null : leaderCount < followerCount ? "LEADER" : "FOLLOWER";
-                              // "Разбить" смотрит на РЕАЛЬНЫЙ (не считая
-                              // помощников) дисбаланс — доступно, даже если
-                              // помощники уже сгладили общее число, это
-                              // альтернативный способ, не зависящий от них.
-                              const scoredLeaderCount =
-                                draw?.participants.filter((p) => p.role === "LEADER" && p.scored).length ?? 0;
-                              const scoredFollowerCount =
-                                draw?.participants.filter((p) => p.role === "FOLLOWER" && p.scored).length ?? 0;
-                              // Если меньшая сторона — 0 реальных участников,
-                              // разбивка унесла бы их всех в новый заезд и
-                              // текущий остался бы пустым — кнопку не
-                              // показываем вовсе (сервер такое тоже отклонит,
-                              // 2026-09-04).
-                              const hasRealImbalance =
-                                scoredLeaderCount !== scoredFollowerCount && Math.min(scoredLeaderCount, scoredFollowerCount) > 0;
-                              return (
-                                <div key={heat.id} className="pl-3">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span>
-                                      Заход {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
-                                    </span>
-                                    <HeatStatusControls heatId={heat.id} status={heat.status} roundStatus={round.status} />
-                                  </div>
-                                  {draw && (
-                                    <DrawParticipantsGrid
-                                      heatId={heat.id}
-                                      participants={draw.participants}
-                                      canEditDraw={canEditDraw}
-                                    />
-                                  )}
-                                  {canEditDraw && (
-                                    <div className="flex flex-wrap items-center gap-2 mt-1 pl-3">
-                                      <RerollDrawButton heatId={heat.id} />
-                                      {neededRole && <AddDrawHelperForm heatId={heat.id} role={neededRole} />}
-                                      {hasRealImbalance && <SplitHeatButton heatId={heat.id} />}
-                                    </div>
-                                  )}
-                                  {heat.status !== "PENDING" && <RotationPanel heatId={heat.id} />}
-                                </div>
-                              );
-                            })}
-                            {/* После DRAW_LOCKED у каждого захода уже обязана быть жеребьёвка
-                                (round-state.ts) — новый заход без списка нарушил бы это, поэтому
-                                кнопку прячем, как только жеребьёвка зафиксирована. */}
-                            {(round.status === "DRAFT" || round.status === "READY" || round.status === "DRAWING") && (
-                              <div className="pl-3">
-                                <AddHeatButton roundId={round.id} />
-                              </div>
-                            )}
-                          </div>
-                          )}
-
-                          {/* Финал обязан пройти через "Начать финал" (StartFinalPanel
-                              выше) — та фиксирует критерии в FinalSession, до этого
-                              жеребьёвка не должна быть доступна вообще ни одной кнопкой:
-                              иначе раунд может уйти в RUNNING по обычному пути, без
-                              FinalSession, и судьи увидят обычную схему Да/Нет вместо
-                              критериев (найдено на живом тестировании, 2026-09-05). Для
-                              NORMAL-формата после старта финала жеребьёвка нужна как
-                              обычно — поэтому условие "уже есть finalSession", а не
-                              "не финал вовсе". Для JUDGES_DANCE/RANDOM_COUPLES кнопка и
-                              так не нужна (usesCustomFinalFlow), это отдельная защита
-                              на случай NORMAL-финала конкретно. */}
-                          {!usesCustomFinalFlow &&
-                            round.status === "READY" &&
-                            (!isFinalRound || round.finalSession) && <StartDrawingForm roundId={round.id} />}
-                        </div>
-                        );
-                      })
-                    )}
-                    <div className="flex flex-wrap items-start gap-4">
-                      <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} />
-                    </div>
+          if (round.status === "COMPLETED" && !round.finalSession && round.results.length > 0) {
+            panels.push(
+              <div key="round-results" className="grid grid-cols-2 gap-3">
+                {(["LEADER", "FOLLOWER"] as const).map((r) => (
+                  <div key={r}>
+                    <p className="hint-text">{ROLE_LABELS_PLURAL[r] ?? r}</p>
+                    <ul className="stack gap-0.5">
+                      {round.results
+                        .filter((res) => res.registration.role === r)
+                        .map((res) => (
+                          <li key={res.id} className={res.status === "ADVANCED" ? "" : "hint-text line-through"}>
+                            №{res.registration.checkIn?.bibNumber ?? "—"} {res.registration.dancer.displayName} —{" "}
+                            {res.status === "ADVANCED" ? "прошёл" : "не прошёл"} ({res.scoreSum})
+                          </li>
+                        ))}
+                    </ul>
                   </div>
-                )}
+                ))}
+              </div>
+            );
+          }
 
-                {canCalculateResults && (
-                  <DivisionResultsPanel
-                    divisionId={d.id}
-                    finalRoundCompleted={finalRoundCompletedByDivisionId.get(d.id) ?? false}
-                    hasResults={(divisionResultsById.get(d.id)?.length ?? 0) > 0}
-                    reviewedAt={d.resultsReviewedAt ? d.resultsReviewedAt.toISOString() : null}
-                    canReview={canReviewResults}
-                    canCorrect={canPublishResults}
-                    rows={(divisionResultsById.get(d.id) ?? []).map((r) => ({
-                      id: r.id,
-                      registrationId: r.registrationId,
-                      role: r.role,
-                      displayName: r.displayName,
-                      bibNumber: r.bibNumber,
-                      status: r.status,
-                      placement: r.placement,
-                      publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
-                    }))}
-                  />
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
+          if (round.status === "COMPLETED" && round.type !== "TIE_BREAK" && !isFinalRound && canPublishResults) {
+            panels.push(
+              <RoundAdvancementPublish
+                key="advancement-publish"
+                roundId={round.id}
+                publishedAt={round.advancementPublishedAt ? round.advancementPublishedAt.toISOString() : null}
+              />
+            );
+          }
+
+          if (isJudgesDance) {
+            // JUDGES_DANCE не использует Draw Engine (партнёр участника — судья,
+            // не другой финалист, A5) — заходы управляются целиком через
+            // JudgesDanceStagePanel выше, здесь только read-only список
+            // вызванных по стадиям.
+            panels.push(
+              <div key="judges-dance-stages" className="stack gap-1.5">
+                {round.heats.map((heat) => (
+                  <div key={heat.id}>
+                    <p className="hint-text m-0">
+                      Стадия {heat.number} ({heat.number === 1 ? "Партнёры" : "Партнёрши"}) ·{" "}
+                      {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                    </p>
+                    <ul className="stack gap-0.5 m-0 pl-4">
+                      {(heat.draws[0]?.participants ?? []).map((p) => (
+                        <li key={p.id}>
+                          №{p.registration.checkIn?.bibNumber ?? "—"} {p.registration.dancer.displayName}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          if (isRandomCouples) {
+            // Список пар уже виден в RandomCouplesPanel выше (с именами/треком)
+            // — здесь только статус захода каждой пары, для контроля "кто
+            // сейчас танцует".
+            panels.push(
+              <div key="random-couples-heats" className="stack gap-1.5">
+                {round.heats.map((heat) => (
+                  <p key={heat.id} className="hint-text m-0">
+                    Пара {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
+                  </p>
+                ))}
+              </div>
+            );
+          }
+
+          const heats: MonitorHeat[] = round.heats.map((heat) => {
+            const draw = heat.draws[0];
+            const participants = draw?.participants ?? [];
+            const leaderCount = participants.filter((p) => p.role === "LEADER").length;
+            const followerCount = participants.filter((p) => p.role === "FOLLOWER").length;
+            // "Разбить" смотрит на РЕАЛЬНЫЙ (не считая помощников) дисбаланс —
+            // доступно, даже если помощники уже сгладили общее число, это
+            // альтернативный способ, не зависящий от них. Если меньшая
+            // сторона — 0 реальных участников, разбивка унесла бы их всех в
+            // новый заезд и текущий остался бы пустым (сервер такое тоже
+            // отклонит, 2026-09-04).
+            const scoredLeaderCount = participants.filter((p) => p.role === "LEADER" && p.scored).length;
+            const scoredFollowerCount = participants.filter((p) => p.role === "FOLLOWER" && p.scored).length;
+            const toMonitorParticipant = (p: (typeof participants)[number]): MonitorParticipant => ({
+              id: p.id,
+              bibNumber: p.registration.checkIn?.bibNumber ?? null,
+              displayName: p.registration.dancer.displayName,
+              isHelper: !p.scored,
+              helperCategoryName: p.scored ? null : p.registration.division.category.name,
+            });
+            return {
+              id: heat.id,
+              number: heat.number,
+              status: heat.status,
+              leaders: participants.filter((p) => p.role === "LEADER").map(toMonitorParticipant),
+              followers: participants.filter((p) => p.role === "FOLLOWER").map(toMonitorParticipant),
+              hasDraw: !!draw,
+              drawVersion: draw?.version ?? null,
+              drawSeed: draw?.seed ?? null,
+              canEditDraw: round.status === "DRAWING" && heat.status === "PENDING" && !!draw,
+              // Кого звать в помощь — определяется по факту (какой стороны
+              // сейчас меньше в списке), а не выбором организатора: если уже
+              // поровну, помощь не нужна вообще (docs/00_DECISIONS.md,
+              // 2026-09-04).
+              neededRole: leaderCount === followerCount ? null : leaderCount < followerCount ? "LEADER" : "FOLLOWER",
+              hasRealImbalance: scoredLeaderCount !== scoredFollowerCount && Math.min(scoredLeaderCount, scoredFollowerCount) > 0,
+            };
+          });
+
+          const calledOf = (role: RegistrationRole) =>
+            round.heats.reduce(
+              (sum, h) => sum + (h.draws[0]?.participants.filter((p) => p.scored && p.role === role).length ?? 0),
+              0
+            );
+
+          return {
+            id: round.id,
+            name: round.stage?.name ?? (round.type ? (ROUND_TYPE_LABELS[round.type] ?? round.type) : "—"),
+            status: round.status,
+            finalistsCount: round.finalistsCount,
+            isFinalRound,
+            isTieBreak: round.type === "TIE_BREAK",
+            showsHeats: !usesCustomFinalFlow,
+            // После DRAW_LOCKED у каждого захода уже обязана быть жеребьёвка
+            // (round-state.ts) — новый заход без списка нарушил бы это.
+            canAddHeat:
+              !usesCustomFinalFlow && (round.status === "DRAFT" || round.status === "READY" || round.status === "DRAWING"),
+            // Финал обязан пройти через "Начать финал" (StartFinalPanel) — та
+            // фиксирует критерии в FinalSession, до этого жеребьёвка не должна
+            // быть доступна вообще ни одной кнопкой: иначе раунд может уйти в
+            // RUNNING по обычному пути, без FinalSession, и судьи увидят
+            // обычную схему Да/Нет вместо критериев (найдено на живом
+            // тестировании, 2026-09-05).
+            showStartDrawing: !usesCustomFinalFlow && round.status === "READY" && (!isFinalRound || !!round.finalSession),
+            // Перетанцовка "за место" (FULL_RANK/RANK_ALL, TIEBREAK-001/A22) —
+            // судьи её больше не оценивают вовсе (rolesNotNeedingJudging,
+            // 2026-09-07): решение вносит HEAD_JUDGE вручную, монитору
+            // судейских оценок для неё нечего показывать.
+            scoreMonitorHref:
+              canViewScoreMonitor && !(round.type === "TIE_BREAK" && (isFullRankTieBreak || isFinalTieBreak))
+                ? `/admin/competitions/${competition.id}/score-monitor/${round.id}`
+                : null,
+            calledLeaders: calledOf("LEADER"),
+            calledFollowers: calledOf("FOLLOWER"),
+            heats,
+            panels,
+          };
+        });
+
+    const judgesOf = (role: RegistrationRole): MonitorJudge[] =>
+      d.judgeAssignments
+        .filter((ja) => ja.role === role)
+        .map((ja) => ({
+          judgeAssignmentId: ja.id,
+          judgeUserId: ja.judgeUserId,
+          displayName: judgeNameByUserId.get(ja.judgeUserId) ?? "—",
+        }));
+
+    return {
+      id: d.id,
+      name: d.category.name,
+      registeredLeaders: countFor(registeredCounts, d.id, "LEADER"),
+      registeredFollowers: countFor(registeredCounts, d.id, "FOLLOWER"),
+      checkedInLeaders: countFor(checkedInCounts, d.id, "LEADER"),
+      checkedInFollowers: countFor(checkedInCounts, d.id, "FOLLOWER"),
+      stagePlanLabel:
+        d.stagePlan.length === 0 ? null : d.stagePlan.map((p) => `${p.stage.name} ${p.participantCount}`).join(" · "),
+      judges: { leaders: judgesOf("LEADER"), followers: judgesOf("FOLLOWER") },
+      rounds,
+      settings,
+      results: canCalculateResults ? (
+        <DivisionResultsPanel
+          divisionId={d.id}
+          finalRoundCompleted={finalRoundCompletedByDivisionId.get(d.id) ?? false}
+          hasResults={(divisionResultsById.get(d.id)?.length ?? 0) > 0}
+          reviewedAt={d.resultsReviewedAt ? d.resultsReviewedAt.toISOString() : null}
+          canReview={canReviewResults}
+          canCorrect={canPublishResults}
+          rows={(divisionResultsById.get(d.id) ?? []).map((r) => ({
+            id: r.id,
+            registrationId: r.registrationId,
+            role: r.role,
+            displayName: r.displayName,
+            bibNumber: r.bibNumber,
+            status: r.status,
+            placement: r.placement,
+            publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
+          }))}
+        />
+      ) : null,
+      generateRounds: canManageRounds ? <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} /> : null,
+    };
+  });
+
+  const monitorContent = (
+    <div className="flex flex-col gap-4">
+      {!canManageRounds && (
+        <p className="m-0 text-sm text-admin-muted">Нет прав на управление раундами — показаны только настройки категорий.</p>
+      )}
+      <CompetitionMonitor categories={monitorCategories} canViewScoreMonitor={canViewScoreMonitor} />
     </div>
   );
 
@@ -1144,7 +1148,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         tabs={[
           { id: "overview", label: "Основное", content: overviewContent },
           { id: "categories", label: "Категории", content: categoriesContent },
-          { id: "rounds", label: "Раунды", content: roundsContent },
+          { id: "monitor", label: "Монитор", content: monitorContent },
           { id: "participants", label: "Участники", content: participantsContent },
           { id: "judges", label: "Судьи", content: judgesContent },
           { id: "charts", label: "Графики", content: chartsContent },

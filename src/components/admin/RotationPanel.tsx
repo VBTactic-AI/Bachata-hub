@@ -120,23 +120,25 @@ export function RotationPanel({ heatId }: { heatId: string }) {
   void tick; // читаем tick только чтобы React перерисовывал компонент каждую секунду
 
   return (
-    <div className="rounded-app-sm border border-line p-3 mt-2 stack gap-2">
+    <div className="mt-2 flex flex-col gap-2.5 rounded-app border border-admin-border bg-admin-card2 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <strong>Живой танцпол</strong>
-        <span className="hint-text">{r ? ROTATION_STATUS_LABELS[r.status] ?? r.status : "Не начата"}</span>
+        <strong className="text-sm font-extrabold text-night-text">Живой танцпол</strong>
+        <span className="text-xs font-semibold text-admin-muted">
+          {r ? ROTATION_STATUS_LABELS[r.status] ?? r.status : "Не начата"}
+        </span>
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="m-0 text-sm text-red-400">{error}</p>}
 
       {!r && (
         <>
           {view.heatStatus === "RUNNING" ? (
             canTimer ? (
-              <Button type="button" size="sm" disabled={!canTimer} onClick={() => call("start")}>
+              <Button type="button" size="sm" variant="admin" disabled={!canTimer} onClick={() => call("start")}>
                 Начать танцпол
               </Button>
             ) : (
-              <p className="hint-text">Ротацию ещё не начали.</p>
+              <p className="m-0 text-sm text-admin-muted">Ротацию ещё не начали.</p>
             )
           ) : null}
         </>
@@ -144,49 +146,62 @@ export function RotationPanel({ heatId }: { heatId: string }) {
 
       {r && r.status !== "FINISHED" && (
         <>
-          <p className="m-0">
-            Трек {r.trackNumber}
+          <p className="m-0 text-sm text-admin-muted">
+            Трек <span className="font-bold text-night-text">{r.trackNumber}</span>
             {r.trackName ? ` · «${r.trackName}»` : ""}
           </p>
 
+          {/* Обратный отсчёт до смены — то, на что смотрят чаще всего за
+              весь заход, поэтому он крупный, а не строкой в общем потоке. */}
           {r.mode === "TRACK_AUTO_SHIFT" && r.status === "RUNNING" && (
-            <p className="m-0">До смены партнёров: {Math.max(0, Math.ceil(r.intervalSec - (elapsedSec % r.intervalSec)))} сек</p>
+            <p className="m-0">
+              <span className="text-3xl font-extrabold leading-none tabular-nums text-night-text">
+                {Math.max(0, Math.ceil(r.intervalSec - (elapsedSec % r.intervalSec)))}
+              </span>
+              <span className="ml-2 text-xs text-admin-muted">сек до смены партнёров</span>
+            </p>
           )}
 
           {r.mode === "SEGMENT_MANUAL_SHIFT" && r.status === "RUNNING" && !r.awaitingShiftChoice && (
-            <p className="m-0 hint-text">Отрезок идёт ({Math.floor(elapsedSec)} сек) — «Стоп», когда пора менять партнёров.</p>
+            <p className="m-0 text-sm text-admin-muted">
+              Отрезок идёт ({Math.floor(elapsedSec)} сек) — «Стоп», когда пора менять партнёров.
+            </p>
           )}
 
           {r.awaitingShiftChoice && r.pendingShiftN === null && (
-            <p className="m-0 text-accent">Стоп! Выберите, на сколько партнёров переходят ({r.shiftMin}–{r.shiftMax}).</p>
+            <p className="m-0 text-sm font-semibold text-night-warning">
+              Стоп! Выберите, на сколько партнёров переходят ({r.shiftMin}–{r.shiftMax}).
+            </p>
           )}
 
-          {r.pendingShiftN !== null && <p className="m-0 text-accent">Переход на {r.pendingShiftN} партнёров.</p>}
+          {r.pendingShiftN !== null && (
+            <p className="m-0 text-sm font-semibold text-night-warning">Переход на {r.pendingShiftN} партнёров.</p>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             {r.status === "RUNNING" && (
               <>
                 {canTimer && (
-                  <Button type="button" size="sm" variant="secondary" onClick={() => call("pause")}>
+                  <Button type="button" size="sm" variant="adminOutline" onClick={() => call("pause")}>
                     Пауза
                   </Button>
                 )}
 
                 {r.mode === "TRACK_AUTO_SHIFT" && canRotation && (
-                  <Button type="button" size="sm" variant="secondary" onClick={() => call("shift-now")}>
+                  <Button type="button" size="sm" variant="adminOutline" onClick={() => call("shift-now")}>
                     Смена сейчас
                   </Button>
                 )}
 
                 {r.mode === "SEGMENT_MANUAL_SHIFT" && !r.awaitingShiftChoice && canTimer && (
-                  <Button type="button" size="sm" variant="secondary" onClick={() => call("stop-segment")}>
+                  <Button type="button" size="sm" variant="adminOutline" onClick={() => call("stop-segment")}>
                     Стоп
                   </Button>
                 )}
 
                 {r.mode === "SEGMENT_MANUAL_SHIFT" && r.awaitingShiftChoice && r.pendingShiftN === null && canRotation && (
                   <>
-                    <Button type="button" size="sm" onClick={() => call("choose-shift", { source: "RANDOM" })}>
+                    <Button type="button" size="sm" variant="admin" onClick={() => call("choose-shift", { source: "RANDOM" })}>
                       Случайно
                     </Button>
                     <Input
@@ -196,12 +211,12 @@ export function RotationPanel({ heatId }: { heatId: string }) {
                       placeholder={`${r.shiftMin}-${r.shiftMax}`}
                       value={manualN}
                       onChange={(e) => setManualN(e.target.value)}
-                      className="w-20"
+                      className="w-20 border-admin-border bg-admin-card px-2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
                     />
                     <Button
                       type="button"
                       size="sm"
-                      variant="secondary"
+                      variant="adminOutline"
                       disabled={!manualN}
                       onClick={() => call("choose-shift", { source: "MANUAL", n: Number(manualN) })}
                     >
@@ -217,11 +232,12 @@ export function RotationPanel({ heatId }: { heatId: string }) {
                       placeholder="Название трека (необязательно)"
                       value={trackNameInput}
                       onChange={(e) => setTrackNameInput(e.target.value)}
-                      className="w-48"
+                      className="w-48 border-admin-border bg-admin-card px-2.5 py-1.5 text-sm text-night-text placeholder:text-admin-disabled focus:border-admin-primary focus:ring-admin-primary/20"
                     />
                     <Button
                       type="button"
                       size="sm"
+                      variant="admin"
                       onClick={() => {
                         call("next-track", { trackName: trackNameInput || undefined });
                         setTrackNameInput("");
@@ -236,7 +252,7 @@ export function RotationPanel({ heatId }: { heatId: string }) {
             )}
 
             {r.status === "PAUSED" && canTimer && (
-              <Button type="button" size="sm" onClick={() => call("resume")}>
+              <Button type="button" size="sm" variant="admin" onClick={() => call("resume")}>
                 Продолжить
               </Button>
             )}
@@ -244,7 +260,9 @@ export function RotationPanel({ heatId }: { heatId: string }) {
         </>
       )}
 
-      {r && r.status === "FINISHED" && <p className="hint-text m-0">Ротация партнёров завершена вместе с заходом.</p>}
+      {r && r.status === "FINISHED" && (
+        <p className="m-0 text-sm text-admin-muted">Ротация партнёров завершена вместе с заходом.</p>
+      )}
     </div>
   );
 }

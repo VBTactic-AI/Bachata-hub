@@ -78,48 +78,66 @@ export function AddDrawHelperForm({ heatId, role }: { heatId: string; role: "LEA
 
   if (!open) {
     return (
-      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant="adminOutline" onClick={() => setOpen(true)}>
         + Помощник ({ROLE_LABELS[role] ?? role})
       </Button>
     );
   }
 
   return (
-    <span className="inline-flex flex-wrap items-start gap-2">
-      <span className="hint-text">
+    <div className="flex w-full flex-col gap-2.5 rounded-app-sm border border-night-warning/30 bg-night-warning/[0.07] p-3">
+      <p className="m-0 text-sm font-semibold text-night-warning">
         Не хватает: {ROLE_LABELS[role] ?? role} — выбрано {selected.length} из {neededCount}
-      </span>
+      </p>
       {loadingCandidates ? (
-        <span className="hint-text">Загрузка…</span>
+        <p className="m-0 text-sm text-admin-muted">Загрузка…</p>
       ) : groups.length === 0 ? (
-        <span className="hint-text">Нет доступных кандидатов.</span>
+        <p className="m-0 text-sm text-admin-muted">Нет доступных кандидатов.</p>
       ) : (
-        <span className="stack gap-1.5">
+        <div className="flex flex-col gap-2">
           {groups.map((g) => (
-            <span key={g.divisionId} className="stack gap-0.5">
-              <span className="hint-text">{g.isOwnDivision ? `${g.categoryName} (своя категория)` : g.categoryName}</span>
-              {g.registrations.map((r) => {
-                const checked = selected.includes(r.id);
-                const disabled = !checked && selected.length >= neededCount;
-                return (
-                  <label key={r.id} className="flex items-center gap-2">
-                    <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(r.id)} />
-                    {r.displayName}
-                    {r.bibNumber ? ` (№${r.bibNumber})` : ""}
-                  </label>
-                );
-              })}
-            </span>
+            <div key={g.divisionId} className="flex flex-col gap-1">
+              <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">
+                {g.isOwnDivision ? `${g.categoryName} (своя категория)` : g.categoryName}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {g.registrations.map((r) => {
+                  const checked = selected.includes(r.id);
+                  const disabled = !checked && selected.length >= neededCount;
+                  return (
+                    <label
+                      key={r.id}
+                      className={`flex items-center gap-2 rounded-app-sm border px-2.5 py-1.5 text-sm ${
+                        checked
+                          ? "border-admin-primary bg-admin-primary/10 text-night-text"
+                          : disabled
+                            ? "border-admin-border text-admin-disabled"
+                            : "cursor-pointer border-admin-border text-night-text hover:border-admin-primary"
+                      }`}
+                    >
+                      <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(r.id)} />
+                      {r.displayName}
+                      {r.bibNumber ? ` (№${r.bibNumber})` : ""}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           ))}
-        </span>
+        </div>
       )}
-      <Button type="button" size="sm" disabled={submitting || selected.length === 0} onClick={submit}>
-        Позвать
-      </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
-        Отмена
-      </Button>
-      {error && <span className="error-text">{error}</span>}
-    </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" size="sm" variant="admin" disabled={submitting || selected.length === 0} onClick={submit}>
+          Позвать
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
+          Отмена
+        </Button>
+        {error && <span className="text-sm text-red-400">{error}</span>}
+      </div>
+      {/* Помощника никто не оценивает — организатор должен это видеть в
+          момент вызова, а не узнавать из бейджа постфактум. */}
+      <p className="m-0 text-[11.5px] text-admin-disabled">Помощник танцует, но его не оценивают — на результат захода он не влияет.</p>
+    </div>
   );
 }

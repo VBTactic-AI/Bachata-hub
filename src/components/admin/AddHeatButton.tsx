@@ -31,10 +31,10 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <Button type="button" size="sm" variant="outline" disabled={loading} onClick={onClick}>
+      <Button type="button" size="sm" variant="adminOutline" disabled={loading} onClick={onClick}>
         + Заход
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </span>
   );
 }
