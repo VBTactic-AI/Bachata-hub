@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/field";
 import { PencilIcon } from "@/components/admin/icons";
@@ -75,9 +76,11 @@ export function DivisionsOverviewTable({
     // Панель добавления/редактирования — компактным блоком СПРАВА от таблицы
     // (по референсу пользователя, 2026-09-09), не растянута сверху во всю
     // ширину. Грид вместо flex-row, чтобы на мобильном (grid-cols-1) панель
-    // естественно уходила под таблицу, а не сжимала её.
-    <div className={`grid grid-cols-1 gap-4 ${panel !== null ? "lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start" : ""}`}>
-      <div className="flex min-w-0 flex-col gap-4">
+    // естественно уходила под таблицу, а не сжимала её. Ширина панели — 380px
+    // (не 320px, как было раньше: не помещались поля/кнопки, найдено
+    // пользователем вживую).
+    <div className={`grid grid-cols-1 gap-4 ${panel !== null ? "lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start" : ""}`}>
+      <Card className="flex min-w-0 flex-col gap-3 border-admin-border bg-admin-card">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="m-0 mb-1 font-semibold text-night-text">Категории соревнования</p>
@@ -147,7 +150,7 @@ export function DivisionsOverviewTable({
             </table>
           </div>
         )}
-      </div>
+      </Card>
 
       {panel !== null && (
         <div className="rounded-app border border-admin-border bg-admin-card p-4 lg:sticky lg:top-4">
@@ -244,44 +247,42 @@ function DivisionForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {isEdit ? (
-          <Label className="text-night-text">
-            Категория
-            <p className="m-0 mt-1 text-sm text-admin-muted">{panel.division.categoryName} (не меняется)</p>
-          </Label>
-        ) : (
-          <Label className="text-night-text">
-            Выберите категорию
-            <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={FIELD_CLASS}>
-              {availableCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </Label>
-        )}
+      {isEdit ? (
         <Label className="text-night-text">
-          Мест на паркете
-          <Input type="number" min={1} value={heatCapacity} onChange={(e) => setHeatCapacity(e.target.value)} className={FIELD_CLASS} />
+          Категория
+          <p className="m-0 mt-1 text-sm text-admin-muted">{panel.division.categoryName} (не меняется)</p>
         </Label>
-      </div>
+      ) : (
+        <Label className="text-night-text">
+          Выберите категорию
+          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={FIELD_CLASS}>
+            {availableCategories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Label>
+      )}
+      <Label className="text-night-text">
+        Мест на паркете
+        <Input type="number" min={1} value={heatCapacity} onChange={(e) => setHeatCapacity(e.target.value)} className={FIELD_CLASS} />
+      </Label>
 
       {stages.length > 0 && (
         <div className="flex flex-col gap-2">
           <p className="m-0 text-sm font-semibold text-night-text">Этапы и количество участников</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
             {stages.map((s) => (
-              <Label key={s.id} className="flex-row items-center gap-2 text-night-text">
-                <span className="min-w-[140px] text-sm">{s.name}</span>
+              <Label key={s.id} className="flex-row items-center justify-between gap-2 text-night-text">
+                <span className="text-sm">{s.name}</span>
                 <Input
                   type="number"
                   min={1}
                   placeholder="—"
                   value={stagePlan[s.id] ?? ""}
                   onChange={(e) => setStagePlan((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                  className={FIELD_CLASS}
+                  className={`${FIELD_CLASS} max-w-[110px]`}
                 />
               </Label>
             ))}
