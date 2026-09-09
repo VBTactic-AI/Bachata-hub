@@ -76,30 +76,24 @@ type NavItem = { href: string; label: string; icon: React.ReactNode; match: (p: 
 
 const MAIN_ITEMS: NavItem[] = [{ href: "/admin", label: "Главная", icon: <HomeIcon />, match: (p) => p === "/admin" }];
 
-// "Соревнования" — раскрывающееся меню (по прямому запросу пользователя,
-// 2026-09-09), тот же приём, что и "Справочники" ниже: список раньше был
-// одной прямой ссылкой на /admin/competitions. Id текущего соревнования
-// берётся прямо из pathname (сайдбар — часть общего layout.tsx, который
-// оборачивает и список, и страницу конкретного соревнования) — без пропсов
-// и без нового запроса.
+// "Соревнования" ведёт на /admin/competitions напрямую (сам пункт УЖЕ
+// значит "все соревнования" — по прямому замечанию пользователя,
+// 2026-09-09, отдельная строка "Все соревнования" в раскрывающемся списке
+// была лишней). Раскрывается только "Текущее соревнование" — ярлык на
+// открытую сейчас страницу соревнования, когда она вообще есть; id берётся
+// прямо из pathname (сайдбар — часть общего layout.tsx) — без пропсов и без
+// нового запроса. Если currentCompetitionId нет — раскрывать нечего, список
+// пуст, шеврон не рендерится вовсе (см. ниже).
 function competitionSubItems(currentCompetitionId: string | null): NavItem[] {
-  const items: NavItem[] = [
+  if (!currentCompetitionId) return [];
+  return [
     {
-      href: "/admin/competitions",
-      label: "Все соревнования",
-      icon: <TrophyIcon />,
-      match: (p) => p === "/admin/competitions" || p === "/admin/competitions/new",
-    },
-  ];
-  if (currentCompetitionId) {
-    items.push({
       href: `/admin/competitions/${currentCompetitionId}`,
       label: "Текущее соревнование",
       icon: <TrophyIcon />,
       match: (p) => p.startsWith(`/admin/competitions/${currentCompetitionId}`),
-    });
-  }
-  return items;
+    },
+  ];
 }
 
 function referenceItems(): NavItem[] {
@@ -183,35 +177,57 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
       </div>
 
       <div className="mt-0 flex shrink-0 items-center gap-1.5 sm:mt-0.5 sm:flex-col sm:items-stretch sm:gap-0.5">
-        <button
-          type="button"
-          onClick={() => setCompetitionsOpen((v) => !v)}
-          aria-expanded={competitionsOpen}
-          className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium transition-colors sm:w-full ${
-            competitionsActive ? "text-night-text" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
-          }`}
-        >
-          <span className={competitionsActive ? "text-admin-primary" : "text-admin-disabled"}>
-            <TrophyIcon />
-          </span>
-          <span className="flex-1 text-left">Соревнования</span>
-          <span className={competitionsActive ? "text-admin-primary" : "text-admin-disabled"}>
-            <ChevronIcon open={competitionsOpen} />
-          </span>
-        </button>
-        <div
-          className={`grid shrink-0 transition-[grid-template-rows] duration-300 ease-out sm:w-full ${
-            competitionsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-          }`}
-        >
-          <div className="min-h-0 overflow-hidden">
-            <div className="flex shrink-0 flex-col gap-0.5 pt-0.5 sm:pl-1">
-              {competitionLinks.map((item) => (
-                <NavLink key={item.href} item={item} active={item.match(pathname)} />
-              ))}
+        {/* Сам пункт — обычная ссылка (ведёт на /admin/competitions, как и
+            раньше); шеврон — отдельная кнопка РЯДОМ, только сворачивает и
+            разворачивает "Текущее соревнование" под ним. Кнопку внутри
+            ссылки не вкладываем (интерактивный элемент в интерактивном —
+            невалидный HTML), поэтому это два соседних элемента одной строки,
+            не один составной. */}
+        <div className="flex shrink-0 items-stretch gap-0.5 sm:w-full">
+          <Link
+            href="/admin/competitions"
+            aria-current={competitionsActive ? "page" : undefined}
+            title="Соревнования"
+            className={`flex flex-1 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium no-underline transition-colors hover:no-underline sm:min-w-0 sm:truncate ${
+              competitionsActive
+                ? "bg-admin-primary/15 text-night-text sm:relative sm:before:absolute sm:before:-left-3 sm:before:top-1/2 sm:before:block sm:before:h-5 sm:before:w-[3px] sm:before:-translate-y-1/2 sm:before:rounded-full sm:before:bg-admin-primary"
+                : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+            }`}
+          >
+            <span className={`shrink-0 ${competitionsActive ? "text-admin-primary" : "text-admin-disabled"}`}>
+              <TrophyIcon />
+            </span>
+            <span className="sm:truncate">Соревнования</span>
+          </Link>
+          {currentCompetitionId && (
+            <button
+              type="button"
+              onClick={() => setCompetitionsOpen((v) => !v)}
+              aria-expanded={competitionsOpen}
+              aria-label={competitionsOpen ? "Свернуть текущее соревнование" : "Показать текущее соревнование"}
+              className={`flex shrink-0 items-center justify-center rounded-app-sm px-2 transition-colors ${
+                competitionsActive ? "text-admin-primary hover:bg-admin-card2" : "text-admin-disabled hover:bg-admin-card2 hover:text-night-text"
+              }`}
+            >
+              <ChevronIcon open={competitionsOpen} />
+            </button>
+          )}
+        </div>
+        {currentCompetitionId && (
+          <div
+            className={`grid shrink-0 transition-[grid-template-rows] duration-300 ease-out sm:w-full ${
+              competitionsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            }`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex shrink-0 flex-col gap-0.5 pt-0.5 sm:pl-1">
+                {competitionLinks.map((item) => (
+                  <NavLink key={item.href} item={item} active={item.match(pathname)} />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {isAdminUser && (

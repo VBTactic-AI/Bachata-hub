@@ -106,15 +106,18 @@ function ParticipantRow({
       {participant.isHelper && (
         <span className="shrink-0 rounded-full bg-night-warning/15 px-2 py-0.5 text-[10px] font-bold text-night-warning">помощник</span>
       )}
-      {/* Своя строка: колонка узкая (половина ширины), и в один ряд с именем
-          и бейджем «заменить/убрать» перекрывали бы имя. flex-wrap — раскрытая
-          форма замены (ReplaceDrawHelperButton) рендерит блок на всю ширину и
-          должна уйти на свою строку, не сжимая соседнюю кнопку «убрать». */}
+      {/* Прямые дети `<li>` (не отдельный "свой" span) — «заменить»/«убрать»
+          текут инлайн сразу за бейджем "помощник" на общих правах flex-wrap
+          (по прямому запросу пользователя, 2026-09-09 — раньше собственная
+          строка ниже смотрелась как лишний пустой ряд). Раскрытая форма
+          замены (ReplaceDrawHelperButton) сама рендерит блок на всю ширину,
+          когда открыта, — flex-wrap родителя переносит именно её на новую
+          строку, ничего дополнительно оборачивать не нужно. */}
       {participant.isHelper && canEditDraw && (
-        <span className="flex w-full flex-wrap items-center justify-end gap-1">
+        <>
           <ReplaceDrawHelperButton heatId={heatId} participantId={participant.id} role={role} />
           <RemoveDrawHelperButton participantId={participant.id} heatId={heatId} role={role} />
-        </span>
+        </>
       )}
     </li>
   );
@@ -125,11 +128,17 @@ function SideColumn({
   role,
   title,
   deficit,
+  categoryName,
+  categoryOrder,
+  roundName,
 }: {
   heat: MonitorHeat;
   role: RegistrationRole;
   title: string;
   deficit: number;
+  categoryName: string;
+  categoryOrder: number;
+  roundName: string;
 }) {
   const list = role === "LEADER" ? heat.leaders : heat.followers;
   const isNeeded = heat.neededRole === role;
@@ -164,12 +173,40 @@ function SideColumn({
         ) : (
           <span className="text-admin-muted">{heat.neededRole ? " " : "Стороны сходятся"}</span>
         )}
+        {/* Кнопка вызова помощника — своя, в подвале ИМЕННО этой стороны (по
+            прямому запросу пользователя, 2026-09-09 — раньше была одна общая
+            под обеими колонками). Раскрытый список кандидатов теперь модалка
+            (AddDrawHelperForm), поэтому ширина колонки ему больше не мешает. */}
+        {isNeeded && heat.canEditDraw && (
+          <span className="ml-auto">
+            <AddDrawHelperForm
+              heatId={heat.id}
+              role={role}
+              categoryName={categoryName}
+              categoryOrder={categoryOrder}
+              roundName={roundName}
+              heatNumber={heat.number}
+            />
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-function HeatPanel({ heat, roundStatus }: { heat: MonitorHeat; roundStatus: RoundStatus }) {
+function HeatPanel({
+  heat,
+  roundStatus,
+  categoryName,
+  categoryOrder,
+  roundName,
+}: {
+  heat: MonitorHeat;
+  roundStatus: RoundStatus;
+  categoryName: string;
+  categoryOrder: number;
+  roundName: string;
+}) {
   const deficit = Math.abs(heat.leaders.length - heat.followers.length);
 
   return (
@@ -192,14 +229,25 @@ function HeatPanel({ heat, roundStatus }: { heat: MonitorHeat; roundStatus: Roun
       {heat.hasDraw ? (
         <>
           <div className="grid gap-3.5 sm:grid-cols-2">
-            <SideColumn heat={heat} role="LEADER" title="Партнёры" deficit={deficit} />
-            <SideColumn heat={heat} role="FOLLOWER" title="Партнёрши" deficit={deficit} />
+            <SideColumn
+              heat={heat}
+              role="LEADER"
+              title="Партнёры"
+              deficit={deficit}
+              categoryName={categoryName}
+              categoryOrder={categoryOrder}
+              roundName={roundName}
+            />
+            <SideColumn
+              heat={heat}
+              role="FOLLOWER"
+              title="Партнёрши"
+              deficit={deficit}
+              categoryName={categoryName}
+              categoryOrder={categoryOrder}
+              roundName={roundName}
+            />
           </div>
-
-          {/* Вызов помощника — во всю ширину под обеими колонками, а не в
-              подвале одной из них: раскрытый список кандидатов с группами по
-              категориям в половину ширины не помещается. */}
-          {heat.canEditDraw && heat.neededRole && <AddDrawHelperForm heatId={heat.id} role={heat.neededRole} />}
 
           <div className="flex flex-wrap items-center gap-3 rounded-app border border-admin-border bg-admin-card2 px-4 py-3">
             <div>
@@ -248,7 +296,7 @@ function AdvancementCard({ round }: { round: MonitorRound }) {
       {round.finalistsCount ? (
         <>
           <p className="m-0 mt-1.5 text-sm leading-relaxed text-admin-muted">
-            Из {round.calledLeaders} партнёров и {round.calledFollowers} партнёрш этого этапа проходят дальше:
+            Из {round.calledLeaders} партнёров и {round.calledFollowers} партнёрш этого этапа
           </p>
           <div className="mt-3 grid grid-cols-2 gap-2.5">
             <div className="rounded-app-sm border border-admin-border bg-admin-card2 px-3 py-2.5">
@@ -407,13 +455,16 @@ export function CompetitionMonitor({
 
               <div className="p-[18px]">
                 {round.showsHeats ? (
-                  round.heats.length === 0 ? (
-                    <p className="m-0 text-sm text-admin-muted">Заходов пока нет.</p>
-                  ) : (
-                    <div className="flex flex-col gap-4">
-                      {round.heats.length > 1 && (
-                        <div className="flex gap-1.5 overflow-x-auto rounded-app-sm bg-admin-card2/50 p-1.5" role="tablist" aria-label="Заходы">
-                          {round.heats.map((h) => {
+                  <div className="flex flex-col gap-4">
+                    {/* "+ Заход" — справа от списка заходов (по прямому запросу
+                        пользователя, 2026-09-09), в той же строке-полоске, что
+                        и сами вкладки заходов; показывается, даже если заходов
+                        ещё 0 или 1 (тогда сама полоска состоит из одной этой
+                        кнопки). */}
+                    {(round.heats.length > 1 || round.canAddHeat) && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto rounded-app-sm bg-admin-card2/50 p-1.5" role="tablist" aria-label="Заходы">
+                        {round.heats.length > 1 &&
+                          round.heats.map((h) => {
                             const isActive = h.id === heat?.id;
                             return (
                               <button
@@ -437,21 +488,36 @@ export function CompetitionMonitor({
                               </button>
                             );
                           })}
-                        </div>
-                      )}
-                      {heat && <HeatPanel heat={heat} roundStatus={round.status} />}
-                    </div>
-                  )
+                        {round.canAddHeat && (
+                          <span className="ml-auto shrink-0">
+                            <AddHeatButton roundId={round.id} />
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {round.heats.length === 0 ? (
+                      <p className="m-0 text-sm text-admin-muted">Заходов пока нет.</p>
+                    ) : (
+                      heat && (
+                        <HeatPanel
+                          heat={heat}
+                          roundStatus={round.status}
+                          categoryName={category.name}
+                          categoryOrder={category.order}
+                          roundName={round.name}
+                        />
+                      )
+                    )}
+                  </div>
                 ) : (
                   <p className="m-0 text-sm text-admin-muted">
                     Этот формат финала не использует обычную жеребьёвку — заходами управляет панель ниже.
                   </p>
                 )}
 
-                {(round.canAddHeat || round.showStartDrawing) && (
+                {round.showStartDrawing && (
                   <div className="mt-4 flex flex-wrap items-start gap-3 border-t border-admin-border pt-4">
-                    {round.canAddHeat && <AddHeatButton roundId={round.id} />}
-                    {round.showStartDrawing && <StartDrawingForm roundId={round.id} />}
+                    <StartDrawingForm roundId={round.id} />
                   </div>
                 )}
               </div>

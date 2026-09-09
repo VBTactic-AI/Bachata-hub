@@ -31,7 +31,17 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <Button type="button" size="sm" variant="adminOutline" disabled={loading} onClick={onClick}>
+      {/* Акцентный, а не серый outline (по прямому запросу пользователя,
+          2026-09-09 — "в цветовой гамме"): тот же синий, что у активной
+          вкладки захода рядом, кнопка стоит прямо в их строке. */}
+      <Button
+        type="button"
+        size="sm"
+        variant="adminOutline"
+        className="border-admin-primary/40 text-admin-primaryHover hover:border-admin-primary hover:bg-admin-primary/10 hover:text-admin-primaryHover"
+        disabled={loading}
+        onClick={onClick}
+      >
         + Заход
       </Button>
       {error && <span className="text-sm text-red-400">{error}</span>}

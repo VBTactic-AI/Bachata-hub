@@ -92,6 +92,11 @@ export type MonitorJudge = {
 export type MonitorCategory = {
   id: string;
   name: string;
+  // DivisionCategory.order — нужен модалке вызова помощника, чтобы подписать
+  // группы кандидатов "категория выше"/"категория ниже" относительно ЭТОЙ
+  // категории (draw-helper-candidates.ts возвращает категорию каждой группы
+  // с её собственным order, сравнение — на клиенте, без нового запроса).
+  order: number;
   registeredLeaders: number;
   registeredFollowers: number;
   checkedInLeaders: number;

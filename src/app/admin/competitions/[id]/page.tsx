@@ -1098,6 +1098,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     return {
       id: d.id,
       name: d.category.name,
+      order: d.category.order,
       registeredLeaders: countFor(registeredCounts, d.id, "LEADER"),
       registeredFollowers: countFor(registeredCounts, d.id, "FOLLOWER"),
       checkedInLeaders: countFor(checkedInCounts, d.id, "LEADER"),
