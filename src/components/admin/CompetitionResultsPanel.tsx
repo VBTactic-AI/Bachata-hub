@@ -6,11 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Label, Input } from "@/components/ui/field";
 import { perfFetch } from "@/lib/performance-debug/client";
 
+// Тот же приём переопределения полей, что и в DivisionResultsPanel.tsx,
+// рядом с которым эта панель теперь и живёт (в Мониторе, а не на "Главной",
+// по запросу пользователя 2026-09-09 — "сделаем в мониторе, там же, где
+// смотрим результаты по категории").
+const FIELD_CLASS = "border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+
 // Публикация официальных мест ВСЕГО соревнования разом (Этап 10, уточнено
-// пользователем 2026-09-04 — не по дивизиону отдельно). Готовность
-// проверяется на сервере по каждому дивизиону (GET, список проблем целиком,
-// по образцу StartFinalPanel/checkFinalReadiness) — кнопка публикации
-// активна только когда проблем нет.
+// пользователем 2026-09-04 — не по дивизиону отдельно, даже если кнопка
+// открытия теперь показывается рядом с протоколом ОДНОЙ категории в
+// Мониторе). Готовность проверяется на сервере по каждому дивизиону (GET,
+// список проблем целиком, по образцу StartFinalPanel/checkFinalReadiness) —
+// кнопка публикации активна только когда проблем нет ни у одной категории.
 export function CompetitionResultsPanel({ competitionId, publicResults }: { competitionId: string; publicResults: boolean }) {
   const router = useRouter();
   const [issues, setIssues] = useState<string[] | null>(null);
@@ -74,52 +81,64 @@ export function CompetitionResultsPanel({ competitionId, publicResults }: { comp
   }
 
   return (
-    <div className="rounded-app-sm border border-line p-3 stack gap-2">
-      <p className="m-0 font-semibold">Публикация результатов соревнования</p>
+    <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="m-0 text-sm font-extrabold text-night-text">Публикация результатов соревнования</h3>
+        {publicResults && <span className="rounded-full bg-night-success/15 px-2.5 py-1 text-xs font-bold text-night-success">Опубликовано</span>}
+      </div>
 
       {publicResults ? (
         <>
-          <p className="hint-text m-0">Результаты опубликованы и видны публично.</p>
+          <p className="m-0 mt-3 text-sm text-admin-muted">Результаты опубликованы и видны публично.</p>
           {!unpublishing ? (
-            <Button type="button" size="sm" variant="ghost" onClick={() => setUnpublishing(true)}>
+            <button
+              type="button"
+              className="mt-3 text-sm font-semibold text-admin-muted hover:text-admin-primaryHover"
+              onClick={() => setUnpublishing(true)}
+            >
               Отменить публикацию
-            </Button>
+            </button>
           ) : (
-            <form onSubmit={unpublish} className="stack gap-1.5">
-              <Label>
+            <form onSubmit={unpublish} className="mt-3 flex flex-col gap-2.5">
+              <Label className="text-night-text">
                 Причина отмены публикации
-                <Input value={reason} onChange={(e) => setReason(e.target.value)} required />
+                <Input value={reason} onChange={(e) => setReason(e.target.value)} required className={FIELD_CLASS} />
               </Label>
               <div className="flex items-center gap-2">
-                <Button type="submit" size="sm" variant="secondary" disabled={loading || !reason.trim()}>
+                <Button type="submit" size="sm" variant="admin" disabled={loading || !reason.trim()}>
                   Отменить публикацию
                 </Button>
-                <Button type="button" size="sm" variant="ghost" disabled={loading} onClick={() => setUnpublishing(false)}>
+                <button
+                  type="button"
+                  className="text-sm font-semibold text-admin-muted hover:text-admin-primaryHover"
+                  disabled={loading}
+                  onClick={() => setUnpublishing(false)}
+                >
                   отмена
-                </Button>
+                </button>
               </div>
             </form>
           )}
         </>
       ) : (
         <>
-          {issues === null && <p className="hint-text m-0">Проверка готовности…</p>}
+          {issues === null && <p className="m-0 mt-3 text-sm text-admin-muted">Проверка готовности…</p>}
           {issues && issues.length > 0 && (
-            <ul className="stack gap-0.5 m-0 pl-4">
+            <ul className="m-0 mt-3 flex flex-col gap-0.5 pl-4">
               {issues.map((i, idx) => (
-                <li key={idx} className="error-text text-sm">
+                <li key={idx} className="text-sm text-red-400">
                   {i}
                 </li>
               ))}
             </ul>
           )}
-          {issues && issues.length === 0 && <p className="hint-text m-0">Все категории рассчитаны и проверены — можно публиковать.</p>}
-          <Button type="button" size="sm" disabled={loading || !issues || issues.length > 0} onClick={publish}>
+          {issues && issues.length === 0 && <p className="m-0 mt-3 text-sm text-admin-muted">Все категории рассчитаны и проверены — можно публиковать.</p>}
+          <Button type="button" size="sm" variant="admin" className="mt-3" disabled={loading || !issues || issues.length > 0} onClick={publish}>
             Опубликовать результаты
           </Button>
         </>
       )}
-      {error && <span className="error-text">{error}</span>}
-    </div>
+      {error && <p className="m-0 mt-2 text-sm text-red-400">{error}</p>}
+    </section>
   );
 }

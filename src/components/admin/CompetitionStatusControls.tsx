@@ -71,7 +71,7 @@ export function CompetitionStatusControls({
   return (
     <div className="flex flex-wrap items-center gap-2">
       {nextOptions.map((to) => (
-        <Button key={to} type="button" size="sm" disabled={loading} onClick={() => go(to)}>
+        <Button key={to} type="button" variant="admin" size="sm" disabled={loading} onClick={() => go(to)}>
           {ACTION_LABELS[to]}
         </Button>
       ))}

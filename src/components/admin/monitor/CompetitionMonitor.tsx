@@ -340,9 +340,16 @@ function AdvancementCard({ round }: { round: MonitorRound }) {
 export function CompetitionMonitor({
   categories,
   canViewScoreMonitor,
+  resultsPublishPanel,
 }: {
   categories: MonitorCategory[];
   canViewScoreMonitor: boolean;
+  // Публикация результатов ВСЕГО соревнования (не только текущей выбранной
+  // категории, CompetitionResultsPanel.tsx) — переехала сюда, к протоколу
+  // категории, с вкладки "Главная" по прямому запросу пользователя,
+  // 2026-09-09 ("кнопка публикации там же, где смотрим результаты
+  // категории"). Опционально — только у тех, у кого есть result:publish.
+  resultsPublishPanel?: ReactNode;
 }) {
   // Выбор категории/этапа/захода читается из URL один раз при монтировании
   // (та же query-строка, что и в ссылке "← Назад к соревнованию" со страницы
@@ -608,6 +615,12 @@ export function CompetitionMonitor({
                 </div>
               </section>
             )}
+
+            {/* Уже на admin-* палитре — отдельно от светлых panels выше
+                (см. комментарий у advancementPublishPanel в types.ts). */}
+            {round.advancementPublishPanel && (
+              <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">{round.advancementPublishPanel}</section>
+            )}
           </div>
 
           <aside className="flex min-w-0 flex-col gap-4">
@@ -632,6 +645,8 @@ export function CompetitionMonitor({
           категории оставляла бы открытой форму "исправить"/"поменять
           местами" (и её error) от предыдущей категории. */}
       <Fragment key={category.id}>{category.results}</Fragment>
+
+      {resultsPublishPanel}
     </div>
   );
 }

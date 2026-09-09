@@ -197,7 +197,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // не получает (по прямому запросу пользователя, 2026-09-09 — "только для
   // супер админа").
   const canDeleteCompetition = can(actor, "competition:delete");
-  const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
   // должен видеть чужие регистрации — только свою собственную, ниже.
@@ -472,10 +471,12 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           <StatCard label="Судьи" value={kpis[3].value} icon={<JudgesIcon />} tone="primary" />
         </div>
       )}
-      {canManage && <CompetitionProgressStepper status={competition.status} />}
-      {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
-      {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
-
+      {canManage && (
+        <CompetitionProgressStepper
+          status={competition.status}
+          actions={<CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
+        />
+      )}
       {pendingTieBreaks.length > 0 && <TieBreakAlertBanner rows={pendingTieBreaks} />}
 
       {floorSpotlight && <FloorSpotlight data={floorSpotlight} />}
@@ -485,12 +486,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           <OtherActiveCategoriesList rows={otherActiveCategories} />
           <NextUpChecklist items={nextUpItems} />
         </div>
-      )}
-
-      {isJudge && (
-        <p>
-          <a href={`/judging/${competition.id}`}>Моё судейство →</a>
-        </p>
       )}
     </div>
   );
@@ -953,15 +948,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             );
           }
 
-          if (round.status === "COMPLETED" && round.type !== "TIE_BREAK" && !isFinalRound && canPublishResults) {
-            panels.push(
+          const advancementPublishPanel =
+            round.status === "COMPLETED" && round.type !== "TIE_BREAK" && !isFinalRound && canPublishResults ? (
               <RoundAdvancementPublish
-                key="advancement-publish"
                 roundId={round.id}
                 publishedAt={round.advancementPublishedAt ? round.advancementPublishedAt.toISOString() : null}
               />
-            );
-          }
+            ) : null;
 
           if (isJudgesDance) {
             // JUDGES_DANCE не использует Draw Engine (партнёр участника — судья,
@@ -1085,6 +1078,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             calledFollowers: calledOf("FOLLOWER"),
             heats,
             panels,
+            advancementPublishPanel,
           };
         });
 
@@ -1139,7 +1133,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {!canManageRounds && (
         <p className="m-0 text-sm text-admin-muted">Нет прав на управление раундами — показаны только настройки категорий.</p>
       )}
-      <CompetitionMonitor categories={monitorCategories} canViewScoreMonitor={canViewScoreMonitor} />
+      <CompetitionMonitor
+        categories={monitorCategories}
+        canViewScoreMonitor={canViewScoreMonitor}
+        resultsPublishPanel={
+          canPublishResults ? <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} /> : null
+        }
+      />
     </div>
   );
 
