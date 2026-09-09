@@ -433,16 +433,32 @@ export function CompetitionMonitor({
         </div>
       )}
 
+      {/* ── Зарегистрировано в категории ──────────────────────── */}
+      {/* Постоянно видимый счётчик — не только пока раундов ещё нет
+          (раньше был только в пустом состоянии ниже и пропадал после
+          генерации раундов; после этого оставалось только "Из 0 партнёров и
+          0 партнёрш этого этапа" в AdvancementCard — это число ВЫЗВАННЫХ на
+          паркет, а не зарегистрированных, и легко перепутать одно с другим,
+          найдено по прямому замечанию пользователя на живом тесте
+          соревнования, 2026-09-09). */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-app border border-admin-border bg-admin-card/50 px-4 py-2.5 text-sm">
+        <span className="font-semibold text-night-text">Зарегистрировано:</span>
+        <span className={ROLE_TEXT_CLASS.LEADER}>
+          Партнёров <span className="font-bold tabular-nums">{category.registeredLeaders}</span>
+          <span className="text-admin-disabled"> ({category.checkedInLeaders} check-in)</span>
+        </span>
+        <span className={ROLE_TEXT_CLASS.FOLLOWER}>
+          Партнёрш <span className="font-bold tabular-nums">{category.registeredFollowers}</span>
+          <span className="text-admin-disabled"> ({category.checkedInFollowers} check-in)</span>
+        </span>
+      </div>
+
       {/* ── Этапы категории ───────────────────────────────────── */}
       {category.rounds.length === 0 ? (
         <div className="rounded-app border border-admin-border bg-admin-card p-5">
           <p className="m-0 text-sm text-admin-muted">
             У категории «{category.name}» ещё нет раундов.
             {category.stagePlanLabel ? ` План по этапам: ${category.stagePlanLabel}.` : " План по этапам не задан."}
-          </p>
-          <p className="m-0 mt-1 text-sm text-admin-muted">
-            Партнёров: {category.registeredLeaders} ({category.checkedInLeaders} прошли check-in) · Партнёрш:{" "}
-            {category.registeredFollowers} ({category.checkedInFollowers} прошли check-in)
           </p>
           {category.generateRounds && <div className="mt-3">{category.generateRounds}</div>}
         </div>
