@@ -187,7 +187,30 @@ describe("generateRounds() — пересборка существующих р�
     expect(auditActions).toContain("division.regenerate_rounds");
   });
 
-  it("отклоняет пересборку, если хотя бы один раунд уже начат (не DRAFT/READY)", async () => {
+  // Границу подняли с READY до DRAW_LOCKED по прямому запросу пользователя
+  // (2026-09-09, живой тест реального соревнования) — DRAWING сама по себе
+  // черновик (ничего ещё не зафиксировано), её и так можно поштучно менять
+  // (reroll/split/помощники); блокировать пересборку раньше DRAW_LOCKED было
+  // лишним — организатор, заметивший ошибку в плане уже во время
+  // жеребьёвки, не мог её исправить иначе как через SQL.
+  it("если раунд уже в DRAWING (жеребьёвка идёт, но не зафиксирована) — пересборка разрешена", async () => {
+    mockDivision({ rounds: [{ id: "old1", status: "DRAWING", stage: { name: "Четвертьфинал" } }] });
+
+    await generateRounds("div1");
+
+    expect(roundDeleteMany).toHaveBeenCalledWith({ where: { divisionId: "div1" } });
+    expect(roundCreate).toHaveBeenNthCalledWith(1, expect.objectContaining({ data: expect.objectContaining({ order: 1 }) }));
+  });
+
+  it("отклоняет пересборку, если хотя бы один раунд уже зафиксирован (DRAW_LOCKED и позже)", async () => {
+    mockDivision({ rounds: [{ id: "old1", status: "DRAW_LOCKED", stage: { name: "Четвертьфинал" } }] });
+
+    await expect(generateRounds("div1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(roundDeleteMany).not.toHaveBeenCalled();
+    expect(roundCreate).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет пересборку, если хотя бы один раунд уже начат дальше (RUNNING/судейство)", async () => {
     mockDivision({ rounds: [{ id: "old1", status: "RUNNING", stage: { name: "Четвертьфинал" } }] });
 
     await expect(generateRounds("div1")).rejects.toBeInstanceOf(ValidationFailedError);

@@ -24,10 +24,15 @@ import { getOrCreateLatestRulesVersion } from "./rules-version";
 // Пересборка (2026-09-04, по запросу пользователя): если у дивизиона уже
 // есть раунды, они не ДОБАВЛЯЮТСЯ к существующим, а заменяют их — старые
 // удаляются (каскадом снимает Heat/Draw/DrawParticipant/HeatRotation/
-// RoundResult), новые создаются заново с order=1. Разрешено только пока ни
-// один раунд ещё не сдвинулся дальше READY (жеребьёвка/заезды/оценки не
-// начинались) — иначе это будет не пересборка черновика, а тихое удаление
-// реальных результатов соревнования (CLAUDE.md §18/§39).
+// RoundResult), новые создаются заново с order=1. Разрешено, пока ни один
+// раунд ещё не зафиксирован (DRAW_LOCKED и позже) — граница совпадает с
+// CLAUDE.md §39 ("locked draw" неизменяем), а не с READY: жеребьёвка
+// (DRAWING) сама по себе — черновик, её и так можно править поштучно
+// (RerollDrawButton/SplitHeatButton/AddDrawHelperForm работают именно в
+// DRAWING) — раньше пересборка блокировалась уже на DRAWING, хотя ничего
+// реального ещё не зафиксировано; организатор, заметивший ошибку в плане
+// раундов уже во время жеребьёвки, не мог её исправить иначе как через SQL
+// (найдено по прямому запросу пользователя на живом тесте, 2026-09-09).
 
 export type PlanStep = { stageId: string; stageName: string; participantCount: number; finalistsCount: number };
 
@@ -88,10 +93,10 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
     );
   }
 
-  const startedRound = existingRounds.find((r) => r.status !== "DRAFT" && r.status !== "READY");
-  if (startedRound) {
+  const lockedRound = existingRounds.find((r) => r.status !== "DRAFT" && r.status !== "READY" && r.status !== "DRAWING");
+  if (lockedRound) {
     throw new ValidationFailedError(
-      `Нельзя перегенерировать раунды: раунд «${startedRound.stage?.name ?? "—"}» уже начат (жеребьёвка/заезды/судейство) — пересборка удалила бы реальные результаты.`
+      `Нельзя перегенерировать раунды: раунд «${lockedRound.stage?.name ?? "—"}» уже зафиксирован (заезды/судейство) — пересборка удалила бы реальные результаты.`
     );
   }
 
