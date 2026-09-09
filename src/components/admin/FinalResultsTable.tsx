@@ -42,7 +42,13 @@ export function FinalResultsTable({
   const sortedCriteria = [...criteria].sort((a, b) => a.priority - b.priority);
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    // xl, а не md — при 4-5 критериях (Техника/Музыкальность/Взаимодействие/
+    // Презентация + Итого) таблица уже не влезает в половину экрана, имя
+    // участника переносится на вторую строку, а колонки "съезжают" (по
+    // прямому замечанию пользователя со скриншотом, 2026-09-09). До xl обе
+    // роли идут одна под другой на всю ширину — так у каждой таблицы
+    // достаточно места без внутреннего горизонтального скролла.
+    <div className="grid gap-3 xl:grid-cols-2">
       {(["LEADER", "FOLLOWER"] as const).map((role) => {
         const rows = results
           .filter((r) => r.role === role)
@@ -58,9 +64,9 @@ export function FinalResultsTable({
                 <thead>
                   <tr className="text-admin-muted">
                     <th className="px-3 py-1.5 text-left font-semibold">Место</th>
-                    <th className="text-left font-semibold">Участник</th>
+                    <th className="whitespace-nowrap px-3 text-left font-semibold">Участник</th>
                     {sortedCriteria.map((c) => (
-                      <th key={c.id} className="px-1.5 text-right font-semibold">
+                      <th key={c.id} className="whitespace-nowrap px-1.5 text-right font-semibold">
                         {c.name}
                       </th>
                     ))}
@@ -83,7 +89,7 @@ export function FinalResultsTable({
                         <td className={`px-3 py-1.5 tabular-nums ${r.tieGroupKey ? "text-amber-400" : "font-bold text-night-text"}`}>
                           {placeLabel}
                         </td>
-                        <td className="text-night-text">
+                        <td className="whitespace-nowrap px-3 py-1.5 text-night-text">
                           №{r.bibNumber ?? "—"} {r.displayName}
                         </td>
                         {sortedCriteria.map((c) => (

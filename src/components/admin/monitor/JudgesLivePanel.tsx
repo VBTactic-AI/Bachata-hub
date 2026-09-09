@@ -115,16 +115,17 @@ export function JudgesLivePanel({
   return (
     <div className="flex flex-col gap-2.5">
       {/* Ссылки — сверху, перед карточкой "Судьи категории" (по прямому
-          запросу пользователя, 2026-09-09), своя отдельная плашка. "Монитор
-          оценок судей" залит акцентным градиентом, а не приглушённым текстом
-          — раньше терялась рядом с остальными приглушёнными подписями (по
-          прямому замечанию пользователя, 2026-09-09). "Результаты этапов" —
-          рядом (2026-09-09, тоже по прямому запросу — "рядом с кнопкой") и
-          нарочно менее ярким outline-стилем: это не live-инструмент судейства,
-          а справочный протокол, ему не место наравне с главным CTA. Ведёт на
-          отдельную страницу с вкладками этапов категории (round-results/
-          [divisionId]) — доступна только SUPER_ADMIN/EVENT_ADMIN, тот же гейт,
-          что у самого Монитора. */}
+          запросу пользователя, 2026-09-09), своя отдельная плашка. Обе —
+          залитые градиентом CTA, а не приглушённым текстом или outline (по
+          прямому замечанию пользователя, 2026-09-09: outline-вариант терялся
+          рядом с ярким "Монитор оценок судей"). Разный акцент — синий у
+          live-инструмента судейства, фиолетовый (admin-violet) у
+          "Результаты этапов" — тот же цвет, что и у плитки "Результаты" в
+          самом Мониторе (CompetitionMonitor.tsx), так у справочного
+          протокола свой узнаваемый акцент, а не просто более тусклая копия
+          главной кнопки. Ведёт на отдельную страницу с вкладками этапов
+          категории (round-results/[divisionId]) — доступна только
+          SUPER_ADMIN/EVENT_ADMIN, тот же гейт, что у самого Монитора. */}
       <div className="flex flex-wrap gap-2">
         {scoreMonitorHref && (
           <Link
@@ -136,7 +137,7 @@ export function JudgesLivePanel({
         )}
         <Link
           href={roundResultsHref}
-          className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-app border border-admin-border bg-admin-card2 px-4 py-3 text-sm font-bold text-night-text shadow-sm transition hover:border-admin-primary"
+          className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-app bg-[linear-gradient(100deg,#8b5cf6,#7c3aed)] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-[1.06]"
         >
           Результаты этапов<span aria-hidden="true">→</span>
         </Link>
