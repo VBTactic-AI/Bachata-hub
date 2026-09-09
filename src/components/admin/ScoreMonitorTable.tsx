@@ -20,18 +20,38 @@ import type {
 // (миграция 20260907020000) не даёт увидеть чужие раунды. Первичный снимок
 // приходит с сервера как props (обычный SSR).
 
+// Синий/розовый — те же роль-цвета, что и в остальном "Мониторе"
+// (CompetitionMonitor.tsx, ROLE_TEXT_CLASS; DivisionResultsPanel.tsx) —
+// литеральные классы, не интерполяция (Tailwind ищет полные имена классов
+// в исходном коде). Рамка/тонировка панели — тот же приём, что у активной
+// вкладки категории/этапа там же (border-admin-primary/40 bg-admin-primary/15),
+// только оттенок ролевой, а не бренд-акцент.
+type DancerRole = "LEADER" | "FOLLOWER";
+const ROLE_TEXT_CLASS: Record<DancerRole, string> = {
+  LEADER: "text-[#60a5fa]",
+  FOLLOWER: "text-[#f472b6]",
+};
+const ROLE_DOT_CLASS: Record<DancerRole, string> = {
+  LEADER: "bg-[#60a5fa]",
+  FOLLOWER: "bg-[#f472b6]",
+};
+const ROLE_PANEL_CLASS: Record<DancerRole, string> = {
+  LEADER: "border-[#60a5fa]/35 bg-[#60a5fa]/[0.06]",
+  FOLLOWER: "border-[#f472b6]/35 bg-[#f472b6]/[0.06]",
+};
+
 function JudgeHeaderLabel({ judge }: { judge: ScoreMonitorJudgeColumn }) {
   return (
     <span title={judge.isEmailFallback ? "У судьи нет профиля с именем — показана часть email" : undefined}>
       {judge.displayName}
-      {judge.isEmailFallback && <span className="text-muted"> *</span>}
+      {judge.isEmailFallback && <span className="text-admin-muted"> *</span>}
     </span>
   );
 }
 
 function LiveBadge({ connected }: { connected: boolean }) {
   return (
-    <span className={`hint-text ${connected ? "" : "error-text"}`}>
+    <span className={`text-xs font-semibold ${connected ? "text-night-success" : "text-red-400"}`}>
       {connected ? "● live" : "○ переподключение…"}
     </span>
   );
@@ -103,28 +123,42 @@ export function PrelimScoreMonitor({
   return (
     <div className="stack gap-6">
       <LiveBadge connected={connected} />
-      <PrelimRoleTable title="Партнёры (Leader)" table={leader} maxValue={maxValue} />
-      <PrelimRoleTable title="Партнёрши (Follower)" table={follower} maxValue={maxValue} />
+      <PrelimRoleTable title="Партнёры (Leader)" role="LEADER" table={leader} maxValue={maxValue} />
+      <PrelimRoleTable title="Партнёрши (Follower)" role="FOLLOWER" table={follower} maxValue={maxValue} />
     </div>
   );
 }
 
-function PrelimRoleTable({ title, table, maxValue }: { title: string; table: PrelimTable; maxValue: number }) {
+function PrelimRoleTable({
+  title,
+  role,
+  table,
+  maxValue,
+}: {
+  title: string;
+  role: DancerRole;
+  table: PrelimTable;
+  maxValue: number;
+}) {
   return (
-    <div>
-      <p className="hint-text m-0">
-        {title} · шкала 0–{maxValue}
-      </p>
+    <div className={`overflow-hidden rounded-app border ${ROLE_PANEL_CLASS[role]}`}>
+      <div className="flex items-center gap-2 border-b border-admin-border px-4 py-2.5">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${ROLE_DOT_CLASS[role]}`} aria-hidden="true" />
+        <p className={`m-0 text-xs font-bold uppercase tracking-wide ${ROLE_TEXT_CLASS[role]}`}>{title}</p>
+        <span className="ml-auto text-xs text-admin-muted">шкала 0–{maxValue}</span>
+      </div>
       {table.judges.length === 0 ? (
-        <p className="hint-text">Судьи на эту роль не назначены.</p>
+        <p className="m-0 px-4 py-3 text-sm text-admin-muted">Судьи на эту роль не назначены.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full mt-1 text-sm border-collapse">
+          <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                <th className="border border-line px-2 py-1 text-left">№</th>
+                <th className="border-b border-admin-border px-3 py-2 text-left text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
+                  №
+                </th>
                 {table.judges.map((j) => (
-                  <th key={j.judgeAssignmentId} className="border border-line px-2 py-1 text-center">
+                  <th key={j.judgeAssignmentId} className="border-b border-admin-border px-3 py-2 text-center text-xs font-bold text-night-text">
                     <JudgeHeaderLabel judge={j} />
                   </th>
                 ))}
@@ -133,35 +167,49 @@ function PrelimRoleTable({ title, table, maxValue }: { title: string; table: Pre
             <tbody>
               {table.rows.length === 0 && (
                 <tr>
-                  <td className="border border-line px-2 py-1 hint-text" colSpan={table.judges.length + 1}>
+                  <td className="px-3 py-3 text-sm text-admin-muted" colSpan={table.judges.length + 1}>
                     Участников пока нет.
                   </td>
                 </tr>
               )}
               {table.rows.map((r) => (
-                <tr key={r.drawParticipantId}>
-                  <td className="border border-line px-2 py-1 font-semibold">№{r.bibNumber ?? "—"}</td>
-                  {table.judges.map((j) => (
-                    <td key={j.judgeAssignmentId} className="border border-line px-2 py-1 text-center">
-                      {r.scores[j.judgeAssignmentId] ?? "—"}
-                    </td>
-                  ))}
+                <tr key={r.drawParticipantId} className="hover:bg-admin-card/70">
+                  <td className={`border-b border-admin-border px-3 py-2 font-extrabold tabular-nums ${ROLE_TEXT_CLASS[role]}`}>
+                    №{r.bibNumber ?? "—"}
+                  </td>
+                  {table.judges.map((j) => {
+                    const value = r.scores[j.judgeAssignmentId];
+                    return (
+                      <td
+                        key={j.judgeAssignmentId}
+                        className={`border-b border-admin-border px-3 py-2 text-center ${
+                          value === null ? "text-admin-disabled" : "font-semibold text-night-text"
+                        }`}
+                      >
+                        {value ?? "—"}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="font-semibold bg-bg">
-                <td className="border border-line px-2 py-1">ИТОГО</td>
+              <tr className="bg-admin-bg/40">
+                <td className="border-t border-admin-border px-3 py-2 text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
+                  ИТОГО
+                </td>
                 {table.judges.map((j) => {
                   const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
                   return (
                     <td
                       key={j.judgeAssignmentId}
-                      className={`border border-line px-2 py-1 text-center ${total?.complete ? "text-success" : "text-danger"}`}
+                      className={`border-t border-admin-border px-3 py-2 text-center font-bold ${
+                        total?.complete ? "text-night-success" : "text-red-400"
+                      }`}
                     >
                       {total ? `${total.submitted}/${total.required}` : "—"}
                       {total?.confirmed && (
-                        <span className="block text-xs text-success" title='Судья нажал "Готово" — оценки зафиксированы'>
+                        <span className="mt-0.5 block text-[10.5px] font-bold text-night-success" title='Судья нажал "Готово" — оценки зафиксированы'>
                           ✓ Готово
                         </span>
                       )}
@@ -241,29 +289,36 @@ export function FinalScoreMonitor({
   return (
     <div className="stack gap-6">
       <LiveBadge connected={connected} />
-      <FinalRoleTable title="Партнёры (Leader)" table={leader} />
-      <FinalRoleTable title="Партнёрши (Follower)" table={follower} />
+      <FinalRoleTable title="Партнёры (Leader)" role="LEADER" table={leader} />
+      <FinalRoleTable title="Партнёрши (Follower)" role="FOLLOWER" table={follower} />
     </div>
   );
 }
 
-function FinalRoleTable({ title, table }: { title: string; table: FinalTable }) {
+function FinalRoleTable({ title, role, table }: { title: string; role: DancerRole; table: FinalTable }) {
   const criteriaCount = table.criteria.length || 1;
   return (
-    <div>
-      <p className="hint-text m-0">{title}</p>
+    <div className={`overflow-hidden rounded-app border ${ROLE_PANEL_CLASS[role]}`}>
+      <div className="flex items-center gap-2 border-b border-admin-border px-4 py-2.5">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${ROLE_DOT_CLASS[role]}`} aria-hidden="true" />
+        <p className={`m-0 text-xs font-bold uppercase tracking-wide ${ROLE_TEXT_CLASS[role]}`}>{title}</p>
+      </div>
       {table.judges.length === 0 ? (
-        <p className="hint-text">Судьи на эту роль не назначены.</p>
+        <p className="m-0 px-4 py-3 text-sm text-admin-muted">Судьи на эту роль не назначены.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full mt-1 text-sm border-collapse">
+          <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                <th rowSpan={2} className="border border-line px-2 py-1 align-bottom">
+                <th rowSpan={2} className="border-b border-admin-border px-3 py-2 align-bottom text-left text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
                   №
                 </th>
                 {table.judges.map((j) => (
-                  <th key={j.judgeAssignmentId} colSpan={criteriaCount} className="border border-line px-2 py-1 text-center">
+                  <th
+                    key={j.judgeAssignmentId}
+                    colSpan={criteriaCount}
+                    className="border-b border-admin-border px-3 py-2 text-center text-xs font-bold text-night-text"
+                  >
                     <JudgeHeaderLabel judge={j} />
                   </th>
                 ))}
@@ -271,7 +326,10 @@ function FinalRoleTable({ title, table }: { title: string; table: FinalTable }) 
               <tr>
                 {table.judges.flatMap((j) =>
                   table.criteria.map((c) => (
-                    <th key={`${j.judgeAssignmentId}:${c.id}`} className="border border-line px-1 py-0.5 text-center hint-text font-normal">
+                    <th
+                      key={`${j.judgeAssignmentId}:${c.id}`}
+                      className="border-b border-admin-border bg-admin-bg/40 px-1 py-1 text-center text-[10px] font-semibold text-admin-muted"
+                    >
                       {c.name}
                     </th>
                   ))
@@ -281,38 +339,52 @@ function FinalRoleTable({ title, table }: { title: string; table: FinalTable }) 
             <tbody>
               {table.rows.length === 0 && (
                 <tr>
-                  <td className="border border-line px-2 py-1 hint-text" colSpan={1 + table.judges.length * criteriaCount}>
+                  <td className="px-3 py-3 text-sm text-admin-muted" colSpan={1 + table.judges.length * criteriaCount}>
                     Участников пока нет.
                   </td>
                 </tr>
               )}
               {table.rows.map((r) => (
-                <tr key={r.drawParticipantId}>
-                  <td className="border border-line px-2 py-1 font-semibold">№{r.bibNumber ?? "—"}</td>
+                <tr key={r.drawParticipantId} className="hover:bg-admin-card/70">
+                  <td className={`border-b border-admin-border px-3 py-2 font-extrabold tabular-nums ${ROLE_TEXT_CLASS[role]}`}>
+                    №{r.bibNumber ?? "—"}
+                  </td>
                   {table.judges.flatMap((j) =>
-                    table.criteria.map((c) => (
-                      <td key={`${j.judgeAssignmentId}:${c.id}`} className="border border-line px-1 py-0.5 text-center">
-                        {r.scores[j.judgeAssignmentId]?.[c.id] ?? "—"}
-                      </td>
-                    ))
+                    table.criteria.map((c) => {
+                      const value = r.scores[j.judgeAssignmentId]?.[c.id] ?? null;
+                      return (
+                        <td
+                          key={`${j.judgeAssignmentId}:${c.id}`}
+                          className={`border-b border-admin-border px-1 py-2 text-center ${
+                            value === null ? "text-admin-disabled" : "font-semibold text-night-text"
+                          }`}
+                        >
+                          {value ?? "—"}
+                        </td>
+                      );
+                    })
                   )}
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="font-semibold bg-bg">
-                <td className="border border-line px-2 py-1">ИТОГО</td>
+              <tr className="bg-admin-bg/40">
+                <td className="border-t border-admin-border px-3 py-2 text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
+                  ИТОГО
+                </td>
                 {table.judges.map((j) => {
                   const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
                   return (
                     <td
                       key={j.judgeAssignmentId}
                       colSpan={criteriaCount}
-                      className={`border border-line px-2 py-1 text-center ${total?.complete ? "text-success" : "text-danger"}`}
+                      className={`border-t border-admin-border px-3 py-2 text-center font-bold ${
+                        total?.complete ? "text-night-success" : "text-red-400"
+                      }`}
                     >
                       {total ? `${total.submitted}/${total.required}` : "—"}
                       {total?.confirmed && (
-                        <span className="block text-xs text-success" title='Судья нажал "Готово" — оценки зафиксированы'>
+                        <span className="mt-0.5 block text-[10.5px] font-bold text-night-success" title='Судья нажал "Готово" — оценки зафиксированы'>
                           ✓ Готово
                         </span>
                       )}
