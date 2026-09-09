@@ -76,9 +76,8 @@ export function DivisionJudgingSettingsForm({
   // JUDGES_DANCE — какие критерии оценивает "танцующий" (физически
   // партнёрящий, противоположной роли) судья, остальные — судья со стороны.
   // Ключ — id критерия, доступно только для уже сохранённых критериев.
-  const [dancingIds, setDancingIds] = useState<Set<string>>(
-    () => new Set(((finalConfig as { dancingJudgeCriteriaIds?: string[] } | null)?.dancingJudgeCriteriaIds ?? []).filter(Boolean))
-  );
+  const initialDancingIds = ((finalConfig as { dancingJudgeCriteriaIds?: string[] } | null)?.dancingJudgeCriteriaIds ?? []).filter(Boolean);
+  const [dancingIds, setDancingIds] = useState<Set<string>>(() => new Set(initialDancingIds));
   const [criteriaLoading, setCriteriaLoading] = useState(false);
   const [criteriaError, setCriteriaError] = useState<string | null>(null);
 
@@ -88,7 +87,11 @@ export function DivisionJudgingSettingsForm({
   // final:configure, та же блокировка "финал уже начат") — это одна методика,
   // не две разные.
   const canEditCriteria = canEditFinalFormat;
-  const hasChanges = (canEditJudgingMaxScore && judgingMaxScore !== initialJudgingMaxScore) || (canEditFinalFormat && finalFormat !== initialFinalFormat);
+  const dancingIdsChanged =
+    dancingIds.size !== initialDancingIds.length || initialDancingIds.some((id) => !dancingIds.has(id));
+  const hasChanges =
+    (canEditJudgingMaxScore && judgingMaxScore !== initialJudgingMaxScore) ||
+    (canEditFinalFormat && (finalFormat !== initialFinalFormat || dancingIdsChanged));
 
   async function onSave() {
     setLoading(true);
@@ -103,12 +106,13 @@ export function DivisionJudgingSettingsForm({
         })
       );
     }
-    if (canEditFinalFormat && finalFormat !== initialFinalFormat) {
+    if (canEditFinalFormat && (finalFormat !== initialFinalFormat || dancingIdsChanged)) {
+      const config = { ...(finalConfig as Record<string, unknown> | null), dancingJudgeCriteriaIds: [...dancingIds] };
       requests.push(
         fetch(`/api/divisions/${divisionId}/final-settings`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ format: finalFormat, tracksCount: finalTracksCount, partnerChangeEnabled: finalPartnerChangeEnabled, config: finalConfig }),
+          body: JSON.stringify({ format: finalFormat, tracksCount: finalTracksCount, partnerChangeEnabled: finalPartnerChangeEnabled, config }),
         })
       );
     }
@@ -171,10 +175,22 @@ export function DivisionJudgingSettingsForm({
       }),
     });
     setCriteriaLoading(false);
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
       setCriteriaError(data.error || "Не удалось сохранить критерии.");
       return;
+    }
+    // Сервер возвращает сохранённые критерии с реальными id — подставляем их
+    // в локальный state сразу, не дожидаясь router.refresh(): initialCriteria
+    // передаётся сюда только один раз при монтировании (useState-инициализатор
+    // не перезапускается при обновлении пропсов), поэтому без этого чекбокс
+    // "судья оценивает" у только что созданных критериев оставался disabled
+    // до полной перезагрузки страницы (найдено вживую, 2026-09-09).
+    const saved = (data.criteria ?? []) as (FinalCriterionRow & { priority: number })[];
+    if (saved.length > 0) {
+      setCriteria(
+        [...saved].sort((a, b) => a.priority - b.priority).map(({ id, name, minScore, maxScore, step, catalogId }) => ({ id, name, minScore, maxScore, step, catalogId }))
+      );
     }
     router.refresh();
   }
@@ -309,7 +325,7 @@ export function DivisionJudgingSettingsForm({
                   {finalFormat === "JUDGES_DANCE" && (
                     <label className={`flex items-center gap-1.5 pl-[26px] text-xs ${c.id ? "text-admin-muted" : "text-admin-disabled"}`}>
                       <input type="checkbox" disabled={!c.id} checked={c.id ? dancingIds.has(c.id) : false} onChange={() => c.id && toggleDancing(c.id)} />
-                      Танцующий судья{!c.id && " (сначала сохраните критерии)"}
+                      Танцующий в финале судья оценивает этот критерий{!c.id && " (сначала сохраните критерии)"}
                     </label>
                   )}
                 </div>

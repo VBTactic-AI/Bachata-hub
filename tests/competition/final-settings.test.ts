@@ -18,7 +18,12 @@ const auditCreate = vi.fn();
 
 const fakeTx = {
   finalSettings: { findUnique: txFinalSettingsFindUnique, findFirst: txFinalSettingsFindUnique, upsert: txFinalSettingsUpsert },
-  finalCriterion: { deleteMany: txFinalCriterionDeleteMany, update: txFinalCriterionUpdate, create: txFinalCriterionCreate },
+  finalCriterion: {
+    deleteMany: txFinalCriterionDeleteMany,
+    update: txFinalCriterionUpdate,
+    create: txFinalCriterionCreate,
+    findMany: (...a: unknown[]) => finalCriterionFindMany(...a),
+  },
   auditLog: { create: auditCreate },
 };
 
@@ -98,7 +103,7 @@ describe("setFinalCriteria() — валидация приоритетов (пр
   it("принимает приоритеты 1..N без пропусков", async () => {
     await expect(
       setFinalCriteria("div1", { criteria: [criterion(undefined, 1), criterion(undefined, 2), criterion(undefined, 3)] })
-    ).resolves.toBeUndefined();
+    ).resolves.toBeDefined();
     expect(txFinalCriterionCreate).toHaveBeenCalledTimes(3);
   });
 

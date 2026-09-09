@@ -97,7 +97,7 @@ export async function setFinalSettings(divisionId: string, input: SetFinalSettin
 // (есть id) обновляются, новые (без id) создаются, отсутствующие в списке
 // удаляются. Приоритеты обязаны быть уникальны и идти подряд 1..N — иначе
 // лексикографическое сравнение при ничье (final-ranking.ts) неоднозначно.
-export async function setFinalCriteria(divisionId: string, input: SetFinalCriteriaInput): Promise<void> {
+export async function setFinalCriteria(divisionId: string, input: SetFinalCriteriaInput) {
   const division = await prisma.division.findUniqueOrThrow({ where: { id: divisionId }, select: { competitionId: true } });
   const actor = await requirePermission("final:configure", division.competitionId);
   await assertNotLocked(divisionId);
@@ -117,7 +117,7 @@ export async function setFinalCriteria(divisionId: string, input: SetFinalCriter
   const toDelete = existing.filter((c) => !keepIds.has(c.id));
   const existingToUpdate = input.criteria.filter((c) => c.id);
 
-  await prisma.$transaction(async (tx) => {
+  return await prisma.$transaction(async (tx) => {
     if (toDelete.length > 0) {
       await tx.finalCriterion.deleteMany({ where: { id: { in: toDelete.map((c) => c.id) } } });
     }
@@ -150,5 +150,6 @@ export async function setFinalCriteria(divisionId: string, input: SetFinalCriter
       entityId: divisionId,
       after: { criteria: input.criteria.map((c) => ({ name: c.name, priority: c.priority, minScore: c.minScore, maxScore: c.maxScore })) },
     });
+    return tx.finalCriterion.findMany({ where: { divisionId }, orderBy: { priority: "asc" } });
   });
 }

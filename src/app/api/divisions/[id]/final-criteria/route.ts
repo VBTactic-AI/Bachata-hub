@@ -14,8 +14,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   try {
-    await setFinalCriteria(id, parsed.data);
-    return NextResponse.json({ ok: true });
+    const criteria = await setFinalCriteria(id, parsed.data);
+    return NextResponse.json({ ok: true, criteria });
   } catch (e) {
     return respondToDomainError(e);
   }

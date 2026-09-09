@@ -114,6 +114,7 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
             <p className="m-0 mb-1 font-semibold text-night-text">Судейская панель</p>
             <p className="m-0 mb-3 text-sm text-admin-muted">Настройка состава судей для категории «{selected.categoryName}».</p>
             <DivisionJudgesPanel
+              key={selected.id}
               divisionId={selected.id}
               pool={pool}
               leaderJudgeUserIds={selected.leaderJudgeUserIds}
@@ -125,6 +126,7 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
             <p className="m-0 mb-1 font-semibold text-night-text">Настройки судейства</p>
             <p className="m-0 mb-3 text-sm text-admin-muted">Общие параметры, влияющие на работу судей и подсчёт результатов для «{selected.categoryName}».</p>
             <DivisionJudgingSettingsForm
+              key={selected.id}
               divisionId={selected.id}
               judgingMaxScore={selected.judgingMaxScore}
               judgingMaxScoreDisabledReason={selected.judgingMaxScoreDisabledReason}
