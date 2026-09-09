@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { setShallowQueryParams } from "@/lib/shallow-query";
 
 export type WorkspaceTab = { id: string; label: string; content: React.ReactNode };
 
@@ -10,9 +11,11 @@ export type WorkspaceTab = { id: string; label: string; content: React.ReactNode
 // непрерывным скроллом на 860+ строк. Данные по-прежнему грузятся ОДИН раз на
 // сервере (page.tsx) — эта обёртка только переключает, какой уже отрендеренный
 // блок показан, без единого дополнительного запроса к серверу. Переключение —
-// локальное состояние клиента (не URL/searchParams), чтобы не гонять заново
-// тяжёлый серверный фетч этой страницы (~9 SQL-запросов, задокументировано в
-// docs/00_DECISIONS.md) при каждом клике по вкладке.
+// локальное состояние клиента, а адресная строка обновляется в обход роутера
+// Next.js (setShallowQueryParams/history.replaceState, 2026-09-09 — F5 должен
+// вернуть на ту же вкладку, а не сбрасывать на первую по умолчанию), поэтому
+// клик по вкладке по-прежнему не гоняет заново тяжёлый серверный фетч этой
+// страницы (~9 SQL-запросов, задокументировано в docs/00_DECISIONS.md).
 //
 // Неактивные вкладки остаются в DOM (`hidden`, не размонтируются) — чтобы
 // клиентское состояние вложенных компонентов (например, уже загруженная по
@@ -27,6 +30,15 @@ export function CompetitionWorkspaceTabs({ tabs, defaultTab }: { tabs: Workspace
   const urlTab = searchParams.get("tab");
   const initialTab = urlTab && tabs.some((t) => t.id === urlTab) ? urlTab : (defaultTab ?? tabs[0]?.id);
   const [active, setActive] = useState(initialTab);
+
+  // Каждый клик по вкладке кладёт её id в адресную строку (без похода через
+  // Next.js router — см. shallow-query.ts) — по прямому запросу пользователя,
+  // 2026-09-09: F5 на любой вкладке должен вернуть на неё же, а не сбрасывать
+  // на первую по умолчанию.
+  function selectTab(id: string) {
+    setActive(id);
+    setShallowQueryParams({ tab: id });
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -43,7 +55,7 @@ export function CompetitionWorkspaceTabs({ tabs, defaultTab }: { tabs: Workspace
               type="button"
               role="tab"
               aria-selected={isActive}
-              onClick={() => setActive(tab.id)}
+              onClick={() => selectTab(tab.id)}
               className={`shrink-0 whitespace-nowrap rounded-app-sm px-4 py-2 text-sm font-semibold transition-colors ${
                 isActive ? "bg-admin-primary text-white shadow-sm" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
               }`}

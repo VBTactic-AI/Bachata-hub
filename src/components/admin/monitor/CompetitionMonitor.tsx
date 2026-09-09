@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
+import { setShallowQueryParams } from "@/lib/shallow-query";
 import { HEAT_STATUS_LABELS, REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL, ROUND_STATUS_LABELS } from "@/lib/competition-labels";
 import { categoryDotColor } from "../category-colors";
 import { AddDrawHelperForm } from "../AddDrawHelperForm";
@@ -337,20 +338,19 @@ export function CompetitionMonitor({
   categories: MonitorCategory[];
   canViewScoreMonitor: boolean;
 }) {
-  // Возврат со страницы "Монитор оценок судей" (score-monitor/[roundId]) —
-  // та сама знает свою категорию/раунд и кладёт их в query-строку своей
-  // ссылки "← Назад к соревнованию" (по прямому запросу пользователя,
-  // 2026-09-09: назад должно вести на ту же категорию и этап, а не на
-  // дефолтный "что сейчас идёт"). Читаем один раз при монтировании — не
-  // держим состояние синхронизированным с URL постоянно (тот же принцип,
-  // что и у остальной вкладки: переключение категории/этапа не должно стоить
-  // лишнего запроса, а URL/searchParams для этого специально не используются
-  // — см. комментарий у CompetitionWorkspaceTabs).
+  // Выбор категории/этапа/захода читается из URL один раз при монтировании
+  // (та же query-строка, что и в ссылке "← Назад к соревнованию" со страницы
+  // "Монитор оценок судей", 2026-09-09) — И каждый клик пишет обратно в адрес
+  // (setShallowQueryParams, в обход роутера Next.js), чтобы F5 в любой точке
+  // монитора возвращал на то же самое место (по прямому запросу пользователя,
+  // 2026-09-09), а не на "что сейчас идёт" по умолчанию. history.replaceState
+  // не идёт через Next.js router — переключение по-прежнему не стоит ни
+  // одного лишнего запроса (см. комментарий у CompetitionWorkspaceTabs).
   const searchParams = useSearchParams();
   const fallbackCategoryId = defaultCategoryId(categories);
   const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("category") ?? fallbackCategoryId);
   const [roundId, setRoundId] = useState<string | null>(searchParams.get("round"));
-  const [heatId, setHeatId] = useState<string | null>(null);
+  const [heatId, setHeatId] = useState<string | null>(searchParams.get("heat"));
 
   const category = resolveSelected(categories, categoryId, fallbackCategoryId);
   if (!category) return <p className="text-sm text-admin-muted">Категорий пока нет.</p>;
@@ -364,6 +364,18 @@ export function CompetitionMonitor({
     // сработало то же правило "показать то, что идёт сейчас".
     setRoundId(null);
     setHeatId(null);
+    setShallowQueryParams({ category: id, round: null, heat: null });
+  }
+
+  function selectRound(id: string) {
+    setRoundId(id);
+    setHeatId(null);
+    setShallowQueryParams({ round: id, heat: null });
+  }
+
+  function selectHeat(id: string) {
+    setHeatId(id);
+    setShallowQueryParams({ heat: id });
   }
 
   return (
@@ -418,10 +430,7 @@ export function CompetitionMonitor({
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => {
-                  setRoundId(r.id);
-                  setHeatId(null);
-                }}
+                onClick={() => selectRound(r.id)}
                 className={`flex flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
                   isActive
                     ? "border-admin-primary bg-admin-primary/10"
@@ -492,7 +501,7 @@ export function CompetitionMonitor({
                                 type="button"
                                 role="tab"
                                 aria-selected={isActive}
-                                onClick={() => setHeatId(h.id)}
+                                onClick={() => selectHeat(h.id)}
                                 className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-app-sm px-3.5 py-2 text-[13px] font-semibold transition-colors ${
                                   isActive ? "bg-admin-primary text-white" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
                                 }`}
