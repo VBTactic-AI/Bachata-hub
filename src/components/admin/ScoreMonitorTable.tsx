@@ -6,12 +6,14 @@ import type {
   FinalScoreMonitorTable as FinalTable,
   PrelimScoreMonitorTable as PrelimTable,
   ScoreMonitorJudgeColumn,
+  ScoreMonitorTotal,
 } from "@/server/judging/score-monitor";
 
 // Live-таблица оценок для head judge/admin (промт пользователя, 2026-09-07):
-// строки — номер участника без имени, столбцы — судьи (имя без email),
-// в ячейках — их оценки в прямом эфире; последняя строка — ИТОГО (сдал ли
-// судья все оценки, как на его собственном экране). Браузер подписывается
+// строки — номер участника без имени, столбцы — судьи (имя без email); статус
+// судьи (сдал ли все оценки, как на его собственном экране) — прямо в шапке
+// колонки (JudgeChip/JudgeStatusPill), не отдельной строкой снизу (перенесено
+// по прямому запросу пользователя, 2026-09-09). Браузер подписывается
 // на Supabase Realtime НАПРЯМУЮ (без сервера-посредника — тот обрывался и
 // холодно стартовал заново каждые ~55-60с на Vercel serverless, 2026-09-07,
 // найдено по логам "Waiting for server response" ~20-30с). Сервер выдаёт
@@ -46,6 +48,74 @@ function JudgeHeaderLabel({ judge }: { judge: ScoreMonitorJudgeColumn }) {
       {judge.displayName}
       {judge.isEmailFallback && <span className="text-admin-muted"> *</span>}
     </span>
+  );
+}
+
+function initials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+// Статус судьи прямо в шапке таблицы (по прямому запросу пользователя,
+// 2026-09-09) — те же submitted/required/complete/confirmed, что раньше
+// показывала только строка ИТОГО снизу (см. score-monitor.ts); строку
+// ИТОГО убрали, чтобы не дублировать одно и то же в двух местах. Никакой
+// новой бизнес-логики: "complete"/"confirmed" по-прежнему считает сервер,
+// здесь только выбор пилюли под уже готовые флаги.
+function JudgeStatusPill({ total }: { total: ScoreMonitorTotal | undefined }) {
+  if (!total) return null;
+  if (total.confirmed) {
+    return (
+      <span
+        className="rounded-full bg-night-success/15 px-2 py-0.5 text-[10.5px] font-bold text-night-success"
+        title='Судья нажал "Готово" — оценки зафиксированы'
+      >
+        ✓ Готово
+      </span>
+    );
+  }
+  if (total.complete) {
+    return (
+      <span className="rounded-full bg-night-warning/15 px-2 py-0.5 text-[10.5px] font-bold text-night-warning">
+        Ждёт подтверждения · {total.submitted}/{total.required}
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-admin-primaryHover/15 px-2 py-0.5 text-[10.5px] font-bold text-admin-primaryHover">
+      Оценивает · {total.submitted}/{total.required}
+    </span>
+  );
+}
+
+function JudgeChip({
+  judge,
+  role,
+  total,
+}: {
+  judge: ScoreMonitorJudgeColumn;
+  role: DancerRole;
+  total: ScoreMonitorTotal | undefined;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="flex items-center gap-2">
+        <span
+          className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-extrabold text-admin-bg ${ROLE_DOT_CLASS[role]}`}
+          aria-hidden="true"
+        >
+          {initials(judge.displayName)}
+        </span>
+        <span className="text-xs font-bold text-night-text">
+          <JudgeHeaderLabel judge={judge} />
+        </span>
+      </div>
+      <JudgeStatusPill total={total} />
+    </div>
   );
 }
 
@@ -157,11 +227,14 @@ function PrelimRoleTable({
                 <th className="border-b border-admin-border px-3 py-2 text-left text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
                   №
                 </th>
-                {table.judges.map((j) => (
-                  <th key={j.judgeAssignmentId} className="border-b border-admin-border px-3 py-2 text-center text-xs font-bold text-night-text">
-                    <JudgeHeaderLabel judge={j} />
-                  </th>
-                ))}
+                {table.judges.map((j) => {
+                  const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
+                  return (
+                    <th key={j.judgeAssignmentId} className="border-b border-admin-border px-3 py-2.5 align-top">
+                      <JudgeChip judge={j} role={role} total={total} />
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -193,31 +266,6 @@ function PrelimRoleTable({
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="bg-admin-bg/40">
-                <td className="border-t border-admin-border px-3 py-2 text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
-                  ИТОГО
-                </td>
-                {table.judges.map((j) => {
-                  const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
-                  return (
-                    <td
-                      key={j.judgeAssignmentId}
-                      className={`border-t border-admin-border px-3 py-2 text-center font-bold ${
-                        total?.complete ? "text-night-success" : "text-red-400"
-                      }`}
-                    >
-                      {total ? `${total.submitted}/${total.required}` : "—"}
-                      {total?.confirmed && (
-                        <span className="mt-0.5 block text-[10.5px] font-bold text-night-success" title='Судья нажал "Готово" — оценки зафиксированы'>
-                          ✓ Готово
-                        </span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            </tfoot>
           </table>
         </div>
       )}
@@ -313,15 +361,14 @@ function FinalRoleTable({ title, role, table }: { title: string; role: DancerRol
                 <th rowSpan={2} className="border-b border-admin-border px-3 py-2 align-bottom text-left text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
                   №
                 </th>
-                {table.judges.map((j) => (
-                  <th
-                    key={j.judgeAssignmentId}
-                    colSpan={criteriaCount}
-                    className="border-b border-admin-border px-3 py-2 text-center text-xs font-bold text-night-text"
-                  >
-                    <JudgeHeaderLabel judge={j} />
-                  </th>
-                ))}
+                {table.judges.map((j) => {
+                  const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
+                  return (
+                    <th key={j.judgeAssignmentId} colSpan={criteriaCount} className="border-b border-admin-border px-3 py-2.5 align-top">
+                      <JudgeChip judge={j} role={role} total={total} />
+                    </th>
+                  );
+                })}
               </tr>
               <tr>
                 {table.judges.flatMap((j) =>
@@ -367,32 +414,6 @@ function FinalRoleTable({ title, role, table }: { title: string; role: DancerRol
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="bg-admin-bg/40">
-                <td className="border-t border-admin-border px-3 py-2 text-[10.5px] font-bold uppercase tracking-wide text-admin-muted">
-                  ИТОГО
-                </td>
-                {table.judges.map((j) => {
-                  const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
-                  return (
-                    <td
-                      key={j.judgeAssignmentId}
-                      colSpan={criteriaCount}
-                      className={`border-t border-admin-border px-3 py-2 text-center font-bold ${
-                        total?.complete ? "text-night-success" : "text-red-400"
-                      }`}
-                    >
-                      {total ? `${total.submitted}/${total.required}` : "—"}
-                      {total?.confirmed && (
-                        <span className="mt-0.5 block text-[10.5px] font-bold text-night-success" title='Судья нажал "Готово" — оценки зафиксированы'>
-                          ✓ Готово
-                        </span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            </tfoot>
           </table>
         </div>
       )}
