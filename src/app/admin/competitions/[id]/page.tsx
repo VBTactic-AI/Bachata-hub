@@ -1,4 +1,4 @@
-import { Fragment, Suspense, type ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -19,7 +19,8 @@ import type { MonitorCategory, MonitorHeat, MonitorJudge, MonitorParticipant, Mo
 import type { PoolJudge } from "@/components/admin/DivisionJudgesPanel";
 import { JudgesWorkspace, type JudgingDivision } from "@/components/admin/JudgesWorkspace";
 import { AddCompetitionJudgeForm } from "@/components/admin/AddCompetitionJudgeForm";
-import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
+import { JudgeRegistryPanel, type RegistryJudge } from "@/components/admin/JudgeRegistryPanel";
+import { categoryDotColor } from "@/components/admin/category-colors";
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { suggestedRoleForGender } from "@/server/competition/register-competitor";
@@ -41,7 +42,6 @@ import { CompetitionHeader } from "@/components/admin/CompetitionHeader";
 import { CompetitionWorkspaceTabs } from "@/components/admin/CompetitionWorkspaceTabs";
 import { ParticipantsPanel } from "@/components/admin/ParticipantsPanel";
 import { StatCard } from "@/components/admin/StatCard";
-import { StatusBadge } from "@/components/admin/StatusBadge";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -241,16 +241,26 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     }))
     .sort((a, b) => (a.displayName ?? a.judgeEmail).localeCompare(b.displayName ?? b.judgeEmail, "ru"));
 
-  // Только для отображения в "Общий список судей" (какие категории судит
-  // каждый) — не часть контракта DivisionJudgesPanel, отдельная структура.
-  const judgeDivisionNames = new Map<string, string[]>();
-  for (const d of competition.divisions) {
+  // Только для отображения в "Реестр судей" (какие категории судит каждый,
+  // каким цветом — тем же, что точка категории в сайдбаре ниже, чтобы одна и
+  // та же категория узнавалась в обоих местах, 2026-09-09) и в каких ролях
+  // (LEADER/FOLLOWER) — не часть контракта DivisionJudgesPanel, отдельная
+  // структура. Роль судьи не хранится как отдельное поле нигде — это просто
+  // объединение ролей всех его JudgeAssignment по всем категориям.
+  const judgeDivisionChips = new Map<string, { name: string; color: string }[]>();
+  const judgeRoles = new Map<string, Set<RegistrationRole>>();
+  competition.divisions.forEach((d, i) => {
+    const color = categoryDotColor(i);
     for (const ja of d.judgeAssignments) {
-      const names = judgeDivisionNames.get(ja.judgeUserId) ?? [];
-      if (!names.includes(d.category.name)) names.push(d.category.name);
-      judgeDivisionNames.set(ja.judgeUserId, names);
+      const chips = judgeDivisionChips.get(ja.judgeUserId) ?? [];
+      if (!chips.some((c) => c.name === d.category.name)) chips.push({ name: d.category.name, color });
+      judgeDivisionChips.set(ja.judgeUserId, chips);
+
+      const roles = judgeRoles.get(ja.judgeUserId) ?? new Set<RegistrationRole>();
+      roles.add(ja.role);
+      judgeRoles.set(ja.judgeUserId, roles);
     }
-  }
+  });
 
   // Соревнование ещё не началось — то же понятие, что и в
   // updateDivisionSettings() (COMPETITION_NOT_STARTED_STATUSES): метод
@@ -560,98 +570,55 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     };
   });
 
-  // Группировка "Общий список судей" по полу (по запросу пользователя,
-  // 2026-09-09) — реальное поле Dancer.gender, не выдумываем недостающее:
-  // те, у кого пол не указан (или нет профиля танцора), — отдельной группой,
-  // а не молча в одной из двух. Нумерация "№" сквозная по всему списку.
-  const judgesByGender = {
-    MALE: competitionJudgePool.filter((j) => j.gender === "MALE"),
-    FEMALE: competitionJudgePool.filter((j) => j.gender === "FEMALE"),
-    UNKNOWN: competitionJudgePool.filter((j) => j.gender === null),
-  };
-  const JUDGE_GENDER_GROUP_LABELS: Record<keyof typeof judgesByGender, string> = {
-    MALE: "Мужчины",
-    FEMALE: "Женщины",
-    UNKNOWN: "Пол не указан",
-  };
-  const judgeNumberById = new Map(
-    [...judgesByGender.MALE, ...judgesByGender.FEMALE, ...judgesByGender.UNKNOWN].map((j, i) => [j.judgeUserId, i + 1])
-  );
+  // Реестр судей — теперь плоские данные для клиентского JudgeRegistryPanel
+  // (поиск + фильтр "Не назначены" + группировка по роли, редизайн
+  // 2026-09-09, см. также JudgesWorkspace/DivisionJudgesPanel). Роль здесь —
+  // объединение ролей судьи по всем его назначениям (judgeRoles выше), не
+  // отдельное хранимое поле.
+  const registryJudges: RegistryJudge[] = competitionJudgePool.map((j) => ({
+    judgeUserId: j.judgeUserId,
+    displayName: j.displayName,
+    judgeEmail: j.judgeEmail,
+    categories: judgeDivisionChips.get(j.judgeUserId) ?? [],
+    roles: [...(judgeRoles.get(j.judgeUserId) ?? [])],
+  }));
 
   const judgesContent = (
     <div className="flex flex-col gap-4">
       {canAssignJudges && (
-        <Card className="border-admin-border bg-admin-card">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="m-0 mb-1 font-semibold text-night-text">Общий список судей</p>
-              <p className="m-0 text-sm text-admin-muted">Все судьи, зарегистрированные на соревнование.</p>
-            </div>
-            <AddButton label="Добавить судью" gradientClassName="bg-gradient-admin-cta" wide>
-              <AddCompetitionJudgeForm competitionId={competition.id} />
-            </AddButton>
+        <div className="flex flex-col gap-3">
+          <div>
+            <h2 className="m-0 text-xl font-extrabold text-night-text">Реестр судей</h2>
+            <p className="m-0 mt-1 text-sm text-admin-muted">
+              Все судьи, зарегистрированные на соревнование — независимо от того, назначены ли они уже в категорию.
+            </p>
           </div>
-          {competitionJudgePool.length === 0 ? (
-            <p className="m-0 mt-3 text-sm text-admin-muted">Судьи пока не добавлены.</p>
-          ) : (
-            <div className="mt-3 overflow-x-auto rounded-app border border-admin-border">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
-                  <tr>
-                    <th className="px-3 py-2.5 font-semibold">№</th>
-                    <th className="px-3 py-2.5 font-semibold">Судья</th>
-                    <th className="px-3 py-2.5 font-semibold">Категории</th>
-                    <th className="px-3 py-2.5 font-semibold">Статус</th>
-                    <th className="px-3 py-2.5 text-right font-semibold">Действия</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(Object.keys(judgesByGender) as (keyof typeof judgesByGender)[]).map((group) => {
-                    const list = judgesByGender[group];
-                    if (list.length === 0) return null;
-                    return (
-                      <Fragment key={group}>
-                        <tr className="border-t border-admin-border bg-admin-card2/40">
-                          <td colSpan={5} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-admin-muted">
-                            {JUDGE_GENDER_GROUP_LABELS[group]} ({list.length})
-                          </td>
-                        </tr>
-                        {list.map((j) => {
-                          const names = judgeDivisionNames.get(j.judgeUserId) ?? [];
-                          return (
-                            <tr key={j.judgeUserId} className="border-t border-admin-border">
-                              <td className="px-3 py-2.5 align-middle text-admin-muted">{judgeNumberById.get(j.judgeUserId)}</td>
-                              <td className="px-3 py-2.5 align-middle font-medium text-night-text">{j.displayName ?? j.judgeEmail}</td>
-                              <td className="px-3 py-2.5 align-middle text-admin-muted">{names.length > 0 ? names.join(", ") : "—"}</td>
-                              <td className="px-3 py-2.5 align-middle">
-                                <StatusBadge label="Активен" variant="success" />
-                              </td>
-                              <td className="px-3 py-2.5 align-middle">
-                                <div className="flex justify-end">
-                                  <DeleteIconButton
-                                    url={`/api/competitions/${competition.id}/judges/${j.judgeUserId}`}
-                                    confirmMessage={`Убрать судью «${j.displayName ?? j.judgeEmail}» из соревнования? Снимет назначения по всем категориям.`}
-                                    label={`Убрать судью ${j.displayName ?? j.judgeEmail}`}
-                                  />
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+          <Card className="border-admin-border bg-admin-card">
+            <JudgeRegistryPanel
+              competitionId={competition.id}
+              judges={registryJudges}
+              addAction={
+                <AddButton label="Добавить судью" gradientClassName="bg-gradient-admin-cta" wide>
+                  <AddCompetitionJudgeForm competitionId={competition.id} />
+                </AddButton>
+              }
+            />
+          </Card>
+        </div>
       )}
       {canAssignJudges ? (
         competition.divisions.length === 0 ? (
           <p className="text-sm text-admin-muted">Категорий пока нет.</p>
         ) : (
-          <JudgesWorkspace divisions={judgingDivisions} pool={competitionJudgePool} />
+          <div className="flex flex-col gap-3">
+            <div>
+              <h2 className="m-0 text-xl font-extrabold text-night-text">Назначение и настройка по категориям</h2>
+              <p className="m-0 mt-1 text-sm text-admin-muted">
+                Кто судит какую категорию, по какой методике и с какими критериями — выберите категорию слева.
+              </p>
+            </div>
+            <JudgesWorkspace divisions={judgingDivisions} pool={competitionJudgePool} />
+          </div>
         )
       ) : (
         <p className="text-sm text-admin-muted">Нет прав на назначение судей.</p>

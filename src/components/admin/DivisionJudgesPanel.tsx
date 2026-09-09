@@ -151,8 +151,33 @@ export function DivisionJudgesPanel({
   const initialFollowers = new Set(followerJudgeUserIds);
   const availableFromPool = pool.filter((j) => !initialLeaders.has(j.judgeUserId) && !initialFollowers.has(j.judgeUserId));
 
+  // Индикатор дисбаланса ролей (по запросу пользователя, 2026-09-09) — без
+  // него 0 судей на одну из ролей было видно, только если долистать таблицу
+  // ниже и заметить пустую группу. Считается от live-состояния (leaders/
+  // followers), а не от исходных пропсов — обновляется сразу при отметке
+  // галочки, ещё до "Сохранить".
+  const nLeaders = leaders.size;
+  const nFollowers = followers.size;
+  const imbalanced = nLeaders === 0 || nFollowers === 0;
+
   return (
     <div className="flex flex-col gap-3">
+      <div
+        className={`flex flex-wrap items-center gap-1.5 rounded-app-sm border px-3 py-2 text-sm ${
+          imbalanced ? "border-night-warning/40 bg-night-warning/10" : "border-admin-border bg-admin-card2"
+        }`}
+      >
+        <span className={`font-semibold ${imbalanced ? "text-night-warning" : "text-night-text"}`}>
+          {nLeaders} {REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL.LEADER.toLowerCase()} · {nFollowers}{" "}
+          {REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL.FOLLOWER.toLowerCase()}
+        </span>
+        {imbalanced && (
+          <span className="text-night-warning">
+            — нет ни одного судьи на {nLeaders === 0 ? REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL.LEADER.toLowerCase() : REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL.FOLLOWER.toLowerCase()}, категорию некому судить.
+          </span>
+        )}
+      </div>
+
       {availableFromPool.length > 0 && (
         <AddButton label="Изменить состав" gradientClassName="bg-gradient-admin-cta" wide>
           <div className="flex flex-col gap-2">

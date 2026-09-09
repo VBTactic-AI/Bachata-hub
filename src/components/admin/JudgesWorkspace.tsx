@@ -39,8 +39,16 @@ export type JudgingDivision = {
 // судей, справа — состав судей выбранной категории и её методики оценки.
 // "Порядок судей" (drag-список из референса) сознательно не реализован — по
 // прямому запросу пользователя, не нужен.
+//
+// Состав судей и методика/критерии разведены по подвкладкам (redesign
+// 2026-09-09, по прямому запросу пользователя) — раньше это были две карточки
+// в сетке 1fr/360px, и редактор критериев (поля "От/До/Шаг") в такой узкой
+// колонке уже ломался. Подвкладка получает всю ширину рабочей области.
+type DetailTab = "composition" | "settings";
+
 export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivision[]; pool: PoolJudge[] }) {
   const [selectedId, setSelectedId] = useState(divisions[0]?.id ?? "");
+  const [tab, setTab] = useState<DetailTab>("composition");
   const selected = divisions.find((d) => d.id === selectedId) ?? divisions[0];
   if (!selected) return null;
 
@@ -51,6 +59,10 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
           {divisions.map((d, i) => {
             const count = d.leaderJudgeUserIds.length + d.followerJudgeUserIds.length;
             const active = d.id === selected.id;
+            // Дисбаланс ролей (0 судей на партнёров или на партнёрш) —
+            // предупреждение прямо в сайдбаре, не только внутри самой панели
+            // категории (по запросу пользователя, 2026-09-09).
+            const imbalanced = d.leaderJudgeUserIds.length === 0 || d.followerJudgeUserIds.length === 0;
             return (
               <button
                 key={d.id}
@@ -63,6 +75,9 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
               >
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: categoryDotColor(i) }} aria-hidden="true" />
                 <span className="flex-1 truncate font-medium sm:truncate">{d.categoryName}</span>
+                {imbalanced && (
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-night-warning" title="Не хватает судей на одну из ролей" aria-hidden="true" />
+                )}
                 <span className="shrink-0 text-xs text-admin-disabled">{count} суд.</span>
               </button>
             );
@@ -70,38 +85,63 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
         </div>
       </div>
 
-      <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
-        <Card className="border-admin-border bg-admin-card">
-          <p className="m-0 mb-1 font-semibold text-night-text">Судейская панель</p>
-          <p className="m-0 mb-3 text-sm text-admin-muted">Настройка состава судей для категории «{selected.categoryName}».</p>
-          <DivisionJudgesPanel
-            divisionId={selected.id}
-            pool={pool}
-            leaderJudgeUserIds={selected.leaderJudgeUserIds}
-            followerJudgeUserIds={selected.followerJudgeUserIds}
-          />
-        </Card>
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
+        <div className="inline-flex w-fit gap-1 rounded-app-sm border border-admin-border bg-admin-card p-1">
+          <button
+            type="button"
+            onClick={() => setTab("composition")}
+            aria-current={tab === "composition" ? "true" : undefined}
+            className={`rounded-app-sm px-3 py-2 text-sm font-semibold transition-colors ${
+              tab === "composition" ? "bg-admin-card2 text-night-text" : "text-admin-muted hover:text-night-text"
+            }`}
+          >
+            Состав судей
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("settings")}
+            aria-current={tab === "settings" ? "true" : undefined}
+            className={`rounded-app-sm px-3 py-2 text-sm font-semibold transition-colors ${
+              tab === "settings" ? "bg-admin-card2 text-night-text" : "text-admin-muted hover:text-night-text"
+            }`}
+          >
+            Методика и критерии
+          </button>
+        </div>
 
-        <Card className="border-admin-border bg-admin-card">
-          <p className="m-0 mb-1 font-semibold text-night-text">Настройки судейства</p>
-          <p className="m-0 mb-3 text-sm text-admin-muted">Общие параметры, влияющие на работу судей и подсчёт результатов для «{selected.categoryName}».</p>
-          <DivisionJudgingSettingsForm
-            divisionId={selected.id}
-            judgingMaxScore={selected.judgingMaxScore}
-            judgingMaxScoreDisabledReason={selected.judgingMaxScoreDisabledReason}
-            rotationMode={selected.rotationMode}
-            rotationIntervalSec={selected.rotationIntervalSec}
-            rotationShiftMin={selected.rotationShiftMin}
-            rotationShiftMax={selected.rotationShiftMax}
-            finalFormat={selected.finalFormat}
-            finalFormatDisabledReason={selected.finalFormatDisabledReason}
-            finalTracksCount={selected.finalTracksCount}
-            finalPartnerChangeEnabled={selected.finalPartnerChangeEnabled}
-            finalConfig={selected.finalConfig}
-            finalCriteria={selected.finalCriteria}
-            finalCriteriaCatalog={selected.finalCriteriaCatalog}
-          />
-        </Card>
+        {tab === "composition" ? (
+          <Card className="border-admin-border bg-admin-card">
+            <p className="m-0 mb-1 font-semibold text-night-text">Судейская панель</p>
+            <p className="m-0 mb-3 text-sm text-admin-muted">Настройка состава судей для категории «{selected.categoryName}».</p>
+            <DivisionJudgesPanel
+              divisionId={selected.id}
+              pool={pool}
+              leaderJudgeUserIds={selected.leaderJudgeUserIds}
+              followerJudgeUserIds={selected.followerJudgeUserIds}
+            />
+          </Card>
+        ) : (
+          <Card className="border-admin-border bg-admin-card">
+            <p className="m-0 mb-1 font-semibold text-night-text">Настройки судейства</p>
+            <p className="m-0 mb-3 text-sm text-admin-muted">Общие параметры, влияющие на работу судей и подсчёт результатов для «{selected.categoryName}».</p>
+            <DivisionJudgingSettingsForm
+              divisionId={selected.id}
+              judgingMaxScore={selected.judgingMaxScore}
+              judgingMaxScoreDisabledReason={selected.judgingMaxScoreDisabledReason}
+              rotationMode={selected.rotationMode}
+              rotationIntervalSec={selected.rotationIntervalSec}
+              rotationShiftMin={selected.rotationShiftMin}
+              rotationShiftMax={selected.rotationShiftMax}
+              finalFormat={selected.finalFormat}
+              finalFormatDisabledReason={selected.finalFormatDisabledReason}
+              finalTracksCount={selected.finalTracksCount}
+              finalPartnerChangeEnabled={selected.finalPartnerChangeEnabled}
+              finalConfig={selected.finalConfig}
+              finalCriteria={selected.finalCriteria}
+              finalCriteriaCatalog={selected.finalCriteriaCatalog}
+            />
+          </Card>
+        )}
       </div>
     </div>
   );
