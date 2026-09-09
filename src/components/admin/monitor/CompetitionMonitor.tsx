@@ -10,7 +10,7 @@ import { AddDrawHelperForm } from "../AddDrawHelperForm";
 import { AddHeatButton } from "../AddHeatButton";
 import { DeleteIconButton } from "../DeleteIconButton";
 import { HeatStatusControls } from "../HeatStatusControls";
-import { PersonIcon } from "../icons";
+import { CheckCircleIcon, ChevronRightIcon, PersonIcon } from "../icons";
 import { RemoveDrawHelperButton } from "../RemoveDrawHelperButton";
 import { ReplaceDrawHelperButton } from "../ReplaceDrawHelperButton";
 import { RerollDrawButton } from "../RerollDrawButton";
@@ -46,7 +46,13 @@ const ROUND_STATUS_TONE: Record<RoundStatus, string> = {
   PAUSED: "bg-night-warning",
   FINISHED: "bg-admin-primaryHover",
   SCORING: "bg-night-warning",
-  COMPLETED: "bg-admin-disabled",
+  // Раньше совпадал с DRAFT/READY ("bg-admin-disabled") — пройденный этап
+  // выглядел неотличимо от ещё не начатого (найдено по прямому запросу
+  // пользователя, 2026-09-09: "если этап пройдёт, обозначить визуально").
+  // В карточке этапа ниже COMPLETED вдобавок получает не точку, а галочку
+  // (CheckCircleIcon) — форма отличается от "Идёт" (тоже зелёный, но точка),
+  // а не только оттенок.
+  COMPLETED: "bg-night-success",
 };
 
 const HEAT_STATUS_TONE: Record<HeatStatus, string> = {
@@ -421,34 +427,56 @@ export function CompetitionMonitor({
           {category.generateRounds && <div className="mt-3">{category.generateRounds}</div>}
         </div>
       ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Этапы категории">
-          {category.rounds.map((r) => {
+        // Горизонтальный ряд со скроллом (не grid, как раньше) — по прямому
+        // запросу пользователя (2026-09-09): между этапами теперь стрелка
+        // ("этап переходит в следующий"), а она осмысленна только в одну
+        // строку — в grid карточки переносились на новую строку, и стрелка
+        // между последней в строке и первой в следующей не имела бы смысла.
+        <div className="flex items-stretch gap-1.5 overflow-x-auto rounded-app border border-admin-border bg-admin-card/50 p-1.5" role="tablist" aria-label="Этапы категории">
+          {category.rounds.map((r, i) => {
             const isActive = r.id === round?.id;
+            const isCompleted = r.status === "COMPLETED";
             return (
-              <button
-                key={r.id}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => selectRound(r.id)}
-                className={`flex flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
-                  isActive
-                    ? "border-admin-primary bg-admin-primary/10"
-                    : "border-admin-border bg-admin-card hover:border-admin-disabled"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${ROUND_STATUS_TONE[r.status]}`} aria-hidden="true" />
-                  <span className={`text-sm font-bold ${isActive ? "text-night-text" : "text-admin-muted"}`}>{r.name}</span>
-                </span>
-                <span className="text-xs tabular-nums text-admin-disabled">
-                  {r.calledLeaders} / {r.calledFollowers}
-                  {r.finalistsCount ? ` · проходят ${r.finalistsCount} пар` : ""}
-                </span>
-                <span className="text-[10.5px] font-bold uppercase tracking-wide text-admin-disabled">
-                  {ROUND_STATUS_LABELS[r.status] ?? r.status}
-                </span>
-              </button>
+              <Fragment key={r.id}>
+                {i > 0 && (
+                  <span className="flex shrink-0 items-center text-admin-disabled" aria-hidden="true">
+                    <ChevronRightIcon />
+                  </span>
+                )}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => selectRound(r.id)}
+                  className={`flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
+                    isActive
+                      ? "border-admin-primary bg-admin-primary/10"
+                      : isCompleted
+                        ? "border-night-success/30 bg-night-success/[0.07] hover:border-night-success/50"
+                        : "border-admin-border bg-admin-card hover:border-admin-disabled"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    {isCompleted ? (
+                      <span className="shrink-0 text-night-success" aria-hidden="true">
+                        <CheckCircleIcon />
+                      </span>
+                    ) : (
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${ROUND_STATUS_TONE[r.status]}`} aria-hidden="true" />
+                    )}
+                    <span className={`text-sm font-bold ${isActive || isCompleted ? "text-night-text" : "text-admin-muted"}`}>{r.name}</span>
+                  </span>
+                  <span className="text-xs tabular-nums text-admin-disabled">
+                    {r.calledLeaders} / {r.calledFollowers}
+                    {r.finalistsCount ? ` · проходят ${r.finalistsCount} пар` : ""}
+                  </span>
+                  <span
+                    className={`text-[10.5px] font-bold uppercase tracking-wide ${isCompleted ? "text-night-success" : "text-admin-disabled"}`}
+                  >
+                    {ROUND_STATUS_LABELS[r.status] ?? r.status}
+                  </span>
+                </button>
+              </Fragment>
             );
           })}
         </div>

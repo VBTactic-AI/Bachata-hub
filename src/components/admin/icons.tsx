@@ -88,6 +88,17 @@ export function GearIcon() {
   );
 }
 
+// Стрелка-разделитель между этапами в "Мониторе" (визуально "этап переходит
+// в следующий", по прямому запросу пользователя, 2026-09-09) — тот же
+// нейтральный контурный стиль, что и остальные иконки этого файла.
+export function ChevronRightIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+      <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
