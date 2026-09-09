@@ -37,30 +37,29 @@ export function GenerateRoundsButton({ divisionId, hasExistingRounds }: { divisi
 
   if (confirming) {
     return (
-      <span className="inline-flex flex-col items-start gap-1.5">
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-admin-muted">Удалить текущие раунды и собрать заново по плану?</span>
-          <Button type="button" size="sm" variant="admin" disabled={loading} onClick={run}>
-            Да, перегенерировать
-          </Button>
-          <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" disabled={loading} onClick={() => setConfirming(false)}>
-            отмена
-          </Button>
-        </span>
-        {/* Ошибка — своей строкой, не рядом с кнопками: иначе им не хватало
-            места и подпись кнопки переносилась на две строки (жалоба
-            пользователя со скриншотом, 2026-09-09). */}
+      // Ошибка — первой, слева от вопроса и кнопок (по прямому запросу
+      // пользователя, 2026-09-09) — кнопки не переносят подпись
+      // (whitespace-nowrap в button.tsx), при нехватке места переносится вся
+      // строка целиком (flex-wrap), не текст внутри кнопки.
+      <span className="inline-flex flex-wrap items-center gap-2">
         {error && <span className="text-xs text-red-400">{error}</span>}
+        <span className="text-sm text-admin-muted">Удалить текущие раунды и собрать заново по плану?</span>
+        <Button type="button" size="sm" variant="admin" disabled={loading} onClick={run}>
+          Да, перегенерировать
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" disabled={loading} onClick={() => setConfirming(false)}>
+          отмена
+        </Button>
       </span>
     );
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1.5">
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {error && <span className="text-xs text-red-400">{error}</span>}
       <Button type="button" size="sm" variant="adminOutline" disabled={loading} onClick={() => (hasExistingRounds ? setConfirming(true) : run())}>
         {hasExistingRounds ? "Перегенерировать раунды" : "Сгенерировать раунды"}
       </Button>
-      {error && <span className="text-xs text-red-400">{error}</span>}
     </span>
   );
 }

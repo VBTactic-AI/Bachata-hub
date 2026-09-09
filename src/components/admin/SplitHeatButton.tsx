@@ -30,12 +30,12 @@ export function SplitHeatButton({ heatId }: { heatId: string }) {
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1.5">
+    // Ошибка — слева от кнопки, в одной строке (2026-09-09).
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {error && <span className="text-xs text-red-400">{error}</span>}
       <Button type="button" size="sm" variant="adminOutline" disabled={loading} onClick={submit}>
         Разбить на 2 выхода
       </Button>
-      {/* Ошибка — своей строкой, не рядом с кнопкой (2026-09-09). */}
-      {error && <span className="text-xs text-red-400">{error}</span>}
     </span>
   );
 }

@@ -30,7 +30,9 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1.5">
+    // Ошибка — слева от кнопки, в одной строке (2026-09-09).
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {error && <span className="text-xs text-red-400">{error}</span>}
       {/* Акцентный, а не серый outline (по прямому запросу пользователя,
           2026-09-09 — "в цветовой гамме"): тот же синий, что у активной
           вкладки захода рядом, кнопка стоит прямо в их строке. */}
@@ -44,8 +46,6 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
       >
         + Заход
       </Button>
-      {/* Ошибка — своей строкой, не рядом с кнопкой (2026-09-09). */}
-      {error && <span className="text-xs text-red-400">{error}</span>}
     </span>
   );
 }

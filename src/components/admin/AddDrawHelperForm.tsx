@@ -194,22 +194,22 @@ export function AddDrawHelperForm({
               )}
             </div>
 
-            <div className="flex flex-col gap-2 border-t border-admin-border px-5 py-4">
-              {/* Ошибка — своей строкой над кнопками, не рядом с ними: иначе
-                  раздвигала бы их и переносила подписи (2026-09-09). */}
-              {error && <p className="m-0 text-right text-xs text-red-400">{error}</p>}
-              <div className="flex items-center gap-3">
-                <p className="m-0 max-w-[230px] text-[11.5px] leading-snug text-admin-disabled">
-                  Помощник танцует, но его не оценивают — на результат захода он не влияет.
-                </p>
-                <div className="ml-auto flex items-center gap-2">
-                  <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
-                    Отмена
-                  </Button>
-                  <Button type="button" size="sm" variant="admin" disabled={submitting || selected.length === 0} onClick={submit}>
-                    Позвать
-                  </Button>
-                </div>
+            <div className="flex flex-wrap items-center gap-3 border-t border-admin-border px-5 py-4">
+              <p className="m-0 max-w-[230px] text-[11.5px] leading-snug text-admin-disabled">
+                Помощник танцует, но его не оценивают — на результат захода он не влияет.
+              </p>
+              {/* Ошибка — слева от кнопок, в одной строке с ними (2026-09-09):
+                  весь этот кластер прижат вправо через ml-auto, так что текст
+                  занимает свободное место перед кнопками, а не разрывает
+                  строку. */}
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {error && <span className="text-xs text-red-400">{error}</span>}
+                <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
+                  Отмена
+                </Button>
+                <Button type="button" size="sm" variant="admin" disabled={submitting || selected.length === 0} onClick={submit}>
+                  Позвать
+                </Button>
               </div>
             </div>
           </div>

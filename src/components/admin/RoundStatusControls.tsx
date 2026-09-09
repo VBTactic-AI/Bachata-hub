@@ -73,19 +73,17 @@ export function RoundStatusControls({ roundId, status }: { roundId: string; stat
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1.5">
-      <span className="flex flex-wrap items-center gap-2">
-        {nextOptions.map((to) => (
-          <Button key={to} type="button" size="sm" variant="admin" disabled={loading} onClick={() => go(to)}>
-            {ACTION_LABELS[to]}
-          </Button>
-        ))}
-        {nextOptions.length === 0 && <span className="text-sm text-admin-muted">{ROUND_STATUS_LABELS[status]}</span>}
-      </span>
-      {/* Ошибка — своей строкой под кнопкой (не рядом с ней), чтобы не
-          раздвигать её по ширине (жалоба пользователя со скриншотом,
-          2026-09-09). */}
+    // Ошибка — ПЕРЕД кнопкой (слева), в одной строке (по прямому запросу
+    // пользователя, 2026-09-09) — см. подробный комментарий в
+    // HeatStatusControls.tsx, тот же приём.
+    <span className="inline-flex flex-wrap items-center justify-end gap-2">
       {error && <span className="text-xs text-red-400">{error}</span>}
+      {nextOptions.map((to) => (
+        <Button key={to} type="button" size="sm" variant="admin" disabled={loading} onClick={() => go(to)}>
+          {ACTION_LABELS[to]}
+        </Button>
+      ))}
+      {nextOptions.length === 0 && <span className="text-sm text-admin-muted">{ROUND_STATUS_LABELS[status]}</span>}
     </span>
   );
 }

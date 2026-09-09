@@ -59,27 +59,29 @@ export function HeatStatusControls({
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1.5">
-      <span className="flex flex-wrap items-center gap-2">
-        {nextOptions.map((to) => (
-          // "Запустить" — главное действие захода, остальные (пауза/завершить)
-          // не должны с ним конкурировать по весу на живом экране.
-          <Button
-            key={to}
-            type="button"
-            size="sm"
-            variant={to === "RUNNING" ? "admin" : "adminOutline"}
-            disabled={loading}
-            onClick={() => go(to)}
-          >
-            {ACTION_LABELS[to]}
-          </Button>
-        ))}
-      </span>
-      {/* Ошибка — своей строкой под кнопками, а не рядом с ними: иначе она
-          раздвигала кнопку по ширине и текст переносился (жалоба
-          пользователя со скриншотом, 2026-09-09). */}
+    // Ошибка — ПЕРЕД кнопками (слева), в одной строке (по прямому запросу
+    // пользователя, 2026-09-09, со стрелкой на скриншоте): контейнер сам
+    // right-aligned через ml-auto у родителя, поэтому текст занимает
+    // свободное место слева от кнопки, а не жмётся вплотную к ней. Кнопки
+    // теперь не переносят подпись (whitespace-nowrap в button.tsx), так что
+    // при нехватке места переносится вся строка целиком (flex-wrap), а не
+    // текст внутри кнопки.
+    <span className="inline-flex flex-wrap items-center justify-end gap-2">
       {error && <span className="text-xs text-red-400">{error}</span>}
+      {nextOptions.map((to) => (
+        // "Запустить" — главное действие захода, остальные (пауза/завершить)
+        // не должны с ним конкурировать по весу на живом экране.
+        <Button
+          key={to}
+          type="button"
+          size="sm"
+          variant={to === "RUNNING" ? "admin" : "adminOutline"}
+          disabled={loading}
+          onClick={() => go(to)}
+        >
+          {ACTION_LABELS[to]}
+        </Button>
+      ))}
     </span>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
 import { setShallowQueryParams } from "@/lib/shallow-query";
@@ -456,7 +456,14 @@ export function CompetitionMonitor({
 
       {/* ── Выбранный этап ────────────────────────────────────── */}
       {round && (
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_336px]">
+        // key={round.id} — при смене раунда React иначе переиспользует те же
+        // экземпляры компонентов (RoundStatusControls/GenerateRoundsButton и
+        // всё вложенное в HeatPanel) на новом месте дерева и тащит за собой их
+        // локальный error/loading — ошибка от раунда №2 продолжала
+        // показываться после переключения на раунд №1 (найдено вживую, со
+        // скриншотом, 2026-09-09). key меняет "личность" поддерева — React
+        // размонтирует старое и создаёт всё заново с чистым состоянием.
+        <div key={round.id} className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_336px]">
           <div className="flex min-w-0 flex-col gap-4">
             <section className="overflow-hidden rounded-app border border-admin-border bg-admin-card">
               <div className="flex flex-wrap items-center gap-3 border-b border-admin-border px-[18px] py-4">
@@ -528,7 +535,14 @@ export function CompetitionMonitor({
                       <p className="m-0 text-sm text-admin-muted">Заходов пока нет.</p>
                     ) : (
                       heat && (
+                        // key={heat.id} — та же причина, что у key={round.id}
+                        // выше, только для переключения между заходами внутри
+                        // одного раунда (сам сценарий со скриншота
+                        // пользователя): HeatStatusControls/RerollDrawButton/
+                        // SplitHeatButton/AddDrawHelperForm/RotationPanel
+                        // иначе не размонтируются при смене захода.
                         <HeatPanel
+                          key={heat.id}
                           heat={heat}
                           roundStatus={round.status}
                           categoryName={category.name}
@@ -585,8 +599,11 @@ export function CompetitionMonitor({
       {/* ── Протокол результатов категории ────────────────────── */}
       {/* DivisionResultsPanel сам решает, показываться ли (только когда
           финальный раунд категории завершён, 2026-09-09) — здесь просто
-          всегда смонтирован, без своего свёрнутого блока. */}
-      {category.results}
+          всегда смонтирован, без своего свёрнутого блока. key={category.id} —
+          та же причина, что у key={round.id}/{heat.id} выше: без него смена
+          категории оставляла бы открытой форму "исправить"/"поменять
+          местами" (и её error) от предыдущей категории. */}
+      <Fragment key={category.id}>{category.results}</Fragment>
     </div>
   );
 }
