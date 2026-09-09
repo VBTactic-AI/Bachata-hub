@@ -26,7 +26,6 @@ import { suggestedRoleForGender } from "@/server/competition/register-competitor
 import { isNoShow } from "@/server/competition/no-show";
 import { getRoundScoringProgress, rolesNotNeedingJudging } from "@/server/judging/advancement";
 import { getFinalScoringProgress } from "@/server/judging/final-advancement";
-import { FinalSettingsPanel } from "@/components/admin/FinalSettingsPanel";
 import { StartFinalPanel } from "@/components/admin/StartFinalPanel";
 import { FinalResultsTable } from "@/components/admin/FinalResultsTable";
 import { FinalTieBreakDecisionForm } from "@/components/admin/FinalTieBreakDecisionForm";
@@ -546,6 +545,18 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       finalTracksCount: d.finalSettings?.tracksCount ?? 1,
       finalPartnerChangeEnabled: d.finalSettings?.partnerChangeEnabled ?? false,
       finalConfig: d.finalSettings?.config ?? {},
+      // Критерии финала — теперь тоже здесь, в "Настройки судейства" (было
+      // отдельной формой в удалённом блоке Монитора, 2026-09-09).
+      finalCriteria: d.finalCriteria.map((c) => ({
+        id: c.id,
+        name: c.name,
+        priority: c.priority,
+        minScore: c.minScore,
+        maxScore: c.maxScore,
+        step: c.step,
+        catalogId: c.catalogId,
+      })),
+      finalCriteriaCatalog: criterionCatalog.map((c) => ({ id: c.id, name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step })),
     };
   });
 
@@ -777,44 +788,21 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const judgeNameByUserId = new Map(competitionJudgePool.map((j) => [j.judgeUserId, j.displayName ?? j.judgeEmail]));
 
   const monitorCategories: MonitorCategory[] = competition.divisions.map((d) => {
-    const settings: ReactNode[] = [];
-    if (canManage) {
-      settings.push(
-        <DivisionSettingsPanel
-          key="division"
-          divisionId={d.id}
-          settings={{
-            rotationMode: d.rotationMode,
-            rotationIntervalSec: d.rotationIntervalSec,
-            rotationShiftMin: d.rotationShiftMin,
-            rotationShiftMax: d.rotationShiftMax,
-          }}
-        />
-      );
-    }
-    if (canConfigureFinal) {
-      settings.push(
-        <FinalSettingsPanel
-          key="final"
-          divisionId={d.id}
-          format={d.finalSettings?.format ?? "NORMAL"}
-          tracksCount={d.finalSettings?.tracksCount ?? 1}
-          partnerChangeEnabled={d.finalSettings?.partnerChangeEnabled ?? false}
-          config={d.finalSettings?.config ?? {}}
-          criteria={d.finalCriteria.map((c) => ({
-            id: c.id,
-            name: c.name,
-            priority: c.priority,
-            minScore: c.minScore,
-            maxScore: c.maxScore,
-            step: c.step,
-            catalogId: c.catalogId,
-          }))}
-          catalog={criterionCatalog.map((c) => ({ id: c.id, name: c.name, minScore: c.minScore, maxScore: c.maxScore, step: c.step }))}
-          locked={d.rounds.some((r) => r.finalSession)}
-        />
-      );
-    }
+    // Настройки ротации по умолчанию — теперь внутри "Живого танцпола"
+    // (за шестерёнкой, RotationPanel), не отдельным блоком (2026-09-09).
+    // Формат финала и критерии переехали в "Настройки судейства"
+    // (judgingDivisions выше) — здесь для них узла больше нет.
+    const rotationSettingsPanel = canManage ? (
+      <DivisionSettingsPanel
+        divisionId={d.id}
+        settings={{
+          rotationMode: d.rotationMode,
+          rotationIntervalSec: d.rotationIntervalSec,
+          rotationShiftMin: d.rotationShiftMin,
+          rotationShiftMax: d.rotationShiftMax,
+        }}
+      />
+    ) : null;
 
     const rounds: MonitorRound[] = !canManageRounds
       ? []
@@ -1107,7 +1095,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         d.stagePlan.length === 0 ? null : d.stagePlan.map((p) => `${p.stage.name} ${p.participantCount}`).join(" · "),
       judges: { leaders: judgesOf("LEADER"), followers: judgesOf("FOLLOWER") },
       rounds,
-      settings,
+      rotationSettingsPanel,
       results: canCalculateResults ? (
         <DivisionResultsPanel
           divisionId={d.id}

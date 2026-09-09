@@ -22,6 +22,8 @@ export type JudgingDivision = {
   finalTracksCount: number;
   finalPartnerChangeEnabled: boolean;
   finalConfig: unknown;
+  finalCriteria: { id?: string; name: string; priority: number; minScore: number; maxScore: number; step: number; catalogId?: string | null }[];
+  finalCriteriaCatalog: { id: string; name: string; minScore: number; maxScore: number; step: number }[];
 };
 
 // Цвет-точка категории в сайдбаре — чисто визуальный ориентир (по референсу
@@ -68,7 +70,7 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
         </div>
       </div>
 
-      <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+      <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
         <Card className="border-admin-border bg-admin-card">
           <p className="m-0 mb-1 font-semibold text-night-text">Судейская панель</p>
           <p className="m-0 mb-3 text-sm text-admin-muted">Настройка состава судей для категории «{selected.categoryName}».</p>
@@ -96,6 +98,8 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
             finalTracksCount={selected.finalTracksCount}
             finalPartnerChangeEnabled={selected.finalPartnerChangeEnabled}
             finalConfig={selected.finalConfig}
+            finalCriteria={selected.finalCriteria}
+            finalCriteriaCatalog={selected.finalCriteriaCatalog}
           />
         </Card>
       </div>

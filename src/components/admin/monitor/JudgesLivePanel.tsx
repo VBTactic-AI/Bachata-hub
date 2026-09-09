@@ -113,12 +113,14 @@ export function JudgesLivePanel({
   return (
     <div className="flex flex-col gap-2.5">
       {/* Ссылка — сверху, перед карточкой "Судьи категории" (по прямому
-          запросу пользователя, 2026-09-09), своя отдельная плашка, а не
-          нижняя строка внутри карточки. */}
+          запросу пользователя, 2026-09-09), своя отдельная плашка. Залита
+          акцентным градиентом, а не приглушённым текстом — раньше терялась
+          рядом с остальными приглушёнными подписями (по прямому замечанию
+          пользователя, 2026-09-09). */}
       {scoreMonitorHref && (
         <Link
           href={scoreMonitorHref}
-          className="flex items-center justify-between gap-2 rounded-app border border-admin-border bg-admin-card px-4 py-3 text-sm font-semibold text-admin-muted transition-colors hover:border-admin-primary hover:text-admin-primaryHover"
+          className="flex items-center justify-center gap-2 rounded-app bg-gradient-admin-cta px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-[1.06]"
         >
           Монитор оценок судей<span aria-hidden="true">→</span>
         </Link>

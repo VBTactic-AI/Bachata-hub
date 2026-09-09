@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { GearIcon } from "@/components/admin/icons";
 import { ROTATION_STATUS_LABELS } from "@/lib/competition-labels";
 
 type RotationView = {
@@ -35,7 +36,7 @@ const POLL_MS = 2500;
 // клиентских часов на момент последнего опроса (calibration), а не по
 // сырому "теперь" браузера — так правки системного времени на клиенте не
 // портят отсчёт сильнее, чем на POLL_MS.
-export function RotationPanel({ heatId }: { heatId: string }) {
+export function RotationPanel({ heatId, settingsPanel }: { heatId: string; settingsPanel?: ReactNode }) {
   const [view, setView] = useState<RotationView | null>(null);
   const [clockOffsetMs, setClockOffsetMs] = useState(0); // Date.now() - serverNow, на момент последнего опроса
   const [tick, setTick] = useState(0); // только чтобы перерисовывать отсчёт каждую секунду
@@ -43,6 +44,12 @@ export function RotationPanel({ heatId }: { heatId: string }) {
   const [busy, setBusy] = useState(false);
   const [trackNameInput, setTrackNameInput] = useState("");
   const [manualN, setManualN] = useState("");
+  // Настройки ротации по умолчанию (режим/интервал/мин-макс) — спрятаны за
+  // этой шестерёнкой, не на виду постоянно (по прямому запросу пользователя,
+  // 2026-09-09: раньше жили отдельным блоком на вкладке "Категории",
+  // окончательного владельца этой настройки ещё не решили — доступ тот же,
+  // что и был, settingsPanel приходит null, если прав нет).
+  const [showSettings, setShowSettings] = useState(false);
   const mountedRef = useRef(true);
 
   const load = useCallback(async () => {
@@ -123,10 +130,26 @@ export function RotationPanel({ heatId }: { heatId: string }) {
     <div className="mt-2 flex flex-col gap-2.5 rounded-app border border-admin-border bg-admin-card2 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong className="text-sm font-extrabold text-night-text">Живой танцпол</strong>
-        <span className="text-xs font-semibold text-admin-muted">
-          {r ? ROTATION_STATUS_LABELS[r.status] ?? r.status : "Не начата"}
+        <span className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-admin-muted">
+            {r ? ROTATION_STATUS_LABELS[r.status] ?? r.status : "Не начата"}
+          </span>
+          {settingsPanel && (
+            <button
+              type="button"
+              onClick={() => setShowSettings((v) => !v)}
+              aria-expanded={showSettings}
+              aria-label="Настройки ротации по умолчанию"
+              title="Настройки ротации по умолчанию"
+              className={`rounded-app-sm p-1 transition-colors ${showSettings ? "text-admin-primaryHover" : "text-admin-disabled hover:text-night-text"}`}
+            >
+              <GearIcon />
+            </button>
+          )}
         </span>
       </div>
+
+      {showSettings && settingsPanel}
 
       {error && <p className="m-0 text-sm text-red-400">{error}</p>}
 

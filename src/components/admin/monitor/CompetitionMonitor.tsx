@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
 import { HEAT_STATUS_LABELS, REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL, ROUND_STATUS_LABELS } from "@/lib/competition-labels";
@@ -202,12 +202,14 @@ function HeatPanel({
   categoryName,
   categoryOrder,
   roundName,
+  rotationSettingsPanel,
 }: {
   heat: MonitorHeat;
   roundStatus: RoundStatus;
   categoryName: string;
   categoryOrder: number;
   roundName: string;
+  rotationSettingsPanel: ReactNode;
 }) {
   const deficit = Math.abs(heat.leaders.length - heat.followers.length);
 
@@ -283,7 +285,7 @@ function HeatPanel({
         </p>
       )}
 
-      {heat.status !== "PENDING" && <RotationPanel heatId={heat.id} />}
+      {heat.status !== "PENDING" && <RotationPanel heatId={heat.id} settingsPanel={rotationSettingsPanel} />}
     </div>
   );
 }
@@ -349,7 +351,6 @@ export function CompetitionMonitor({
   const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("category") ?? fallbackCategoryId);
   const [roundId, setRoundId] = useState<string | null>(searchParams.get("round"));
   const [heatId, setHeatId] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const category = resolveSelected(categories, categoryId, fallbackCategoryId);
   if (!category) return <p className="text-sm text-admin-muted">Категорий пока нет.</p>;
@@ -462,6 +463,13 @@ export function CompetitionMonitor({
                 )}
                 <span className="ml-auto flex flex-wrap items-center gap-2">
                   <RoundStatusControls roundId={round.id} status={round.status} />
+                  {/* "Перегенерировать раунды" — категория целиком, не этот
+                      конкретный раунд, но по прямому запросу пользователя
+                      (2026-09-09) стоит здесь же, рядом с "Зафиксировать
+                      жеребьёвку" — сервер сам отклонит, если хоть один раунд
+                      категории уже начат, отдельный "режим подтверждения"
+                      уже встроен в саму кнопку. */}
+                  {category.generateRounds}
                 </span>
               </div>
 
@@ -517,6 +525,7 @@ export function CompetitionMonitor({
                           categoryName={category.name}
                           categoryOrder={category.order}
                           roundName={round.name}
+                          rotationSettingsPanel={category.rotationSettingsPanel}
                         />
                       )
                     )}
@@ -564,31 +573,11 @@ export function CompetitionMonitor({
         </div>
       )}
 
-      {/* ── Настройки и протокол категории ────────────────────── */}
-      {(category.settings.length > 0 || category.results || category.generateRounds) && category.rounds.length > 0 && (
-        <section className="rounded-app border border-admin-border bg-admin-card">
-          <button
-            type="button"
-            onClick={() => setSettingsOpen((v) => !v)}
-            aria-expanded={settingsOpen}
-            className="flex w-full items-center gap-2 px-[18px] py-3.5 text-left text-sm font-bold text-night-text"
-          >
-            Категория «{category.name}» — настройки и протокол
-            <span className="ml-auto text-xs font-semibold text-admin-muted">{settingsOpen ? "свернуть" : "развернуть"}</span>
-          </button>
-          {settingsOpen && (
-            <div className="border-t border-admin-border p-[18px]">
-              <div className="flex flex-col gap-3 rounded-app border border-admin-border bg-surface p-[18px] text-ink">
-                {category.settings.map((node, i) => (
-                  <div key={i}>{node}</div>
-                ))}
-                {category.results}
-                {category.generateRounds}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
+      {/* ── Протокол результатов категории ────────────────────── */}
+      {/* DivisionResultsPanel сам решает, показываться ли (только когда
+          финальный раунд категории завершён, 2026-09-09) — здесь просто
+          всегда смонтирован, без своего свёрнутого блока. */}
+      {category.results}
     </div>
   );
 }
