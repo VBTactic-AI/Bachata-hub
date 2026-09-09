@@ -1,10 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/field";
-import { AddButton } from "@/components/admin/AddButton";
 import { TrashIcon } from "@/components/admin/icons";
 import { REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL } from "@/lib/competition-labels";
 
@@ -15,31 +13,28 @@ function judgeName(j: PoolJudge | undefined, fallbackId: string): string {
   return j?.displayName || j?.judgeEmail || fallbackId;
 }
 
-// Та же подсказка пол→роль, что и сервер (suggestedRoleForGender,
-// register-competitor.ts) — здесь только чтобы отрисовать чекбокс без
-// лишнего роль-селекта, когда пол известен; окончательное решение и проверка
-// всё равно на сервере (setDivisionJudges), см. комментарий там.
-function roleFromGender(gender: "MALE" | "FEMALE" | null): Role | null {
-  if (gender === "MALE") return "LEADER";
-  if (gender === "FEMALE") return "FOLLOWER";
-  return null;
-}
-
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
-const FIELD_CLASS = "border-admin-border bg-admin-card2 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+// Винительный падеж единственного числа — только для подписи кнопки
+// добавления в конкретную колонку ("Добавить партнёра"/"Добавить
+// партнёршу"), в отличие от родительного множественного
+// (REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL), которым подписаны сами колонки
+// ("Судят партнёров"/"Судят партнёрш").
+const ADD_ACCUSATIVE_SINGULAR: Record<Role, string> = { LEADER: "партнёра", FOLLOWER: "партнёршу" };
 
-// Судейская сетка одной категории (redesign 2026-09-09) — компактная
-// таблица + добавление ТОЛЬКО из уже существующего ростера судей
-// соревнования ("Общий список судей", AddCompetitionJudgeForm.tsx — там же
-// единственное место, где заводится новый человек). Выбор — множественный,
-// галочками (по запросу пользователя): отмеченные сразу попадают в те же
+// Судейская панель одной категории (redesign 2026-09-09, по референсу
+// пользователя) — две колонки "Судят партнёров" / "Судят партнёрш" рядом,
+// вместо одной таблицы с группами строк. Добавление — ТОЛЬКО из уже
+// существующего ростера судей соревнования ("Реестр судей",
+// AddCompetitionJudgeForm.tsx — там же единственное место, где заводится
+// новый человек), отдельным picker'ом под каждой колонкой: роль больше не
+// нужно выбирать вручную или угадывать по полу — она однозначно определяется
+// тем, под какой колонкой открыт picker. Отмеченные сразу попадают в те же
 // leaders/followers Set, что и уже сохранённые судьи, и наглядно появляются
-// в таблице ниже как "ещё не сохранено" — фиксирует их одно и то же
-// "Сохранить", что уже используется для удаления (тот же batch-diff,
-// setDivisionJudges).
+// в списке колонки как "ещё не сохранено" — фиксирует их то же "Сохранить",
+// что уже используется для удаления (тот же batch-diff, setDivisionJudges).
 export function DivisionJudgesPanel({
   divisionId,
   pool,
@@ -54,6 +49,7 @@ export function DivisionJudgesPanel({
   const router = useRouter();
   const [leaders, setLeaders] = useState<Set<string>>(() => new Set(leaderJudgeUserIds));
   const [followers, setFollowers] = useState<Set<string>>(() => new Set(followerJudgeUserIds));
+  const [openAdd, setOpenAdd] = useState<Role | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,27 +93,25 @@ export function DivisionJudgesPanel({
     });
   }
 
-  function togglePick(judgeUserId: string, derivedRole: Role | null) {
-    if (roleOf(judgeUserId) !== null) {
+  // Переключение из picker'а конкретной колонки — роль уже известна (это и
+  // есть колонка), поэтому либо снимаем (если сейчас в этой самой роли),
+  // либо ставим в эту роль (перекладывая из другой роли, если человек уже
+  // был там — та же логика, что и раньше в addToSet).
+  function toggleInRole(role: Role, judgeUserId: string) {
+    if (roleOf(judgeUserId) === role) {
       removeFromSets(judgeUserId);
       return;
     }
-    addToSet(derivedRole ?? "LEADER", judgeUserId);
+    addToSet(role, judgeUserId);
   }
 
   const byName = (a: string, b: string) => judgeName(poolById.get(a), a).localeCompare(judgeName(poolById.get(b), b), "ru");
-  // Разбито на две группы — судят партнёров / судят партнёрш (по запросу
-  // пользователя, 2026-09-09) — та же группировка по факту, что и деление по
-  // полу в "Общем списке судей" (роль почти всегда совпадает с полом, но
-  // именно роль — авторитетное поле для этой таблицы, в отличие от пола,
-  // который может быть не указан).
   const leaderRows = [...leaders].sort(byName).map((judgeUserId) => ({ judgeUserId, role: "LEADER" as Role }));
   const followerRows = [...followers].sort(byName).map((judgeUserId) => ({ judgeUserId, role: "FOLLOWER" as Role }));
   const roleGroups = [
     { role: "LEADER" as Role, label: REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL.LEADER, rows: leaderRows },
     { role: "FOLLOWER" as Role, label: REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL.FOLLOWER, rows: followerRows },
   ];
-  const rows = [...leaderRows, ...followerRows];
 
   const hasChanges = !setsEqual(leaders, new Set(leaderJudgeUserIds)) || !setsEqual(followers, new Set(followerJudgeUserIds));
 
@@ -147,6 +141,9 @@ export function DivisionJudgesPanel({
   // Кого можно предложить отметить — весь ростер соревнования, кроме тех, кто
   // УЖЕ был назначен на эту категорию до открытия формы (стабильный список:
   // отметка/снятие галочки не убирает человека из этого списка на лету).
+  // Общий для обеих колонок: один и тот же кандидат может быть отмечен и в
+  // picker'е "партнёров", и в picker'е "партнёрш" — отметка в одном снимает
+  // его из другой роли, если он там был (toggleInRole).
   const initialLeaders = new Set(leaderJudgeUserIds);
   const initialFollowers = new Set(followerJudgeUserIds);
   const availableFromPool = pool.filter((j) => !initialLeaders.has(j.judgeUserId) && !initialFollowers.has(j.judgeUserId));
@@ -178,102 +175,78 @@ export function DivisionJudgesPanel({
         )}
       </div>
 
-      {availableFromPool.length > 0 && (
-        <AddButton label="Изменить состав" gradientClassName="bg-gradient-admin-cta" wide>
-          <div className="flex flex-col gap-2">
-            <p className="m-0 text-sm text-admin-muted">Отметьте судей, которых нужно добавить в категорию, и нажмите «Сохранить» ниже.</p>
-            <div className="flex flex-wrap gap-2">
-              {availableFromPool.map((j) => {
-                const derivedRole = roleFromGender(j.gender);
-                const currentRole = roleOf(j.judgeUserId);
-                const checked = currentRole !== null;
-                return (
-                  <div
-                    key={j.judgeUserId}
-                    className={`flex items-center gap-2 rounded-app-sm border px-2.5 py-1.5 ${
-                      checked ? "border-admin-primary bg-admin-primary/10" : "border-admin-border bg-admin-card2"
-                    }`}
-                  >
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-night-text">
-                      <input type="checkbox" checked={checked} onChange={() => togglePick(j.judgeUserId, derivedRole)} />
-                      {judgeName(j, j.judgeUserId)}
-                    </label>
-                    {derivedRole ? (
-                      <span className="text-xs text-admin-muted">{REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL[derivedRole]}</span>
-                    ) : (
-                      <Select
-                        value={currentRole ?? "LEADER"}
-                        onChange={(e) => addToSet(e.target.value as Role, j.judgeUserId)}
-                        className={`${FIELD_CLASS} !w-auto py-1 text-xs`}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {roleGroups.map((group) => (
+          <div key={group.role} className="flex flex-col gap-2.5 rounded-app border border-admin-border bg-admin-card p-3.5">
+            <p className="m-0 text-xs font-bold uppercase tracking-wide text-admin-muted">
+              Судят {group.label.toLowerCase()} ({group.rows.length})
+            </p>
+
+            <div className="flex flex-col gap-1.5">
+              {group.rows.length === 0 ? (
+                <p className="m-0 rounded-app-sm border border-dashed border-admin-border px-3 py-2 text-center text-sm text-admin-disabled">
+                  Никто не назначен
+                </p>
+              ) : (
+                group.rows.map((r) => {
+                  const j = poolById.get(r.judgeUserId);
+                  const name = judgeName(j, r.judgeUserId);
+                  return (
+                    <div key={r.judgeUserId} className="flex items-center justify-between gap-2 rounded-app-sm bg-admin-card2 px-3 py-2.5 text-sm">
+                      <span className="font-medium text-night-text">{name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeFromSets(r.judgeUserId)}
+                        title="Убрать"
+                        aria-label={`Убрать судью ${name}`}
+                        className="text-admin-muted hover:text-red-400"
                       >
-                        <option value="LEADER">Партнёров</option>
-                        <option value="FOLLOWER">Партнёрш</option>
-                      </Select>
-                    )}
-                  </div>
-                );
-              })}
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
-          </div>
-        </AddButton>
-      )}
 
-      <p className="m-0 text-sm font-semibold text-night-text">
-        Судьи категории <span className="font-normal text-admin-muted">({rows.length})</span>
-      </p>
-
-      {rows.length === 0 ? (
-        <p className="m-0 text-sm text-admin-muted">Судьи пока не назначены.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-app border border-admin-border">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
-              <tr>
-                <th className="px-2.5 py-2 font-semibold">Судья</th>
-                <th className="px-2.5 py-2 font-semibold">Судит</th>
-                <th className="px-2.5 py-2 text-right font-semibold">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {roleGroups.map((group) => {
-                if (group.rows.length === 0) return null;
-                return (
-                  <Fragment key={group.role}>
-                    <tr className="border-t border-admin-border bg-admin-card2/40">
-                      <td colSpan={3} className="px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-admin-muted">
-                        Судят {group.label.toLowerCase()} ({group.rows.length})
-                      </td>
-                    </tr>
-                    {group.rows.map((r) => {
-                      const j = poolById.get(r.judgeUserId);
-                      const name = judgeName(j, r.judgeUserId);
+            {availableFromPool.length > 0 &&
+              (openAdd === group.role ? (
+                <div className="flex flex-col gap-2 rounded-app-sm border border-admin-border bg-admin-card2 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="m-0 text-xs text-admin-muted">Отметьте, кого добавить, и нажмите «Сохранить» ниже.</p>
+                    <button type="button" onClick={() => setOpenAdd(null)} aria-label="Закрыть" className="text-admin-muted hover:text-night-text">
+                      ✕
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {availableFromPool.map((j) => {
+                      const checked = roleOf(j.judgeUserId) === group.role;
                       return (
-                        <tr key={`${r.role}:${r.judgeUserId}`} className="border-t border-admin-border">
-                          <td className="px-2.5 py-2 align-middle font-medium text-night-text">{name}</td>
-                          <td className="px-2.5 py-2 align-middle text-admin-muted">{REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL[r.role]}</td>
-                          <td className="px-2.5 py-2 align-middle">
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => removeFromSets(r.judgeUserId)}
-                                title="Убрать"
-                                aria-label={`Убрать судью ${name}`}
-                                className="text-admin-muted hover:text-red-400"
-                              >
-                                <TrashIcon />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                        <label
+                          key={j.judgeUserId}
+                          className={`flex cursor-pointer items-center gap-1.5 rounded-app-sm border px-2.5 py-1.5 text-sm text-night-text ${
+                            checked ? "border-admin-primary bg-admin-primary/10" : "border-admin-border bg-admin-card"
+                          }`}
+                        >
+                          <input type="checkbox" checked={checked} onChange={() => toggleInRole(group.role, j.judgeUserId)} />
+                          {judgeName(j, j.judgeUserId)}
+                        </label>
                       );
                     })}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setOpenAdd(group.role)}
+                  className="w-full rounded-app-sm border border-dashed border-admin-border px-3 py-2 text-sm text-night-text transition-colors hover:border-admin-primary hover:text-admin-primary"
+                >
+                  + Добавить {ADD_ACCUSATIVE_SINGULAR[group.role]}
+                </button>
+              ))}
+          </div>
+        ))}
+      </div>
 
       {hasChanges && (
         <div className="flex flex-wrap items-center gap-2">
