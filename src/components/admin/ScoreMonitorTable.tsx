@@ -199,7 +199,11 @@ export function PrelimScoreMonitor({
   );
 }
 
-function PrelimRoleTable({
+// Экспортированы отдельно от PrelimScoreMonitor/FinalScoreMonitor (ниже) —
+// переиспользуются в RoundScoreProtocol.tsx как статический (без Realtime-
+// подписки) протокол оценок по завершённому этапу на вкладке "Результаты"
+// (redesign 2026-09-09).
+export function PrelimRoleTable({
   title,
   role,
   table,
@@ -343,7 +347,7 @@ export function FinalScoreMonitor({
   );
 }
 
-function FinalRoleTable({ title, role, table }: { title: string; role: DancerRole; table: FinalTable }) {
+export function FinalRoleTable({ title, role, table }: { title: string; role: DancerRole; table: FinalTable }) {
   const criteriaCount = table.criteria.length || 1;
   return (
     <div className={`overflow-hidden rounded-app border ${ROLE_PANEL_CLASS[role]}`}>

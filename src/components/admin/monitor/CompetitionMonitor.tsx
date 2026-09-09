@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
 import { setShallowQueryParams } from "@/lib/shallow-query";
@@ -340,16 +341,9 @@ function AdvancementCard({ round }: { round: MonitorRound }) {
 export function CompetitionMonitor({
   categories,
   canViewScoreMonitor,
-  resultsPublishPanel,
 }: {
   categories: MonitorCategory[];
   canViewScoreMonitor: boolean;
-  // Публикация результатов ВСЕГО соревнования (не только текущей выбранной
-  // категории, CompetitionResultsPanel.tsx) — переехала сюда, к протоколу
-  // категории, с вкладки "Главная" по прямому запросу пользователя,
-  // 2026-09-09 ("кнопка публикации там же, где смотрим результаты
-  // категории"). Опционально — только у тех, у кого есть result:publish.
-  resultsPublishPanel?: ReactNode;
 }) {
   // Выбор категории/этапа/захода читается из URL один раз при монтировании
   // (та же query-строка, что и в ссылке "← Назад к соревнованию" со страницы
@@ -364,17 +358,6 @@ export function CompetitionMonitor({
   const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("category") ?? fallbackCategoryId);
   const [roundId, setRoundId] = useState<string | null>(searchParams.get("round"));
   const [heatId, setHeatId] = useState<string | null>(searchParams.get("heat"));
-  // "Результаты" и "Оценки судей" — не настоящие этапы (не в
-  // category.rounds), а два отдельных режима просмотра этой же категории
-  // вместо сетки заходов: протокол мест отдельно от таблицы баллов по
-  // критериям (redesign 2026-09-09, по запросу пользователя — сначала были
-  // вместе одним экраном "Результаты", разнесены по двум плиткам, чтобы не
-  // листать один длинный список). ViewMode, а не sentinel-значение roundId,
-  // — чтобы re-open обычного этапа (selectRound) не приходилось нигде явно
-  // проверять на "не тот ли это специальный id".
-  type ViewMode = "round" | "results" | "scores";
-  const initialView = searchParams.get("view");
-  const [view, setView] = useState<ViewMode>(initialView === "results" || initialView === "scores" ? initialView : "round");
 
   const category = resolveSelected(categories, categoryId, fallbackCategoryId);
   if (!category) return <p className="text-sm text-admin-muted">Категорий пока нет.</p>;
@@ -388,20 +371,13 @@ export function CompetitionMonitor({
     // сработало то же правило "показать то, что идёт сейчас".
     setRoundId(null);
     setHeatId(null);
-    setView("round");
-    setShallowQueryParams({ category: id, round: null, heat: null, view: null });
+    setShallowQueryParams({ category: id, round: null, heat: null });
   }
 
   function selectRound(id: string) {
     setRoundId(id);
     setHeatId(null);
-    setView("round");
-    setShallowQueryParams({ round: id, heat: null, view: null });
-  }
-
-  function selectView(mode: "results" | "scores") {
-    setView(mode);
-    setShallowQueryParams({ view: mode });
+    setShallowQueryParams({ round: id, heat: null });
   }
 
   function selectHeat(id: string) {
@@ -506,13 +482,15 @@ export function CompetitionMonitor({
           })}
 
           {/* Ещё две "плитки" после последнего этапа (по запросу
-              пользователя, 2026-09-09) — не настоящие этапы, а два разных
-              режима просмотра категории вместо сетки заходов: сначала были
-              вместе одним экраном "Результаты", разнесены по отдельным
-              вкладкам, чтобы не листать один длинный список. Гейты разные и
-              намеренно независимые: протокол мест (resultsAvailable) готов
-              только после завершения финального раунда, а оценки судей по
-              критериям (finalResultsTable) можно смотреть уже во время
+              пользователя, 2026-09-09) — не настоящие этапы, а прямые ссылки
+              на объединённую вкладку "Результаты" (ResultsWorkspace), не
+              локальный режим просмотра: сам контент (протокол мест/оценки
+              судей по критериям) теперь живёт только там (redesign
+              2026-09-09, по прямому решению пользователя — "плитки остаются
+              на месте, просто ведут в нужное место той же вкладки"). Гейты
+              разные и намеренно независимые: протокол мест (resultsAvailable)
+              готов только после завершения финального раунда, а оценки судей
+              по критериям (hasFinalResultsTable) можно смотреть уже во время
               подсчёта, не дожидаясь "Рассчитать результаты". */}
           {category.resultsAvailable && (
             <Fragment>
@@ -521,16 +499,9 @@ export function CompetitionMonitor({
                   <ChevronRightIcon />
                 </span>
               )}
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === "results"}
-                onClick={() => selectView("results")}
-                className={`flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
-                  view === "results"
-                    ? "border-admin-violet bg-admin-violet/10"
-                    : "border-admin-violet/30 bg-admin-violet/[0.07] hover:border-admin-violet/50"
-                }`}
+              <Link
+                href={category.resultsHref}
+                className="flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border border-admin-violet/30 bg-admin-violet/[0.07] p-3.5 text-left transition-colors hover:border-admin-violet/50"
               >
                 <span className="flex items-center gap-2">
                   <span className="shrink-0 text-admin-violet" aria-hidden="true">
@@ -539,27 +510,20 @@ export function CompetitionMonitor({
                   <span className="text-sm font-bold text-night-text">Результаты</span>
                 </span>
                 <span className="text-[10.5px] font-bold uppercase tracking-wide text-admin-violet">Протокол мест</span>
-              </button>
+              </Link>
             </Fragment>
           )}
 
-          {category.finalResultsTable && (
+          {category.hasFinalResultsTable && (
             <Fragment>
               {(category.rounds.length > 0 || category.resultsAvailable) && (
                 <span className="flex shrink-0 items-center text-admin-disabled" aria-hidden="true">
                   <ChevronRightIcon />
                 </span>
               )}
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === "scores"}
-                onClick={() => selectView("scores")}
-                className={`flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
-                  view === "scores"
-                    ? "border-[#22d3ee] bg-[#22d3ee]/10"
-                    : "border-[#22d3ee]/30 bg-[#22d3ee]/[0.07] hover:border-[#22d3ee]/50"
-                }`}
+              <Link
+                href={category.scoresHref}
+                className="flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border border-[#22d3ee]/30 bg-[#22d3ee]/[0.07] p-3.5 text-left transition-colors hover:border-[#22d3ee]/50"
               >
                 <span className="flex items-center gap-2">
                   <span className="shrink-0 text-[#22d3ee]" aria-hidden="true">
@@ -568,38 +532,14 @@ export function CompetitionMonitor({
                   <span className="text-sm font-bold text-night-text">Оценки судей</span>
                 </span>
                 <span className="text-[10.5px] font-bold uppercase tracking-wide text-[#22d3ee]">Протокол оценок</span>
-              </button>
+              </Link>
             </Fragment>
           )}
         </div>
       )}
 
-      {/* ── Результаты категории ──────────────────────────────── */}
-      {/* Отдельный режим просмотра вместо сетки заходов — протокол мест
-          (DivisionResultsPanel) и публикация результатов всего соревнования
-          (resultsPublishPanel), уже на admin-* палитре (redesign
-          2026-09-09). key={category.id} — та же причина, что и раньше:
-          смена категории не должна тащить за собой открытую форму
-          "исправить"/её error от прошлой категории. */}
-      {view === "results" && category.resultsAvailable && (
-        <Fragment key={category.id}>
-          <div className="flex flex-col gap-4">
-            {category.results}
-            {resultsPublishPanel}
-          </div>
-        </Fragment>
-      )}
-
-      {/* ── Оценки судей по критериям (финал) ─────────────────── */}
-      {view === "scores" && category.finalResultsTable && (
-        <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">
-          <h3 className="m-0 mb-3 text-sm font-extrabold text-night-text">Оценки судей по критериям (финал)</h3>
-          {category.finalResultsTable}
-        </section>
-      )}
-
       {/* ── Выбранный этап ────────────────────────────────────── */}
-      {view === "round" && round && (
+      {round && (
         // key={round.id} — при смене раунда React иначе переиспользует те же
         // экземпляры компонентов (RoundStatusControls/GenerateRoundsButton и
         // всё вложенное в HeatPanel) на новом месте дерева и тащит за собой их

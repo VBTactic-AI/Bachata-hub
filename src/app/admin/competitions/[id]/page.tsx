@@ -55,6 +55,7 @@ import { CompetitionWorkspaceTabs } from "@/components/admin/CompetitionWorkspac
 import { ParticipantsPanel } from "@/components/admin/ParticipantsPanel";
 import { StatCard } from "@/components/admin/StatCard";
 import { RoundResultsList } from "@/components/admin/RoundResultsList";
+import { ResultsWorkspace, type ResultsCategory } from "@/components/admin/ResultsWorkspace";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -796,29 +797,38 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // УЖЕ загруженного выше дерева (ни одного нового запроса).
   const judgeNameByUserId = new Map(competitionJudgePool.map((j) => [j.judgeUserId, j.displayName ?? j.judgeEmail]));
 
-  const monitorCategories: MonitorCategory[] = competition.divisions.map((d) => {
-    // Настройки ротации по умолчанию — теперь внутри "Живого танцпола"
-    // (за шестерёнкой, RotationPanel), не отдельным блоком (2026-09-09).
-    // Формат финала и критерии переехали в "Настройки судейства"
-    // (judgingDivisions выше) — здесь для них узла больше нет.
-    const rotationSettingsPanel = canManage ? (
-      <DivisionSettingsPanel
+  // "Результаты" (redesign 2026-09-09, по прямому запросу пользователя) —
+  // единая вкладка: слева категории, по каждой — этапы с протоколом "кто
+  // прошёл"/"оценки судей", и отдельно финал (официальный протокол мест +
+  // оценки судей по критериям). Независимый проход по тому же уже
+  // загруженному дереву (ни одного нового запроса) — сознательно не смешан с
+  // monitorCategories ниже: тому для его собственных плиток-ссылок
+  // (resultsHref/scoresHref/hasFinalResultsTable) нужны только id финального
+  // раунда и булевы гейты, а не сам ReactNode протокола.
+  const resultsCategoriesRaw = competition.divisions.map((d) => {
+    const finalRound = [...d.rounds].filter((r) => r.type === null).sort((a, b) => b.order - a.order)[0] ?? null;
+    const resultsAvailable = canCalculateResults && (finalRoundCompletedByDivisionId.get(d.id) ?? false);
+    const results = canCalculateResults ? (
+      <DivisionResultsPanel
         divisionId={d.id}
-        settings={{
-          rotationMode: d.rotationMode,
-          rotationIntervalSec: d.rotationIntervalSec,
-          rotationShiftMin: d.rotationShiftMin,
-          rotationShiftMax: d.rotationShiftMax,
-        }}
+        finalRoundCompleted={finalRoundCompletedByDivisionId.get(d.id) ?? false}
+        hasResults={(divisionResultsById.get(d.id)?.length ?? 0) > 0}
+        reviewedAt={d.resultsReviewedAt ? d.resultsReviewedAt.toISOString() : null}
+        canReview={canReviewResults}
+        canCorrect={canPublishResults}
+        rows={(divisionResultsById.get(d.id) ?? []).map((r) => ({
+          id: r.id,
+          registrationId: r.registrationId,
+          role: r.role,
+          displayName: r.displayName,
+          bibNumber: r.bibNumber,
+          status: r.status,
+          placement: r.placement,
+          publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
+        }))}
       />
     ) : null;
 
-    // Оценки судей по критериям для финала (FinalResultsTable) — раньше
-    // жила внутри panels ТОЛЬКО финального раунда (светлая рамка "Панели
-    // этапа"); вынесена на уровень категории и переехала на объединённый
-    // экран "Результаты" (redesign 2026-09-09, по запросу пользователя —
-    // "туда же вывести блок с оценками судей, по финалистам"), рядом с
-    // DivisionResultsPanel ниже.
     const finalResultsRound = d.rounds.find(
       (r) => (r.status === "SCORING" || r.status === "COMPLETED") && r.finalSession && r.finalResults.length > 0
     );
@@ -837,6 +847,62 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         }))}
       />
     ) : null;
+
+    const rounds = !canManageRounds
+      ? []
+      : d.rounds.map((round) => {
+          const isFinalRound = round.type === null && !d.rounds.some((r) => r.type === null && r.order > round.order);
+          const tieGroupConfig = round.config as { finalTieGroupKey?: string; tieBreakKind?: string } | null;
+          const isFullRankTieBreak = round.type === "TIE_BREAK" && tieGroupConfig?.tieBreakKind === "FULL_RANK";
+          const isFinalTieBreak = round.type === "TIE_BREAK" && !!tieGroupConfig?.finalTieGroupKey;
+          // Тот же гейт, что разрешает live "Монитор оценок судей"
+          // (scoreMonitorHref в monitorCategories ниже) — перетанцовка "за
+          // место" без судейства (FULL_RANK/финальная) решается вручную
+          // HEAD_JUDGE, оценок судей там нет вовсе.
+          const hasScoreProtocol = canViewScoreMonitor && !(round.type === "TIE_BREAK" && (isFullRankTieBreak || isFinalTieBreak));
+          return {
+            id: round.id,
+            name: round.stage?.name ?? (round.type ? (ROUND_TYPE_LABELS[round.type] ?? round.type) : "—"),
+            status: round.status,
+            isFinalRound,
+            hasScoreProtocol,
+            results: round.results,
+          };
+        });
+
+    return { id: d.id, name: d.category.name, rounds, resultsAvailable, results, finalResultsTable, finalRoundId: finalRound?.id ?? null };
+  });
+  const resultsCategories: ResultsCategory[] = resultsCategoriesRaw.map(({ finalRoundId: _finalRoundId, ...rest }) => rest);
+  const finalRoundIdByDivisionId = new Map(resultsCategoriesRaw.map((r) => [r.id, r.finalRoundId] as const));
+
+  const monitorCategories: MonitorCategory[] = competition.divisions.map((d) => {
+    // Настройки ротации по умолчанию — теперь внутри "Живого танцпола"
+    // (за шестерёнкой, RotationPanel), не отдельным блоком (2026-09-09).
+    // Формат финала и критерии переехали в "Настройки судейства"
+    // (judgingDivisions выше) — здесь для них узла больше нет.
+    const rotationSettingsPanel = canManage ? (
+      <DivisionSettingsPanel
+        divisionId={d.id}
+        settings={{
+          rotationMode: d.rotationMode,
+          rotationIntervalSec: d.rotationIntervalSec,
+          rotationShiftMin: d.rotationShiftMin,
+          rotationShiftMax: d.rotationShiftMax,
+        }}
+      />
+    ) : null;
+
+    // Полный протокол оценок судей по критериям для финала строится только в
+    // resultsCategoriesRaw выше (объединённая вкладка "Результаты") — здесь
+    // остаётся лишь булев гейт для плитки-ссылки "Оценки судей" и адреса
+    // самих плиток (сама ссылка ведёт на ResultsWorkspace, не рисует контент
+    // внутри Монитора — redesign 2026-09-09, по решению пользователя).
+    const hasFinalResultsTable = d.rounds.some(
+      (r) => (r.status === "SCORING" || r.status === "COMPLETED") && r.finalSession && r.finalResults.length > 0
+    );
+    const finalRoundId = finalRoundIdByDivisionId.get(d.id) ?? null;
+    const resultsHref = `/admin/competitions/${competition.id}?tab=results&category=${d.id}${finalRoundId ? `&round=${finalRoundId}` : ""}&view=results`;
+    const scoresHref = `/admin/competitions/${competition.id}?tab=results&category=${d.id}${finalRoundId ? `&round=${finalRoundId}` : ""}&view=scores`;
 
     const rounds: MonitorRound[] = !canManageRounds
       ? []
@@ -1065,13 +1131,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               canViewScoreMonitor && !(round.type === "TIE_BREAK" && (isFullRankTieBreak || isFinalTieBreak))
                 ? `/admin/competitions/${competition.id}/score-monitor/${round.id}`
                 : null,
-            // Отдельная страница "Результаты этапов" (redesign 2026-09-09, по
-            // прямому запросу пользователя) — тот же гейт, что открывает саму
-            // вкладку "Монитор" целиком (round:create, только SUPER_ADMIN и
-            // EVENT_ADMIN — не HEAD_JUDGE, у него round:create нет). Ссылка
-            // сразу открывает вкладку ЭТОГО раунда (?round=), не первую по
-            // умолчанию.
-            roundResultsHref: `/admin/competitions/${competition.id}/round-results/${d.id}?round=${round.id}`,
+            // "Результаты этапов" — прямая ссылка на объединённую вкладку
+            // "Результаты" (ResultsWorkspace, redesign 2026-09-09, по прямому
+            // запросу пользователя), сразу с нужной категорией и ЭТИМ раундом
+            // (?round=), не первым по умолчанию. Тот же гейт, что открывает
+            // саму вкладку "Монитор" целиком (round:create, только
+            // SUPER_ADMIN и EVENT_ADMIN — не HEAD_JUDGE, у него round:create
+            // нет).
+            roundResultsHref: `/admin/competitions/${competition.id}?tab=results&category=${d.id}&round=${round.id}`,
             calledLeaders: calledOf("LEADER"),
             calledFollowers: calledOf("FOLLOWER"),
             heats,
@@ -1102,28 +1169,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       judges: { leaders: judgesOf("LEADER"), followers: judgesOf("FOLLOWER") },
       rounds,
       rotationSettingsPanel,
-      finalResultsTable,
       resultsAvailable: canCalculateResults && (finalRoundCompletedByDivisionId.get(d.id) ?? false),
-      results: canCalculateResults ? (
-        <DivisionResultsPanel
-          divisionId={d.id}
-          finalRoundCompleted={finalRoundCompletedByDivisionId.get(d.id) ?? false}
-          hasResults={(divisionResultsById.get(d.id)?.length ?? 0) > 0}
-          reviewedAt={d.resultsReviewedAt ? d.resultsReviewedAt.toISOString() : null}
-          canReview={canReviewResults}
-          canCorrect={canPublishResults}
-          rows={(divisionResultsById.get(d.id) ?? []).map((r) => ({
-            id: r.id,
-            registrationId: r.registrationId,
-            role: r.role,
-            displayName: r.displayName,
-            bibNumber: r.bibNumber,
-            status: r.status,
-            placement: r.placement,
-            publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
-          }))}
-        />
-      ) : null,
+      hasFinalResultsTable,
+      resultsHref,
+      scoresHref,
       generateRounds: canManageRounds ? <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} /> : null,
     };
   });
@@ -1133,13 +1182,29 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {!canManageRounds && (
         <p className="m-0 text-sm text-admin-muted">Нет прав на управление раундами — показаны только настройки категорий.</p>
       )}
-      <CompetitionMonitor
-        categories={monitorCategories}
-        canViewScoreMonitor={canViewScoreMonitor}
-        resultsPublishPanel={
-          canPublishResults ? <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} /> : null
-        }
-      />
+      <CompetitionMonitor categories={monitorCategories} canViewScoreMonitor={canViewScoreMonitor} />
+    </div>
+  );
+
+  // "Результаты" (redesign 2026-09-09, по прямому запросу пользователя) —
+  // тот же гейт доступа, что и у "Монитора" (round:create): протоколы
+  // раундов/финала показывают те же данные, что решает, кто их вообще может
+  // менять/публиковать. Публикация результатов ВСЕГО соревнования
+  // (CompetitionResultsPanel) переехала сюда вместе с протоколом дивизиона —
+  // раньше жила внутри "Монитора" рядом с плиткой "Результаты" (см. §64
+  // истории редизайна), теперь у неё один настоящий дом.
+  const resultsContent = (
+    <div className="flex flex-col gap-4">
+      {!canManageRounds ? (
+        <p className="m-0 text-sm text-admin-muted">Нет прав на просмотр результатов.</p>
+      ) : (
+        <ResultsWorkspace
+          categories={resultsCategories}
+          publishPanel={
+            canPublishResults ? <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} /> : null
+          }
+        />
+      )}
     </div>
   );
 
@@ -1152,9 +1217,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         venue={competition.venue}
         startAt={competition.startAt}
       />
-      {/* Suspense — CompetitionWorkspaceTabs и вложенный в него CompetitionMonitor
-          читают useSearchParams() (возврат со страницы "Монитор оценок судей"
-          на ту же вкладку/категорию/этап, 2026-09-09); Next.js требует
+      {/* Suspense — CompetitionWorkspaceTabs и вложенные в него CompetitionMonitor/
+          ResultsWorkspace читают useSearchParams() (возврат со страницы
+          "Монитор оценок судей"/переход по ссылкам "Результаты этапов" и
+          т.п. на ту же вкладку/категорию/этап, 2026-09-09); Next.js требует
           Suspense-границу вокруг любого потребителя useSearchParams. */}
       <Suspense fallback={null}>
         <CompetitionWorkspaceTabs
@@ -1162,6 +1228,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             { id: "overview", label: "Главная", content: overviewContent },
             { id: "categories", label: "Категории", content: categoriesContent },
             { id: "monitor", label: "Монитор", content: monitorContent },
+            { id: "results", label: "Результаты", content: resultsContent },
             { id: "participants", label: "Участники", content: participantsContent },
             { id: "judges", label: "Судьи", content: judgesContent },
             { id: "charts", label: "Графики", content: chartsContent },

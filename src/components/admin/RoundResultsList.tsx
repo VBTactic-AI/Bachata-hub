@@ -19,9 +19,8 @@ export type RoundResultRow = {
 // что и SideColumn/ParticipantRow в CompetitionMonitor.tsx (карточка-роль +
 // пронумерованный бейдж, синий/розовый акцент Партнёры/Партнёрши). Вынесен
 // из панели раунда на /admin/competitions/[id] (redesign 2026-09-09, по
-// запросу пользователя) — используется и там, и на отдельной странице
-// "Результаты этапов" (round-results/[divisionId]), чтобы не дублировать
-// разметку в двух местах.
+// запросу пользователя) — используется и там, и на вкладке "Результаты"
+// (ResultsWorkspace.tsx), чтобы не дублировать разметку в двух местах.
 export function RoundResultsList({ results }: { results: RoundResultRow[] }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
