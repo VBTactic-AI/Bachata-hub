@@ -1038,6 +1038,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               // 2026-09-04).
               neededRole: leaderCount === followerCount ? null : leaderCount < followerCount ? "LEADER" : "FOLLOWER",
               hasRealImbalance: scoredLeaderCount !== scoredFollowerCount && Math.min(scoredLeaderCount, scoredFollowerCount) > 0,
+              // Та же узкая область, что и на сервере (create-heat.ts,
+              // deleteHeat) — только пустой PENDING-заход без жеребьёвки.
+              canDelete: heat.status === "PENDING" && !draw,
             };
           });
 
@@ -1054,6 +1057,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             finalistsCount: round.finalistsCount,
             isFinalRound,
             isTieBreak: round.type === "TIE_BREAK",
+            judgingMethodLabel: JUDGING_MAX_SCORE_LABELS[round.judgingMaxScore] ?? String(round.judgingMaxScore),
+            finalFormatLabel: isFinalRound ? FINAL_FORMAT_LABELS[d.finalSettings?.format ?? "NORMAL"] : null,
             showsHeats: !usesCustomFinalFlow,
             // После DRAW_LOCKED у каждого захода уже обязана быть жеребьёвка
             // (round-state.ts) — новый заход без списка нарушил бы это.

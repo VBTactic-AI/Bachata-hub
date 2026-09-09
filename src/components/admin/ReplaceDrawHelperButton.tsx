@@ -73,8 +73,13 @@ export function ReplaceDrawHelperButton({
     );
   }
 
+  // Раскрытое состояние — свой блок на всю ширину строки (не инлайн рядом с
+  // «убрать»): список судьи выбирает из <Select>, который при узкой колонке
+  // не помещался в один ряд с кнопками и "скакал" при перестроении (по
+  // прямому запросу пользователя, 2026-09-09). Строка выбора — отдельно,
+  // строка действий — отдельно, ширина и порядок всегда одни и те же.
   return (
-    <span className="inline-flex flex-wrap items-center gap-2">
+    <div className="flex w-full flex-col gap-1.5 rounded-app-sm border border-admin-border bg-admin-card2 p-2">
       {loadingCandidates ? (
         <span className="text-sm text-admin-muted">Загрузка…</span>
       ) : groups.length === 0 ? (
@@ -83,7 +88,7 @@ export function ReplaceDrawHelperButton({
         <Select
           value={registrationId}
           onChange={(e) => setRegistrationId(e.target.value)}
-          className="!w-auto border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          className="w-full border-admin-border bg-admin-bg/70 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
         >
           {groups.map((g) => (
             <optgroup key={g.divisionId} label={g.isOwnDivision ? `${g.categoryName} (своя категория)` : g.categoryName}>
@@ -97,13 +102,15 @@ export function ReplaceDrawHelperButton({
           ))}
         </Select>
       )}
-      <Button type="button" size="sm" variant="admin" disabled={submitting || !registrationId} onClick={submit}>
-        Заменить
-      </Button>
-      <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
-        Отмена
-      </Button>
-      {error && <span className="text-sm text-red-400">{error}</span>}
-    </span>
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" variant="admin" disabled={submitting || !registrationId} onClick={submit}>
+          Заменить
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
+          Отмена
+        </Button>
+        {error && <span className="text-sm text-red-400">{error}</span>}
+      </div>
+    </div>
   );
 }

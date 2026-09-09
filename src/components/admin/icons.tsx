@@ -59,6 +59,19 @@ export function AlertIcon() {
   );
 }
 
+// Один нейтральный силуэт для обеих ролей J&J (Партнёр/Партнёрша) — различие
+// только по цвету (синий/розовый), не по форме: роль не привязана к полу
+// (CLAUDE.md §4/§60), рисовать разные силуэты для ролей означало бы намекать
+// на обратное.
+export function PersonIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

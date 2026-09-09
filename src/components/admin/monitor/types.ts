@@ -44,6 +44,10 @@ export type MonitorHeat = {
   // Дисбаланс среди РЕАЛЬНЫХ участников (без помощников) — условие для
   // "Разбить на 2 выхода".
   hasRealImbalance: boolean;
+  // Заход можно удалить только пока он PENDING и для него ЕЩЁ НЕТ
+  // жеребьёвки (create-heat.ts, deleteHeat) — узкая, безопасная область:
+  // не даёт молча убрать из раунда уже вызванных участников.
+  canDelete: boolean;
 };
 
 export type MonitorRound = {
@@ -53,6 +57,12 @@ export type MonitorRound = {
   finalistsCount: number | null;
   isFinalRound: boolean;
   isTieBreak: boolean;
+  // Метод судейства этого раунда — "снимок" на момент создания раунда
+  // (Round.judgingMaxScore не меняется задним числом, CLAUDE.md §50), не
+  // текущая настройка категории. Для финального раунда дополнительно формат
+  // финала (настройка категории — сам формат раунда не хранит его отдельно).
+  judgingMethodLabel: string;
+  finalFormatLabel: string | null;
   // JUDGES_DANCE/RANDOM_COUPLES не используют Draw Engine — заходами
   // управляют собственные панели, обычную сетку заходов не показываем.
   showsHeats: boolean;

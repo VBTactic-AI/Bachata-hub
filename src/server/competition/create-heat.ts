@@ -44,3 +44,48 @@ export async function createHeat(roundId: string): Promise<{ id: string }> {
 
   return { id: heat.id };
 }
+
+// Удаление заезда (запрос пользователя, 2026-09-09 — организатор мог по
+// ошибке нажать "+ Заход" лишний раз, а обратной кнопки не было).
+// Сознательно ОЧЕНЬ узкая область: только PENDING-заезд, для которого ЕЩЁ
+// НЕТ ни одной жеребьёвки. Заезд с уже сформированной жеребьёвкой не
+// удаляется — это молча убрало бы реальных участников из раунда без
+// перераспределения (нарушение CLAUDE.md §18/§60); для такого случая уже
+// есть другие, явные инструменты — "Разбить на 2 выхода" и пересборка. Номер
+// удалённого заезда не переиспользуется ("+ Заход" всегда берёт максимум+1)
+// — как и с bib-номерами, разрыв в нумерации не считается проблемой, это
+// дешевле, чем тихо переносить историю на другой номер.
+export async function deleteHeat(heatId: string): Promise<void> {
+  const heat = await prisma.heat.findFirstOrThrow({
+    where: { id: heatId },
+    relationLoadStrategy: "join",
+    include: {
+      round: { include: { division: { select: { competitionId: true } } } },
+      _count: { select: { draws: true } },
+    },
+  });
+  const competitionId = heat.round.division.competitionId;
+  const actor = await requirePermission("round:create", competitionId);
+
+  if (heat.status !== "PENDING") {
+    throw new ValidationFailedError(
+      `Нельзя удалить заход №${heat.number}: он уже запускался (статус "${heat.status}").`
+    );
+  }
+  if (heat._count.draws > 0) {
+    throw new ValidationFailedError(
+      `Нельзя удалить заход №${heat.number}: для него уже сформирована жеребьёвка. Используйте пересборку или «Разбить на 2 выхода», если нужно изменить состав.`
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.heat.delete({ where: { id: heatId } });
+    await writeAudit(tx, {
+      actor,
+      action: "heat.delete",
+      entityType: "Heat",
+      entityId: heatId,
+      before: { roundId: heat.roundId, number: heat.number, status: heat.status },
+    });
+  });
+}

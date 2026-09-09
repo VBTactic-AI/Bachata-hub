@@ -6,7 +6,9 @@ import { HEAT_STATUS_LABELS, REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL, ROUND_STA
 import { categoryDotColor } from "../category-colors";
 import { AddDrawHelperForm } from "../AddDrawHelperForm";
 import { AddHeatButton } from "../AddHeatButton";
+import { DeleteIconButton } from "../DeleteIconButton";
 import { HeatStatusControls } from "../HeatStatusControls";
+import { PersonIcon } from "../icons";
 import { RemoveDrawHelperButton } from "../RemoveDrawHelperButton";
 import { ReplaceDrawHelperButton } from "../ReplaceDrawHelperButton";
 import { RerollDrawButton } from "../RerollDrawButton";
@@ -52,6 +54,21 @@ const HEAT_STATUS_TONE: Record<HeatStatus, string> = {
   FINISHED: "bg-admin-primaryHover",
 };
 
+// Синий — партнёры/ведущие, розовый — партнёрши/ведомые (по прямому запросу
+// пользователя, 2026-09-09): один и тот же цвет для номера, полоски-акцента
+// и иконки — единственное, что отличает стороны визуально, форма иконки
+// намеренно одна и та же (см. PersonIcon). Литеральные строки классов (не
+// собранные через template-string) — Tailwind ищет полные имена классов в
+// исходном коде, интерполяция их не находит.
+const ROLE_TEXT_CLASS: Record<RegistrationRole, string> = {
+  LEADER: "text-[#60a5fa]",
+  FOLLOWER: "text-[#f472b6]",
+};
+const ROLE_BG_CLASS: Record<RegistrationRole, string> = {
+  LEADER: "bg-[#60a5fa]",
+  FOLLOWER: "bg-[#f472b6]",
+};
+
 function StatusPill({ label, tone }: { label: string; tone: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-admin-card2 px-2.5 py-1 text-xs font-bold text-night-text">
@@ -72,11 +89,10 @@ function ParticipantRow({
   role: RegistrationRole;
   canEditDraw: boolean;
 }) {
-  const bibTone = role === "LEADER" ? "text-admin-primaryHover" : "text-[#a78bfa]";
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-app-sm px-2 py-1.5 transition-colors hover:bg-admin-card/70">
       <span
-        className={`grid h-9 min-w-[48px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-base font-extrabold tabular-nums ${bibTone}`}
+        className={`grid h-9 min-w-[48px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-base font-extrabold tabular-nums ${ROLE_TEXT_CLASS[role]}`}
       >
         {participant.bibNumber ?? "—"}
       </span>
@@ -91,9 +107,11 @@ function ParticipantRow({
         <span className="shrink-0 rounded-full bg-night-warning/15 px-2 py-0.5 text-[10px] font-bold text-night-warning">помощник</span>
       )}
       {/* Своя строка: колонка узкая (половина ширины), и в один ряд с именем
-          и бейджем «заменить/убрать» перекрывали бы имя. */}
+          и бейджем «заменить/убрать» перекрывали бы имя. flex-wrap — раскрытая
+          форма замены (ReplaceDrawHelperButton) рендерит блок на всю ширину и
+          должна уйти на свою строку, не сжимая соседнюю кнопку «убрать». */}
       {participant.isHelper && canEditDraw && (
-        <span className="flex w-full items-center justify-end gap-1">
+        <span className="flex w-full flex-wrap items-center justify-end gap-1">
           <ReplaceDrawHelperButton heatId={heatId} participantId={participant.id} role={role} />
           <RemoveDrawHelperButton participantId={participant.id} heatId={heatId} role={role} />
         </span>
@@ -117,10 +135,13 @@ function SideColumn({
   const isNeeded = heat.neededRole === role;
   return (
     <div className="flex flex-col rounded-app border border-admin-border bg-admin-card2">
-      <div className="flex items-center gap-2.5 border-b border-admin-border px-3.5 py-3">
-        <span className={`h-4 w-[3px] shrink-0 rounded-sm ${role === "LEADER" ? "bg-admin-primary" : "bg-admin-violet"}`} aria-hidden="true" />
+      <div className="flex items-center gap-2 border-b border-admin-border px-3.5 py-3">
+        <span className={`h-4 w-[3px] shrink-0 rounded-sm ${ROLE_BG_CLASS[role]}`} aria-hidden="true" />
+        <span className={ROLE_TEXT_CLASS[role]} aria-hidden="true">
+          <PersonIcon />
+        </span>
         <h4 className="m-0 text-[13px] font-extrabold uppercase tracking-wide text-night-text">{title}</h4>
-        <span className="ml-auto text-xl font-extrabold tabular-nums leading-none text-night-text">{list.length}</span>
+        <span className={`ml-auto text-xl font-extrabold tabular-nums leading-none ${ROLE_TEXT_CLASS[role]}`}>{list.length}</span>
       </div>
       {list.length === 0 ? (
         <p className="m-0 px-3.5 py-3 text-sm text-admin-muted">Пусто.</p>
@@ -158,6 +179,13 @@ function HeatPanel({ heat, roundStatus }: { heat: MonitorHeat; roundStatus: Roun
         <StatusPill label={HEAT_STATUS_LABELS[heat.status] ?? heat.status} tone={HEAT_STATUS_TONE[heat.status]} />
         <span className="ml-auto flex flex-wrap items-center gap-2">
           <HeatStatusControls heatId={heat.id} status={heat.status} roundStatus={roundStatus} />
+          {heat.canDelete && (
+            <DeleteIconButton
+              url={`/api/heats/${heat.id}`}
+              confirmMessage={`Удалить заход №${heat.number}? Отменить нельзя.`}
+              label={`Удалить заход №${heat.number}`}
+            />
+          )}
         </span>
       </div>
 
@@ -219,23 +247,17 @@ function AdvancementCard({ round }: { round: MonitorRound }) {
       </p>
       {round.finalistsCount ? (
         <>
-          <p className="m-0 mb-0.5 mt-1.5 flex items-baseline gap-2">
-            <span className="text-[44px] font-extrabold leading-none tracking-tight tabular-nums text-night-text">
-              {round.finalistsCount}
-            </span>
-            <span className="text-[15px] font-bold text-admin-muted">пар</span>
+          <p className="m-0 mt-1.5 text-sm leading-relaxed text-admin-muted">
+            Из {round.calledLeaders} партнёров и {round.calledFollowers} партнёрш этого этапа проходят дальше:
           </p>
-          <p className="m-0 text-[12.5px] tabular-nums text-admin-muted">
-            из {round.calledLeaders} партнёров и {round.calledFollowers} партнёрш этого этапа
-          </p>
-          <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+          <div className="mt-3 grid grid-cols-2 gap-2.5">
             <div className="rounded-app-sm border border-admin-border bg-admin-card2 px-3 py-2.5">
               <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">Партнёров</p>
-              <p className="m-0 mt-1 text-[17px] font-extrabold tabular-nums text-admin-primaryHover">{round.finalistsCount}</p>
+              <p className={`m-0 mt-1 text-[17px] font-extrabold tabular-nums ${ROLE_TEXT_CLASS.LEADER}`}>{round.finalistsCount}</p>
             </div>
             <div className="rounded-app-sm border border-admin-border bg-admin-card2 px-3 py-2.5">
               <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">Партнёрш</p>
-              <p className="m-0 mt-1 text-[17px] font-extrabold tabular-nums text-[#a78bfa]">{round.finalistsCount}</p>
+              <p className={`m-0 mt-1 text-[17px] font-extrabold tabular-nums ${ROLE_TEXT_CLASS.FOLLOWER}`}>{round.finalistsCount}</p>
             </div>
           </div>
           {/* CLAUDE.md §19: на границе отсева система не выбирает за судей. */}
@@ -370,6 +392,14 @@ export function CompetitionMonitor({
               <div className="flex flex-wrap items-center gap-3 border-b border-admin-border px-[18px] py-4">
                 <h3 className="m-0 text-base font-extrabold text-night-text">{round.name}</h3>
                 <StatusPill label={ROUND_STATUS_LABELS[round.status] ?? round.status} tone={ROUND_STATUS_TONE[round.status]} />
+                <span className="rounded-full border border-admin-border px-2.5 py-1 text-xs font-semibold text-admin-muted">
+                  Судейство: <span className="text-night-text">{round.judgingMethodLabel}</span>
+                </span>
+                {round.finalFormatLabel && (
+                  <span className="rounded-full border border-admin-border px-2.5 py-1 text-xs font-semibold text-admin-muted">
+                    Финал: <span className="text-night-text">{round.finalFormatLabel}</span>
+                  </span>
+                )}
                 <span className="ml-auto flex flex-wrap items-center gap-2">
                   <RoundStatusControls roundId={round.id} status={round.status} />
                 </span>

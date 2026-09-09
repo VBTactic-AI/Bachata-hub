@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
@@ -74,10 +74,33 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 type NavItem = { href: string; label: string; icon: React.ReactNode; match: (p: string) => boolean };
 
-const MAIN_ITEMS: NavItem[] = [
-  { href: "/admin", label: "Главная", icon: <HomeIcon />, match: (p) => p === "/admin" },
-  { href: "/admin/competitions", label: "Соревнования", icon: <TrophyIcon />, match: (p) => p.startsWith("/admin/competitions") },
-];
+const MAIN_ITEMS: NavItem[] = [{ href: "/admin", label: "Главная", icon: <HomeIcon />, match: (p) => p === "/admin" }];
+
+// "Соревнования" — раскрывающееся меню (по прямому запросу пользователя,
+// 2026-09-09), тот же приём, что и "Справочники" ниже: список раньше был
+// одной прямой ссылкой на /admin/competitions. Id текущего соревнования
+// берётся прямо из pathname (сайдбар — часть общего layout.tsx, который
+// оборачивает и список, и страницу конкретного соревнования) — без пропсов
+// и без нового запроса.
+function competitionSubItems(currentCompetitionId: string | null): NavItem[] {
+  const items: NavItem[] = [
+    {
+      href: "/admin/competitions",
+      label: "Все соревнования",
+      icon: <TrophyIcon />,
+      match: (p) => p === "/admin/competitions" || p === "/admin/competitions/new",
+    },
+  ];
+  if (currentCompetitionId) {
+    items.push({
+      href: `/admin/competitions/${currentCompetitionId}`,
+      label: "Текущее соревнование",
+      icon: <TrophyIcon />,
+      match: (p) => p.startsWith(`/admin/competitions/${currentCompetitionId}`),
+    });
+  }
+  return items;
+}
 
 function referenceItems(): NavItem[] {
   return [
@@ -120,6 +143,24 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
   // безусловно, теперь сворачивается кликом по заголовку).
   const [referencesOpen, setReferencesOpen] = useState(referenceActive);
 
+  const competitionsActive = pathname.startsWith("/admin/competitions");
+  // "new" — форма создания, не id конкретного соревнования; для неё пункта
+  // "Текущее соревнование" не показываем.
+  const competitionMatch = pathname.match(/^\/admin\/competitions\/([^/?#]+)/);
+  const currentCompetitionId = competitionMatch && competitionMatch[1] !== "new" ? competitionMatch[1] : null;
+  const competitionLinks = competitionSubItems(currentCompetitionId);
+  const [competitionsOpen, setCompetitionsOpen] = useState(competitionsActive);
+  // В отличие от "Справочники" (открывается один раз, при монтировании) —
+  // здесь именно ЖИВАЯ синхронизация: выбор соревнования из списка должен
+  // сразу раскрыть меню и показать "Текущее соревнование", а не только при
+  // первой загрузке страницы (пользователь явно попросил именно это,
+  // 2026-09-09). Sidebar — часть layout.tsx и не размонтируется между
+  // страницами /admin/**, поэтому obычный useState-инициализатор этого не
+  // подхватил бы сам.
+  useEffect(() => {
+    if (competitionsActive) setCompetitionsOpen(true);
+  }, [competitionsActive]);
+
   return (
     <nav
       className="flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-admin-border bg-admin-bg pb-3 font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-b-0 sm:border-r sm:bg-admin-card/30 sm:px-3 sm:pb-6 sm:pt-6"
@@ -139,6 +180,38 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
         {MAIN_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} active={item.match(pathname)} />
         ))}
+      </div>
+
+      <div className="mt-0 flex shrink-0 items-center gap-1.5 sm:mt-0.5 sm:flex-col sm:items-stretch sm:gap-0.5">
+        <button
+          type="button"
+          onClick={() => setCompetitionsOpen((v) => !v)}
+          aria-expanded={competitionsOpen}
+          className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium transition-colors sm:w-full ${
+            competitionsActive ? "text-night-text" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+          }`}
+        >
+          <span className={competitionsActive ? "text-admin-primary" : "text-admin-disabled"}>
+            <TrophyIcon />
+          </span>
+          <span className="flex-1 text-left">Соревнования</span>
+          <span className={competitionsActive ? "text-admin-primary" : "text-admin-disabled"}>
+            <ChevronIcon open={competitionsOpen} />
+          </span>
+        </button>
+        <div
+          className={`grid shrink-0 transition-[grid-template-rows] duration-300 ease-out sm:w-full ${
+            competitionsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          }`}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="flex shrink-0 flex-col gap-0.5 pt-0.5 sm:pl-1">
+              {competitionLinks.map((item) => (
+                <NavLink key={item.href} item={item} active={item.match(pathname)} />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {isAdminUser && (

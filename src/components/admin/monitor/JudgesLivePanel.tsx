@@ -111,49 +111,54 @@ export function JudgesLivePanel({
   const total = leaders.length + followers.length;
 
   return (
-    <section className="overflow-hidden rounded-app border border-admin-border bg-admin-card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-admin-border px-4 py-3.5">
-        <h3 className="m-0 text-sm font-extrabold text-night-text">Судьи категории</h3>
-        <span className="rounded-full bg-admin-card2 px-2.5 py-0.5 text-xs font-bold tabular-nums text-admin-muted">{total}</span>
-        {live && (
-          <span className={`ml-auto text-xs font-semibold ${connected ? "text-night-success" : "text-red-400"}`}>
-            {connected ? "● live" : "○ переподключение…"}
-          </span>
-        )}
-      </div>
-
-      {total === 0 ? (
-        <p className="m-0 px-4 py-3 text-sm text-admin-muted">Судьи на категорию не назначены.</p>
-      ) : (
-        <>
-          {(
-            [
-              ["Судят партнёров", leaders],
-              ["Судят партнёрш", followers],
-            ] as const
-          ).map(([title, list]) =>
-            list.length === 0 ? null : (
-              <div key={title}>
-                <p className="m-0 border-t border-admin-border bg-admin-card2/40 px-4 py-1.5 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">
-                  {title} · {list.length}
-                </p>
-                {list.map((j) => (
-                  <JudgeRow key={j.judgeAssignmentId} judge={j} total={totals.get(j.judgeAssignmentId) ?? null} />
-                ))}
-              </div>
-            )
-          )}
-        </>
-      )}
-
+    <div className="flex flex-col gap-2.5">
+      {/* Ссылка — сверху, перед карточкой "Судьи категории" (по прямому
+          запросу пользователя, 2026-09-09), своя отдельная плашка, а не
+          нижняя строка внутри карточки. */}
       {scoreMonitorHref && (
         <Link
           href={scoreMonitorHref}
-          className="flex items-center justify-between gap-2 border-t border-admin-border px-4 py-3 text-sm font-semibold text-admin-muted transition-colors hover:bg-admin-card2/60 hover:text-admin-primaryHover"
+          className="flex items-center justify-between gap-2 rounded-app border border-admin-border bg-admin-card px-4 py-3 text-sm font-semibold text-admin-muted transition-colors hover:border-admin-primary hover:text-admin-primaryHover"
         >
           Монитор оценок судей<span aria-hidden="true">→</span>
         </Link>
       )}
-    </section>
+
+      <section className="overflow-hidden rounded-app border border-admin-border bg-admin-card">
+        <div className="flex flex-wrap items-center gap-2 border-b border-admin-border px-4 py-3.5">
+          <h3 className="m-0 text-sm font-extrabold text-night-text">Судьи категории</h3>
+          <span className="rounded-full bg-admin-card2 px-2.5 py-0.5 text-xs font-bold tabular-nums text-admin-muted">{total}</span>
+          {live && (
+            <span className={`ml-auto text-xs font-semibold ${connected ? "text-night-success" : "text-red-400"}`}>
+              {connected ? "● live" : "○ переподключение…"}
+            </span>
+          )}
+        </div>
+
+        {total === 0 ? (
+          <p className="m-0 px-4 py-3 text-sm text-admin-muted">Судьи на категорию не назначены.</p>
+        ) : (
+          <>
+            {(
+              [
+                ["Судят партнёров", leaders],
+                ["Судят партнёрш", followers],
+              ] as const
+            ).map(([title, list]) =>
+              list.length === 0 ? null : (
+                <div key={title}>
+                  <p className="m-0 border-t border-admin-border bg-admin-card2/40 px-4 py-1.5 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">
+                    {title} · {list.length}
+                  </p>
+                  {list.map((j) => (
+                    <JudgeRow key={j.judgeAssignmentId} judge={j} total={totals.get(j.judgeAssignmentId) ?? null} />
+                  ))}
+                </div>
+              )
+            )}
+          </>
+        )}
+      </section>
+    </div>
   );
 }

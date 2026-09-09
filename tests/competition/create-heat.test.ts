@@ -6,22 +6,25 @@ vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[])
 
 const roundFindUniqueOrThrow = vi.fn();
 const heatFindFirst = vi.fn();
+const heatFindFirstOrThrow = vi.fn();
 const heatCreate = vi.fn();
+const heatDelete = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  heat: { findFirst: heatFindFirst, create: heatCreate },
+  heat: { findFirst: heatFindFirst, create: heatCreate, delete: heatDelete },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
+    heat: { findFirstOrThrow: (...a: unknown[]) => heatFindFirstOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { createHeat } = await import("@/server/competition/create-heat");
+const { createHeat, deleteHeat } = await import("@/server/competition/create-heat");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "u1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -31,6 +34,15 @@ beforeEach(() => {
   roundFindUniqueOrThrow.mockReset().mockResolvedValue({ status: "DRAFT", division: { competitionId: "comp1" } });
   heatFindFirst.mockReset().mockResolvedValue(null);
   heatCreate.mockReset().mockResolvedValue({ id: "heat1", number: 1 });
+  heatFindFirstOrThrow.mockReset().mockResolvedValue({
+    id: "heat1",
+    roundId: "round1",
+    number: 2,
+    status: "PENDING",
+    round: { division: { competitionId: "comp1" } },
+    _count: { draws: 0 },
+  });
+  heatDelete.mockReset();
   auditCreate.mockReset();
 });
 
@@ -77,5 +89,48 @@ describe("createHeat()", () => {
     await createHeat("round1");
 
     expect(heatCreate).toHaveBeenCalled();
+  });
+});
+
+describe("deleteHeat()", () => {
+  it("проверяет round:create ИМЕННО для competitionId раунда захода", async () => {
+    await deleteHeat("heat1");
+
+    expect(requirePermissionMock).toHaveBeenCalledWith("round:create", "comp1");
+  });
+
+  it("удаляет пустой PENDING-заход без жеребьёвки и пишет audit", async () => {
+    await deleteHeat("heat1");
+
+    expect(heatDelete).toHaveBeenCalledWith({ where: { id: "heat1" } });
+    expect(auditCreate).toHaveBeenCalledOnce();
+  });
+
+  it.each(["RUNNING", "PAUSED", "FINISHED"] as const)("отклоняет удаление захода в статусе %s", async (status) => {
+    heatFindFirstOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      number: 2,
+      status,
+      round: { division: { competitionId: "comp1" } },
+      _count: { draws: 0 },
+    });
+
+    await expect(deleteHeat("heat1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(heatDelete).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет удаление захода, для которого уже сформирована жеребьёвка", async () => {
+    heatFindFirstOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      number: 2,
+      status: "PENDING",
+      round: { division: { competitionId: "comp1" } },
+      _count: { draws: 1 },
+    });
+
+    await expect(deleteHeat("heat1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(heatDelete).not.toHaveBeenCalled();
   });
 });
