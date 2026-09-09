@@ -372,8 +372,32 @@ describe("listHelperCandidates()", () => {
     expect(own?.registrations.map((r) => r.id)).toEqual(["reg-scored"]);
   });
 
-  // Тот же порядок приоритета, что и в авто-доборе при жеребьёвке (A10,
-  // уточнено 2026-09-04): выше -> свои уже станцевавшие -> ниже.
+  // Тот же порядок приоритета, что и в авто-доборе при жеребьёвке
+  // (draw-engine.ts, fillHelperShortage): свои уже станцевавшие -> выше ->
+  // ниже (порядок первых двух шагов изменён по прямому запросу пользователя,
+  // 2026-09-09 — было "выше -> свои", см. draw-helper.ts).
+  it("если есть и категория выше, И свои уже станцевавшие — предлагает своих, а не категорию выше", async () => {
+    heatFindUniqueOrThrow.mockResolvedValue({
+      id: "heat1",
+      roundId: "round1",
+      draws: [],
+      round: { divisionId: "div1", division: { id: "div1", competitionId: "comp1", category: { order: 2 } } },
+    });
+    divisionFindMany.mockResolvedValue([
+      { id: "div1", category: { name: "Любители", order: 2 } },
+      { id: "div-higher", category: { name: "Продвинутые", order: 3 } },
+    ]);
+    registrationFindMany.mockResolvedValue([
+      { id: "reg-own-scored", divisionId: "div1", dancer: { displayName: "Свой" }, checkIn: { bibNumber: "9" } },
+      { id: "reg-higher", divisionId: "div-higher", dancer: { displayName: "A" }, checkIn: { bibNumber: "1" } },
+    ]);
+    heatFindMany.mockResolvedValue([{ draws: [{ participants: [{ registrationId: "reg-own-scored" }] }] }]);
+
+    const result = await listHelperCandidates("heat1", "LEADER");
+
+    expect(result.suggestedRegistrationId).toBe("reg-own-scored");
+  });
+
   it("если категории выше нет, но есть свои уже станцевавшие — предлагает их, а не категорию ниже", async () => {
     heatFindUniqueOrThrow.mockResolvedValue({
       id: "heat1",

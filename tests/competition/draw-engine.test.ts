@@ -402,18 +402,49 @@ describe("formDrawInTx() — авто-добор помощников при д�
   });
 });
 
-// Уточнение каскада от 2026-09-04: перебираем ВСЕ категории выше по очереди
-// (не только ближайшую), потом — своих уже станцевавших, и только тогда
-// оставляем разбалансированным — категории НИЖЕ сама жеребьёвка не трогает,
-// это уже ручное решение организатора (docs/00_DECISIONS.md, A10).
-describe("formDrawInTx() — каскад: все категории выше, потом свои, ниже — только вручную", () => {
-  it("перебирает КАЖДУЮ категорию выше по очереди, пока не найдёт кандидата", async () => {
+// Уточнение каскада от 2026-09-04, порядок первых двух шагов ИЗМЕНЁН на
+// обратный по прямому запросу пользователя 2026-09-09 (после живого теста
+// реального соревнования — во второй заход позвало гостей из категории на
+// два уровня выше вместо уже станцевавших своих же): сначала свои уже
+// станцевавшие, потом ВСЕ категории выше по очереди (не только ближайшую),
+// и только тогда оставляем разбалансированным — категории НИЖЕ сама
+// жеребьёвка не трогает, это уже ручное решение организатора
+// (docs/00_DECISIONS.md, A10).
+describe("formDrawInTx() — каскад: сначала свои, потом все категории выше, ниже — только вручную", () => {
+  it("если есть и свои уже станцевавшие, И категория выше — выбирает своих", async () => {
+    heatFindMany.mockResolvedValue([{ draws: [{ participants: [{ registrationId: "reused-f1" }] }] }]);
+    divisionFindMany.mockResolvedValue([{ id: "div-higher", category: { order: 3 } }]);
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId?: string; id?: unknown } }) => {
+      if (where.id) return Promise.resolve([{ id: "reused-f1" }]);
+      if (where.divisionId === "div-higher" && where.role === "FOLLOWER") return Promise.resolve([reg("guest-higher", "77")]);
+      if (where.divisionId !== "div1") return Promise.resolve([]);
+      // Дисбаланс ровно 1 (3 ведущих / 2 ведомых) — "свои" должны полностью
+      // покрыть нехватку и ни разу не дойти до категории выше.
+      return Promise.resolve(where.role === "LEADER" ? [reg("l1", "1"), reg("l2", "2"), reg("l3", "3")] : [reg("f1", "4"), reg("f2", "6")]);
+    });
+
+    await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    const helperCalls = createdParticipants().filter((p) => p.scored === false);
+    expect(helperCalls).toHaveLength(1);
+    expect(helperCalls[0]).toMatchObject({ registrationId: "reused-f1", helperSource: "REUSED_ALREADY_SCORED" });
+  });
+
+  it("если своих нет — перебирает КАЖДУЮ категорию выше по очереди, пока не найдёт кандидата", async () => {
     divisionFindMany.mockResolvedValue([
       { id: "div-higher1", category: { order: 3 } },
       { id: "div-higher2", category: { order: 4 } },
     ]);
     registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string; id?: unknown } }) => {
-      if (where.id) return Promise.resolve([]); // до переиспользования своих дойти не должно
+      if (where.id) return Promise.resolve([]); // своих уже станцевавших нет вовсе
       if (where.divisionId === "div-higher1") return Promise.resolve([]); // в ближайшей выше — никого
       if (where.divisionId === "div-higher2") return Promise.resolve([reg("guest-higher2", "50")]); // в следующей — есть
       if (where.divisionId !== "div1") return Promise.resolve([]);
