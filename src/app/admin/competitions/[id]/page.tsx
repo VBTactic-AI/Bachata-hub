@@ -10,7 +10,6 @@ import { Card } from "@/components/ui/card";
 import { DivisionSettingsPanel } from "@/components/admin/DivisionSettingsPanel";
 import { DivisionsOverviewTable, type DivisionOverviewRow } from "@/components/admin/DivisionsOverviewTable";
 import { CompetitionStatusControls } from "@/components/admin/CompetitionStatusControls";
-import { RegisterSelfForm } from "@/components/admin/RegisterSelfForm";
 import { AddParticipantPanel } from "@/components/admin/AddParticipantPanel";
 import { AddButton } from "@/components/admin/AddButton";
 import { GenerateRoundsButton } from "@/components/admin/GenerateRoundsButton";
@@ -23,7 +22,6 @@ import { JudgeRegistryPanel, type RegistryJudge } from "@/components/admin/Judge
 import { categoryDotColor } from "@/components/admin/category-colors";
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
-import { suggestedRoleForGender } from "@/server/competition/register-competitor";
 import { isNoShow } from "@/server/competition/no-show";
 import { getRoundScoringProgress, rolesNotNeedingJudging } from "@/server/judging/advancement";
 import { getFinalScoringProgress } from "@/server/judging/final-advancement";
@@ -362,15 +360,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           include: { checkIn: true, division: { include: { category: true } } },
         })
       : Promise.resolve(null);
-  // DB-002: точечный запрос, а не registrations.some(...) — тот список
-  // может быть обрезан лимитом отображения, а эта проверка обязана быть
-  // верной независимо от того, попала ли конкретная регистрация в первые
-  // REGISTRATIONS_DISPLAY_LIMIT.
-  const myRegistrationCountPromise =
-    canViewAllRegistrations && myDancer
-      ? prisma.registration.count({ where: { competitionId: competition.id, dancerId: myDancer.id } })
-      : Promise.resolve(0);
-
   const [
     registeredCounts,
     checkedInCounts,
@@ -379,7 +368,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     registrations,
     registrationsTotalCount,
     myRegistration,
-    myRegistrationCount,
   ] = await measureServerOperation("admin.open_competition.rest", () =>
     Promise.all([
       registeredCountsPromise,
@@ -389,15 +377,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       registrationsPromise,
       registrationsTotalCountPromise,
       myRegistrationPromise,
-      myRegistrationCountPromise,
     ])
   );
 
   const scoringProgressByRoundId = new Map(scoringProgressEntries);
   const divisionResultsById: Map<string, Awaited<ReturnType<typeof getCurrentDivisionResults>>> = new Map(divisionResultEntries);
-
-  const isRegistrationOpen = competition.status === "REGISTRATION_OPEN";
-  const alreadyRegistered = canViewAllRegistrations ? myRegistrationCount > 0 : myRegistration !== null;
 
   // Формы регистрации ждут { id, name } — категория дивизиона теперь и есть
   // его "имя" для пользователя.
@@ -659,17 +643,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
   const participantsContent = (
     <div className="flex flex-col gap-4">
-      {isRegistrationOpen && !alreadyRegistered && divisionOptions.length > 0 && (
-        <div>
-          <h2 className="page-title">Регистрация</h2>
-          <RegisterSelfForm
-            competitionId={competition.id}
-            divisions={divisionOptions}
-            suggestedRole={suggestedRoleForGender(myDancer?.gender ?? null)}
-          />
-        </div>
-      )}
-
       {canViewAllRegistrations ? (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
