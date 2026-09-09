@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { RoundStatus } from "@prisma/client";
 import { setShallowQueryParams } from "@/lib/shallow-query";
@@ -111,6 +111,23 @@ export function ResultsWorkspace({ categories, publishPanel }: { categories: Res
   const round = resolveSelected(category.rounds, roundId, defaultRoundId(category.rounds));
   const defaultView: ViewMode = round?.isFinalRound ? "results" : "advancement";
   const activeView = view ?? defaultView;
+
+  // Этот компонент смонтирован с самой первой загрузки страницы (все вкладки
+  // CompetitionWorkspaceTabs держит в DOM разом, просто скрывая неактивные) —
+  // клик по "Результаты"/"Оценки судей"/"Результаты этапов" в Мониторе не
+  // размонтирует его, а меняет URL настоящей Next.js-навигацией. Без этого
+  // эффекта адрес обновился бы, а показанная категория/этап/режим — нет
+  // (найдено вживую, 2026-09-09 — "клик и ничего"). Не конфликтует с
+  // shallow-кликами ниже (setShallowQueryParams в обход роутера,
+  // useSearchParams() их не видит).
+  useEffect(() => {
+    const c = searchParams.get("category");
+    if (c) setCategoryId(c);
+    setRoundId(searchParams.get("round"));
+    const v = searchParams.get("view");
+    setView(v === "results" || v === "scores" || v === "advancement" ? v : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   function selectCategory(id: string) {
     setCategoryId(id);

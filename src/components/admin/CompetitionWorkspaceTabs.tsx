@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { setShallowQueryParams } from "@/lib/shallow-query";
 
@@ -30,6 +30,23 @@ export function CompetitionWorkspaceTabs({ tabs, defaultTab }: { tabs: Workspace
   const urlTab = searchParams.get("tab");
   const initialTab = urlTab && tabs.some((t) => t.id === urlTab) ? urlTab : (defaultTab ?? tabs[0]?.id);
   const [active, setActive] = useState(initialTab);
+
+  // Настоящий переход по ссылке на ЭТУ ЖЕ страницу с другим ?tab= (кнопки
+  // "Результаты"/"Результаты этапов" в Мониторе — CompetitionMonitor.tsx,
+  // JudgesLivePanel.tsx) не размонтирует уже смонтированный
+  // CompetitionWorkspaceTabs — React переиспользует тот же экземпляр
+  // компонента, а initialTab выше читается только один раз при первом
+  // монтировании. Без этого эффекта такой клик менял бы адресную строку, но
+  // видимая вкладка оставалась бы прежней (найдено вживую, 2026-09-09).
+  // useSearchParams() при этом обновляется только настоящей Next.js
+  // навигацией — локальные клики по вкладкам ниже (setShallowQueryParams,
+  // history.replaceState в обход роутера) его не трогают, так что эффект не
+  // конфликтует с shallow-переключением.
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t && tabs.some((tab) => tab.id === t)) setActive(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Каждый клик по вкладке кладёт её id в адресную строку (без похода через
   // Next.js router — см. shallow-query.ts) — по прямому запросу пользователя,

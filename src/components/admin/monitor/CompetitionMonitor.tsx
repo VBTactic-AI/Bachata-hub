@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
@@ -364,6 +364,20 @@ export function CompetitionMonitor({
 
   const round = resolveSelected(category.rounds, roundId, defaultRoundId(category.rounds));
   const heat = round ? resolveSelected(round.heats, heatId, defaultHeatId(round.heats)) : null;
+
+  // Тот же случай, что и в CompetitionWorkspaceTabs.tsx: настоящий переход по
+  // ссылке на эту же категорию/этап (score-monitor "← Назад", 2026-09-09) не
+  // размонтирует уже смонтированный Монитор — без этого эффекта адрес менялся
+  // бы, а видимый этап оставался прежним. Не конфликтует с shallow-кликами
+  // ниже (те меняют history.replaceState в обход роутера, useSearchParams()
+  // на них не реагирует).
+  useEffect(() => {
+    const c = searchParams.get("category");
+    if (c) setCategoryId(c);
+    setRoundId(searchParams.get("round"));
+    setHeatId(searchParams.get("heat"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   function selectCategory(id: string) {
     setCategoryId(id);
