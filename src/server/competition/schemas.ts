@@ -244,6 +244,14 @@ export const rerollDrawSchema = z.object({
 });
 export type RerollDrawInput = z.infer<typeof rerollDrawSchema>;
 
+// Причина обязательна (как и у reroll выше) — физическое удаление
+// соревнования необратимо, CLAUDE.md §28 требует reason у критических
+// операций.
+export const deleteCompetitionSchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+export type DeleteCompetitionInput = z.infer<typeof deleteCompetitionSchema>;
+
 export const addDrawHelperSchema = z.object({
   registrationId: z.string().min(1),
   role: registrationRoleSchema,

@@ -38,6 +38,7 @@ import { RoundAdvancementPublish } from "@/components/admin/RoundAdvancementPubl
 import { getCurrentDivisionResults } from "@/server/results/results";
 import { StatisticsSection } from "@/components/admin/StatisticsSection";
 import { PublicInfoPanel } from "@/components/admin/PublicInfoPanel";
+import { DeleteCompetitionButton } from "@/components/admin/DeleteCompetitionButton";
 import { CompetitionHeader } from "@/components/admin/CompetitionHeader";
 import { CompetitionWorkspaceTabs } from "@/components/admin/CompetitionWorkspaceTabs";
 import { ParticipantsPanel } from "@/components/admin/ParticipantsPanel";
@@ -181,6 +182,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canViewStatistics = can(actor, "statistics:view", competition.id);
   const canViewScoreMonitor = can(actor, "score:view_all", competition.id);
   const canEditPublicInfo = can(actor, "competition:settings_update", competition.id);
+  // Без competitionId — глобальное право, как competition:create: по сиду
+  // им обладает только SUPER_ADMIN, EVENT_ADMIN конкретного соревнования его
+  // не получает (по прямому запросу пользователя, 2026-09-09 — "только для
+  // супер админа").
+  const canDeleteCompetition = can(actor, "competition:delete");
   const isJudge = can(actor, "score:submit", competition.id);
   // Полный список участников — только у тех, кому реально нужно им
   // управлять (03 §4: registration.view). Обычный участник (COMPETITOR) не
@@ -532,6 +538,23 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           Настройки конкретной категории (вместимость захода, ротация, метод судейства, критерии финала) — на вкладке
           «Категории», у каждой категории отдельно.
         </p>
+      )}
+      {canDeleteCompetition && (
+        <Card className="border-red-400/30 bg-admin-card">
+          <p className="m-0 mb-1 font-semibold text-red-400">Опасная зона</p>
+          <p className="m-0 mb-3 text-sm text-admin-muted">Необратимое удаление соревнования и всех его данных.</p>
+          <DeleteCompetitionButton
+            competitionId={competition.id}
+            competitionName={competition.name}
+            divisionsCount={competition.divisions.length}
+            registrationsCount={registrationsTotalCount}
+            disabledReason={
+              competition.status === "PUBLISHED" || competition.status === "ARCHIVED"
+                ? "Результаты уже опубликованы — удаление отключено, история должна сохраняться."
+                : null
+            }
+          />
+        </Card>
       )}
     </div>
   );
