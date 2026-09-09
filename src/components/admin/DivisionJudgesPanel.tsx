@@ -33,9 +33,9 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 // самого окна), в отличие от родительного множественного
 // (REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL), которым подписаны колонки.
 // Кнопки, которые это окно открывают, теперь называются одинаково — просто
-// "Добавить судью" (по запросу пользователя, 2026-09-09) — какую роль
-// показать, определяется тем, под какой колонкой кнопку нажали, без разницы
-// в подписи самой кнопки.
+// "Добавить" (по запросу пользователя, 2026-09-09) — какую роль показать,
+// определяется тем, под какой колонкой кнопку нажали, без разницы в подписи
+// самой кнопки.
 const ADD_ACCUSATIVE_SINGULAR: Record<Role, string> = { LEADER: "партнёра", FOLLOWER: "партнёршу" };
 
 // Судейская панель одной категории (redesign 2026-09-09, по референсу
@@ -250,7 +250,7 @@ export function DivisionJudgesPanel({
                 onClick={() => setOpenAdd(group.role)}
                 className="w-full rounded-app-sm border border-dashed border-admin-border px-3 py-2 text-sm text-night-text transition-colors hover:border-admin-primary hover:text-admin-primary"
               >
-                + Добавить судью
+                + Добавить
               </button>
             )}
           </div>
