@@ -305,7 +305,16 @@ function AdvancementCard({ round }: { round: MonitorRound }) {
       <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">
         {round.isFinalRound ? "Финал" : "Проходят дальше"}
       </p>
-      {round.finalistsCount ? (
+      {round.isFinalRound ? (
+        // Финал — дальше уже некому проходить: round.finalistsCount здесь
+        // означает "сколько пар танцует финал" (конфигурация категории), а
+        // не "сколько пройдёт в следующий раунд" — карточка "Партнёров N /
+        // Партнёрш N" и предупреждение про перетанцовку "за место в
+        // следующем раунде" вводили в заблуждение на финальном этапе
+        // (найдено по скриншоту пользователя, 2026-09-09; тот же баг был и в
+        // подписи вкладки этапа выше).
+        <p className="m-0 mt-1.5 text-sm text-admin-muted">Финальный этап — дальше никто не проходит, определяются места.</p>
+      ) : round.finalistsCount ? (
         <>
           <p className="m-0 mt-1.5 text-sm leading-relaxed text-admin-muted">
             Из {round.calledLeaders} партнёров и {round.calledFollowers} партнёрш этого этапа
@@ -327,11 +336,7 @@ function AdvancementCard({ round }: { round: MonitorRound }) {
           </p>
         </>
       ) : (
-        <p className="m-0 mt-1.5 text-sm text-admin-muted">
-          {round.isFinalRound
-            ? "Финальный этап — дальше никто не проходит, определяются места."
-            : "Число проходящих для этого этапа не задано."}
-        </p>
+        <p className="m-0 mt-1.5 text-sm text-admin-muted">Число проходящих для этого этапа не задано.</p>
       )}
       {called === 0 && <p className="m-0 mt-2 text-[11.5px] text-admin-disabled">Участники на паркет ещё не вызывались.</p>}
     </section>
@@ -483,7 +488,13 @@ export function CompetitionMonitor({
                   </span>
                   <span className="text-xs tabular-nums text-admin-disabled">
                     {r.calledLeaders} / {r.calledFollowers}
-                    {r.finalistsCount ? ` · проходят ${r.finalistsCount} пар` : ""}
+                    {/* "Проходят N пар" — только для обычных этапов: на финале
+                        дальше проходить уже некуда, r.finalistsCount там
+                        означает "сколько пар танцует финал", а не "сколько
+                        пройдёт дальше" — старая формулировка вводила в
+                        заблуждение (найдено по скриншоту пользователя,
+                        2026-09-09). */}
+                    {r.finalistsCount && !r.isFinalRound ? ` · проходят ${r.finalistsCount} пар` : ""}
                   </span>
                   <span
                     className={`text-[10.5px] font-bold uppercase tracking-wide ${isCompleted ? "text-night-success" : "text-admin-disabled"}`}
