@@ -54,10 +54,10 @@ import { CompetitionHeader } from "@/components/admin/CompetitionHeader";
 import { CompetitionWorkspaceTabs } from "@/components/admin/CompetitionWorkspaceTabs";
 import { ParticipantsPanel } from "@/components/admin/ParticipantsPanel";
 import { StatCard } from "@/components/admin/StatCard";
+import { RoundResultsList } from "@/components/admin/RoundResultsList";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
-  REGISTRATION_ROLE_LABELS_PLURAL as ROLE_LABELS_PLURAL,
   REGISTRATION_STATUS_LABELS,
   ROUND_TYPE_LABELS,
   HEAT_STATUS_LABELS,
@@ -936,60 +936,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           }
 
           if (round.status === "COMPLETED" && !round.finalSession && round.results.length > 0) {
-            // Тот же визуальный язык, что и SideColumn/ParticipantRow в
-            // CompetitionMonitor.tsx (карточка-роль + пронумерованный бейдж,
-            // синий/розовый акцент Партнёры/Партнёрши) — раньше жил на
-            // светлой "text-ink" поверхности, единственный из панелей раунда
-            // не переведённый на admin-* (redesign 2026-09-09, по прямому
-            // запросу пользователя со скриншотом).
-            panels.push(
-              <div key="round-results" className="grid gap-3 sm:grid-cols-2">
-                {(["LEADER", "FOLLOWER"] as const).map((r) => {
-                  const roleAccent = r === "LEADER" ? "#60a5fa" : "#f472b6";
-                  return (
-                    <div key={r} className="rounded-app border border-admin-border bg-admin-card2">
-                      <div className="flex items-center gap-2 border-b border-admin-border px-3.5 py-3">
-                        <span className="h-4 w-[3px] shrink-0 rounded-sm" style={{ background: roleAccent }} aria-hidden="true" />
-                        <h4 className="m-0 text-[13px] font-extrabold uppercase tracking-wide text-night-text">
-                          {ROLE_LABELS_PLURAL[r] ?? r}
-                        </h4>
-                      </div>
-                      <ul className="m-0 flex list-none flex-col gap-1 p-2">
-                        {round.results
-                          .filter((res) => res.registration.role === r)
-                          .map((res) => {
-                            const advanced = res.status === "ADVANCED";
-                            return (
-                              <li key={res.id} className="flex items-center gap-2.5 rounded-app-sm px-2 py-1.5">
-                                <span
-                                  className="grid h-7 min-w-[40px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-[13px] font-extrabold tabular-nums"
-                                  style={{ color: roleAccent }}
-                                >
-                                  {res.registration.checkIn?.bibNumber ?? "—"}
-                                </span>
-                                <span
-                                  className={`min-w-0 flex-1 truncate text-sm ${
-                                    advanced ? "text-night-text" : "text-admin-disabled line-through"
-                                  }`}
-                                >
-                                  {res.registration.dancer.displayName}
-                                </span>
-                                <span
-                                  className={`shrink-0 text-xs font-bold tabular-nums ${
-                                    advanced ? "text-night-success" : "text-admin-disabled"
-                                  }`}
-                                >
-                                  {advanced ? "прошёл" : "не прошёл"} ({res.scoreSum})
-                                </span>
-                              </li>
-                            );
-                          })}
-                      </ul>
-                    </div>
-                  );
-                })}
-              </div>
-            );
+            panels.push(<RoundResultsList key="round-results" results={round.results} />);
           }
 
           const advancementPublishPanel =
@@ -1118,6 +1065,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               canViewScoreMonitor && !(round.type === "TIE_BREAK" && (isFullRankTieBreak || isFinalTieBreak))
                 ? `/admin/competitions/${competition.id}/score-monitor/${round.id}`
                 : null,
+            // Отдельная страница "Результаты этапов" (redesign 2026-09-09, по
+            // прямому запросу пользователя) — тот же гейт, что открывает саму
+            // вкладку "Монитор" целиком (round:create, только SUPER_ADMIN и
+            // EVENT_ADMIN — не HEAD_JUDGE, у него round:create нет). Ссылка
+            // сразу открывает вкладку ЭТОГО раунда (?round=), не первую по
+            // умолчанию.
+            roundResultsHref: `/admin/competitions/${competition.id}/round-results/${d.id}?round=${round.id}`,
             calledLeaders: calledOf("LEADER"),
             calledFollowers: calledOf("FOLLOWER"),
             heats,

@@ -75,6 +75,7 @@ export function JudgesLivePanel({
   followers,
   canViewLive,
   scoreMonitorHref,
+  roundResultsHref,
 }: {
   roundId: string;
   roundStatus: RoundStatus;
@@ -82,6 +83,7 @@ export function JudgesLivePanel({
   followers: MonitorJudge[];
   canViewLive: boolean;
   scoreMonitorHref: string | null;
+  roundResultsHref: string;
 }) {
   const live = canViewLive && LIVE_ROUND_STATUSES.has(roundStatus);
   const [totals, setTotals] = useState<Map<string, ScoreMonitorTotal>>(new Map());
@@ -112,19 +114,33 @@ export function JudgesLivePanel({
 
   return (
     <div className="flex flex-col gap-2.5">
-      {/* Ссылка — сверху, перед карточкой "Судьи категории" (по прямому
-          запросу пользователя, 2026-09-09), своя отдельная плашка. Залита
-          акцентным градиентом, а не приглушённым текстом — раньше терялась
-          рядом с остальными приглушёнными подписями (по прямому замечанию
-          пользователя, 2026-09-09). */}
-      {scoreMonitorHref && (
+      {/* Ссылки — сверху, перед карточкой "Судьи категории" (по прямому
+          запросу пользователя, 2026-09-09), своя отдельная плашка. "Монитор
+          оценок судей" залит акцентным градиентом, а не приглушённым текстом
+          — раньше терялась рядом с остальными приглушёнными подписями (по
+          прямому замечанию пользователя, 2026-09-09). "Результаты этапов" —
+          рядом (2026-09-09, тоже по прямому запросу — "рядом с кнопкой") и
+          нарочно менее ярким outline-стилем: это не live-инструмент судейства,
+          а справочный протокол, ему не место наравне с главным CTA. Ведёт на
+          отдельную страницу с вкладками этапов категории (round-results/
+          [divisionId]) — доступна только SUPER_ADMIN/EVENT_ADMIN, тот же гейт,
+          что у самого Монитора. */}
+      <div className="flex flex-wrap gap-2">
+        {scoreMonitorHref && (
+          <Link
+            href={scoreMonitorHref}
+            className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-app bg-gradient-admin-cta px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-[1.06]"
+          >
+            Монитор оценок судей<span aria-hidden="true">→</span>
+          </Link>
+        )}
         <Link
-          href={scoreMonitorHref}
-          className="flex items-center justify-center gap-2 rounded-app bg-gradient-admin-cta px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-[1.06]"
+          href={roundResultsHref}
+          className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-app border border-admin-border bg-admin-card2 px-4 py-3 text-sm font-bold text-night-text shadow-sm transition hover:border-admin-primary"
         >
-          Монитор оценок судей<span aria-hidden="true">→</span>
+          Результаты этапов<span aria-hidden="true">→</span>
         </Link>
-      )}
+      </div>
 
       <section className="overflow-hidden rounded-app border border-admin-border bg-admin-card">
         <div className="flex flex-wrap items-center gap-2 border-b border-admin-border px-4 py-3.5">

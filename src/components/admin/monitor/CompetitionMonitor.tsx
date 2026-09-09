@@ -10,7 +10,7 @@ import { AddDrawHelperForm } from "../AddDrawHelperForm";
 import { AddHeatButton } from "../AddHeatButton";
 import { DeleteIconButton } from "../DeleteIconButton";
 import { HeatStatusControls } from "../HeatStatusControls";
-import { CheckCircleIcon, ChevronRightIcon, PersonIcon, TrophyIcon } from "../icons";
+import { CheckCircleIcon, ChevronRightIcon, JudgesIcon, PersonIcon, TrophyIcon } from "../icons";
 import { RemoveDrawHelperButton } from "../RemoveDrawHelperButton";
 import { ReplaceDrawHelperButton } from "../ReplaceDrawHelperButton";
 import { RerollDrawButton } from "../RerollDrawButton";
@@ -364,14 +364,17 @@ export function CompetitionMonitor({
   const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("category") ?? fallbackCategoryId);
   const [roundId, setRoundId] = useState<string | null>(searchParams.get("round"));
   const [heatId, setHeatId] = useState<string | null>(searchParams.get("heat"));
-  // "Результаты" — не настоящий этап (не в category.rounds), а отдельный
-  // режим просмотра этой же категории: протокол + оценки судей по
-  // критериям финала, вместо сетки заходов (redesign 2026-09-09, по
-  // запросу пользователя — "ещё один квадратик после Финала"). Отдельный
-  // булев флаг, а не sentinel-значение roundId, — чтобы re-open обычного
-  // этапа (selectRound) не приходилось нигде явно проверять на "не тот ли
-  // это специальный id".
-  const [showResults, setShowResults] = useState(searchParams.get("view") === "results");
+  // "Результаты" и "Оценки судей" — не настоящие этапы (не в
+  // category.rounds), а два отдельных режима просмотра этой же категории
+  // вместо сетки заходов: протокол мест отдельно от таблицы баллов по
+  // критериям (redesign 2026-09-09, по запросу пользователя — сначала были
+  // вместе одним экраном "Результаты", разнесены по двум плиткам, чтобы не
+  // листать один длинный список). ViewMode, а не sentinel-значение roundId,
+  // — чтобы re-open обычного этапа (selectRound) не приходилось нигде явно
+  // проверять на "не тот ли это специальный id".
+  type ViewMode = "round" | "results" | "scores";
+  const initialView = searchParams.get("view");
+  const [view, setView] = useState<ViewMode>(initialView === "results" || initialView === "scores" ? initialView : "round");
 
   const category = resolveSelected(categories, categoryId, fallbackCategoryId);
   if (!category) return <p className="text-sm text-admin-muted">Категорий пока нет.</p>;
@@ -385,20 +388,20 @@ export function CompetitionMonitor({
     // сработало то же правило "показать то, что идёт сейчас".
     setRoundId(null);
     setHeatId(null);
-    setShowResults(false);
+    setView("round");
     setShallowQueryParams({ category: id, round: null, heat: null, view: null });
   }
 
   function selectRound(id: string) {
     setRoundId(id);
     setHeatId(null);
-    setShowResults(false);
+    setView("round");
     setShallowQueryParams({ round: id, heat: null, view: null });
   }
 
-  function selectResults() {
-    setShowResults(true);
-    setShallowQueryParams({ view: "results" });
+  function selectView(mode: "results" | "scores") {
+    setView(mode);
+    setShallowQueryParams({ view: mode });
   }
 
   function selectHeat(id: string) {
@@ -502,9 +505,15 @@ export function CompetitionMonitor({
             );
           })}
 
-          {/* "Ещё один квадратик после Финала" (по запросу пользователя,
-              2026-09-09) — не настоящий этап, отдельный режим просмотра
-              category.results/finalResultsTable ниже (см. selectResults). */}
+          {/* Ещё две "плитки" после последнего этапа (по запросу
+              пользователя, 2026-09-09) — не настоящие этапы, а два разных
+              режима просмотра категории вместо сетки заходов: сначала были
+              вместе одним экраном "Результаты", разнесены по отдельным
+              вкладкам, чтобы не листать один длинный список. Гейты разные и
+              намеренно независимые: протокол мест (resultsAvailable) готов
+              только после завершения финального раунда, а оценки судей по
+              критериям (finalResultsTable) можно смотреть уже во время
+              подсчёта, не дожидаясь "Рассчитать результаты". */}
           {category.resultsAvailable && (
             <Fragment>
               {category.rounds.length > 0 && (
@@ -515,10 +524,10 @@ export function CompetitionMonitor({
               <button
                 type="button"
                 role="tab"
-                aria-selected={showResults}
-                onClick={selectResults}
+                aria-selected={view === "results"}
+                onClick={() => selectView("results")}
                 className={`flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
-                  showResults
+                  view === "results"
                     ? "border-admin-violet bg-admin-violet/10"
                     : "border-admin-violet/30 bg-admin-violet/[0.07] hover:border-admin-violet/50"
                 }`}
@@ -529,7 +538,36 @@ export function CompetitionMonitor({
                   </span>
                   <span className="text-sm font-bold text-night-text">Результаты</span>
                 </span>
-                <span className="text-[10.5px] font-bold uppercase tracking-wide text-admin-violet">Протокол и оценки</span>
+                <span className="text-[10.5px] font-bold uppercase tracking-wide text-admin-violet">Протокол мест</span>
+              </button>
+            </Fragment>
+          )}
+
+          {category.finalResultsTable && (
+            <Fragment>
+              {(category.rounds.length > 0 || category.resultsAvailable) && (
+                <span className="flex shrink-0 items-center text-admin-disabled" aria-hidden="true">
+                  <ChevronRightIcon />
+                </span>
+              )}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === "scores"}
+                onClick={() => selectView("scores")}
+                className={`flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
+                  view === "scores"
+                    ? "border-[#22d3ee] bg-[#22d3ee]/10"
+                    : "border-[#22d3ee]/30 bg-[#22d3ee]/[0.07] hover:border-[#22d3ee]/50"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="shrink-0 text-[#22d3ee]" aria-hidden="true">
+                    <JudgesIcon />
+                  </span>
+                  <span className="text-sm font-bold text-night-text">Оценки судей</span>
+                </span>
+                <span className="text-[10.5px] font-bold uppercase tracking-wide text-[#22d3ee]">Протокол оценок</span>
               </button>
             </Fragment>
           )}
@@ -537,30 +575,31 @@ export function CompetitionMonitor({
       )}
 
       {/* ── Результаты категории ──────────────────────────────── */}
-      {/* Отдельный режим просмотра вместо сетки заходов — протокол
-          (DivisionResultsPanel), оценки судей по критериям финала
-          (FinalResultsTable) и публикация результатов всего соревнования
-          (resultsPublishPanel), все уже на admin-* палитре, вместе на одном
-          тёмном экране (redesign 2026-09-09). key={category.id} — та же
-          причина, что и раньше: смена категории не должна тащить за собой
-          открытую форму "исправить"/её error от прошлой категории. */}
-      {showResults && category.resultsAvailable && (
+      {/* Отдельный режим просмотра вместо сетки заходов — протокол мест
+          (DivisionResultsPanel) и публикация результатов всего соревнования
+          (resultsPublishPanel), уже на admin-* палитре (redesign
+          2026-09-09). key={category.id} — та же причина, что и раньше:
+          смена категории не должна тащить за собой открытую форму
+          "исправить"/её error от прошлой категории. */}
+      {view === "results" && category.resultsAvailable && (
         <Fragment key={category.id}>
           <div className="flex flex-col gap-4">
-            {category.finalResultsTable && (
-              <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">
-                <h3 className="m-0 mb-3 text-sm font-extrabold text-night-text">Оценки судей по критериям (финал)</h3>
-                {category.finalResultsTable}
-              </section>
-            )}
             {category.results}
             {resultsPublishPanel}
           </div>
         </Fragment>
       )}
 
+      {/* ── Оценки судей по критериям (финал) ─────────────────── */}
+      {view === "scores" && category.finalResultsTable && (
+        <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">
+          <h3 className="m-0 mb-3 text-sm font-extrabold text-night-text">Оценки судей по критериям (финал)</h3>
+          {category.finalResultsTable}
+        </section>
+      )}
+
       {/* ── Выбранный этап ────────────────────────────────────── */}
-      {!showResults && round && (
+      {view === "round" && round && (
         // key={round.id} — при смене раунда React иначе переиспользует те же
         // экземпляры компонентов (RoundStatusControls/GenerateRoundsButton и
         // всё вложенное в HeatPanel) на новом месте дерева и тащит за собой их
@@ -687,8 +726,9 @@ export function CompetitionMonitor({
               </section>
             )}
 
-            {/* Уже на admin-* палитре — отдельно от светлых panels выше
-                (см. комментарий у advancementPublishPanel в types.ts). */}
+            {/* Отдельная секция от panels выше — публикуется независимо от
+                остальных панелей раунда (см. комментарий у
+                advancementPublishPanel в types.ts). */}
             {round.advancementPublishPanel && (
               <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">{round.advancementPublishPanel}</section>
             )}
@@ -703,6 +743,7 @@ export function CompetitionMonitor({
               followers={category.judges.followers}
               canViewLive={canViewScoreMonitor}
               scoreMonitorHref={round.scoreMonitorHref}
+              roundResultsHref={round.roundResultsHref}
             />
           </aside>
         </div>
