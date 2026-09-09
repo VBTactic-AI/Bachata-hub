@@ -43,21 +43,24 @@ export function RerollDrawButton({ heatId }: { heatId: string }) {
   }
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-2">
-      <Input
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Причина пересборки"
-        className="!w-auto border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text placeholder:text-admin-disabled focus:border-admin-primary focus:ring-admin-primary/20"
-        style={{ maxWidth: 220 }}
-      />
-      <Button type="button" size="sm" variant="admin" disabled={loading || !reason.trim()} onClick={submit}>
-        Подтвердить
-      </Button>
-      <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
-        Отмена
-      </Button>
-      {error && <span className="text-sm text-red-400">{error}</span>}
+    <span className="inline-flex flex-col items-start gap-1.5">
+      <span className="flex flex-wrap items-center gap-2">
+        <Input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Причина пересборки"
+          className="!w-auto border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text placeholder:text-admin-disabled focus:border-admin-primary focus:ring-admin-primary/20"
+          style={{ maxWidth: 220 }}
+        />
+        <Button type="button" size="sm" variant="admin" disabled={loading || !reason.trim()} onClick={submit}>
+          Подтвердить
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
+          Отмена
+        </Button>
+      </span>
+      {/* Ошибка — своей строкой, не рядом с кнопками (2026-09-09). */}
+      {error && <span className="text-xs text-red-400">{error}</span>}
     </span>
   );
 }

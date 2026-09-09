@@ -59,22 +59,27 @@ export function HeatStatusControls({
   }
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-2">
-      {nextOptions.map((to) => (
-        // "Запустить" — главное действие захода, остальные (пауза/завершить)
-        // не должны с ним конкурировать по весу на живом экране.
-        <Button
-          key={to}
-          type="button"
-          size="sm"
-          variant={to === "RUNNING" ? "admin" : "adminOutline"}
-          disabled={loading}
-          onClick={() => go(to)}
-        >
-          {ACTION_LABELS[to]}
-        </Button>
-      ))}
-      {error && <span className="text-sm text-red-400">{error}</span>}
+    <span className="inline-flex flex-col items-start gap-1.5">
+      <span className="flex flex-wrap items-center gap-2">
+        {nextOptions.map((to) => (
+          // "Запустить" — главное действие захода, остальные (пауза/завершить)
+          // не должны с ним конкурировать по весу на живом экране.
+          <Button
+            key={to}
+            type="button"
+            size="sm"
+            variant={to === "RUNNING" ? "admin" : "adminOutline"}
+            disabled={loading}
+            onClick={() => go(to)}
+          >
+            {ACTION_LABELS[to]}
+          </Button>
+        ))}
+      </span>
+      {/* Ошибка — своей строкой под кнопками, а не рядом с ними: иначе она
+          раздвигала кнопку по ширине и текст переносился (жалоба
+          пользователя со скриншотом, 2026-09-09). */}
+      {error && <span className="text-xs text-red-400">{error}</span>}
     </span>
   );
 }

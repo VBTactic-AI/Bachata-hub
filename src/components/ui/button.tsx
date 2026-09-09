@@ -4,8 +4,14 @@ import { cn } from "@/lib/cn";
 // buttonVariants экспортируется отдельно от <Button>, чтобы этот же набор
 // классов можно было навесить на <Link> (у нас много ссылок, которые
 // визуально выглядят кнопкой — раньше это было className="btn").
+// whitespace-nowrap — кнопка не переносит подпись на вторую строку, даже
+// если ей не хватает места в тесной flex-строке (найдено вживую, 2026-09-09:
+// "Перегенерировать раунды" ломалось на "Перегенерировать"/"раунды" и
+// раздувало кнопку по высоте). Кнопка либо влезает целиком, либо сама
+// строка-контейнер переносит её целиком на новую строку (flex-wrap на
+// контейнере) — но не разрывает текст внутри одной кнопки.
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1.5 rounded-full font-semibold font-body cursor-pointer transition duration-150 ease-out disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full font-semibold font-body cursor-pointer transition duration-150 ease-out disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none",
   {
     variants: {
       variant: {
