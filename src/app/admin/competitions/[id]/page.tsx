@@ -225,28 +225,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const countFor = (rows: { divisionId: string; role: string; _count: { _all: number } }[], divisionId: string, role: string) =>
     rows.find((r) => r.divisionId === divisionId && r.role === role)?._count._all ?? 0;
 
-  // Общий ростер судей соревнования — из CompetitionMember(role=JUDGE), а не
-  // из назначений на категории (2026-09-09): судья появляется здесь сразу
-  // после добавления в "Общий список судей" (AddCompetitionJudgeForm), даже
-  // если ещё не назначен ни на одну категорию — это и есть тот самый список,
-  // из которого DivisionJudgesPanel ниже выбирает, кого добавить. displayName
-  // — из профиля танцора судьи, если он у него есть (у судей без профиля его
-  // нет — тогда показывается email, реальных данных не выдумываем).
-  const competitionJudgePool: PoolJudge[] = competition.members
-    .map((m) => ({
-      judgeUserId: m.userId,
-      judgeEmail: m.user.email,
-      displayName: m.user.dancer?.displayName ?? null,
-      gender: m.user.dancer?.gender ?? null,
-    }))
-    .sort((a, b) => (a.displayName ?? a.judgeEmail).localeCompare(b.displayName ?? b.judgeEmail, "ru"));
-
   // Только для отображения в "Реестр судей" (какие категории судит каждый,
   // каким цветом — тем же, что точка категории в сайдбаре ниже, чтобы одна и
   // та же категория узнавалась в обоих местах, 2026-09-09) и в каких ролях
   // (LEADER/FOLLOWER) — не часть контракта DivisionJudgesPanel, отдельная
   // структура. Роль судьи не хранится как отдельное поле нигде — это просто
-  // объединение ролей всех его JudgeAssignment по всем категориям.
+  // объединение ролей всех его JudgeAssignment по всем категориям. Тот же
+  // judgeRoles используется и ниже, в пуле для DivisionJudgesPanel (фильтр
+  // "Добавить судью" по колонке — 2026-09-09).
   const judgeDivisionChips = new Map<string, { name: string; color: string }[]>();
   const judgeRoles = new Map<string, Set<RegistrationRole>>();
   competition.divisions.forEach((d, i) => {
@@ -261,6 +247,28 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       judgeRoles.set(ja.judgeUserId, roles);
     }
   });
+
+  // Общий ростер судей соревнования — из CompetitionMember(role=JUDGE), а не
+  // из назначений на категории (2026-09-09): судья появляется здесь сразу
+  // после добавления в "Общий список судей" (AddCompetitionJudgeForm), даже
+  // если ещё не назначен ни на одну категорию — это и есть тот самый список,
+  // из которого DivisionJudgesPanel ниже выбирает, кого добавить. displayName
+  // — из профиля танцора судьи, если он у него есть (у судей без профиля его
+  // нет — тогда показывается email, реальных данных не выдумываем). `roles` —
+  // объединение ролей по ВСЕМ категориям этого соревнования (см. judgeRoles
+  // выше) — DivisionJudgesPanel использует его, чтобы в окне "Добавить судью"
+  // под колонкой "Судят партнёров" показывать только тех, кто и правда где-то
+  // ещё судит партнёров (плюс тех, кто пока не судит нигде вообще — им ещё не
+  // из чего было бы определиться).
+  const competitionJudgePool: PoolJudge[] = competition.members
+    .map((m) => ({
+      judgeUserId: m.userId,
+      judgeEmail: m.user.email,
+      displayName: m.user.dancer?.displayName ?? null,
+      gender: m.user.dancer?.gender ?? null,
+      roles: [...(judgeRoles.get(m.userId) ?? [])],
+    }))
+    .sort((a, b) => (a.displayName ?? a.judgeEmail).localeCompare(b.displayName ?? b.judgeEmail, "ru"));
 
   // Соревнование ещё не началось — то же понятие, что и в
   // updateDivisionSettings() (COMPETITION_NOT_STARTED_STATUSES): метод

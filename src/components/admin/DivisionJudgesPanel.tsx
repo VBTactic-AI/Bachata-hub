@@ -6,8 +6,19 @@ import { Button } from "@/components/ui/button";
 import { TrashIcon } from "@/components/admin/icons";
 import { REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL } from "@/lib/competition-labels";
 
-export type PoolJudge = { judgeUserId: string; judgeEmail: string; displayName: string | null; gender: "MALE" | "FEMALE" | null };
 type Role = "LEADER" | "FOLLOWER";
+export type PoolJudge = {
+  judgeUserId: string;
+  judgeEmail: string;
+  displayName: string | null;
+  gender: "MALE" | "FEMALE" | null;
+  // Объединение ролей судьи по ВСЕМ категориям этого соревнования (не
+  // отдельное хранимое поле, см. page.tsx) — пустой массив значит "ещё
+  // нигде не судит", а не "судит обе роли". Используется только для фильтра
+  // окна "Добавить судью" ниже (2026-09-09) — какую роль показать под какой
+  // колонкой.
+  roles: Role[];
+};
 
 function judgeName(j: PoolJudge | undefined, fallbackId: string): string {
   return j?.displayName || j?.judgeEmail || fallbackId;
@@ -17,11 +28,14 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
-// Винительный падеж единственного числа — только для подписи кнопки
-// добавления в конкретную колонку ("Добавить партнёра"/"Добавить
-// партнёршу"), в отличие от родительного множественного
-// (REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL), которым подписаны сами колонки
-// ("Судят партнёров"/"Судят партнёрш").
+// Винительный падеж единственного числа — только для заголовка окна выбора
+// ("Добавить партнёра"/"Добавить партнёршу", для ясности контекста внутри
+// самого окна), в отличие от родительного множественного
+// (REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL), которым подписаны колонки.
+// Кнопки, которые это окно открывают, теперь называются одинаково — просто
+// "Добавить судью" (по запросу пользователя, 2026-09-09) — какую роль
+// показать, определяется тем, под какой колонкой кнопку нажали, без разницы
+// в подписи самой кнопки.
 const ADD_ACCUSATIVE_SINGULAR: Record<Role, string> = { LEADER: "партнёра", FOLLOWER: "партнёршу" };
 
 // Судейская панель одной категории (redesign 2026-09-09, по референсу
@@ -159,6 +173,16 @@ export function DivisionJudgesPanel({
   const initialFollowers = new Set(followerJudgeUserIds);
   const availableFromPool = pool.filter((j) => !initialLeaders.has(j.judgeUserId) && !initialFollowers.has(j.judgeUserId));
 
+  // Фильтр окна "Добавить судью" по запросу пользователя (2026-09-09): под
+  // колонкой "Судят партнёров" показываем только тех, кто и в других
+  // категориях этого соревнования уже оценивает партнёров, — судья обычно
+  // ведёт одну и ту же роль на всех категориях одного конкурса. Тех, кто
+  // нигде ещё не судит (`roles.length === 0`), показываем в обоих окнах —
+  // ролью им пока просто неоткуда было определиться.
+  function candidatesForRole(role: Role): PoolJudge[] {
+    return availableFromPool.filter((j) => j.roles.length === 0 || j.roles.includes(role));
+  }
+
   // Индикатор дисбаланса ролей (по запросу пользователя, 2026-09-09) — без
   // него 0 судей на одну из ролей было видно, только если долистать таблицу
   // ниже и заметить пустую группу. Считается от live-состояния (leaders/
@@ -220,13 +244,13 @@ export function DivisionJudgesPanel({
               )}
             </div>
 
-            {availableFromPool.length > 0 && (
+            {candidatesForRole(group.role).length > 0 && (
               <button
                 type="button"
                 onClick={() => setOpenAdd(group.role)}
                 className="w-full rounded-app-sm border border-dashed border-admin-border px-3 py-2 text-sm text-night-text transition-colors hover:border-admin-primary hover:text-admin-primary"
               >
-                + Добавить {ADD_ACCUSATIVE_SINGULAR[group.role]}
+                + Добавить судью
               </button>
             )}
           </div>
@@ -259,10 +283,18 @@ export function DivisionJudgesPanel({
             </div>
 
             <div className="flex-1 overflow-y-auto py-1.5">
-              {availableFromPool.length === 0 ? (
-                <p className="m-0 px-5 py-4 text-sm text-admin-muted">Все судьи реестра уже назначены в эту категорию.</p>
-              ) : (
-                availableFromPool.map((j) => {
+              {(() => {
+                const candidates = candidatesForRole(openAdd);
+                if (candidates.length === 0) {
+                  return (
+                    <p className="m-0 px-5 py-4 text-sm text-admin-muted">
+                      {availableFromPool.length === 0
+                        ? "Все судьи реестра уже назначены в эту категорию."
+                        : `Нет свободных судей, оценивающих ${REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL[openAdd].toLowerCase()}.`}
+                    </p>
+                  );
+                }
+                return candidates.map((j) => {
                   const checked = roleOf(j.judgeUserId) === openAdd;
                   return (
                     <label key={j.judgeUserId} className="flex cursor-pointer items-center gap-3 px-5 py-2 hover:bg-admin-card2">
@@ -275,8 +307,8 @@ export function DivisionJudgesPanel({
                       <span className="truncate text-sm font-semibold text-night-text">{judgeName(j, j.judgeUserId)}</span>
                     </label>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
