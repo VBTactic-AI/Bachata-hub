@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 export type WorkspaceTab = { id: string; label: string; content: React.ReactNode };
 
@@ -17,7 +18,15 @@ export type WorkspaceTab = { id: string; label: string; content: React.ReactNode
 // клиентское состояние вложенных компонентов (например, уже загруженная по
 // кнопке статистика) не терялось при переключении туда-обратно.
 export function CompetitionWorkspaceTabs({ tabs, defaultTab }: { tabs: WorkspaceTab[]; defaultTab?: string }) {
-  const [active, setActive] = useState(defaultTab ?? tabs[0]?.id);
+  // Возврат со страницы "Монитор оценок судей" — та кладёт `?tab=monitor` в
+  // свою ссылку "← Назад к соревнованию" (2026-09-09), чтобы вернуться сразу
+  // на нужную вкладку, а не на первую по умолчанию. Читаем один раз при
+  // монтировании — дальнейшее переключение вкладок по-прежнему не трогает
+  // URL (см. комментарий выше про лишние запросы).
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  const initialTab = urlTab && tabs.some((t) => t.id === urlTab) ? urlTab : (defaultTab ?? tabs[0]?.id);
+  const [active, setActive] = useState(initialTab);
 
   return (
     <div className="flex flex-col gap-5">

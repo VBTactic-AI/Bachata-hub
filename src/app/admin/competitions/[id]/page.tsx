@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, Suspense, type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -1150,17 +1150,23 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         venue={competition.venue}
         startAt={competition.startAt}
       />
-      <CompetitionWorkspaceTabs
-        tabs={[
-          { id: "overview", label: "Основное", content: overviewContent },
-          { id: "categories", label: "Категории", content: categoriesContent },
-          { id: "monitor", label: "Монитор", content: monitorContent },
-          { id: "participants", label: "Участники", content: participantsContent },
-          { id: "judges", label: "Судьи", content: judgesContent },
-          { id: "charts", label: "Графики", content: chartsContent },
-          { id: "settings", label: "Настройки", content: settingsContent },
-        ]}
-      />
+      {/* Suspense — CompetitionWorkspaceTabs и вложенный в него CompetitionMonitor
+          читают useSearchParams() (возврат со страницы "Монитор оценок судей"
+          на ту же вкладку/категорию/этап, 2026-09-09); Next.js требует
+          Suspense-границу вокруг любого потребителя useSearchParams. */}
+      <Suspense fallback={null}>
+        <CompetitionWorkspaceTabs
+          tabs={[
+            { id: "overview", label: "Основное", content: overviewContent },
+            { id: "categories", label: "Категории", content: categoriesContent },
+            { id: "monitor", label: "Монитор", content: monitorContent },
+            { id: "participants", label: "Участники", content: participantsContent },
+            { id: "judges", label: "Судьи", content: judgesContent },
+            { id: "charts", label: "Графики", content: chartsContent },
+            { id: "settings", label: "Настройки", content: settingsContent },
+          ]}
+        />
+      </Suspense>
     </div>
   );
 }

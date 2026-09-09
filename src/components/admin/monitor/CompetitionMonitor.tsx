@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
 import { HEAT_STATUS_LABELS, REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL, ROUND_STATUS_LABELS } from "@/lib/competition-labels";
 import { categoryDotColor } from "../category-colors";
@@ -334,9 +335,19 @@ export function CompetitionMonitor({
   categories: MonitorCategory[];
   canViewScoreMonitor: boolean;
 }) {
+  // Возврат со страницы "Монитор оценок судей" (score-monitor/[roundId]) —
+  // та сама знает свою категорию/раунд и кладёт их в query-строку своей
+  // ссылки "← Назад к соревнованию" (по прямому запросу пользователя,
+  // 2026-09-09: назад должно вести на ту же категорию и этап, а не на
+  // дефолтный "что сейчас идёт"). Читаем один раз при монтировании — не
+  // держим состояние синхронизированным с URL постоянно (тот же принцип,
+  // что и у остальной вкладки: переключение категории/этапа не должно стоить
+  // лишнего запроса, а URL/searchParams для этого специально не используются
+  // — см. комментарий у CompetitionWorkspaceTabs).
+  const searchParams = useSearchParams();
   const fallbackCategoryId = defaultCategoryId(categories);
-  const [categoryId, setCategoryId] = useState<string | null>(fallbackCategoryId);
-  const [roundId, setRoundId] = useState<string | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("category") ?? fallbackCategoryId);
+  const [roundId, setRoundId] = useState<string | null>(searchParams.get("round"));
   const [heatId, setHeatId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -567,11 +578,6 @@ export function CompetitionMonitor({
           </button>
           {settingsOpen && (
             <div className="border-t border-admin-border p-[18px]">
-              <p className="m-0 mb-3 text-sm text-admin-muted">
-                Партнёров: {category.registeredLeaders} ({category.checkedInLeaders} прошли check-in) · Партнёрш:{" "}
-                {category.registeredFollowers} ({category.checkedInFollowers} прошли check-in)
-                {category.stagePlanLabel ? ` · План по этапам: ${category.stagePlanLabel}` : ""}
-              </p>
               <div className="flex flex-col gap-3 rounded-app border border-admin-border bg-surface p-[18px] text-ink">
                 {category.settings.map((node, i) => (
                   <div key={i}>{node}</div>
