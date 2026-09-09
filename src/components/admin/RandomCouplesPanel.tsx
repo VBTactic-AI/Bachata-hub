@@ -45,10 +45,10 @@ export function RandomCouplesPanel({ roundId, pairs }: { roundId: string; pairs:
   }
 
   return (
-    <div className="rounded-app-sm border border-line p-3 mt-2 stack gap-1.5">
-      <p className="m-0 font-semibold">Финал «Случайные пары»</p>
+    <div className="rounded-app-sm border border-admin-border bg-admin-card2 p-3 mt-2 stack gap-1.5">
+      <p className="m-0 font-semibold text-night-text">Финал «Случайные пары»</p>
       {pairs.length > 0 && (
-        <ol className="stack gap-0.5 m-0 pl-4">
+        <ol className="stack gap-0.5 m-0 pl-4 text-sm text-night-text">
           {pairs.map((p) => (
             <li key={p.pairNumber}>
               Пара {p.pairNumber}: №{p.leaderBib ?? "—"} {p.leaderName} + №{p.followerBib ?? "—"} {p.followerName}
@@ -58,13 +58,18 @@ export function RandomCouplesPanel({ roundId, pairs }: { roundId: string; pairs:
         </ol>
       )}
       <label className="stack gap-1 max-w-[300px]">
-        <span className="hint-text">Песня для следующей пары (необязательно)</span>
-        <Input value={trackName} onChange={(e) => setTrackName(e.target.value)} placeholder="Название трека" />
+        <span className="text-sm text-admin-muted">Песня для следующей пары (необязательно)</span>
+        <Input
+          value={trackName}
+          onChange={(e) => setTrackName(e.target.value)}
+          placeholder="Название трека"
+          className="border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+        />
       </label>
-      <Button type="button" size="sm" disabled={loading} onClick={onAdvance}>
+      <Button type="button" size="sm" variant="admin" disabled={loading} onClick={onAdvance}>
         Следующая пара
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-night-danger">{error}</span>}
     </div>
   );
 }

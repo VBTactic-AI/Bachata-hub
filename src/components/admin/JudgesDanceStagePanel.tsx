@@ -36,17 +36,17 @@ export function JudgesDanceStagePanel({ roundId, currentStage }: { roundId: stri
   }
 
   return (
-    <div className="rounded-app-sm border border-line p-3 mt-2 stack gap-1.5">
-      <p className="m-0 font-semibold">Финал «Танец с судьями»</p>
-      <p className="hint-text m-0">
+    <div className="rounded-app-sm border border-admin-border bg-admin-card2 p-3 mt-2 stack gap-1.5">
+      <p className="m-0 font-semibold text-night-text">Финал «Танец с судьями»</p>
+      <p className="m-0 text-sm text-admin-muted">
         {currentStage === null && "Ещё не начат."}
         {currentStage === 1 && "Идёт стадия 1: финалисты-Партнёры танцуют с судьями-Партнёршами."}
         {currentStage === 2 && "Идёт стадия 2: финалистки-Партнёрши танцуют с судьями-Партнёрами."}
       </p>
-      <Button type="button" size="sm" disabled={loading} onClick={onAdvance}>
+      <Button type="button" size="sm" variant="admin" disabled={loading} onClick={onAdvance}>
         {label}
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-night-danger">{error}</span>}
     </div>
   );
 }

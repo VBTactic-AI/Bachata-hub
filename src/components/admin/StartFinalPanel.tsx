@@ -44,23 +44,23 @@ export function StartFinalPanel({ roundId }: { roundId: string }) {
   }
 
   return (
-    <div className="rounded-app-sm border border-line p-3 mt-2 stack gap-1.5">
-      <p className="m-0 font-semibold">Начать финал (критериальное судейство)</p>
-      {issues === null && <p className="hint-text m-0">Проверка готовности…</p>}
+    <div className="rounded-app-sm border border-admin-border bg-admin-card2 p-3 mt-2 stack gap-1.5">
+      <p className="m-0 font-semibold text-night-text">Начать финал (критериальное судейство)</p>
+      {issues === null && <p className="m-0 text-sm text-admin-muted">Проверка готовности…</p>}
       {issues && issues.length > 0 && (
         <ul className="stack gap-0.5 m-0 pl-4">
           {issues.map((i, idx) => (
-            <li key={idx} className="error-text text-sm">
+            <li key={idx} className="text-sm text-night-danger">
               {i}
             </li>
           ))}
         </ul>
       )}
-      {issues && issues.length === 0 && <p className="hint-text m-0">Всё готово.</p>}
-      <Button type="button" size="sm" disabled={loading || !issues || issues.length > 0} onClick={onStart}>
+      {issues && issues.length === 0 && <p className="m-0 text-sm text-admin-muted">Всё готово.</p>}
+      <Button type="button" size="sm" variant="admin" disabled={loading || !issues || issues.length > 0} onClick={onStart}>
         Начать финал
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-night-danger">{error}</span>}
     </div>
   );
 }

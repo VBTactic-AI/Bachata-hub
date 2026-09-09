@@ -55,30 +55,31 @@ export function FinalTieBreakDecisionForm({
   }
 
   return (
-    <div className="stack gap-2 mt-2">
-      <p className="hint-text m-0">
-        ⚠ Требуется перетанцовка — общая сумма и все критерии по приоритету полностью совпали. Судьи коллегиально определяют
-        порядок (обсуждают вслух); отметьте его кнопками ↑/↓ ниже — от лучшего к худшему.
+    <div className="stack gap-2 mt-2 rounded-app-sm border border-night-warning/30 bg-night-warning/[0.09] p-3">
+      <p className="m-0 text-[12.5px] leading-relaxed text-[#f8cf8d]">
+        <span className="font-bold text-night-warning">⚠ Требуется перетанцовка —</span> общая сумма и все критерии по
+        приоритету полностью совпали. Судьи коллегиально определяют порядок (обсуждают вслух); отметьте его кнопками ↑/↓
+        ниже — от лучшего к худшему.
       </p>
       <ol className="stack gap-1 m-0 pl-4">
         {order.map((c, i) => (
-          <li key={c.registrationId} className="flex items-center gap-2">
+          <li key={c.registrationId} className="flex items-center gap-2 text-sm text-night-text">
             <span>
               №{c.bibNumber ?? "—"} {c.displayName}
             </span>
-            <Button type="button" size="sm" variant="outline" disabled={i === 0} onClick={() => move(i, -1)}>
+            <Button type="button" size="sm" variant="adminOutline" disabled={i === 0} onClick={() => move(i, -1)}>
               ↑
             </Button>
-            <Button type="button" size="sm" variant="outline" disabled={i === order.length - 1} onClick={() => move(i, 1)}>
+            <Button type="button" size="sm" variant="adminOutline" disabled={i === order.length - 1} onClick={() => move(i, 1)}>
               ↓
             </Button>
           </li>
         ))}
       </ol>
-      <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={onSubmit}>
+      <Button type="button" size="sm" variant="admin" disabled={loading} onClick={onSubmit}>
         Зафиксировать порядок
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-night-danger">{error}</span>}
     </div>
   );
 }

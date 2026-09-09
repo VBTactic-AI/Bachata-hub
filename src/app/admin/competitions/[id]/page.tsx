@@ -813,6 +813,31 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       />
     ) : null;
 
+    // Оценки судей по критериям для финала (FinalResultsTable) — раньше
+    // жила внутри panels ТОЛЬКО финального раунда (светлая рамка "Панели
+    // этапа"); вынесена на уровень категории и переехала на объединённый
+    // экран "Результаты" (redesign 2026-09-09, по запросу пользователя —
+    // "туда же вывести блок с оценками судей, по финалистам"), рядом с
+    // DivisionResultsPanel ниже.
+    const finalResultsRound = d.rounds.find(
+      (r) => (r.status === "SCORING" || r.status === "COMPLETED") && r.finalSession && r.finalResults.length > 0
+    );
+    const finalResultsTable = finalResultsRound ? (
+      <FinalResultsTable
+        criteria={finalResultsRound.finalSession!.criteriaSnapshot as unknown as { id: string; name: string; priority: number }[]}
+        results={finalResultsRound.finalResults.map((r) => ({
+          registrationId: r.registrationId,
+          role: r.role,
+          displayName: r.registration.dancer.displayName,
+          bibNumber: r.registration.checkIn?.bibNumber ?? null,
+          totalScore: r.totalScore,
+          criteriaTotals: r.criteriaTotals as Record<string, number>,
+          place: r.place,
+          tieGroupKey: r.tieGroupKey,
+        }))}
+      />
+    ) : null;
+
     const rounds: MonitorRound[] = !canManageRounds
       ? []
       : d.rounds.map((round) => {
@@ -857,14 +882,17 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
           if (round.status === "SCORING" && round.type !== "TIE_BREAK") {
             panels.push(
-              <div key="scoring-progress">
+              <div key="scoring-progress" className="flex flex-col gap-3">
                 {skippedRolesByRoundId.has(round.id) && (
-                  <p className="hint-text">
-                    {skippedRolesByRoundId
-                      .get(round.id)!
-                      .map((r) => ROLE_LABELS[r] ?? r)
-                      .join(", ")}{" "}
-                    не оценивается — участников не больше, чем мест, проходят автоматически.
+                  <p className="m-0 rounded-app-sm border border-night-warning/30 bg-night-warning/[0.09] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#f8cf8d]">
+                    <span className="font-bold text-night-warning">
+                      {skippedRolesByRoundId
+                        .get(round.id)!
+                        .map((r) => ROLE_LABELS[r] ?? r)
+                        .join(", ")}{" "}
+                      не оценивается —
+                    </span>{" "}
+                    участников не больше, чем мест, проходят автоматически.
                   </p>
                 )}
                 <ScoringProgress {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />
@@ -907,43 +935,59 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             );
           }
 
-          if ((round.status === "SCORING" || round.status === "COMPLETED") && round.finalSession && round.finalResults.length > 0) {
-            panels.push(
-              <FinalResultsTable
-                key="final-results"
-                criteria={round.finalSession!.criteriaSnapshot as unknown as { id: string; name: string; priority: number }[]}
-                results={round.finalResults.map((r) => ({
-                  registrationId: r.registrationId,
-                  role: r.role,
-                  displayName: r.registration.dancer.displayName,
-                  bibNumber: r.registration.checkIn?.bibNumber ?? null,
-                  totalScore: r.totalScore,
-                  criteriaTotals: r.criteriaTotals as Record<string, number>,
-                  place: r.place,
-                  tieGroupKey: r.tieGroupKey,
-                }))}
-              />
-            );
-          }
-
           if (round.status === "COMPLETED" && !round.finalSession && round.results.length > 0) {
+            // Тот же визуальный язык, что и SideColumn/ParticipantRow в
+            // CompetitionMonitor.tsx (карточка-роль + пронумерованный бейдж,
+            // синий/розовый акцент Партнёры/Партнёрши) — раньше жил на
+            // светлой "text-ink" поверхности, единственный из панелей раунда
+            // не переведённый на admin-* (redesign 2026-09-09, по прямому
+            // запросу пользователя со скриншотом).
             panels.push(
-              <div key="round-results" className="grid grid-cols-2 gap-3">
-                {(["LEADER", "FOLLOWER"] as const).map((r) => (
-                  <div key={r}>
-                    <p className="hint-text">{ROLE_LABELS_PLURAL[r] ?? r}</p>
-                    <ul className="stack gap-0.5">
-                      {round.results
-                        .filter((res) => res.registration.role === r)
-                        .map((res) => (
-                          <li key={res.id} className={res.status === "ADVANCED" ? "" : "hint-text line-through"}>
-                            №{res.registration.checkIn?.bibNumber ?? "—"} {res.registration.dancer.displayName} —{" "}
-                            {res.status === "ADVANCED" ? "прошёл" : "не прошёл"} ({res.scoreSum})
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                ))}
+              <div key="round-results" className="grid gap-3 sm:grid-cols-2">
+                {(["LEADER", "FOLLOWER"] as const).map((r) => {
+                  const roleAccent = r === "LEADER" ? "#60a5fa" : "#f472b6";
+                  return (
+                    <div key={r} className="rounded-app border border-admin-border bg-admin-card2">
+                      <div className="flex items-center gap-2 border-b border-admin-border px-3.5 py-3">
+                        <span className="h-4 w-[3px] shrink-0 rounded-sm" style={{ background: roleAccent }} aria-hidden="true" />
+                        <h4 className="m-0 text-[13px] font-extrabold uppercase tracking-wide text-night-text">
+                          {ROLE_LABELS_PLURAL[r] ?? r}
+                        </h4>
+                      </div>
+                      <ul className="m-0 flex list-none flex-col gap-1 p-2">
+                        {round.results
+                          .filter((res) => res.registration.role === r)
+                          .map((res) => {
+                            const advanced = res.status === "ADVANCED";
+                            return (
+                              <li key={res.id} className="flex items-center gap-2.5 rounded-app-sm px-2 py-1.5">
+                                <span
+                                  className="grid h-7 min-w-[40px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-[13px] font-extrabold tabular-nums"
+                                  style={{ color: roleAccent }}
+                                >
+                                  {res.registration.checkIn?.bibNumber ?? "—"}
+                                </span>
+                                <span
+                                  className={`min-w-0 flex-1 truncate text-sm ${
+                                    advanced ? "text-night-text" : "text-admin-disabled line-through"
+                                  }`}
+                                >
+                                  {res.registration.dancer.displayName}
+                                </span>
+                                <span
+                                  className={`shrink-0 text-xs font-bold tabular-nums ${
+                                    advanced ? "text-night-success" : "text-admin-disabled"
+                                  }`}
+                                >
+                                  {advanced ? "прошёл" : "не прошёл"} ({res.scoreSum})
+                                </span>
+                              </li>
+                            );
+                          })}
+                      </ul>
+                    </div>
+                  );
+                })}
               </div>
             );
           }
@@ -965,11 +1009,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               <div key="judges-dance-stages" className="stack gap-1.5">
                 {round.heats.map((heat) => (
                   <div key={heat.id}>
-                    <p className="hint-text m-0">
+                    <p className="m-0 text-sm text-admin-muted">
                       Стадия {heat.number} ({heat.number === 1 ? "Партнёры" : "Партнёрши"}) ·{" "}
                       {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
                     </p>
-                    <ul className="stack gap-0.5 m-0 pl-4">
+                    <ul className="stack gap-0.5 m-0 pl-4 text-sm text-night-text">
                       {(heat.draws[0]?.participants ?? []).map((p) => (
                         <li key={p.id}>
                           №{p.registration.checkIn?.bibNumber ?? "—"} {p.registration.dancer.displayName}
@@ -989,7 +1033,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             panels.push(
               <div key="random-couples-heats" className="stack gap-1.5">
                 {round.heats.map((heat) => (
-                  <p key={heat.id} className="hint-text m-0">
+                  <p key={heat.id} className="m-0 text-sm text-admin-muted">
                     Пара {heat.number} · {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
                   </p>
                 ))}
@@ -1104,6 +1148,8 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       judges: { leaders: judgesOf("LEADER"), followers: judgesOf("FOLLOWER") },
       rounds,
       rotationSettingsPanel,
+      finalResultsTable,
+      resultsAvailable: canCalculateResults && (finalRoundCompletedByDivisionId.get(d.id) ?? false),
       results: canCalculateResults ? (
         <DivisionResultsPanel
           divisionId={d.id}

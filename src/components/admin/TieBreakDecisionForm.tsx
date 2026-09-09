@@ -71,30 +71,31 @@ export function TieBreakDecisionForm({
 
   if (fullRank) {
     return (
-      <div className="stack gap-2 mt-2">
-        <p className="hint-text m-0">
-          ⚠ Ничья за место — никого не отсеиваем, нужно решить порядок мест внутри группы. Судьи коллегиально определяют
-          порядок (обсуждают вслух); отметьте его кнопками ↑/↓ ниже — от лучшего к худшему.
+      <div className="stack gap-2 mt-2 rounded-app-sm border border-night-warning/30 bg-night-warning/[0.09] p-3">
+        <p className="m-0 text-[12.5px] leading-relaxed text-[#f8cf8d]">
+          <span className="font-bold text-night-warning">⚠ Ничья за место —</span> никого не отсеиваем, нужно решить
+          порядок мест внутри группы. Судьи коллегиально определяют порядок (обсуждают вслух); отметьте его кнопками ↑/↓
+          ниже — от лучшего к худшему.
         </p>
         <ol className="stack gap-1 m-0 pl-4">
           {order.map((c, i) => (
-            <li key={c.registrationId} className="flex items-center gap-2">
+            <li key={c.registrationId} className="flex items-center gap-2 text-sm text-night-text">
               <span>
                 {c.role === "LEADER" ? "Партнёр" : "Партнёрша"} {c.displayName} №{c.bibNumber ?? "—"}
               </span>
-              <Button type="button" size="sm" variant="outline" disabled={i === 0} onClick={() => move(i, -1)}>
+              <Button type="button" size="sm" variant="adminOutline" disabled={i === 0} onClick={() => move(i, -1)}>
                 ↑
               </Button>
-              <Button type="button" size="sm" variant="outline" disabled={i === order.length - 1} onClick={() => move(i, 1)}>
+              <Button type="button" size="sm" variant="adminOutline" disabled={i === order.length - 1} onClick={() => move(i, 1)}>
                 ↓
               </Button>
             </li>
           ))}
         </ol>
-        <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={() => submit(order.map((c) => c.registrationId))}>
+        <Button type="button" size="sm" variant="admin" disabled={loading} onClick={() => submit(order.map((c) => c.registrationId))}>
           Зафиксировать порядок
         </Button>
-        {error && <span className="error-text">{error}</span>}
+        {error && <span className="text-sm text-night-danger">{error}</span>}
       </div>
     );
   }
@@ -105,25 +106,31 @@ export function TieBreakDecisionForm({
         e.preventDefault();
         void submit([...selected]);
       }}
-      className="stack gap-2 mt-2"
+      className="stack gap-2 mt-2 rounded-app-sm border border-night-warning/30 bg-night-warning/[0.09] p-3"
     >
-      <p className="hint-text">
-        Перетанцовка: выберите ровно {expectedCount} прошедших дальше (выбрано {selected.size}).
+      <p className="m-0 text-[12.5px] leading-relaxed text-[#f8cf8d]">
+        <span className="font-bold text-night-warning">⚠ Перетанцовка —</span> выберите ровно {expectedCount} прошедших
+        дальше (выбрано {selected.size}).
       </p>
       <ul className="stack gap-1">
         {candidates.map((c) => (
           <li key={c.registrationId}>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={selected.has(c.registrationId)} onChange={() => toggle(c.registrationId)} />
+            <label className="flex items-center gap-2 text-sm text-night-text">
+              <input
+                type="checkbox"
+                checked={selected.has(c.registrationId)}
+                onChange={() => toggle(c.registrationId)}
+                className="accent-admin-primary"
+              />
               {c.role === "LEADER" ? "Партнёр" : "Партнёрша"} {c.displayName} №{c.bibNumber ?? "—"}
             </label>
           </li>
         ))}
       </ul>
-      <Button type="submit" size="sm" variant="secondary" disabled={loading || selected.size !== expectedCount}>
+      <Button type="submit" size="sm" variant="admin" disabled={loading || selected.size !== expectedCount}>
         Зафиксировать решение
       </Button>
-      {error && <span className="error-text">{error}</span>}
+      {error && <span className="text-sm text-night-danger">{error}</span>}
     </form>
   );
 }

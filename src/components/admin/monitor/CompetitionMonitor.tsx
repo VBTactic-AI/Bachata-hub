@@ -10,7 +10,7 @@ import { AddDrawHelperForm } from "../AddDrawHelperForm";
 import { AddHeatButton } from "../AddHeatButton";
 import { DeleteIconButton } from "../DeleteIconButton";
 import { HeatStatusControls } from "../HeatStatusControls";
-import { CheckCircleIcon, ChevronRightIcon, PersonIcon } from "../icons";
+import { CheckCircleIcon, ChevronRightIcon, PersonIcon, TrophyIcon } from "../icons";
 import { RemoveDrawHelperButton } from "../RemoveDrawHelperButton";
 import { ReplaceDrawHelperButton } from "../ReplaceDrawHelperButton";
 import { RerollDrawButton } from "../RerollDrawButton";
@@ -364,6 +364,14 @@ export function CompetitionMonitor({
   const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("category") ?? fallbackCategoryId);
   const [roundId, setRoundId] = useState<string | null>(searchParams.get("round"));
   const [heatId, setHeatId] = useState<string | null>(searchParams.get("heat"));
+  // "Результаты" — не настоящий этап (не в category.rounds), а отдельный
+  // режим просмотра этой же категории: протокол + оценки судей по
+  // критериям финала, вместо сетки заходов (redesign 2026-09-09, по
+  // запросу пользователя — "ещё один квадратик после Финала"). Отдельный
+  // булев флаг, а не sentinel-значение roundId, — чтобы re-open обычного
+  // этапа (selectRound) не приходилось нигде явно проверять на "не тот ли
+  // это специальный id".
+  const [showResults, setShowResults] = useState(searchParams.get("view") === "results");
 
   const category = resolveSelected(categories, categoryId, fallbackCategoryId);
   if (!category) return <p className="text-sm text-admin-muted">Категорий пока нет.</p>;
@@ -377,13 +385,20 @@ export function CompetitionMonitor({
     // сработало то же правило "показать то, что идёт сейчас".
     setRoundId(null);
     setHeatId(null);
-    setShallowQueryParams({ category: id, round: null, heat: null });
+    setShowResults(false);
+    setShallowQueryParams({ category: id, round: null, heat: null, view: null });
   }
 
   function selectRound(id: string) {
     setRoundId(id);
     setHeatId(null);
-    setShallowQueryParams({ round: id, heat: null });
+    setShowResults(false);
+    setShallowQueryParams({ round: id, heat: null, view: null });
+  }
+
+  function selectResults() {
+    setShowResults(true);
+    setShallowQueryParams({ view: "results" });
   }
 
   function selectHeat(id: string) {
@@ -486,11 +501,66 @@ export function CompetitionMonitor({
               </Fragment>
             );
           })}
+
+          {/* "Ещё один квадратик после Финала" (по запросу пользователя,
+              2026-09-09) — не настоящий этап, отдельный режим просмотра
+              category.results/finalResultsTable ниже (см. selectResults). */}
+          {category.resultsAvailable && (
+            <Fragment>
+              {category.rounds.length > 0 && (
+                <span className="flex shrink-0 items-center text-admin-disabled" aria-hidden="true">
+                  <ChevronRightIcon />
+                </span>
+              )}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={showResults}
+                onClick={selectResults}
+                className={`flex min-w-[168px] shrink-0 flex-col gap-1.5 rounded-app border p-3.5 text-left transition-colors ${
+                  showResults
+                    ? "border-admin-violet bg-admin-violet/10"
+                    : "border-admin-violet/30 bg-admin-violet/[0.07] hover:border-admin-violet/50"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="shrink-0 text-admin-violet" aria-hidden="true">
+                    <TrophyIcon />
+                  </span>
+                  <span className="text-sm font-bold text-night-text">Результаты</span>
+                </span>
+                <span className="text-[10.5px] font-bold uppercase tracking-wide text-admin-violet">Протокол и оценки</span>
+              </button>
+            </Fragment>
+          )}
         </div>
       )}
 
+      {/* ── Результаты категории ──────────────────────────────── */}
+      {/* Отдельный режим просмотра вместо сетки заходов — протокол
+          (DivisionResultsPanel), оценки судей по критериям финала
+          (FinalResultsTable) и публикация результатов всего соревнования
+          (resultsPublishPanel), все уже на admin-* палитре, вместе на одном
+          тёмном экране (redesign 2026-09-09). key={category.id} — та же
+          причина, что и раньше: смена категории не должна тащить за собой
+          открытую форму "исправить"/её error от прошлой категории. */}
+      {showResults && category.resultsAvailable && (
+        <Fragment key={category.id}>
+          <div className="flex flex-col gap-4">
+            {category.finalResultsTable && (
+              <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">
+                <h3 className="m-0 mb-3 text-sm font-extrabold text-night-text">Оценки судей по критериям (финал)</h3>
+                {category.finalResultsTable}
+              </section>
+            )}
+            {category.results}
+            {resultsPublishPanel}
+          </div>
+        </Fragment>
+      )}
+
       {/* ── Выбранный этап ────────────────────────────────────── */}
-      {round && (
+      {!showResults && round && (
         // key={round.id} — при смене раунда React иначе переиспользует те же
         // экземпляры компонентов (RoundStatusControls/GenerateRoundsButton и
         // всё вложенное в HeatPanel) на новом месте дерева и тащит за собой их
@@ -603,11 +673,12 @@ export function CompetitionMonitor({
             </section>
 
             {/* Панели этапа (старт финала, форматы финала, подсчёт, решения по
-                ничьей, протоколы) остаются на светлой поверхности — они ещё не
-                переведены на admin-* (tailwind.config.ts, "перенос не
-                завершён"), и на тёмном фоне их подписи были бы нечитаемы. */}
+                ничьей, протоколы) — переведены на admin-* вместе с остальным
+                монитором (redesign 2026-09-09, по прямому запросу
+                пользователя со скриншотом: раньше это была единственная
+                светлая "text-ink" поверхность на всей странице). */}
             {round.panels.length > 0 && (
-              <section className="rounded-app border border-admin-border bg-surface p-[18px] text-ink">
+              <section className="rounded-app border border-admin-border bg-admin-card p-[18px]">
                 <div className="flex flex-col gap-3">
                   {round.panels.map((panel, i) => (
                     <div key={i}>{panel}</div>
@@ -637,16 +708,6 @@ export function CompetitionMonitor({
         </div>
       )}
 
-      {/* ── Протокол результатов категории ────────────────────── */}
-      {/* DivisionResultsPanel сам решает, показываться ли (только когда
-          финальный раунд категории завершён, 2026-09-09) — здесь просто
-          всегда смонтирован, без своего свёрнутого блока. key={category.id} —
-          та же причина, что у key={round.id}/{heat.id} выше: без него смена
-          категории оставляла бы открытой форму "исправить"/"поменять
-          местами" (и её error) от предыдущей категории. */}
-      <Fragment key={category.id}>{category.results}</Fragment>
-
-      {resultsPublishPanel}
     </div>
   );
 }
