@@ -13,6 +13,23 @@ export const COMPETITION_STATUS_LABELS: Record<string, string> = {
   ARCHIVED: "Архив",
 };
 
+// Порядок state machine соревнования (CLAUDE.md §9) — та же последовательность,
+// что и ключи NEXT в CompetitionStatusControls.tsx (переходы разрешает
+// src/server/state/competition-state.ts, здесь только порядок для отображения
+// прогресса, не источник истины для переходов).
+export const COMPETITION_STATUS_ORDER: readonly (keyof typeof COMPETITION_STATUS_LABELS)[] = [
+  "DRAFT",
+  "REGISTRATION_OPEN",
+  "REGISTRATION_CLOSED",
+  "CHECK_IN",
+  "READY",
+  "LIVE",
+  "SCORING",
+  "REVIEW",
+  "PUBLISHED",
+  "ARCHIVED",
+];
+
 export const REGISTRATION_ROLE_LABELS: Record<string, string> = { LEADER: "Партнёр", FOLLOWER: "Партнёрша" };
 export const REGISTRATION_ROLE_LABELS_PLURAL: Record<string, string> = { LEADER: "Партнёры", FOLLOWER: "Партнёрши" };
 // Родительный падеж множественного числа — для конструкций вида "Партнёров: N" /

@@ -99,6 +99,32 @@ export function ChevronRightIcon() {
   );
 }
 
+// KPI-иконка "Категории" вкладки "Главная" (CLAUDE.md §64) — сетка 2×2, тот
+// же нейтральный контурный стиль, что и остальные иконки этого файла.
+export function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+// KPI-иконка "Судьи" — два силуэта поверх PersonIcon (та же форма, другой
+// размер/наложение), не привязана к роли/полу.
+export function JudgesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="9" cy="8" r="3" />
+      <circle cx="17" cy="9" r="2.4" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" strokeLinecap="round" />
+      <path d="M15.5 14.3c2.4.4 4.5 2.6 4.5 5.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

@@ -21,6 +21,19 @@ import { AddCompetitionJudgeForm } from "@/components/admin/AddCompetitionJudgeF
 import { JudgeRegistryPanel, type RegistryJudge } from "@/components/admin/JudgeRegistryPanel";
 import { categoryDotColor } from "@/components/admin/category-colors";
 import { ScoringProgress } from "@/components/admin/ScoringProgress";
+import { PeopleIcon, CheckCircleIcon, GridIcon, JudgesIcon } from "@/components/admin/icons";
+import { CompetitionProgressStepper } from "@/components/admin/CompetitionProgressStepper";
+import { TieBreakAlertBanner } from "@/components/admin/TieBreakAlertBanner";
+import { FloorSpotlight } from "@/components/admin/FloorSpotlight";
+import { OtherActiveCategoriesList } from "@/components/admin/OtherActiveCategoriesList";
+import { NextUpChecklist } from "@/components/admin/NextUpChecklist";
+import {
+  findFloorSpotlight,
+  collectPendingTieBreaks,
+  collectOtherActiveCategories,
+  collectNextUpItems,
+  type OverviewDivision,
+} from "@/lib/competition-overview";
 import { TieBreakDecisionForm } from "@/components/admin/TieBreakDecisionForm";
 import { isNoShow } from "@/server/competition/no-show";
 import { getRoundScoringProgress, rolesNotNeedingJudging } from "@/server/judging/advancement";
@@ -47,7 +60,6 @@ import {
   REGISTRATION_ROLE_LABELS_PLURAL as ROLE_LABELS_PLURAL,
   REGISTRATION_STATUS_LABELS,
   ROUND_TYPE_LABELS,
-  ROUND_STATUS_LABELS,
   HEAT_STATUS_LABELS,
   JUDGING_MAX_SCORE_LABELS,
   FINAL_FORMAT_LABELS,
@@ -399,51 +411,82 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     { label: "Судьи", value: competitionJudgePool.length },
   ];
 
-  // Текущий этап — какие раунды прямо сейчас не в состоянии покоя, по
-  // каждой категории отдельно (в раунде другой категории может параллельно
-  // идти жеребьёвка/подсчёт, пока в этой ротация на паркете — заходы одного
-  // СОРЕВНОВАНИЯ эксклюзивны, A4, но раунды разных категорий друг с другом не
-  // связаны). Считается из уже загруженного дерева competition.divisions,
-  // без дополнительных запросов.
-  const ACTIVE_ROUND_STATUSES = new Set(["DRAWING", "DRAW_LOCKED", "RUNNING", "SCORING"]);
-  const currentActiveStages = competition.divisions.flatMap((d) =>
-    d.rounds
-      .filter((r) => ACTIVE_ROUND_STATUSES.has(r.status))
-      .map((r) => ({
-        divisionName: d.category.name,
-        stageName: r.stage?.name ?? (r.type ? ROUND_TYPE_LABELS[r.type] ?? r.type : "—"),
-        status: r.status,
-      }))
-  );
+  // Данные для вкладки "Главная" (redesign, CLAUDE.md §64) — всё из уже
+  // загруженного competition.divisions выше, без новых запросов; чистые
+  // вычисления живут в src/lib/competition-overview.ts (протестированы
+  // отдельно, tests/competition-overview.test.ts), здесь только маппинг
+  // Prisma-дерева в их минимальные "*Like"-типы.
+  const overviewDivisions: OverviewDivision[] = competition.divisions.map((d, i) => ({
+    id: d.id,
+    categoryName: d.category.name,
+    categoryColor: categoryDotColor(i),
+    leaderJudgesCount: d.judgeAssignments.filter((ja) => ja.role === "LEADER").length,
+    followerJudgesCount: d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").length,
+    rounds: !canManageRounds
+      ? []
+      : d.rounds.map((round) => ({
+          id: round.id,
+          type: round.type,
+          status: round.status,
+          order: round.order,
+          stageLabel: round.stage?.name ?? (round.type ? ROUND_TYPE_LABELS[round.type] ?? round.type : "—"),
+          judgingFormatLabel: JUDGING_MAX_SCORE_LABELS[round.judgingMaxScore] ?? String(round.judgingMaxScore),
+          finalistsCount: round.finalistsCount,
+          advancementPublishedAt: round.advancementPublishedAt,
+          config: round.config as { finalTieGroupKey?: string; tieBreakKind?: string } | null,
+          heats: round.heats.map((heat) => ({
+            id: heat.id,
+            number: heat.number,
+            status: heat.status,
+            participants: (heat.draws[0]?.participants ?? []).map((p) => ({
+              registrationId: p.registrationId,
+              role: p.role,
+              scored: p.scored,
+              bibNumber: p.registration.checkIn?.bibNumber ?? null,
+              displayName: p.registration.dancer.displayName,
+            })),
+          })),
+        })),
+  }));
+
+  const floorSpotlight = canManageRounds ? findFloorSpotlight(competition.id, overviewDivisions, scoringProgressByRoundId) : null;
+  const pendingTieBreaks = canManageRounds ? collectPendingTieBreaks(competition.id, overviewDivisions) : [];
+  const otherActiveCategories = canManageRounds
+    ? collectOtherActiveCategories(competition.id, overviewDivisions, scoringProgressByRoundId, floorSpotlight?.roundId ?? null)
+    : [];
+  const nextUpItems = canManageRounds ? collectNextUpItems(competition.id, overviewDivisions, scoringProgressByRoundId, canPublishResults) : [];
 
   const overviewContent = (
     <div className="flex flex-col gap-4">
       {canManage && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {kpis.map((k) => (
-            <StatCard key={k.label} label={k.label} value={k.value} />
-          ))}
+          <StatCard label="Участники" value={kpis[0].value} icon={<PeopleIcon />} tone="primary" />
+          <StatCard
+            label="Check-in"
+            value={kpis[1].value}
+            icon={<CheckCircleIcon />}
+            tone="success"
+            percent={kpis[0].value > 0 ? Math.round((kpis[1].value / kpis[0].value) * 100) : undefined}
+          />
+          <StatCard label="Категории" value={kpis[2].value} icon={<GridIcon />} tone="primary" />
+          <StatCard label="Судьи" value={kpis[3].value} icon={<JudgesIcon />} tone="primary" />
         </div>
       )}
+      {canManage && <CompetitionProgressStepper status={competition.status} />}
       {canManage && <CompetitionStatusControls competitionId={competition.id} status={competition.status} />}
       {canPublishResults && <CompetitionResultsPanel competitionId={competition.id} publicResults={competition.publicResults} />}
+
+      {pendingTieBreaks.length > 0 && <TieBreakAlertBanner rows={pendingTieBreaks} />}
+
+      {floorSpotlight && <FloorSpotlight data={floorSpotlight} />}
+
       {canManageRounds && (
-        <Card className="border-admin-border bg-admin-card">
-          <p className="m-0 mb-2 font-semibold text-night-text">Текущий этап</p>
-          {currentActiveStages.length === 0 ? (
-            <p className="m-0 text-sm text-admin-muted">Нет активных этапов.</p>
-          ) : (
-            <ul className="m-0 flex flex-col gap-1 pl-4">
-              {currentActiveStages.map((s, i) => (
-                <li key={i} className="text-sm text-admin-muted">
-                  <span className="font-medium text-night-text">{s.divisionName}</span> · {s.stageName} —{" "}
-                  {ROUND_STATUS_LABELS[s.status] ?? s.status}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.3fr_1fr]">
+          <OtherActiveCategoriesList rows={otherActiveCategories} />
+          <NextUpChecklist items={nextUpItems} />
+        </div>
       )}
+
       {isJudge && (
         <p>
           <a href={`/judging/${competition.id}`}>Моё судейство →</a>
@@ -1116,7 +1159,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       <Suspense fallback={null}>
         <CompetitionWorkspaceTabs
           tabs={[
-            { id: "overview", label: "Основное", content: overviewContent },
+            { id: "overview", label: "Главная", content: overviewContent },
             { id: "categories", label: "Категории", content: categoriesContent },
             { id: "monitor", label: "Монитор", content: monitorContent },
             { id: "participants", label: "Участники", content: participantsContent },
