@@ -106,17 +106,18 @@ function ParticipantRow({
       {participant.isHelper && (
         <span className="shrink-0 rounded-full bg-night-warning/15 px-2 py-0.5 text-[10px] font-bold text-night-warning">помощник</span>
       )}
-      {/* Прямые дети `<li>` (не отдельный "свой" span) — «заменить»/«убрать»
-          текут инлайн сразу за бейджем "помощник" на общих правах flex-wrap
-          (по прямому запросу пользователя, 2026-09-09 — раньше собственная
-          строка ниже смотрелась как лишний пустой ряд). Раскрытая форма
-          замены (ReplaceDrawHelperButton) сама рендерит блок на всю ширину,
-          когда открыта, — flex-wrap родителя переносит именно её на новую
-          строку, ничего дополнительно оборачивать не нужно. */}
+      {/* «Убрать» — ПЕРЕД «заменить» в разметке (по прямому запросу
+          пользователя, 2026-09-09): flex-wrap переносит элемент на новую
+          строку, только когда САМ не помещается, не трогая уже
+          расположенные раньше него — «убрать» встаёт в общий ряд один раз и
+          там и остаётся, даже когда раскрытая форма замены
+          (ReplaceDrawHelperButton) занимает всю ширину следующей строки. Если
+          поменять их местами, «убрать» после каждого клика на «заменить»
+          уезжало бы вместе с раскрывшейся формой. */}
       {participant.isHelper && canEditDraw && (
         <>
-          <ReplaceDrawHelperButton heatId={heatId} participantId={participant.id} role={role} />
           <RemoveDrawHelperButton participantId={participant.id} heatId={heatId} role={role} />
+          <ReplaceDrawHelperButton heatId={heatId} participantId={participant.id} role={role} />
         </>
       )}
     </li>
