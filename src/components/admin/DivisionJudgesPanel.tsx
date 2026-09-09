@@ -105,6 +105,17 @@ export function DivisionJudgesPanel({
     addToSet(role, judgeUserId);
   }
 
+  // Esc закрывает окно выбора — тот же приём, что и в AddDrawHelperForm.tsx
+  // (стандартное ожидание для fixed-оверлея).
+  useEffect(() => {
+    if (!openAdd) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpenAdd(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openAdd]);
+
   const byName = (a: string, b: string) => judgeName(poolById.get(a), a).localeCompare(judgeName(poolById.get(b), b), "ru");
   const leaderRows = [...leaders].sort(byName).map((judgeUserId) => ({ judgeUserId, role: "LEADER" as Role }));
   const followerRows = [...followers].sort(byName).map((judgeUserId) => ({ judgeUserId, role: "FOLLOWER" as Role }));
@@ -209,44 +220,73 @@ export function DivisionJudgesPanel({
               )}
             </div>
 
-            {availableFromPool.length > 0 &&
-              (openAdd === group.role ? (
-                <div className="flex flex-col gap-2 rounded-app-sm border border-admin-border bg-admin-card2 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="m-0 text-xs text-admin-muted">Отметьте, кого добавить, и нажмите «Сохранить» ниже.</p>
-                    <button type="button" onClick={() => setOpenAdd(null)} aria-label="Закрыть" className="text-admin-muted hover:text-night-text">
-                      ✕
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {availableFromPool.map((j) => {
-                      const checked = roleOf(j.judgeUserId) === group.role;
-                      return (
-                        <label
-                          key={j.judgeUserId}
-                          className={`flex cursor-pointer items-center gap-1.5 rounded-app-sm border px-2.5 py-1.5 text-sm text-night-text ${
-                            checked ? "border-admin-primary bg-admin-primary/10" : "border-admin-border bg-admin-card"
-                          }`}
-                        >
-                          <input type="checkbox" checked={checked} onChange={() => toggleInRole(group.role, j.judgeUserId)} />
-                          {judgeName(j, j.judgeUserId)}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setOpenAdd(group.role)}
-                  className="w-full rounded-app-sm border border-dashed border-admin-border px-3 py-2 text-sm text-night-text transition-colors hover:border-admin-primary hover:text-admin-primary"
-                >
-                  + Добавить {ADD_ACCUSATIVE_SINGULAR[group.role]}
-                </button>
-              ))}
+            {availableFromPool.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setOpenAdd(group.role)}
+                className="w-full rounded-app-sm border border-dashed border-admin-border px-3 py-2 text-sm text-night-text transition-colors hover:border-admin-primary hover:text-admin-primary"
+              >
+                + Добавить {ADD_ACCUSATIVE_SINGULAR[group.role]}
+              </button>
+            )}
           </div>
         ))}
       </div>
+
+      {/* Всплывающее окно выбора кандидата — тот же макет, что и у
+          "Позвать помощника на паркет" (AddDrawHelperForm.tsx), по прямому
+          запросу пользователя (2026-09-09): инлайн-облако чекбоксов внутри
+          узкой колонки категории выглядело тесно. Отдельный submit не нужен —
+          отметка сразу пишет в те же leaders/followers Set, что и постоянный
+          список выше, и сохраняется тем же общим "Сохранить" снизу; "Готово"
+          здесь только закрывает окно. */}
+      {openAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={() => setOpenAdd(null)} role="presentation">
+          <div
+            className="flex max-h-[80vh] w-full max-w-[420px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-judge-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-admin-border px-5 py-4">
+              <h3 id="add-judge-title" className="m-0 text-[17px] font-extrabold text-night-text">
+                Добавить {ADD_ACCUSATIVE_SINGULAR[openAdd]}
+              </h3>
+              <p className="m-0 mt-1.5 text-[12.5px] text-admin-muted">
+                Отметьте, кого добавить, — появятся в списке «Судят {REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL[openAdd].toLowerCase()}» сразу, сохранятся вместе с остальными изменениями.
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-1.5">
+              {availableFromPool.length === 0 ? (
+                <p className="m-0 px-5 py-4 text-sm text-admin-muted">Все судьи реестра уже назначены в эту категорию.</p>
+              ) : (
+                availableFromPool.map((j) => {
+                  const checked = roleOf(j.judgeUserId) === openAdd;
+                  return (
+                    <label key={j.judgeUserId} className="flex cursor-pointer items-center gap-3 px-5 py-2 hover:bg-admin-card2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleInRole(openAdd, j.judgeUserId)}
+                        className="h-[18px] w-[18px] shrink-0 accent-admin-primary"
+                      />
+                      <span className="truncate text-sm font-semibold text-night-text">{judgeName(j, j.judgeUserId)}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
+              <Button type="button" size="sm" variant="admin" onClick={() => setOpenAdd(null)}>
+                Готово
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {hasChanges && (
         <div className="flex flex-wrap items-center gap-2">
