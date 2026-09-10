@@ -4,7 +4,11 @@ const transitionRoundMock = vi.fn();
 vi.mock("@/server/state/round-state", () => ({ transitionRound: (...a: unknown[]) => transitionRoundMock(...a) }));
 
 const formDrawInTxMock = vi.fn();
-vi.mock("@/server/competition/draw-engine", () => ({ formDrawInTx: (...a: unknown[]) => formDrawInTxMock(...a) }));
+const isFinalStageInTxMock = vi.fn();
+vi.mock("@/server/competition/draw-engine", () => ({
+  formDrawInTx: (...a: unknown[]) => formDrawInTxMock(...a),
+  isFinalStageInTx: (...a: unknown[]) => isFinalStageInTxMock(...a),
+}));
 
 const roundFindUniqueOrThrow = vi.fn();
 const heatFindMany = vi.fn();
@@ -21,9 +25,13 @@ const { ValidationFailedError } = await import("@/server/errors");
 beforeEach(() => {
   transitionRoundMock.mockReset().mockResolvedValue(undefined);
   formDrawInTxMock.mockReset().mockResolvedValue({ id: "draw1", leaderCount: 1, followerCount: 1 });
+  isFinalStageInTxMock.mockReset().mockResolvedValue(false); // не финал — нейтральный дефолт
   roundFindUniqueOrThrow.mockReset().mockResolvedValue({
     id: "round1",
     divisionId: "div1",
+    order: 1,
+    type: null,
+    finalistsCount: 6,
     heatCapacity: null,
     config: {},
     division: { id: "div1", heatCapacity: 10 },

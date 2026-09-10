@@ -4,7 +4,12 @@ import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
 import { ConcurrentModificationError, ValidationFailedError } from "../errors";
 import type { Actor } from "../rbac/actor";
-import { alreadyScoredElsewhereInRound, fillHelperShortage } from "../competition/draw-engine";
+import {
+  alreadyScoredElsewhereInRound,
+  fillHelperShortage,
+  isFinalStageInTx,
+  rolesNotNeedingJudging,
+} from "../competition/draw-engine";
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -368,61 +373,15 @@ export async function maybeCalculateOnEntryInTx(tx: PrismaTx, roundId: string, a
 
 export type RoundScoringProgress = { required: number; submitted: number; complete: boolean };
 
-// Считает, сколько РЕАЛЬНО стоит на паркете последним (по order, среди
-// обычных раундов — TIE_BREAK не в счёт) раундом этого дивизиона — то есть
-// это финал. "Проходят N" в финале — не отсев, а призовые места, поэтому
-// финал НИКОГДА не пропускает судейство, даже если участников роли меньше N
-// (по прямому решению пользователя, 2026-09-04, дополняет A13).
-export async function isFinalStageInTx(tx: PrismaTx | typeof prisma, divisionId: string, order: number): Promise<boolean> {
-  const laterCount = await tx.round.count({ where: { divisionId, type: null, order: { gt: order } } });
-  return laterCount === 0;
-}
-
-// Роли, которых в ЭТОМ раунде не нужно оценивать судьям, потому что
-// реальных (не-помощников) участников этой роли не больше, чем мест —
-// все и так проходят дальше независимо от баллов (по запросу пользователя,
-// 2026-09-04). Финал как таковой (isFinalStage) исключён намеренно: там
-// "проходят N" — места, а не отсев (см. isFinalStageInTx), нужны реальные
-// баллы, чтобы их расставить, вне зависимости от числа участников.
-//
-// TIE_BREAK-раунды раньше были исключены БЕЗУСЛОВНО (комментарий "кандидатов
-// по построению всегда больше свободных мест") — это верно для обычной
-// перетанцовки НА ГРАНИЦЕ ОТСЕВА (SELECT_N, CLAUDE.md §22): там участников
-// в тай-группе действительно всегда больше remainingSpots (иначе
-// splitByCutoff разрешил бы её без всякой перетанцовки), и общая арифметика
-// ниже сама по себе никогда не пропустит эту роль — отдельного условия для
-// этого не требовалось.
-//
-// НО с появлением перетанцовки ЗА МЕСТО внутри уже прошедших (FULL_RANK/
-// RANK_ALL — 1-е/2-е место в финале, TIEBREAK-001/A22, docs/00_DECISIONS.md)
-// это перестало быть верным: там Round.finalistsCount = размер ВСЕЙ
-// тай-группы (никого не отсеивают, участников РОВНО столько же, сколько
-// мест), а решение всё равно вносит HEAD_JUDGE вручную (кнопки ↑/↓ —
-// TieBreakDecisionForm/FinalTieBreakDecisionForm), не сумма сырых оценок
-// судей. Безусловное исключение заставляло судей на телефоне бессмысленно
-// отмечать "Да"/оценку каждому в группе (напр. "2 из 2" для тай на 2
-// человек) перед тем, как нажать "Готово" — хотя это ничего не решает
-// (найдено по жалобе пользователя, 2026-09-07). Убрано: общая арифметика
-// ниже теперь сама корректно пропускает FULL_RANK-перетанцовку (участников
-// == мест) и сама же НЕ пропускает SELECT_N-перетанцовку (участников
-// всегда больше мест) — без отдельного условия на roundType.
-//
-// Чистая функция (без обращения к БД) — переиспользуется и здесь, и в
-// getJudgeQueue (scoring.ts), и на странице организатора, каждый раз со
-// своими уже загруженными данными, без дублирования самого правила.
-export function rolesNotNeedingJudging(
-  roleCounts: Record<RegistrationRole, number>,
-  finalistsCount: number,
-  isFinalStage: boolean,
-  roundType: string | null
-): Set<RegistrationRole> {
-  const skipped = new Set<RegistrationRole>();
-  if (isFinalStage && roundType !== "TIE_BREAK") return skipped;
-  for (const role of ["LEADER", "FOLLOWER"] as const) {
-    if (roleCounts[role] > 0 && roleCounts[role] <= finalistsCount) skipped.add(role);
-  }
-  return skipped;
-}
+// isFinalStageInTx и rolesNotNeedingJudging переехали в draw-engine.ts
+// (2026-09-10) — обе теперь нужны и там (rerollHeatDraw/formDrawInTx
+// переиспользуют "своих" роли, которую не нужно оценивать, между заходами
+// вместо гостей, см. комментарии на новом месте), а draw-engine.ts не может
+// импортировать их отсюда — advancement.ts уже импортирует ИЗ draw-engine.ts
+// (alreadyScoredElsewhereInRound/fillHelperShortage), обратный импорт создал
+// бы цикл. Реэкспорт — чтобы существующие импортёры (scoring.ts,
+// score-monitor.ts, start-final.ts, start-round-drawing.ts) не меняли путь.
+export { isFinalStageInTx, rolesNotNeedingJudging };
 
 async function getRoundScoringProgressInTx(tx: PrismaTx | typeof prisma, roundId: string): Promise<RoundScoringProgress> {
   const round = await tx.round.findUniqueOrThrow({

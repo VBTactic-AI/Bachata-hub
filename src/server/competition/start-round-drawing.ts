@@ -18,6 +18,11 @@ export async function startRoundDrawing(roundId: string, callOrder: CallOrder): 
     include: { division: { select: { id: true, heatCapacity: true } }, finalSession: { select: { id: true } } },
   });
 
+  // isFinal нужен и ниже (formDrawInTx — определить роль, которую в этом
+  // раунде не нужно оценивать, rolesNotNeedingJudging), не только для этой
+  // проверки — считаем один раз.
+  const isFinal = await isFinalStageInTx(prisma, round.divisionId, round.order);
+
   // Финальный раунд дивизиона обязан пройти через "Начать финал" (startFinal,
   // start-final.ts) ДО жеребьёвки — та фиксирует критерии в FinalSession, без
   // которой судьи получат обычную схему Да/Нет вместо критериальной (баг,
@@ -25,13 +30,10 @@ export async function startRoundDrawing(roundId: string, callOrder: CallOrder): 
   // была видна и для финала, ничего на сервере это не проверяло). CLAUDE.md
   // §53 — бизнес-правило не должно держаться только на том, что кнопку в UI
   // спрятали.
-  if (round.type === null && !round.finalSession) {
-    const isFinal = await isFinalStageInTx(prisma, round.divisionId, round.order);
-    if (isFinal) {
-      throw new ValidationFailedError(
-        'Это финальный раунд категории — сначала нажмите "Начать финал" (фиксирует критерии оценки), а не "Начать жеребьёвку" напрямую.'
-      );
-    }
+  if (round.type === null && !round.finalSession && isFinal) {
+    throw new ValidationFailedError(
+      'Это финальный раунд категории — сначала нажмите "Начать финал" (фиксирует критерии оценки), а не "Начать жеребьёвку" напрямую.'
+    );
   }
 
   const heats = await prisma.heat.findMany({ where: { roundId }, orderBy: { number: "asc" } });
@@ -55,6 +57,9 @@ export async function startRoundDrawing(roundId: string, callOrder: CallOrder): 
           heatCapacity,
           callOrder,
           actor,
+          finalistsCount: round.finalistsCount,
+          isFinalStage: isFinal,
+          roundType: round.type,
         });
       }
     },

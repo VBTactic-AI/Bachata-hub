@@ -29,6 +29,9 @@ const auditCreate = vi.fn();
 // сохраняя прежнее поведение "берём весь дивизион" без изменений.
 const roundFindFirstTx = vi.fn();
 const roundResultFindMany = vi.fn();
+// rerollHeatDraw вызывает isFinalStageInTx(prisma, ...) ВНЕ транзакции (нужно
+// до её открытия — то же значение уходит в formDrawInTx как isFinalStage).
+const topRoundCount = vi.fn();
 
 const fakeTx = {
   draw: { findFirst: drawFindFirst, create: drawCreate },
@@ -45,6 +48,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     heat: { findUniqueOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => heatFindUniqueOrThrow(...a) },
     draw: { findFirst: (...a: unknown[]) => topDrawFindFirst(...a) },
+    round: { count: (...a: unknown[]) => topRoundCount(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
@@ -85,6 +89,9 @@ beforeEach(() => {
   heatCountTx.mockReset().mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 0 : 1));
   roundFindFirstTx.mockReset().mockResolvedValue(null); // нет предыдущего раунда — пул не ограничен
   roundResultFindMany.mockReset().mockResolvedValue([]);
+  // laterCount=1 -> isFinalStageInTx=false (не финал) — нейтральный дефолт
+  // для тестов reroll'а, которые не про passthrough-роли/финал.
+  topRoundCount.mockReset().mockResolvedValue(1);
   heatCreateTx.mockReset().mockImplementation(({ data }: { data: { number: number } }) =>
     Promise.resolve({ id: "new-heat1", ...data })
   );
@@ -115,6 +122,9 @@ describe("formDrawInTx() — базовое формирование списк�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(3);
@@ -134,6 +144,9 @@ describe("formDrawInTx() — базовое формирование списк�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     const leaderCalls = createdParticipants().filter((p) => p.role === "LEADER");
@@ -157,6 +170,9 @@ describe("formDrawInTx() — базовое формирование списк�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(10);
@@ -173,6 +189,9 @@ describe("formDrawInTx() — базовое формирование списк�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(2); // l1 исключён
@@ -191,6 +210,9 @@ describe("formDrawInTx() — базовое формирование списк�
       heatCapacity: 10,
       callOrder: "RANDOM",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
     expect(drawCreate.mock.calls[0][0].data.seed).toBe("deadbeefcafebabe");
 
@@ -203,6 +225,9 @@ describe("formDrawInTx() — базовое формирование списк�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
     expect(drawCreate.mock.calls[0][0].data.seed).toBeNull();
   });
@@ -233,6 +258,9 @@ describe("formDrawInTx() — заходы примерно равны по чи�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(6);
@@ -265,6 +293,9 @@ describe("formDrawInTx() — заходы примерно равны по чи�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(6);
@@ -287,6 +318,9 @@ describe("formDrawInTx() — заходы примерно равны по чи�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(7); // ceil(13/2)
@@ -305,10 +339,119 @@ describe("formDrawInTx() — заходы примерно равны по чи�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(10);
     expect(result.followerCount).toBe(10);
+  });
+});
+
+// Роль, которую в этом раунде не нужно оценивать (rolesNotNeedingJudging —
+// реальных не больше, чем мест, все и так проходят дальше), не делится
+// поровну по заходам вместе с той ролью, которую действительно судят — её
+// целятся под ту же квоту и переиспользуют между заходами (по прямому
+// запросу пользователя, 2026-09-10, реальный кейс: дивизион "Дебютанты",
+// четвертьфинал, 7 партнёров/14 партнёрш — партнёры сразу проходят (7<=10),
+// партнёрш нужно отобрать 10 из 14. Ожидание: 7/7 и 7/7, партнёры
+// переиспользованы, БЕЗ единого гостя со стороны).
+describe("formDrawInTx() — роль без оценивания не делится по заходам, а переиспользуется", () => {
+  function mockRoleCounts(leaders: number, followers: number) {
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string } }) => {
+      const prefix = where.role === "LEADER" ? "l" : "f";
+      return Promise.resolve(Array.from({ length: where.role === "LEADER" ? leaders : followers }, (_, i) => reg(`${prefix}${i}`, String(i))));
+    });
+  }
+
+  it("первый заход: 7 партнёров (не оцениваются) x 7 партнёрш — ровно по факту, без нехватки", async () => {
+    mockRoleCounts(7, 14);
+    heatCountTx.mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 0 : 2));
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 8,
+      callOrder: "SEQUENTIAL",
+      actor,
+      finalistsCount: 10, // 7 партнёров <= 10 -> не оцениваются; 14 партнёрш > 10 -> оцениваются
+      isFinalStage: false,
+      roundType: null,
+    });
+
+    expect(result.leaderCount).toBe(7); // не 4 (было бы при чётном делении 7 пополам на 2 захода)
+    expect(result.followerCount).toBe(7);
+    const rows = createdParticipants();
+    expect(rows.filter((r) => r.helperSource)).toHaveLength(0); // ни одного помощника не понадобилось
+  });
+
+  it("второй заход: партнёров свежих не осталось — переиспользует СВОИХ уже станцевавших, не гостя", async () => {
+    mockRoleCounts(7, 14);
+    // Заход 1 уже разложен и забрал всех 7 партнёров + первых 7 партнёрш.
+    heatFindMany.mockResolvedValue([
+      {
+        draws: [
+          {
+            participants: [
+              ...Array.from({ length: 7 }, (_, i) => ({ registrationId: `l${i}` })),
+              ...Array.from({ length: 7 }, (_, i) => ({ registrationId: `f${i}` })),
+            ],
+          },
+        ],
+      },
+    ]);
+    heatCountTx.mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 1 : 2));
+    // Категория выше существует и могла бы дать гостей — но своих партнёров
+    // должно хватить, к ней обращаться не должны вовсе.
+    divisionFindMany.mockResolvedValue([{ id: "div-higher", category: { order: 5 } }]);
+    divisionFindUniqueOrThrow.mockResolvedValue({ competitionId: "comp1", category: { order: 2 } });
+
+    await formDrawInTx(fakeTx as never, {
+      heatId: "heat2",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 8,
+      callOrder: "SEQUENTIAL",
+      actor,
+      finalistsCount: 10,
+      isFinalStage: false,
+      roundType: null,
+    });
+
+    const rows = createdParticipants();
+    const leaderRows = rows.filter((r) => r.role === "LEADER");
+    expect(leaderRows).toHaveLength(7);
+    expect(leaderRows.every((r) => r.helperSource === "REUSED_ALREADY_SCORED")).toBe(true);
+    expect(leaderRows.map((r) => r.registrationId).sort()).toEqual(["l0", "l1", "l2", "l3", "l4", "l5", "l6"]);
+    const followerRows = rows.filter((r) => r.role === "FOLLOWER");
+    expect(followerRows).toHaveLength(7);
+    expect(followerRows.every((r) => !r.helperSource)).toBe(true); // реальные, не помощники
+    expect(followerRows.map((r) => r.registrationId).sort()).toEqual(["f10", "f11", "f12", "f13", "f7", "f8", "f9"]);
+  });
+
+  it("финал (isFinalStage) — роль НЕ считается проходной, даже если участников <= мест", async () => {
+    mockRoleCounts(7, 14);
+    heatCountTx.mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 0 : 2));
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 8,
+      callOrder: "SEQUENTIAL",
+      actor,
+      finalistsCount: 10,
+      isFinalStage: true, // финал — "проходят N" это места, не отсев
+      roundType: null,
+    });
+
+    // Партнёров тоже делит поровну (чётный сплит), а не отдаёт всех сразу.
+    expect(result.leaderCount).toBe(4); // ceil(7/2)
   });
 });
 
@@ -328,6 +471,9 @@ describe("formDrawInTx() — пул ограничен прошедшими пр
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(3);
@@ -345,6 +491,9 @@ describe("formDrawInTx() — пул ограничен прошедшими пр
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(result.leaderCount).toBe(3);
@@ -363,6 +512,9 @@ describe("formDrawInTx() — пул ограничен прошедшими пр
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(roundFindFirstTx).toHaveBeenCalledWith(
@@ -387,6 +539,9 @@ describe("formDrawInTx() — версии и reroll", () => {
         heatCapacity: 10,
         callOrder: "SEQUENTIAL",
         actor,
+        finalistsCount: 0,
+        isFinalStage: false,
+        roundType: null,
       })
     ).resolves.toBeDefined();
     expect(drawCreate.mock.calls[0][0].data.version).toBe(1);
@@ -403,6 +558,9 @@ describe("formDrawInTx() — версии и reroll", () => {
         heatCapacity: 10,
         callOrder: "SEQUENTIAL",
         actor,
+        finalistsCount: 0,
+        isFinalStage: false,
+        roundType: null,
       })
     ).rejects.toBeInstanceOf(ValidationFailedError);
     expect(drawCreate).not.toHaveBeenCalled();
@@ -418,6 +576,9 @@ describe("formDrawInTx() — версии и reroll", () => {
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
       reason: "судья ошибся с составом",
     });
     expect(drawCreate.mock.calls[0][0].data.version).toBe(2);
@@ -442,6 +603,9 @@ describe("formDrawInTx() — авто-добор помощников при д�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     expect(divisionFindUniqueOrThrow).not.toHaveBeenCalled();
@@ -471,6 +635,9 @@ describe("formDrawInTx() — авто-добор помощников при д�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     const helperCalls = createdParticipants().filter((p) => p.scored === false);
@@ -503,6 +670,9 @@ describe("formDrawInTx() — авто-добор помощников при д�
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     const helperCalls = createdParticipants().filter((p) => p.scored === false);
@@ -541,6 +711,9 @@ describe("formDrawInTx() — каскад: сначала свои, потом �
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     const helperCalls = createdParticipants().filter((p) => p.scored === false);
@@ -569,6 +742,9 @@ describe("formDrawInTx() — каскад: сначала свои, потом �
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     const helperCalls = createdParticipants().filter((p) => p.scored === false);
@@ -593,6 +769,9 @@ describe("formDrawInTx() — каскад: сначала свои, потом �
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     const helperCalls = createdParticipants().filter((p) => p.scored === false);
@@ -620,6 +799,9 @@ describe("formDrawInTx() — каскад: сначала свои, потом �
       heatCapacity: 10,
       callOrder: "SEQUENTIAL",
       actor,
+      finalistsCount: 0,
+      isFinalStage: false,
+      roundType: null,
     });
 
     const helperCalls = createdParticipants().filter((p) => p.scored === false);

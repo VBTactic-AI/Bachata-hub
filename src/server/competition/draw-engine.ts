@@ -112,6 +112,18 @@ async function advancedRegistrationIdsFromPreviousRound(
   return new Set(results.map((r) => r.registrationId));
 }
 
+// Считает, сколько РЕАЛЬНО стоит на паркете последним (по order, среди
+// обычных раундов — TIE_BREAK не в счёт) раундом этого дивизиона — то есть
+// это финал. "Проходят N" в финале — не отсев, а призовые места, поэтому
+// финал НИКОГДА не пропускает судейство, даже если участников роли меньше N
+// (по прямому решению пользователя, 2026-09-04, дополняет A13). Переехала
+// сюда из advancement.ts (2026-09-10) — та же причина цикла импорта, что и
+// у rolesNotNeedingJudging ниже.
+export async function isFinalStageInTx(tx: PrismaTx | typeof prisma, divisionId: string, order: number): Promise<boolean> {
+  const laterCount = await tx.round.count({ where: { divisionId, type: null, order: { gt: order } } });
+  return laterCount === 0;
+}
+
 // Полный пул раунда для одной роли — та же фильтрация, что использует сама
 // жеребьёвка (CHECKED_IN/LATE + прошедшие предыдущий раунд, A9), но без
 // вместимости заезда и без "уже вызван в другом заезде" — нужно, чтобы
@@ -133,6 +145,57 @@ export async function getRoundEligiblePool(
   });
   const eligible = onlyRegistrationIds === null ? regs : regs.filter((r) => onlyRegistrationIds.has(r.id));
   return new Set(eligible.map((r) => r.id));
+}
+
+// Роли, которых в ЭТОМ раунде не нужно оценивать судьям, потому что
+// реальных (не-помощников) участников этой роли не больше, чем мест —
+// все и так проходят дальше независимо от баллов (по запросу пользователя,
+// 2026-09-04). Финал как таковой (isFinalStage) исключён намеренно: там
+// "проходят N" — места, а не отсев (см. isFinalStageInTx), нужны реальные
+// баллы, чтобы их расставить, вне зависимости от числа участников.
+//
+// TIE_BREAK-раунды раньше были исключены БЕЗУСЛОВНО (комментарий "кандидатов
+// по построению всегда больше свободных мест") — это верно для обычной
+// перетанцовки НА ГРАНИЦЕ ОТСЕВА (SELECT_N, CLAUDE.md §22): там участников
+// в тай-группе действительно всегда больше remainingSpots (иначе
+// splitByCutoff разрешил бы её без всякой перетанцовки), и общая арифметика
+// ниже сама по себе никогда не пропустит эту роль — отдельного условия для
+// этого не требовалось.
+//
+// НО с появлением перетанцовки ЗА МЕСТО внутри уже прошедших (FULL_RANK/
+// RANK_ALL — 1-е/2-е место в финале, TIEBREAK-001/A22, docs/00_DECISIONS.md)
+// это перестало быть верным: там Round.finalistsCount = размер ВСЕЙ
+// тай-группы (никого не отсеивают, участников РОВНО столько же, сколько
+// мест), а решение всё равно вносит HEAD_JUDGE вручную (кнопки ↑/↓ —
+// TieBreakDecisionForm/FinalTieBreakDecisionForm), не сумма сырых оценок
+// судей. Безусловное исключение заставляло судей на телефоне бессмысленно
+// отмечать "Да"/оценку каждому в группе (напр. "2 из 2" для тай на 2
+// человек) перед тем, как нажать "Готово" — хотя это ничего не решает
+// (найдено по жалобе пользователя, 2026-09-07). Убрано: общая арифметика
+// ниже теперь сама корректно пропускает FULL_RANK-перетанцовку (участников
+// == мест) и сама же НЕ пропускает SELECT_N-перетанцовку (участников
+// всегда больше мест) — без отдельного условия на roundType.
+//
+// Чистая функция (без обращения к БД) — переиспользуется и здесь (formDrawInTx
+// переиспользует "своих" такой роли между заходами вместо гостей, см. ниже),
+// и в getJudgeQueue (scoring.ts), и на странице организатора, каждый раз со
+// своими уже загруженными данными, без дублирования самого правила.
+// Переехала сюда из advancement.ts (2026-09-10) — advancement.ts
+// импортирует ИЗ draw-engine.ts (alreadyScoredElsewhereInRound/
+// fillHelperShortage), обратный импорт создал бы цикл; advancement.ts
+// реэкспортирует её же для существующих импортёров.
+export function rolesNotNeedingJudging(
+  roleCounts: Record<RegistrationRole, number>,
+  finalistsCount: number,
+  isFinalStage: boolean,
+  roundType: string | null
+): Set<RegistrationRole> {
+  const skipped = new Set<RegistrationRole>();
+  if (isFinalStage && roundType !== "TIE_BREAK") return skipped;
+  for (const role of ["LEADER", "FOLLOWER"] as const) {
+    if (roleCounts[role] > 0 && roleCounts[role] <= finalistsCount) skipped.add(role);
+  }
+  return skipped;
 }
 
 // Кто уже вызывался и получил scored=true в ДРУГИХ заездах этого раунда —
@@ -313,9 +376,16 @@ export async function formDrawInTx(
     callOrder: CallOrder;
     actor: Actor;
     reason?: string;
+    // Нужны, чтобы понять, какую роль в этом раунде НЕ нужно оценивать
+    // (rolesNotNeedingJudging) — см. комментарий у passthroughRoles ниже.
+    // Вызывающий код (startRoundDrawing/rerollHeatDraw) уже загрузил Round
+    // целиком, здесь — те же значения без повторного запроса.
+    finalistsCount: number | null;
+    isFinalStage: boolean;
+    roundType: string | null;
   }
 ): Promise<{ id: string; leaderCount: number; followerCount: number }> {
-  const { heatId, roundId, roundOrder, divisionId, heatCapacity, callOrder, actor, reason } = params;
+  const { heatId, roundId, roundOrder, divisionId, heatCapacity, callOrder, actor, reason, finalistsCount, isFinalStage, roundType } = params;
 
   const lastDraw = await tx.draw.findFirst({ where: { heatId }, orderBy: { version: "desc" } });
   const version = (lastDraw?.version ?? 0) + 1;
@@ -345,8 +415,38 @@ export async function formDrawInTx(
 
   const leaderPool = await orderedEligiblePool(tx, { divisionId, role: "LEADER", excludeIds, callOrder, seed, onlyRegistrationIds });
   const followerPool = await orderedEligiblePool(tx, { divisionId, role: "FOLLOWER", excludeIds, callOrder, seed, onlyRegistrationIds });
-  const leaderQuota = Math.min(heatCapacity, Math.ceil(leaderPool.length / heatsRemaining));
-  const followerQuota = Math.min(heatCapacity, Math.ceil(followerPool.length / heatsRemaining));
+  let leaderQuota = Math.min(heatCapacity, Math.ceil(leaderPool.length / heatsRemaining));
+  let followerQuota = Math.min(heatCapacity, Math.ceil(followerPool.length / heatsRemaining));
+
+  // Роль, которую в этом раунде не нужно оценивать (rolesNotNeedingJudging —
+  // реальных участников этой роли не больше, чем мест, все и так проходят
+  // дальше), не делим поровну по заходам вместе с другой ролью — её квота
+  // приравнивается к квоте роли, которую действительно судят, чтобы на
+  // каждый заход хватало пары. Реальных на всех заходов может не хватить
+  // (7 партнёров при 2 заходах по 7 партнёрш) — тогда ниже по коду сработает
+  // обычный fillHelperShortage(preferOwnFirst: true), и он же САМ
+  // предпочтёт переиспользовать этих самых партнёров, уже станцевавших в
+  // предыдущем заходе, вместо гостя со стороны (по прямому запросу
+  // пользователя, 2026-09-10 — реальный кейс: 7 партнёров/14 партнёрш,
+  // партнёры сразу проходят, партнёрш нужно отобрать 10 из 14; без этой
+  // поправки чётный сплит резал и партнёров пополам (4+3), из-за чего в
+  // ход шли гости из другой категории, хотя своих семерых хватило бы на
+  // оба захода).
+  const roundPoolSizes = await Promise.all([
+    getRoundEligiblePool(tx, { divisionId, roundOrder, role: "LEADER" }),
+    getRoundEligiblePool(tx, { divisionId, roundOrder, role: "FOLLOWER" }),
+  ]);
+  const passthroughRoles = rolesNotNeedingJudging(
+    { LEADER: roundPoolSizes[0].size, FOLLOWER: roundPoolSizes[1].size },
+    finalistsCount ?? 0,
+    isFinalStage,
+    roundType
+  );
+  if (passthroughRoles.has("LEADER") && !passthroughRoles.has("FOLLOWER")) {
+    leaderQuota = followerQuota;
+  } else if (passthroughRoles.has("FOLLOWER") && !passthroughRoles.has("LEADER")) {
+    followerQuota = leaderQuota;
+  }
 
   const leaders = leaderPool.slice(0, leaderQuota);
   const followers = followerPool.slice(0, followerQuota);
@@ -472,6 +572,7 @@ export async function rerollHeatDraw(
   }
   const callOrder = getDrawCallOrder(heat.round.config) ?? "RANDOM";
   const heatCapacity = heat.round.heatCapacity ?? heat.round.division.heatCapacity;
+  const isFinal = await isFinalStageInTx(prisma, heat.round.divisionId, heat.round.order);
 
   return prisma.$transaction((tx) =>
     formDrawInTx(tx, {
@@ -483,6 +584,9 @@ export async function rerollHeatDraw(
       callOrder,
       actor,
       reason,
+      finalistsCount: heat.round.finalistsCount,
+      isFinalStage: isFinal,
+      roundType: heat.round.type,
     })
   );
 }
