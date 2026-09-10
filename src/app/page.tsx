@@ -84,12 +84,12 @@ export default async function HomePage() {
           карточки (bg-night-card) уже непрозрачны сами по себе, фото видно
           только в промежутках/хиро, поэтому один общий скрим держит контраст
           текста везде без дублирования градиента по секциям. */}
-      <div className="fixed inset-0 -z-10" aria-hidden="true">
+      <div className="fixed inset-0 z-0" aria-hidden="true">
         <Image src="/branding/jnj-couple.png" alt="" fill priority sizes="100vw" className="object-cover object-[60%_20%]" />
         <div className="absolute inset-0 bg-night-bg/70" />
       </div>
       <DarkTopNav />
-      <div className="flex flex-col gap-6 px-4 pb-24 pt-4 sm:mx-auto sm:max-w-[1240px] sm:px-8 sm:pb-12 sm:pt-8">
+      <div className="relative z-10 flex flex-col gap-6 px-4 pb-24 pt-4 sm:mx-auto sm:max-w-[1240px] sm:px-8 sm:pb-12 sm:pt-8">
         <section className="relative flex min-h-[240px] flex-col justify-end overflow-hidden rounded-app p-6 sm:min-h-[320px] sm:p-10">
           {/* Хиро — без своего фона: фото уже видно сквозь секцию из общего
               fixed-слоя страницы. Дополнительное затемнение только снизу
