@@ -3,6 +3,7 @@ import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminTopBar } from "@/components/admin/AdminTopBar";
 import { BottomNavGate } from "@/components/compete/BottomNavGate";
+import { JnjAmbientBackground } from "@/components/admin/JnjAmbientBackground";
 
 // Тёмная тема для /admin/** по макету JBJ Platform (найдено пользователем
 // 07.09.2026: админка оставалась светлой, когда весь остальной сайт уже
@@ -19,8 +20,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const user = await getCurrentUser();
 
   return (
-    <div className="mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-admin-bg font-night text-night-text">
-      <div className="flex min-h-[100dvh] flex-col sm:flex-row">
+    <div className="relative mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-admin-bg font-night text-night-text">
+      <JnjAmbientBackground />
+      {/* z-10 — тот же безопасный приём без отрицательных z-index, что и в
+          фиксе фона главной страницы (src/app/page.tsx): весь настоящий
+          контент в одном слое поверх декоративного фона (z-0). */}
+      <div className="relative z-10 flex min-h-[100dvh] flex-col sm:flex-row">
         <AdminSidebar isAdminUser={isAdmin(user)} />
         <div className="flex min-w-0 flex-1 flex-col">
           <AdminTopBar />
@@ -30,7 +35,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </div>
       <Suspense fallback={null}>
-        <div className="sm:hidden">
+        <div className="relative z-10 sm:hidden">
           <BottomNavGate />
         </div>
       </Suspense>

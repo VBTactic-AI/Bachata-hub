@@ -98,4 +98,55 @@
       animation-delay: 360ms;
     }
   }
+
+  /* Декоративный фон админ-панели (JnjAmbientBackground.tsx, 2026-09-11) —
+     фиксирован на весь вьюпорт, z-0 (без отрицательных значений — та же
+     причина, что и в фиксе фона главной страницы: отрицательный z-index
+     зависит от того, кто из предков образует контекст наложения, и легко
+     ломается непреднамеренно). pointer-events:none — чисто декоративный
+     слой, не должен перехватывать клики у интерфейса поверх него. Цвета —
+     фиолетовый/золотой в честь логотипа JNJ, поверх admin-* фона
+     (навигационная синяя/индиго палитра, CLAUDE.md §64.2) как акцентная
+     подсветка, а не замена самой палитры. */
+  .jnj-ambient-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .jnj-light {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(120px);
+  }
+  .jnj-light--purple {
+    top: -12%;
+    left: -12%;
+    width: 60vmax;
+    height: 60vmax;
+    opacity: 0.32;
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.65) 0%, rgba(124, 58, 237, 0) 70%);
+  }
+  .jnj-light--gold {
+    bottom: -16%;
+    right: -12%;
+    width: 55vmax;
+    height: 55vmax;
+    opacity: 0.28;
+    background: radial-gradient(circle, rgba(217, 164, 90, 0.55) 0%, rgba(217, 164, 90, 0) 70%);
+  }
+  .jnj-vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(4, 5, 9, 0.8) 100%);
+  }
+  .jnj-grain {
+    position: absolute;
+    inset: 0;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+  }
 }
