@@ -511,21 +511,6 @@ function FinalScoreMatrix({
   const hasError = Object.keys(errorsByKey).length > 0;
   return (
     <div className="flex flex-col gap-3">
-      {sortedCriteria.length > 1 && (
-        <div className="flex flex-col gap-1.5 rounded-app-sm border border-admin-border bg-admin-card p-2">
-          <p className="m-0 font-mono text-[9.5px] font-bold uppercase tracking-wide text-admin-muted">При равенстве баллов сравниваем:</p>
-          <div className="flex flex-wrap gap-1.5">
-            {sortedCriteria.map((c, i) => (
-              <span key={c.id} className="flex items-center gap-1 rounded-full border border-admin-border bg-admin-card2 py-0.5 pl-0.5 pr-2">
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-admin-primary font-mono text-[9px] font-extrabold text-white">
-                  {i + 1}
-                </span>
-                <span className="text-[10.5px] font-bold text-night-text">{c.name}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
       {hasError && <p className="m-0 text-xs text-red-400">Не удалось сохранить одну или несколько оценок — откройте ячейку и поставьте заново.</p>}
 
       {rolesPresent.map((role) => (
@@ -537,14 +522,14 @@ function FinalScoreMatrix({
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr>
-                  <th className="bg-admin-card2 px-2 py-1.5 text-left font-mono text-[9px] font-bold uppercase text-admin-muted">№</th>
+                  <th className="bg-admin-card2 px-2 py-2 text-left font-mono text-[10px] font-bold uppercase text-admin-muted">№</th>
                   {sortedCriteria.map((c) => (
-                    <th key={c.id} className="bg-admin-card2 px-0.5 py-1.5 text-center font-mono text-[9px] font-bold uppercase text-admin-muted">
+                    <th key={c.id} className="bg-admin-card2 px-0.5 py-2 text-center font-mono text-[10px] font-bold uppercase text-admin-muted">
                       {c.name.length > 4 ? c.name.slice(0, 3).toUpperCase() : c.name.toUpperCase()}
                     </th>
                   ))}
-                  <th className="bg-admin-card2 px-1 py-1.5 text-center font-mono text-[9px] font-bold uppercase text-admin-muted">Σ</th>
-                  <th className="bg-admin-card2 px-1 py-1.5 text-center font-mono text-[9px] font-bold uppercase text-admin-muted">Мес</th>
+                  <th className="bg-admin-card2 px-1 py-2 text-center font-mono text-[10px] font-bold uppercase text-admin-muted">Σ</th>
+                  <th className="bg-admin-card2 px-1 py-2 text-center font-mono text-[10px] font-bold uppercase text-admin-muted">Мес</th>
                 </tr>
               </thead>
               <tbody>
@@ -555,7 +540,7 @@ function FinalScoreMatrix({
                   return (
                     <tr key={item.drawParticipantId} className="border-t border-admin-bg">
                       <td
-                        className="bg-admin-card px-2 py-1 font-mono text-[13px] font-extrabold text-night-text"
+                        className="bg-admin-card px-2 py-1.5 font-mono text-[15px] font-extrabold text-night-text"
                         style={medal ? { boxShadow: `inset 3px 0 0 ${medal}` } : undefined}
                       >
                         {item.bibNumber ?? "—"}
@@ -565,13 +550,13 @@ function FinalScoreMatrix({
                         const value = applicable ? effectiveValue(item, c.id) : null;
                         const err = errorsByKey[`${item.drawParticipantId}:${c.id}`];
                         return (
-                          <td key={c.id} className="bg-admin-card px-0.5 py-1 text-center">
+                          <td key={c.id} className="bg-admin-card px-0.5 py-1.5 text-center">
                             {applicable ? (
                               <button
                                 type="button"
                                 disabled={confirmed}
                                 onClick={() => onOpenCell(item.drawParticipantId, c.id)}
-                                className={`mx-auto flex h-8 w-full max-w-[38px] items-center justify-center rounded-md border font-mono text-[12px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                                className={`mx-auto flex h-11 w-full items-center justify-center rounded-lg border font-mono text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
                                   err
                                     ? "border-red-400 text-red-400"
                                     : value !== null
@@ -587,13 +572,13 @@ function FinalScoreMatrix({
                           </td>
                         );
                       })}
-                      <td className={`bg-admin-card px-1 py-1 text-center font-mono text-[12px] font-extrabold ${complete ? "text-night-text" : "text-admin-disabled"}`}>
+                      <td className={`bg-admin-card px-1 py-1.5 text-center font-mono text-[14px] font-extrabold ${complete ? "text-night-text" : "text-admin-disabled"}`}>
                         {effectiveSum(item)}
                         {!complete && "*"}
                       </td>
-                      <td className="bg-admin-card px-1 py-1 text-center">
+                      <td className="bg-admin-card px-1 py-1.5 text-center">
                         <span
-                          className={`mx-auto flex h-6 w-6 items-center justify-center rounded-md font-mono text-[11px] font-extrabold ${
+                          className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg font-mono text-[13px] font-extrabold ${
                             medal ? "" : complete ? "bg-admin-border text-admin-muted" : "bg-admin-border text-admin-disabled"
                           }`}
                           style={medal ? { background: medal, color: MEDAL_TEXT } : undefined}
