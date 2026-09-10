@@ -13,6 +13,7 @@ export type JudgingDivision = {
   followerJudgeUserIds: string[];
   judgingMaxScore: number;
   judgingMaxScoreDisabledReason: string | null;
+  judgingMaxScoreExistingRoundsWarning: string | null;
   rotationMode: "TRACK_AUTO_SHIFT" | "SEGMENT_MANUAL_SHIFT";
   rotationIntervalSec: number;
   rotationShiftMin: number;
@@ -130,6 +131,7 @@ export function JudgesWorkspace({ divisions, pool }: { divisions: JudgingDivisio
               divisionId={selected.id}
               judgingMaxScore={selected.judgingMaxScore}
               judgingMaxScoreDisabledReason={selected.judgingMaxScoreDisabledReason}
+              judgingMaxScoreExistingRoundsWarning={selected.judgingMaxScoreExistingRoundsWarning}
               rotationMode={selected.rotationMode}
               rotationIntervalSec={selected.rotationIntervalSec}
               rotationShiftMin={selected.rotationShiftMin}

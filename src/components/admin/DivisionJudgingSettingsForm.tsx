@@ -35,6 +35,7 @@ export function DivisionJudgingSettingsForm({
   divisionId,
   judgingMaxScore: initialJudgingMaxScore,
   judgingMaxScoreDisabledReason,
+  judgingMaxScoreExistingRoundsWarning,
   rotationMode,
   rotationIntervalSec,
   rotationShiftMin,
@@ -50,6 +51,7 @@ export function DivisionJudgingSettingsForm({
   divisionId: string;
   judgingMaxScore: number;
   judgingMaxScoreDisabledReason: string | null;
+  judgingMaxScoreExistingRoundsWarning: string | null;
   rotationMode: "TRACK_AUTO_SHIFT" | "SEGMENT_MANUAL_SHIFT";
   rotationIntervalSec: number;
   rotationShiftMin: number;
@@ -259,6 +261,9 @@ export function DivisionJudgingSettingsForm({
             ))}
           </Select>
           {judgingMaxScoreDisabledReason && <span className="text-xs font-normal text-admin-muted">{judgingMaxScoreDisabledReason}</span>}
+          {!judgingMaxScoreDisabledReason && judgingMaxScoreExistingRoundsWarning && (
+            <span className="text-xs font-normal text-night-warning">{judgingMaxScoreExistingRoundsWarning}</span>
+          )}
         </Label>
 
         <Label className="text-night-text">

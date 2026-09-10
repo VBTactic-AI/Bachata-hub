@@ -622,6 +622,20 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // "Настройки судейства" на общем сайдбаре категорий (JudgesWorkspace).
   const judgingDivisions: JudgingDivision[] = competition.divisions.map((d) => {
     const finalLocked = d.rounds.some((r) => r.finalSession);
+    // Round.judgingMaxScore — снимок Division.judgingMaxScore на момент
+    // "Сгенерировать раунды" (generate-rounds.ts), не живая ссылка (CLAUDE.md
+    // §50-51 — иначе смена метода задним числом поменяла бы смысл уже идущих/
+    // отсуженных раундов). Само поле дивизиона при этом остаётся редактируемым
+    // и после генерации (в отличие от плана по этапам, A14) — форма не мешает
+    // это сохранить, но без предупреждения организатор не поймёт, почему уже
+    // созданные раунды не подхватили новое значение (живой случай — "Тест2"/
+    // «Профи», 2026-09-10: метод сменили через минуту после генерации раундов,
+    // Полуфинал/Финал остались на старом). Раунд для монитора/судьи всегда
+    // читает СВОЁ Round.judgingMaxScore, а не текущее Division.judgingMaxScore.
+    const existingRegularRoundNames = d.rounds
+      .filter((r) => r.type === null)
+      .sort((a, b) => a.order - b.order)
+      .map((r) => r.stage?.name ?? `раунд #${r.order}`);
     return {
       id: d.id,
       categoryName: d.category.name,
@@ -632,6 +646,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         ? "Нет прав на изменение."
         : !competitionNotStarted
           ? "Соревнование уже началось — метод менять нельзя."
+          : null,
+      judgingMaxScoreExistingRoundsWarning:
+        existingRegularRoundNames.length > 0
+          ? `Изменится только для новых раундов — уже созданные (${existingRegularRoundNames.join(", ")}) останутся на прежнем методе.`
           : null,
       heatCapacity: d.heatCapacity,
       rotationMode: d.rotationMode,
