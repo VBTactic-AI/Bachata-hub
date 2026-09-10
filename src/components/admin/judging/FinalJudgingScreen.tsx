@@ -34,6 +34,15 @@ const FORMAT_LABELS: Record<string, string> = {
   RELATIVE_PLACEMENT: "Скейтинг",
 };
 
+// Медали для предварительных мест 1-3 в матрице критериев (2026-09-10, по
+// запросу пользователя: "хотя бы первые 3 места выделялись") — золото/
+// серебро/бронза, отдельно от PLACE_COLORS (та палитра — для мест
+// скейтинга, до 8 позиций подряд, здесь смысл другой: только топ-3 против
+// остальных). Текст — тёмный, эти фоны светлые (правило read_me про
+// контраст на цветных плашках).
+const MEDAL_COLORS: Record<number, string> = { 1: "#fbbf24", 2: "#cbd5e1", 3: "#d98c4a" };
+const MEDAL_TEXT = "#20160a";
+
 export type FinalQueueItem = {
   drawParticipantId: string;
   role: "LEADER" | "FOLLOWER";
@@ -542,9 +551,15 @@ function FinalScoreMatrix({
                 {roleGroup(role).map((item) => {
                   const rank = rankOf(item);
                   const complete = sortedCriteria.filter((c) => item.criteriaIds.includes(c.id)).every((c) => effectiveValue(item, c.id) !== null);
+                  const medal = complete ? MEDAL_COLORS[rank] : undefined;
                   return (
                     <tr key={item.drawParticipantId} className="border-t border-admin-bg">
-                      <td className="bg-admin-card px-2 py-1 font-mono text-[13px] font-extrabold text-night-text">{item.bibNumber ?? "—"}</td>
+                      <td
+                        className="bg-admin-card px-2 py-1 font-mono text-[13px] font-extrabold text-night-text"
+                        style={medal ? { boxShadow: `inset 3px 0 0 ${medal}` } : undefined}
+                      >
+                        {item.bibNumber ?? "—"}
+                      </td>
                       {sortedCriteria.map((c) => {
                         const applicable = item.criteriaIds.includes(c.id);
                         const value = applicable ? effectiveValue(item, c.id) : null;
@@ -579,14 +594,9 @@ function FinalScoreMatrix({
                       <td className="bg-admin-card px-1 py-1 text-center">
                         <span
                           className={`mx-auto flex h-6 w-6 items-center justify-center rounded-md font-mono text-[11px] font-extrabold ${
-                            !complete
-                              ? "bg-admin-border text-admin-disabled"
-                              : rank === 1
-                                ? "bg-admin-primary text-white"
-                                : rank === 2
-                                  ? "bg-admin-primary/35 text-blue-100"
-                                  : "bg-admin-border text-admin-muted"
+                            medal ? "" : complete ? "bg-admin-border text-admin-muted" : "bg-admin-border text-admin-disabled"
                           }`}
+                          style={medal ? { background: medal, color: MEDAL_TEXT } : undefined}
                         >
                           {complete ? rank : "—"}
                         </span>
