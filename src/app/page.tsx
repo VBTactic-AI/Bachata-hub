@@ -75,18 +75,27 @@ export default async function HomePage() {
   ]);
 
   return (
-    <div className="mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-night-bg font-night text-night-text">
+    <div className="relative mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-night-bg font-night text-night-text">
+      {/* Фото пары фоном всей главной страницы (2026-09-11, по прямому
+          запросу пользователя — раньше стояло только внутри хиро-блока,
+          теперь на всю страницу, "position: fixed" вместо background-attachment:
+          fixed — надёжнее на мобильном Safari, CLAUDE.md §40 mobile-first).
+          Затемнение — одно на всю страницу, а не отдельно в каждой секции:
+          карточки (bg-night-card) уже непрозрачны сами по себе, фото видно
+          только в промежутках/хиро, поэтому один общий скрим держит контраст
+          текста везде без дублирования градиента по секциям. */}
+      <div className="fixed inset-0 -z-10" aria-hidden="true">
+        <Image src="/branding/jnj-couple.png" alt="" fill priority sizes="100vw" className="object-cover object-[60%_20%]" />
+        <div className="absolute inset-0 bg-night-bg/70" />
+      </div>
       <DarkTopNav />
       <div className="flex flex-col gap-6 px-4 pb-24 pt-4 sm:mx-auto sm:max-w-[1240px] sm:px-8 sm:pb-12 sm:pt-8">
-        <section className="relative flex min-h-[240px] flex-col justify-end overflow-hidden rounded-app bg-gradient-night-hero p-6 sm:min-h-[320px] sm:p-10">
-          {/* Фото пары на главном хиро (2026-09-11, по прямому запросу
-              пользователя) — bg-gradient-night-hero остаётся под картинкой
-              как фон на случай, если фото не загрузится. Затемнение снизу
-              вверх (from-night-bg до прозрачного) — то же, для чего нужен
-              был сам градиент: текст сидит внизу (justify-end) и должен
-              читаться поверх фотографии. */}
-          <Image src="/branding/jnj-couple.png" alt="" fill priority sizes="(min-width: 640px) 1240px, 100vw" className="object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-night-bg via-night-bg/70 to-night-bg/10" aria-hidden="true" />
+        <section className="relative flex min-h-[240px] flex-col justify-end overflow-hidden rounded-app p-6 sm:min-h-[320px] sm:p-10">
+          {/* Хиро — без своего фона: фото уже видно сквозь секцию из общего
+              fixed-слоя страницы. Дополнительное затемнение только снизу
+              (где текст), чтобы верх хиро с лицами пары оставался более
+              ярким, чем остальная страница. */}
+          <div className="absolute inset-0 bg-gradient-to-t from-night-bg/90 via-night-bg/30 to-transparent" aria-hidden="true" />
           <div className="relative flex max-w-[420px] flex-col gap-3">
             <h1 className="m-0 font-night text-[1.75rem] font-extrabold leading-[1.05] tracking-tight text-night-text sm:text-4xl">
               {t.home.heroTitle}
