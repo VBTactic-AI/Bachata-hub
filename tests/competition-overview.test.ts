@@ -36,6 +36,7 @@ function round(overrides: Partial<OverviewRound> & { id: string }): OverviewRoun
     finalistsCount: null,
     advancementPublishedAt: null,
     config: null,
+    finalFormat: null,
     heats: [],
     ...overrides,
   };
@@ -101,6 +102,35 @@ describe("findFloorSpotlight", () => {
     // Помощник (scored=false) не входит в список танцующих — он не в зачёт (CLAUDE.md §16).
     expect(spotlight?.leaders).toEqual([{ bibNumber: "201", displayName: "Танцор №201" }]);
     expect(spotlight?.followers).toEqual([{ bibNumber: "202", displayName: "Танцор №202" }]);
+  });
+
+  // JUDGES_DANCE (запрос пользователя, 2026-09-11): Heat.number в БД сквозной
+  // на весь раунд (заход 1 = стадия партнёров, заход 2 = стадия партнёрш) —
+  // на экране должно показываться "Заход 1" заново для каждой роли, а не
+  // унаследованный от БД глобальный номер.
+  it("JUDGES_DANCE: номер захода на экране считается заново с 1 для роли, которая сейчас танцует", () => {
+    const divisions: OverviewDivision[] = [
+      division({
+        id: "profi",
+        categoryName: "Профи",
+        rounds: [
+          round({
+            id: "r-final",
+            finalFormat: "JUDGES_DANCE",
+            heats: [
+              heat("h1", 1, "FINISHED", [participant("LEADER", 10), participant("LEADER", 11)]),
+              heat("h2", 2, "RUNNING", [participant("FOLLOWER", 20), participant("FOLLOWER", 21)]),
+            ],
+          }),
+        ],
+      }),
+    ];
+
+    const spotlight = findFloorSpotlight("comp1", divisions, new Map());
+    // Заход h2 — второй по Heat.number в БД, но первый (и единственный) заход
+    // стадии партнёрш — на экране должен быть "Заход 1 из 1", не "2 из 2".
+    expect(spotlight?.heatNumber).toBe(1);
+    expect(spotlight?.heatsTotal).toBe(1);
   });
 
   it("если никто не танцует — на паркете никого", () => {

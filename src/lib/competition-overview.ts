@@ -1,5 +1,6 @@
-import type { HeatStatus, RoundStatus, RoundType } from "@prisma/client";
+import type { FinalFormat, HeatStatus, RoundStatus, RoundType } from "@prisma/client";
 import { HEAT_STATUS_LABELS } from "@/lib/competition-labels";
+import { computeJudgesDanceHeatNumbering } from "@/lib/judges-dance-heat-numbering";
 
 // Чистые (без БД) вычисления для вкладки "Главная" ("Текущее соревнование" →
 // главный экран организатора) — тот же приём, что и в
@@ -38,6 +39,10 @@ export type OverviewRound = {
   // FULL_RANK/финального tie-break и в page.tsx (TieBreakDecisionForm/
   // FinalTieBreakDecisionForm), см. docs/03 (TIEBREAK-001).
   config: { finalTieGroupKey?: string; tieBreakKind?: string } | null;
+  // Только для нумерации заходов на экране (см. findFloorSpotlight ниже) —
+  // JUDGES_DANCE нумерует заходы заново с 1 для каждой роли, не сквозным
+  // Heat.number на весь раунд (docs/00_DECISIONS.md, 2026-09-11).
+  finalFormat: FinalFormat | null;
   heats: OverviewHeat[];
 };
 
@@ -142,6 +147,25 @@ export function findFloorSpotlight(
         if (!heat) continue;
         const leaders = heat.participants.filter((p) => p.scored && p.role === "LEADER");
         const followers = heat.participants.filter((p) => p.scored && p.role === "FOLLOWER");
+        // JUDGES_DANCE — нумерация заново с 1 для каждой роли, не сквозная по
+        // всему раунду (по прямому запросу пользователя, 2026-09-11; сама
+        // Heat.number в БД не меняется, только отображение здесь).
+        let heatNumber = heat.number;
+        let heatsTotal = round.heats.length;
+        if (round.finalFormat === "JUDGES_DANCE") {
+          const numbering = computeJudgesDanceHeatNumbering(
+            round.heats.map((h) => ({
+              id: h.id,
+              number: h.number,
+              dancerRole: h.participants.find((p) => p.scored)?.role ?? null,
+            }))
+          );
+          const display = numbering.get(heat.id);
+          if (display) {
+            heatNumber = display.number;
+            heatsTotal = display.total;
+          }
+        }
         return {
           divisionId: division.id,
           roundId: round.id,
@@ -149,8 +173,8 @@ export function findFloorSpotlight(
           categoryName: division.categoryName,
           categoryColor: division.categoryColor,
           stageLabel: round.stageLabel,
-          heatNumber: heat.number,
-          heatsTotal: round.heats.length,
+          heatNumber,
+          heatsTotal,
           judgingFormatLabel: round.judgingFormatLabel,
           judgesAssignedCount: division.leaderJudgesCount + division.followerJudgesCount,
           leaders: leaders.map((p) => ({ bibNumber: p.bibNumber, displayName: p.displayName })),

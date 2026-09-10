@@ -6,6 +6,7 @@ import { ValidationFailedError } from "../errors";
 import { maybeFinalizeFinalAfterScoreInTx } from "./final-advancement";
 import { allowedJudgeRole, countRequiredForJudgeRole } from "./final-scoring-matrix";
 import { getMyJudgeAssignments } from "./judge-assignment";
+import { computeJudgesDanceHeatNumbering } from "@/lib/judges-dance-heat-numbering";
 import { REGISTRATION_ROLE_LABELS_PLURAL } from "@/lib/competition-labels";
 
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
@@ -529,6 +530,13 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
   for (const hg of heatGroups) {
     hg.items.sort((a, b) => Number(a.bibNumber ?? 0) - Number(b.bibNumber ?? 0));
   }
+  // Нумерация на экране судьи — заново с 1 для каждой роли, а не сквозная по
+  // всему раунду (Heat.number в БД — CLAUDE.md §45/A4, трогать не стали, см.
+  // judges-dance-heat-numbering.ts). Считаем по ПОЛНОМУ heatGroups (все
+  // заходы раунда, а не только те, где есть работа у ЭТОГО судьи) — иначе
+  // судья, который не видит какой-то заход своей же стадии, получил бы
+  // сбитую нумерацию.
+  const heatNumbering = computeJudgesDanceHeatNumbering(heatGroups.map((hg) => ({ id: hg.heatId, number: hg.heatNumber, dancerRole: hg.dancerRole })));
 
   const scoredCount = items.filter((it) => it.criteriaIds.every((id) => it.scores[id] !== null)).length;
 
@@ -577,7 +585,7 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
     const confirmedHeatSet = new Set(heatConfirmations.map((c) => `${c.heatId}:${c.judgeAssignmentId}`));
     heats = perHeat.map((hg) => ({
       heatId: hg.heatId,
-      heatNumber: hg.heatNumber,
+      heatNumber: heatNumbering.get(hg.heatId)?.number ?? hg.heatNumber,
       roleLabel: hg.dancerRole ? (REGISTRATION_ROLE_LABELS_PLURAL[hg.dancerRole] ?? hg.dancerRole) : "—",
       items: hg.items,
       confirmed: hg.relevantAssignmentIds.length > 0 && hg.relevantAssignmentIds.every((id) => confirmedHeatSet.has(`${hg.heatId}:${id}`)),

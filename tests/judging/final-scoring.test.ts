@@ -604,8 +604,51 @@ describe("getFinalJudgeQueue() — heats: группировка по заход
     expect(queue?.heats).toHaveLength(2);
     expect(queue?.heats?.[0]).toMatchObject({ heatId: "heat1", heatNumber: 1, roleLabel: "Партнёры", confirmed: true });
     expect(queue?.heats?.[0]?.items.map((it) => it.drawParticipantId)).toEqual(["dp1"]);
-    expect(queue?.heats?.[1]).toMatchObject({ heatId: "heat2", heatNumber: 2, roleLabel: "Партнёрши", confirmed: false });
+    // heat2 — второй по сквозному Heat.number в БД (2), но первый (и
+    // единственный) заход стадии партнёрш — на экране судьи нумерация
+    // начинается заново с 1 для каждой роли (2026-09-11, по прямому запросу
+    // пользователя), а не наследует глобальный номер захода.
+    expect(queue?.heats?.[1]).toMatchObject({ heatId: "heat2", heatNumber: 1, roleLabel: "Партнёрши", confirmed: false });
     expect(queue?.heats?.[1]?.items.map((it) => it.drawParticipantId)).toEqual(["dp2"]);
+  });
+
+  it("много финалистов — стадия делится на несколько заходов, нумерация 1,2 у каждой роли своя", async () => {
+    // Реальный сценарий запроса пользователя: партнёров-финалистов больше
+    // вместимости одного захода — стадия 1 состоит из ДВУХ заходов (глобально
+    // Heat.number 1 и 2), стадия 2 (партнёрши) — тоже из двух (Heat.number 3
+    // и 4). На экране судья должен увидеть "Заход 1"/"Заход 2" у партнёров И
+    // отдельный "Заход 1"/"Заход 2" у партнёрш — не "3"/"4".
+    // crit1 — обычный (LEADER-судья видит его у LEADER-финалистов, стадия 1,
+    // "со стороны"), crit2 — "танцующий" (LEADER-судья физически партнёрит
+    // FOLLOWER-финалистов стадии 2, оппозитная роль) — той же асимметрией,
+    // что и в реальном JUDGES_DANCE, один судья видит ОБЕ стадии сразу.
+    const twoCriteria = [
+      { id: "crit1", name: "Техника", priority: 1, minScore: 0, maxScore: 10, step: 1 },
+      { id: "crit2", name: "Взаимодействие", priority: 2, minScore: 0, maxScore: 10, step: 1 },
+    ];
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", divisionId: "div1", judgeUserId: "judge1", role: "LEADER" }]);
+    roundFindUniqueOrThrow.mockResolvedValue({
+      division: { id: "div1", competitionId: "comp1", category: { name: "Профи" } },
+      finalSession: { format: "JUDGES_DANCE", config: { dancingJudgeCriteriaIds: ["crit2"] }, currentStage: 2, criteriaSnapshot: twoCriteria },
+      heats: [
+        { id: "heat1", number: 1, status: "FINISHED", draws: [{ participants: [finalist("dp1", "LEADER", "1")] }] },
+        { id: "heat2", number: 2, status: "FINISHED", draws: [{ participants: [finalist("dp2", "LEADER", "2")] }] },
+        { id: "heat3", number: 3, status: "RUNNING", draws: [{ participants: [finalist("dp3", "FOLLOWER", "3")] }] },
+        { id: "heat4", number: 4, status: "PENDING", draws: [] },
+      ],
+    });
+    judgeHeatConfirmationFindMany.mockResolvedValue([]);
+
+    const queue = await getFinalJudgeQueue("comp1", "final1");
+
+    // heat4 — PENDING, ещё не вызван на паркет, судья его вообще не видит
+    // (существующее правило) — участвует в подсчёте нумерации остальных
+    // заходов только тем, что он вообще не попадает в очередь.
+    expect(queue?.heats?.map((h) => [h.heatId, h.heatNumber])).toEqual([
+      ["heat1", 1],
+      ["heat2", 2],
+      ["heat3", 1],
+    ]);
   });
 
   it("не строит heats вовсе для форматов, где заходы формируются все сразу (не JUDGES_DANCE)", async () => {

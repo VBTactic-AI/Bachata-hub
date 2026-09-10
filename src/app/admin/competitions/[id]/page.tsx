@@ -41,6 +41,7 @@ import { StartFinalPanel } from "@/components/admin/StartFinalPanel";
 import { FinalResultsTable } from "@/components/admin/FinalResultsTable";
 import { FinalTieBreakDecisionForm } from "@/components/admin/FinalTieBreakDecisionForm";
 import { JudgesDanceDrawPanel, type JudgesDanceHeatView } from "@/components/admin/JudgesDanceDrawPanel";
+import { computeJudgesDanceHeatNumbering } from "@/lib/judges-dance-heat-numbering";
 import { RandomCouplesPanel } from "@/components/admin/RandomCouplesPanel";
 import { DivisionResultsPanel } from "@/components/admin/DivisionResultsPanel";
 import { CompetitionResultsPanel } from "@/components/admin/CompetitionResultsPanel";
@@ -464,6 +465,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           order: round.order,
           stageLabel: round.stage?.name ?? (round.type ? ROUND_TYPE_LABELS[round.type] ?? round.type : "—"),
           judgingFormatLabel: JUDGING_MAX_SCORE_LABELS[round.judgingMaxScore] ?? String(round.judgingMaxScore),
+          finalFormat: round.finalSession?.format ?? null,
           finalistsCount: round.finalistsCount,
           advancementPublishedAt: round.advancementPublishedAt,
           config: round.config as { finalTieGroupKey?: string; tieBreakKind?: string } | null,
@@ -1010,13 +1012,23 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               LEADER: d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ({ id: ja.id, displayName: judgeNameByUserId.get(ja.judgeUserId) ?? "—" })),
               FOLLOWER: d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ({ id: ja.id, displayName: judgeNameByUserId.get(ja.judgeUserId) ?? "—" })),
             };
-            const heatViews: JudgesDanceHeatView[] = round.heats.map((heat) => {
+            const heatsWithDancerRole = round.heats.map((heat) => ({
+              heat,
+              dancerRole: ((heat.draws[0]?.participants ?? []).find((p) => p.scored)?.role ?? "LEADER") as RegistrationRole,
+            }));
+            // Нумерация на экране — заново с 1 для каждой роли (по прямому
+            // запросу пользователя, 2026-09-11), а не сквозная по всему раунду
+            // (Heat.number в БД трогать не стали — см. judges-dance-heat-numbering.ts).
+            const heatNumbering = computeJudgesDanceHeatNumbering(
+              heatsWithDancerRole.map(({ heat, dancerRole }) => ({ id: heat.id, number: heat.number, dancerRole }))
+            );
+            const heatViews: JudgesDanceHeatView[] = heatsWithDancerRole.map(({ heat, dancerRole }) => {
               const participants = heat.draws[0]?.participants ?? [];
-              const dancerRole: RegistrationRole = (participants.find((p) => p.scored)?.role ?? "LEADER") as RegistrationRole;
               const judgeRole: RegistrationRole = dancerRole === "LEADER" ? "FOLLOWER" : "LEADER";
+              const displayNumber = heatNumbering.get(heat.id)?.number ?? heat.number;
               return {
                 id: heat.id,
-                number: heat.number,
+                number: displayNumber,
                 status: heat.status,
                 roleLabel: REGISTRATION_ROLE_LABELS_PLURAL[dancerRole] ?? dancerRole,
                 judgeRole,

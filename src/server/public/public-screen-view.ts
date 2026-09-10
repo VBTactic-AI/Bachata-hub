@@ -1,6 +1,7 @@
 import type { RegistrationRole, RotationMode, RotationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { roundLabel } from "./public-competition-view";
+import { computeJudgesDanceHeatNumbering } from "@/lib/judges-dance-heat-numbering";
 
 // Большое табло (Этап 12, docs/01 §22 "Big-screen mode") — публичное,
 // read-only зеркало живого танцпола (Этап 6, A12): та же модель данных
@@ -53,7 +54,21 @@ export async function getPublicScreenView(competitionId: string): Promise<Public
       number: true,
       status: true,
       round: {
-        select: { type: true, stage: { select: { name: true } }, division: { select: { category: { select: { name: true } } } } },
+        select: {
+          type: true,
+          stage: { select: { name: true } },
+          division: { select: { category: { select: { name: true } } } },
+          finalSession: { select: { format: true } },
+          // Только для пересчёта нумерации JUDGES_DANCE ниже (заново с 1 для
+          // каждой роли, 2026-09-11) — не для отображения состава заходов.
+          heats: {
+            select: {
+              id: true,
+              number: true,
+              draws: { orderBy: { version: "desc" }, take: 1, select: { participants: { where: { scored: true }, select: { role: true } } } },
+            },
+          },
+        },
       },
       draws: {
         orderBy: { version: "desc" },
@@ -89,13 +104,24 @@ export async function getPublicScreenView(competitionId: string): Promise<Public
 
   if (!heat) return { competitionName: competition.name, active: null, serverNow: new Date().toISOString() };
 
+  // JUDGES_DANCE — нумерация заново с 1 для каждой роли, не сквозная по
+  // всему раунду (по прямому запросу пользователя, 2026-09-11; Heat.number
+  // в БД не меняется, только то, что видит зритель на табло).
+  let heatNumber = heat.number;
+  if (heat.round.finalSession?.format === "JUDGES_DANCE") {
+    const numbering = computeJudgesDanceHeatNumbering(
+      heat.round.heats.map((h) => ({ id: h.id, number: h.number, dancerRole: h.draws[0]?.participants[0]?.role ?? null }))
+    );
+    heatNumber = numbering.get(heat.id)?.number ?? heat.number;
+  }
+
   const r = heat.rotation;
   return {
     competitionName: competition.name,
     serverNow: new Date().toISOString(),
     active: {
       heatId: heat.id,
-      heatNumber: heat.number,
+      heatNumber,
       heatStatus: heat.status,
       divisionCategoryName: heat.round.division.category.name,
       roundLabel: roundLabel(heat.round),
