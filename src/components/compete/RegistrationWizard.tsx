@@ -12,12 +12,14 @@ type Outcome = { divisionId: string; ok: boolean; pending?: boolean; message?: s
 const ROLE_LABEL: Record<Role, string> = { LEADER: "Партнёр", FOLLOWER: "Партнёрша" };
 
 // Пошаговая регистрация (по референсу пользователя, 2026-09-04) поверх уже
-// существующего API POST /api/competitions/[id]/registrations — один вызов
-// на один дивизион (CLAUDE.md §45, ничего нового на сервере не добавлено):
-// при нескольких выбранных категориях зовём его последовательно по кругу,
-// а не выдумываем несуществующий bulk-эндпоинт. Шаг "Ваша роль" — отдельным
-// полем перед категориями (роль обязательна, не выводится из пола —
-// подтверждено пользователем, 2026-09-04), не как в референсе, где её нет.
+// существующего API POST /api/competitions/[id]/registrations (CLAUDE.md §45,
+// ничего нового на сервере не добавлено). Категория — ровно ОДНА на
+// соревнование (по прямому запросу пользователя, 2026-09-10: раньше здесь
+// был чекбокс-мультивыбор, сервер это тоже теперь отдельно отклоняет —
+// register-competitor.ts, AlreadyRegisteredInCompetitionError — но фронт не
+// должен и предлагать выбрать несколько). Шаг "Ваша роль" — отдельным полем
+// перед категорией (роль обязательна, не выводится из пола — подтверждено
+// пользователем, 2026-09-04), не как в референсе, где её нет.
 export function RegistrationWizard({
   competitionId,
   competitionName,
@@ -38,61 +40,48 @@ export function RegistrationWizard({
   suggestedRole: Role | null;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState(0); // 0 данные+роль, 1 категории, 2 подтверждение, 3 успех
+  const [step, setStep] = useState(0); // 0 данные+роль, 1 категория, 2 подтверждение, 3 успех
   const [role, setRole] = useState<Role>(suggestedRole ?? "LEADER");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
-
-  function toggleDivision(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
 
   async function onConfirm() {
+    if (!selected) return;
+    const divisionId = selected;
     setSubmitting(true);
-    const results: Outcome[] = [];
-    for (const divisionId of selected) {
-      try {
-        const res = await fetch(`/api/competitions/${competitionId}/registrations`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ divisionId, role }),
-        });
-        const data = await res.json().catch(() => ({}) as { error?: string; registration?: { roleOverrideStatus?: string } });
-        if (!res.ok) {
-          results.push({ divisionId, ok: false, message: data.error || "Не удалось зарегистрироваться." });
-        } else {
-          results.push({ divisionId, ok: true, pending: data.registration?.roleOverrideStatus === "PENDING" });
-        }
-      } catch {
-        results.push({ divisionId, ok: false, message: "Нет связи с сервером — попробуйте ещё раз." });
+    let result: Outcome;
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}/registrations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ divisionId, role }),
+      });
+      const data = await res.json().catch(() => ({}) as { error?: string; registration?: { roleOverrideStatus?: string } });
+      if (!res.ok) {
+        result = { divisionId, ok: false, message: data.error || "Не удалось зарегистрироваться." };
+      } else {
+        result = { divisionId, ok: true, pending: data.registration?.roleOverrideStatus === "PENDING" };
       }
+    } catch {
+      result = { divisionId, ok: false, message: "Нет связи с сервером — попробуйте ещё раз." };
     }
     setSubmitting(false);
-    setOutcomes(results);
-    // Успешные — больше не переотправляем при повторном клике "Подтвердить"
-    // (повторный вызов на них всё равно вернул бы "уже зарегистрированы").
-    setSelected(new Set(results.filter((r) => !r.ok).map((r) => r.divisionId)));
-    if (results.every((r) => r.ok)) {
+    setOutcome(result);
+    if (result.ok) {
       setStep(3);
       router.refresh();
     }
   }
 
   if (step === 3) {
-    const anyPending = outcomes.some((o) => o.pending);
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-night-cta text-3xl text-white">✓</div>
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text">Вы успешно зарегистрированы!</h1>
         <p className="m-0 max-w-[320px] text-sm text-night-muted">
           Ждём вас на соревновании «{competitionName}».
-          {anyPending && " По одной из категорий роль отличалась от подсказки по полу — организатор подтвердит её перед check-in."}
+          {outcome?.pending && " Роль отличалась от подсказки по полу — организатор подтвердит её перед check-in."}
         </p>
         <Link
           href="/compete"
@@ -154,17 +143,17 @@ export function RegistrationWizard({
       {step === 1 && (
         <div className="stack gap-3">
           <div>
-            <h2 className="m-0 mb-1 font-night text-base font-bold text-night-text">Выберите категории</h2>
-            <p className="m-0 text-xs text-night-muted">Можно выбрать несколько</p>
+            <h2 className="m-0 mb-1 font-night text-base font-bold text-night-text">Выберите категорию</h2>
+            <p className="m-0 text-xs text-night-muted">На одно соревнование — одна категория</p>
           </div>
           {divisions.length === 0 ? (
             <p className="hint-text text-night-muted">
-              Свободных категорий не осталось — либо вы уже зарегистрированы во всех, либо соревнование их пока не объявило.
+              Свободных категорий не осталось — либо вы уже зарегистрированы, либо соревнование их пока не объявило.
             </p>
           ) : (
-            <div className="stack gap-2">
+            <div className="stack gap-2" role="radiogroup" aria-label="Категория">
               {divisions.map((d) => {
-                const checked = selected.has(d.id);
+                const checked = selected === d.id;
                 return (
                   <label
                     key={d.id}
@@ -174,7 +163,7 @@ export function RegistrationWizard({
                         : "border-night-border bg-night-card text-night-text"
                     }`}
                   >
-                    <input type="checkbox" checked={checked} onChange={() => toggleDivision(d.id)} className="h-4 w-4 accent-night-primary" />
+                    <input type="radio" name="division" checked={checked} onChange={() => setSelected(d.id)} className="h-4 w-4 accent-night-primary" />
                     {d.categoryName}
                     {checked && <span className="ml-auto text-night-pink">✓</span>}
                   </label>
@@ -193,7 +182,7 @@ export function RegistrationWizard({
             <button
               type="button"
               onClick={() => setStep(2)}
-              disabled={selected.size === 0}
+              disabled={selected === null}
               className="flex-[2] rounded-full bg-gradient-night-cta py-3.5 text-sm font-bold uppercase tracking-wide text-white disabled:opacity-40"
             >
               Далее →
@@ -211,28 +200,17 @@ export function RegistrationWizard({
             {placeLabel && <p className="m-0 text-night-muted">{placeLabel}</p>}
           </div>
           <div className="rounded-app border border-night-border bg-night-card p-4 text-sm">
-            <p className="m-0 text-night-muted">Категории</p>
-            <p className="m-0 mt-0.5 text-night-text">
-              {divisions
-                .filter((d) => selected.has(d.id))
-                .map((d) => d.categoryName)
-                .join(", ")}
-            </p>
+            <p className="m-0 text-night-muted">Категория</p>
+            <p className="m-0 mt-0.5 text-night-text">{divisions.find((d) => d.id === selected)?.categoryName}</p>
             <p className="m-0 mt-2 text-night-muted">Роль</p>
             <p className="m-0 mt-0.5 text-night-text">{ROLE_LABEL[role]}</p>
             <p className="m-0 mt-2 text-night-muted">Участник</p>
             <p className="m-0 mt-0.5 text-night-text">{profileName || "будет создано автоматически"}</p>
           </div>
 
-          {outcomes.some((o) => !o.ok) && (
+          {outcome && !outcome.ok && (
             <div className="rounded-app border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-              {outcomes
-                .filter((o) => !o.ok)
-                .map((o) => (
-                  <p key={o.divisionId} className="m-0">
-                    {divisions.find((d) => d.id === o.divisionId)?.categoryName}: {o.message}
-                  </p>
-                ))}
+              <p className="m-0">{outcome.message}</p>
             </div>
           )}
 
@@ -248,7 +226,7 @@ export function RegistrationWizard({
             <button
               type="button"
               onClick={onConfirm}
-              disabled={submitting || selected.size === 0}
+              disabled={submitting || selected === null}
               className="flex-[2] rounded-full bg-gradient-night-cta py-3.5 text-sm font-bold uppercase tracking-wide text-white disabled:opacity-60"
             >
               {submitting ? "Отправляем…" : "Подтвердить регистрацию"}

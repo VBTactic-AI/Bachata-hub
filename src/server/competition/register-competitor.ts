@@ -5,7 +5,13 @@ import { hashPassword } from "@/lib/auth";
 import { getActor, type Actor } from "../rbac/actor";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
-import { AlreadyRegisteredError, AuthenticationRequiredError, RegistrationNotOpenError, ValidationFailedError } from "../errors";
+import {
+  AlreadyRegisteredError,
+  AlreadyRegisteredInCompetitionError,
+  AuthenticationRequiredError,
+  RegistrationNotOpenError,
+  ValidationFailedError,
+} from "../errors";
 import type { RegisterByAdminInput, RegisterSelfInput } from "./registration-schemas";
 
 type PrismaTx = Prisma.TransactionClient;
@@ -45,6 +51,25 @@ async function insertRegistration(
   });
   if (!division) throw new ValidationFailedError("Категория не найдена в этом соревновании.");
   if (division.competition.status !== "REGISTRATION_OPEN") throw new RegistrationNotOpenError();
+
+  // Только одна категория на соревнование на человека (по прямому запросу
+  // пользователя, 2026-09-10 — раньше можно было отметить несколько
+  // категорий сразу в RegistrationWizard). Advisory xact-lock сериализует
+  // конкурентные регистрации одного и того же танцора в одном соревновании
+  // (тот же приём, что и в heat-state.ts/round-state.ts/final-scoring.ts) —
+  // без него два параллельных запроса (двойной клик, дожим офлайн-очереди)
+  // могли бы оба пройти проверку ниже ДО того, как второй увидит commit
+  // первого (READY COMMITTED), и оба создать регистрацию в разных
+  // категориях. Существующий уникальный индекс (competitionId, divisionId,
+  // dancerId) защищает только от дубля В ОДНОЙ категории, не от двух разных.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${params.competitionId}), hashtext(${params.dancerId}))`;
+  const existingInCompetition = await tx.registration.findFirst({
+    where: { competitionId: params.competitionId, dancerId: params.dancerId },
+    include: { division: { include: { category: { select: { name: true } } } } },
+  });
+  if (existingInCompetition) {
+    throw new AlreadyRegisteredInCompetitionError(existingInCompetition.division.category.name);
+  }
 
   // Если выбранная роль расходится с подсказкой по полу — сохраняем
   // БЕЗОПАСНОЕ значение (подсказку) как действующую роль и откладываем

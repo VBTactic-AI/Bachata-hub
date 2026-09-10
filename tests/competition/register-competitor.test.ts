@@ -14,20 +14,27 @@ const dancerFindUnique = vi.fn();
 const dancerCreate = vi.fn();
 const divisionFindFirst = vi.fn();
 const roleFindUniqueOrThrow = vi.fn();
+const registrationFindFirst = vi.fn();
 const registrationCreate = vi.fn();
 const competitionMemberUpsert = vi.fn();
 const auditCreate = vi.fn();
 const userFindUnique = vi.fn();
 const userCreate = vi.fn();
+const executeRaw = vi.fn();
 
 const fakeTx = {
   dancer: { findUnique: dancerFindUnique, findFirst: dancerFindUnique, create: dancerCreate },
   division: { findFirst: divisionFindFirst },
   role: { findUniqueOrThrow: roleFindUniqueOrThrow, findFirstOrThrow: roleFindUniqueOrThrow },
-  registration: { create: registrationCreate },
+  registration: { findFirst: registrationFindFirst, create: registrationCreate },
   competitionMember: { upsert: competitionMemberUpsert },
   auditLog: { create: auditCreate },
   user: { findUnique: userFindUnique, findFirst: userFindUnique, create: userCreate },
+  // Тегированный шаблон ($executeRaw`...`) — вызывается как функция, но с
+  // массивом строк первым аргументом; для теста форма вызова не важна,
+  // важно только что он резолвится и не падает (advisory lock — деталь
+  // конкуренции, не бизнес-логики, которую тестирует этот файл).
+  $executeRaw: (...a: unknown[]) => executeRaw(...a),
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -37,7 +44,9 @@ vi.mock("@/lib/prisma", () => ({
 const { registerSelf, registerByAdmin, suggestedRoleForGender } = await import(
   "@/server/competition/register-competitor"
 );
-const { AuthenticationRequiredError, RegistrationNotOpenError } = await import("@/server/errors");
+const { AuthenticationRequiredError, RegistrationNotOpenError, AlreadyRegisteredInCompetitionError } = await import(
+  "@/server/errors"
+);
 
 const actor: Actor = {
   userId: "u1",
@@ -53,11 +62,15 @@ beforeEach(() => {
   dancerCreate.mockReset();
   divisionFindFirst.mockReset().mockResolvedValue({ id: "div1", competition: { status: "REGISTRATION_OPEN" } });
   roleFindUniqueOrThrow.mockReset().mockResolvedValue({ id: "role-competitor" });
+  // По умолчанию — ни в одной категории этого соревнования ещё нет
+  // регистрации (проверка "только одна категория на соревнование").
+  registrationFindFirst.mockReset().mockResolvedValue(null);
   registrationCreate.mockReset().mockResolvedValue({ id: "reg1" });
   competitionMemberUpsert.mockReset();
   auditCreate.mockReset();
   userFindUnique.mockReset();
   userCreate.mockReset();
+  executeRaw.mockReset().mockResolvedValue(0);
 });
 
 describe("suggestedRoleForGender()", () => {
@@ -139,6 +152,35 @@ describe("registerSelf()", () => {
         data: expect.objectContaining({ role: "FOLLOWER", requestedRole: null, roleOverrideStatus: null }),
       })
     );
+  });
+
+  // Только одна категория на соревнование на человека (по прямому запросу
+  // пользователя, 2026-09-10) — раньше можно было отметить сразу несколько
+  // категорий в RegistrationWizard, сервер это никак не проверял.
+  it("уже зарегистрирован в ДРУГОЙ категории этого соревнования — отклоняет", async () => {
+    getActorMock.mockResolvedValue(actor);
+    dancerFindUnique.mockResolvedValue({ id: "dancer1", gender: null });
+    registrationFindFirst.mockResolvedValue({
+      id: "reg-existing",
+      division: { category: { name: "Дебютанты" } },
+    });
+
+    await expect(registerSelf("comp1", { divisionId: "div1", role: "FOLLOWER" })).rejects.toBeInstanceOf(
+      AlreadyRegisteredInCompetitionError
+    );
+    expect(registrationCreate).not.toHaveBeenCalled();
+  });
+
+  it("advisory lock берётся ДО проверки существующей регистрации (сериализация гонки)", async () => {
+    getActorMock.mockResolvedValue(actor);
+    dancerFindUnique.mockResolvedValue({ id: "dancer1", gender: null });
+
+    await registerSelf("comp1", { divisionId: "div1", role: "LEADER" });
+
+    expect(executeRaw).toHaveBeenCalledOnce();
+    const executeRawOrder = executeRaw.mock.invocationCallOrder[0];
+    const findFirstOrder = registrationFindFirst.mock.invocationCallOrder[0];
+    expect(executeRawOrder).toBeLessThan(findFirstOrder);
   });
 });
 

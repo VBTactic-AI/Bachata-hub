@@ -63,6 +63,15 @@ export class AlreadyRegisteredError extends DomainError {
   }
 }
 
+export class AlreadyRegisteredInCompetitionError extends DomainError {
+  constructor(existingCategoryName: string) {
+    super(
+      `Можно участвовать только в одной категории соревнования — вы уже зарегистрированы в категории «${existingCategoryName}».`,
+      { cause: { existingCategoryName } }
+    );
+  }
+}
+
 export class NoDancerProfileError extends DomainError {
   constructor() {
     super("Чтобы зарегистрироваться на конкурс, сначала заполните профиль танцора.");
