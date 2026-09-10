@@ -11,7 +11,12 @@ import { perfFetch } from "@/lib/performance-debug/client";
 // ничего не меняется, кнопку можно нажать ещё раз после исправления.
 // `final=true` переключает на эндпоинт финала (confirmFinalJudgeRoundDone,
 // final-scoring.ts) — тот же компонент, чтобы не дублировать разметку/UX.
-export function ConfirmJudgingButton({ roundId, final = false }: { roundId: string; final?: boolean }) {
+// `heatId` (2026-09-10, только JUDGES_DANCE) — подтверждение ПО ЗАХОДУ
+// (confirmFinalJudgeHeatDone) вместо round: заходы стадий там формируются не
+// все сразу, общее "Готово" на весь раунд блокировало бы ещё не появившуюся
+// стадию (см. JudgeHeatConfirmation в schema.prisma). Игнорируется, если
+// final не передан.
+export function ConfirmJudgingButton({ roundId, final = false, heatId }: { roundId: string; final?: boolean; heatId?: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +25,12 @@ export function ConfirmJudgingButton({ roundId, final = false }: { roundId: stri
     const clickStartedAt = performance.now();
     setLoading(true);
     setError(null);
-    const endpoint = final ? `/api/rounds/${roundId}/confirm-final-judging` : `/api/rounds/${roundId}/confirm-judging`;
+    const endpoint =
+      final && heatId
+        ? `/api/heats/${heatId}/confirm-final-judging`
+        : final
+          ? `/api/rounds/${roundId}/confirm-final-judging`
+          : `/api/rounds/${roundId}/confirm-judging`;
     const res = await perfFetch(final ? "judge.confirm_final_round" : "judge.confirm_round", endpoint, { method: "POST" }, clickStartedAt);
     setLoading(false);
     if (!res.ok) {

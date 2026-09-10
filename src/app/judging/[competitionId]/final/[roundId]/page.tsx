@@ -31,7 +31,14 @@ export default async function FinalJudgingPage({ params }: { params: Promise<{ c
         ← Ко всем заходам
       </a>
       <h1 className="m-0 font-night text-xl font-extrabold text-night-text">Финал · {queue.divisionName}</h1>
-      <FinalJudgingScreen roundId={roundId} format={queue.format} criteria={queue.criteria} items={queue.items} confirmed={queue.confirmed} />
+      <FinalJudgingScreen
+        roundId={roundId}
+        format={queue.format}
+        criteria={queue.criteria}
+        items={queue.items}
+        confirmed={queue.confirmed}
+        heats={queue.heats}
+      />
     </div>
   );
 }

@@ -55,6 +55,16 @@ export type FinalQueueItem = {
   criteriaIds: string[];
 };
 
+// Только JUDGES_DANCE (2026-09-10) — один заход стадии со своим списком и
+// своим "Готово" (см. комментарий у FinalJudgingScreen ниже, зачем).
+export type FinalQueueHeat = {
+  heatId: string;
+  heatNumber: number;
+  roleLabel: string;
+  items: FinalQueueItem[];
+  confirmed: boolean;
+};
+
 // Судейский экран финала (CLAUDE.md §40 — быстро, без админских функций).
 // Два принципиально разных режима:
 // - RELATIVE_PLACEMENT (скейтинг) — судья расставляет МЕСТА, список
@@ -77,21 +87,114 @@ export type FinalQueueItem = {
 // Отправка — через офлайн-очередь (final-judge-score-queue.ts, CLAUDE.md
 // §17): клик сохраняет локально и пытается отправить сразу, без связи —
 // досылается сама.
-export function FinalJudgingScreen({
+//
+// JUDGES_DANCE (2026-09-10, по жалобе пользователя): раньше все заходы
+// раунда (обе стадии) показывались на одном экране, ОДНИМ общим "Готово"
+// (confirmFinalJudgeRoundDone на весь раунд). Так как заходы стадий
+// JUDGES_DANCE формируются НЕ все сразу (final-judges-dance.ts,
+// generateJudgesDanceStage — стадия 2 создаётся только после того, как
+// стадия 1 завершена), судья, назначенный на обе роли, подтверждал "Готово"
+// сразу после стадии 1 — тогда это и правда было всё, что видно — а когда
+// позже появлялась стадия 2 со своим критерием, все клетки оказывались
+// заблокированы уже сработавшим подтверждением ("судья не может этого
+// сделать"). Экспортируемый компонент теперь диспетчер: если сервер прислал
+// heats (только для JUDGES_DANCE, getFinalJudgeQueue), показываем вкладки —
+// каждый заход своим списком и своей кнопкой "Готово" (JudgeHeatConfirmation,
+// отдельно от JudgeRoundConfirmation) — переключение вкладки не уходит со
+// страницы. Для остальных форматов (там все заходы формируются сразу,
+// проблемы нет) heats не передаётся — работает как и раньше, без изменений.
+export function FinalJudgingScreen(
+  props: {
+    roundId: string;
+    format: "NORMAL" | "JUDGES_DANCE" | "RANDOM_COUPLES" | "RELATIVE_PLACEMENT";
+    criteria: FinalCriterionInfo[];
+    items: FinalQueueItem[];
+    confirmed: boolean;
+  } & { heats?: FinalQueueHeat[] }
+) {
+  if (props.format === "JUDGES_DANCE" && props.heats && props.heats.length > 0) {
+    return <JudgesDanceHeatTabs roundId={props.roundId} format={props.format} criteria={props.criteria} heats={props.heats} />;
+  }
+  return <FinalJudgingScreenSingle {...props} />;
+}
+
+function JudgesDanceHeatTabs({
+  roundId,
+  format,
+  criteria,
+  heats,
+}: {
+  roundId: string;
+  format: "JUDGES_DANCE";
+  criteria: FinalCriterionInfo[];
+  heats: FinalQueueHeat[];
+}) {
+  // По умолчанию — последний заход (самый свежий/текущий, как и в остальных
+  // местах приложения, напр. admin JudgesDanceDrawPanel.tsx).
+  const [activeId, setActiveId] = useState(heats[heats.length - 1]?.heatId ?? null);
+  const active = heats.find((h) => h.heatId === activeId) ?? heats[heats.length - 1];
+
+  return (
+    <div className="flex flex-col gap-3">
+      {heats.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto rounded-app-sm bg-admin-card2/50 p-1.5" role="tablist" aria-label="Заходы">
+          {heats.map((h) => {
+            const isActive = h.heatId === active?.heatId;
+            return (
+              <button
+                key={h.heatId}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveId(h.heatId)}
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-app-sm px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                  isActive ? "bg-admin-primary text-white" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+                }`}
+              >
+                Заход {h.heatNumber} · {h.roleLabel}
+                {h.confirmed && <span aria-hidden="true">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {active && (
+        // key — новый экземпляр на каждый заход: локальное состояние
+        // (открытые листы выбора оценки, очередь) не должно течь между
+        // заходами при переключении вкладки.
+        <FinalJudgingScreenSingle
+          key={active.heatId}
+          roundId={roundId}
+          format={format}
+          criteria={criteria}
+          items={active.items}
+          confirmed={active.confirmed}
+          heatId={active.heatId}
+        />
+      )}
+    </div>
+  );
+}
+
+function FinalJudgingScreenSingle({
   roundId,
   format,
   criteria,
   items,
   confirmed,
+  heatId,
 }: {
   roundId: string;
   format: "NORMAL" | "JUDGES_DANCE" | "RANDOM_COUPLES" | "RELATIVE_PLACEMENT";
   criteria: FinalCriterionInfo[];
   items: FinalQueueItem[];
-  // Судья уже нажал "Готово" по этому финалу (confirmFinalJudgeRoundDone) —
-  // оценки зафиксированы, кнопки редактирования блокируются (2026-09-07, по
-  // образцу обычных раундов, JudgeScoreButtons.tsx).
+  // Судья уже нажал "Готово" по этому финалу/заходу — оценки зафиксированы,
+  // кнопки редактирования блокируются (2026-09-07, по образцу обычных
+  // раундов, JudgeScoreButtons.tsx).
   confirmed: boolean;
+  // Только JUDGES_DANCE (2026-09-10, см. JudgesDanceHeatTabs выше) —
+  // подтверждение идёт по ЭТОМУ заходу, не по всему раунду.
+  heatId?: string;
 }) {
   // RELATIVE_PLACEMENT (скейтинг-система) — судья вводит МЕСТО (меньше
   // лучше), а не баллы (больше лучше) — единственный критерий формата.
@@ -309,7 +412,7 @@ export function FinalJudgingScreen({
             ✓ Готово
           </span>
         ) : (
-          <ConfirmJudgingButton roundId={roundId} final />
+          <ConfirmJudgingButton roundId={roundId} final heatId={heatId} />
         )}
       </div>
       <ProgressBar pct={pct} />

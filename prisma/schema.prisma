@@ -939,9 +939,10 @@ model Heat {
   startedAt     DateTime?
   endedAt       DateTime?
 
-  draws     Draw[]
-  rotation  HeatRotation?
-  finalPair FinalPair?
+  draws             Draw[]
+  rotation          HeatRotation?
+  finalPair         FinalPair?
+  heatConfirmations JudgeHeatConfirmation[]
 
   @@unique([roundId, number])
 }
@@ -1082,9 +1083,10 @@ model JudgeAssignment {
   assignedBy   User             @relation("JudgeAssignmentAssignedBy", fields: [assignedById], references: [id])
   createdAt    DateTime         @default(now())
 
-  scores        JudgeScore[]
-  confirmations JudgeRoundConfirmation[]
-  finalScores   FinalJudgeScore[]
+  scores            JudgeScore[]
+  confirmations     JudgeRoundConfirmation[]
+  finalScores       FinalJudgeScore[]
+  heatConfirmations JudgeHeatConfirmation[]
 
   @@unique([divisionId, judgeUserId, role])
   @@index([assignedById])
@@ -1139,6 +1141,32 @@ model JudgeRoundConfirmation {
   createdAt         DateTime        @default(now())
 
   @@unique([roundId, judgeAssignmentId])
+  @@index([judgeAssignmentId])
+}
+
+// Подтверждение "Готово" ПО ЗАХОДУ — только для формата JUDGES_DANCE
+// (2026-09-10). В этом формате заходы стадий появляются не все сразу
+// (final-judges-dance.ts, generateJudgesDanceStage: стадия 2 формируется
+// отдельным действием организатора ПОСЛЕ того, как стадия 1 завершена) —
+// общее JudgeRoundConfirmation "на весь раунд" ошибочно блокировало судью,
+// назначенного на обе роли: он подтверждал "Готово" сразу после стадии 1
+// (тогда это и правда было всё, что видно), а когда позже появлялась стадия
+// 2 со своим единственным критерием — новые обязательные клетки становились
+// недоступны (жалоба пользователя: "судья не может этого сделать"). Для
+// остальных форматов финала (там все заходы формируются сразу при старте)
+// это не воспроизводится — они продолжают использовать JudgeRoundConfirmation
+// без изменений; submitFinalJudgeScore/confirmFinalJudgeHeatDone проверяют
+// именно эту модель только когда FinalSession.format = JUDGES_DANCE.
+model JudgeHeatConfirmation {
+  id                String          @id @default(cuid())
+  heatId            String
+  heat              Heat            @relation(fields: [heatId], references: [id], onDelete: Cascade)
+  judgeAssignmentId String
+  judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
+  yesCount          Int
+  createdAt         DateTime        @default(now())
+
+  @@unique([heatId, judgeAssignmentId])
   @@index([judgeAssignmentId])
 }
 

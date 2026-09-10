@@ -6,6 +6,7 @@ import { ValidationFailedError } from "../errors";
 import { maybeFinalizeFinalAfterScoreInTx } from "./final-advancement";
 import { allowedJudgeRole, countRequiredForJudgeRole } from "./final-scoring-matrix";
 import { getMyJudgeAssignments } from "./judge-assignment";
+import { REGISTRATION_ROLE_LABELS_PLURAL } from "@/lib/competition-labels";
 
 type CriterionSnapshot = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
 
@@ -77,14 +78,29 @@ export async function submitFinalJudgeScore(
     throw new ValidationFailedError("Вы не назначены оценивать этот критерий у этого участника в этой категории.");
   }
 
-  // Судья уже нажал "Готово" по этому раунду (confirmFinalJudgeRoundDone) —
-  // его оценки зафиксированы, даже если финал ещё ждёт других судей
+  // Судья уже нажал "Готово" — где именно проверяем, зависит от формата.
+  // JUDGES_DANCE подтверждает ПО ЗАХОДУ (JudgeHeatConfirmation, 2026-09-10) —
+  // заходы его стадий формируются не все сразу (final-judges-dance.ts), и
+  // общее подтверждение "на весь раунд" блокировало бы уже отдельно
+  // появляющуюся стадию 2 после того, как судья подтвердил стадию 1 (жалоба
+  // пользователя — "судья не может этого сделать"). Остальные форматы
+  // формируют все заходы сразу при старте финала — для них подтверждение
+  // по-прежнему на весь раунд (JudgeRoundConfirmation), без изменений
   // (2026-09-07, по образцу обычных раундов, scoring.ts).
-  const myConfirmation = await prisma.judgeRoundConfirmation.findUnique({
-    where: { roundId_judgeAssignmentId: { roundId: round.id, judgeAssignmentId: assignment.id } },
-  });
-  if (myConfirmation) {
-    throw new ValidationFailedError('Вы уже нажали "Готово" по этому раунду — оценки зафиксированы, менять их больше нельзя.');
+  if (finalFormat === "JUDGES_DANCE") {
+    const myHeatConfirmation = await prisma.judgeHeatConfirmation.findUnique({
+      where: { heatId_judgeAssignmentId: { heatId: heat.id, judgeAssignmentId: assignment.id } },
+    });
+    if (myHeatConfirmation) {
+      throw new ValidationFailedError('Вы уже нажали "Готово" по этому заходу — оценки зафиксированы, менять их больше нельзя.');
+    }
+  } else {
+    const myConfirmation = await prisma.judgeRoundConfirmation.findUnique({
+      where: { roundId_judgeAssignmentId: { roundId: round.id, judgeAssignmentId: assignment.id } },
+    });
+    if (myConfirmation) {
+      throw new ValidationFailedError('Вы уже нажали "Готово" по этому раунду — оценки зафиксированы, менять их больше нельзя.');
+    }
   }
 
   await prisma.$transaction(async (tx) => {
@@ -285,6 +301,99 @@ export async function confirmFinalJudgeRoundDone(roundId: string): Promise<void>
   });
 }
 
+// "Готово" ПО ЗАХОДУ — только для JUDGES_DANCE (см. JudgeHeatConfirmation в
+// schema.prisma). В отличие от confirmFinalJudgeRoundDone выше (весь раунд
+// разом), здесь "обязательные клетки" считаются ТОЛЬКО по участникам ЭТОГО
+// захода — заходы других стадий, ещё не сформированные на момент
+// подтверждения, не блокируются: они станут доступны сами, когда
+// организатор их сформирует (generateJudgesDanceStage), без каких-либо
+// последствий для уже подтверждённых заходов.
+export async function confirmFinalJudgeHeatDone(heatId: string): Promise<void> {
+  const heat = await prisma.heat.findFirstOrThrow({
+    where: { id: heatId },
+    relationLoadStrategy: "join",
+    include: {
+      round: {
+        include: {
+          division: { select: { id: true, competitionId: true } },
+          finalSession: { select: { format: true, config: true, criteriaSnapshot: true } },
+        },
+      },
+      draws: {
+        orderBy: { version: "desc" },
+        take: 1,
+        select: { participants: { where: { scored: true }, select: { role: true, finalJudgeScores: { select: { judgeAssignmentId: true, criterionId: true } } } } },
+      },
+    },
+  });
+  const round = heat.round;
+  const competitionId = round.division.competitionId;
+  const actor = await requirePermission("score:submit", competitionId);
+
+  if (!round.finalSession) {
+    throw new ValidationFailedError("У этого раунда ещё не начат финал.");
+  }
+  if (round.finalSession.format !== "JUDGES_DANCE") {
+    throw new ValidationFailedError('Подтверждение по заходу доступно только для финала "Танец с судьями".');
+  }
+  if (round.status === "COMPLETED") {
+    throw new ValidationFailedError("Финал уже завершён.");
+  }
+  if (heat.status === "PENDING") {
+    throw new ValidationFailedError("Этот заход ещё не начался — оценивать пока нечего.");
+  }
+  const finalSession = round.finalSession;
+
+  const myAssignments = await prisma.judgeAssignment.findMany({ where: { divisionId: round.division.id, judgeUserId: actor.userId } });
+  if (myAssignments.length === 0) {
+    throw new ValidationFailedError("Вы не назначены судить эту категорию.");
+  }
+
+  const criteria = finalSession.criteriaSnapshot as unknown as CriterionSnapshot[];
+  const participants = heat.draws[0]?.participants ?? [];
+
+  await prisma.$transaction(async (tx) => {
+    for (const assignment of myAssignments) {
+      const already = await tx.judgeHeatConfirmation.findUnique({
+        where: { heatId_judgeAssignmentId: { heatId, judgeAssignmentId: assignment.id } },
+      });
+      if (already) continue; // эта роль уже подтверждена раньше — молча пропускаем, не ошибка
+
+      const required = countRequiredForJudgeRole(participants, criteria, finalSession.format, finalSession.config, assignment.role);
+      if (required === 0) continue; // нечего подтверждать для этой роли в этом заходе
+
+      const submitted = participants.reduce((sum, p) => {
+        return (
+          sum +
+          criteria.filter(
+            (c) =>
+              allowedJudgeRole(c.id, p.role, finalSession.format, finalSession.config) === assignment.role &&
+              p.finalJudgeScores.some((s) => s.judgeAssignmentId === assignment.id && s.criterionId === c.id)
+          ).length
+        );
+      }, 0);
+
+      if (submitted !== required) {
+        const roleLabel = assignment.role === "LEADER" ? "Партнёры" : "Партнёрши";
+        throw new ValidationFailedError(
+          `${roleLabel}: оценено ${submitted} из ${required} — сначала оцените всех участников этого захода по всем критериям, прежде чем нажать "Готово".`
+        );
+      }
+
+      const created = await tx.judgeHeatConfirmation.create({
+        data: { heatId, judgeAssignmentId: assignment.id, yesCount: submitted },
+      });
+      await writeAudit(tx, {
+        actor,
+        action: "final_judge.confirm_heat",
+        entityType: "JudgeHeatConfirmation",
+        entityId: created.id,
+        after: { heatId, judgeAssignmentId: assignment.id, role: assignment.role, submitted, required },
+      });
+    }
+  });
+}
+
 export type FinalJudgeQueueItem = {
   drawParticipantId: string;
   role: "LEADER" | "FOLLOWER";
@@ -298,6 +407,17 @@ export type FinalJudgeQueueItem = {
   criteriaIds: string[];
 };
 
+export type FinalJudgeQueueHeat = {
+  heatId: string;
+  heatNumber: number;
+  // Роль, которая ТАНЦУЕТ в этом заходе (JUDGES_DANCE — у каждого захода
+  // ровно одна) — подпись вкладки на экране судьи.
+  roleLabel: string;
+  items: FinalJudgeQueueItem[];
+  // Уже нажал(а) "Готово" по ЭТОМУ заходу (confirmFinalJudgeHeatDone).
+  confirmed: boolean;
+};
+
 export type FinalJudgeQueue = {
   roundId: string;
   divisionName: string;
@@ -309,6 +429,13 @@ export type FinalJudgeQueue = {
   // Уже нажал(а) "Готово" по ВСЕМ своим ролям в этом раунде
   // (confirmFinalJudgeRoundDone) — 2026-09-07.
   confirmed: boolean;
+  // Только для JUDGES_DANCE (2026-09-10) — заходы стадий формируются не все
+  // сразу (final-judges-dance.ts), поэтому там подтверждение "Готово"
+  // отдельное на каждый заход (JudgeHeatConfirmation), а не одно на items/
+  // confirmed выше. FinalJudgingScreen переключается на вкладки по заходу,
+  // когда это поле присутствует; для остальных форматов остаётся undefined,
+  // и экран работает как раньше, без изменений.
+  heats?: FinalJudgeQueueHeat[];
 };
 
 // Что видит судья на своём экране финала: критерии (по снимку правил),
@@ -358,6 +485,9 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
   const config = round.finalSession.config;
 
   const items: FinalJudgeQueueItem[] = [];
+  // JUDGES_DANCE (2026-09-10) — заход к участникам его стадии, только для
+  // группировки на вкладки ниже; для остальных форматов не используется.
+  const heatGroups: { heatId: string; heatNumber: number; dancerRole: RegistrationRole | null; items: FinalJudgeQueueItem[] }[] = [];
   for (const heat of round.heats) {
     // JUDGES_DANCE (2026-09-10): заходы стадии формируются все сразу
     // (generateJudgesDanceStage), но PENDING — судья не должен видеть и
@@ -365,6 +495,8 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
     if (heat.status === "PENDING") continue;
     const draw = heat.draws[0];
     if (!draw) continue;
+    const heatItems: FinalJudgeQueueItem[] = [];
+    let dancerRole: RegistrationRole | null = null;
     for (const p of draw.participants) {
       // В NORMAL/RANDOM_COUPLES видна только своя роль (allowedJudgeRole
       // всегда возвращает participant.role); в JUDGES_DANCE участник может
@@ -379,17 +511,24 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
         const s = p.finalJudgeScores.find((fs) => fs.criterionId === c.id && fs.judgeAssignmentId === myAssignment?.id);
         scores[c.id] = s?.value ?? null;
       }
-      items.push({
+      const item: FinalJudgeQueueItem = {
         drawParticipantId: p.id,
         role: p.role,
         bibNumber: p.registration.checkIn?.bibNumber ?? null,
         displayName: p.registration.dancer.displayName,
         scores,
         criteriaIds: visibleCriteria.map((c) => c.id),
-      });
+      };
+      items.push(item);
+      heatItems.push(item);
+      dancerRole = p.role; // участники этого запроса уже отфильтрованы scored:true — их роль и есть "танцующая" роль захода
     }
+    heatGroups.push({ heatId: heat.id, heatNumber: heat.number, dancerRole, items: heatItems });
   }
   items.sort((a, b) => Number(a.bibNumber ?? 0) - Number(b.bibNumber ?? 0));
+  for (const hg of heatGroups) {
+    hg.items.sort((a, b) => Number(a.bibNumber ?? 0) - Number(b.bibNumber ?? 0));
+  }
 
   const scoredCount = items.filter((it) => it.criteriaIds.every((id) => it.scores[id] !== null)).length;
 
@@ -412,6 +551,39 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
         );
   const confirmed = relevantAssignmentIds.length > 0 && relevantAssignmentIds.every((id) => myConfirmedIds.has(id));
 
+  // JUDGES_DANCE (2026-09-10) — то же "confirmed", что и выше, только
+  // посчитанное ОТДЕЛЬНО для каждого захода (JudgeHeatConfirmation), а не
+  // одно на весь раунд: заходы стадий формируются не все сразу, и общее
+  // подтверждение блокировало бы ещё не появившуюся стадию (см. комментарий
+  // у confirmFinalJudgeHeatDone).
+  let heats: FinalJudgeQueueHeat[] | undefined;
+  if (format === "JUDGES_DANCE" && heatGroups.length > 0) {
+    const perHeat = heatGroups
+      .filter((hg) => hg.items.length > 0)
+      .map((hg) => ({
+        ...hg,
+        relevantAssignmentIds: myAssignments
+          .filter((a) => countRequiredForJudgeRole(hg.items.map((it) => ({ role: it.role })), criteria, format, config, a.role) > 0)
+          .map((a) => a.id),
+      }));
+    const allRelevantIds = [...new Set(perHeat.flatMap((h) => h.relevantAssignmentIds))];
+    const heatConfirmations =
+      allRelevantIds.length === 0
+        ? []
+        : await prisma.judgeHeatConfirmation.findMany({
+            where: { heatId: { in: perHeat.map((h) => h.heatId) }, judgeAssignmentId: { in: allRelevantIds } },
+            select: { heatId: true, judgeAssignmentId: true },
+          });
+    const confirmedHeatSet = new Set(heatConfirmations.map((c) => `${c.heatId}:${c.judgeAssignmentId}`));
+    heats = perHeat.map((hg) => ({
+      heatId: hg.heatId,
+      heatNumber: hg.heatNumber,
+      roleLabel: hg.dancerRole ? (REGISTRATION_ROLE_LABELS_PLURAL[hg.dancerRole] ?? hg.dancerRole) : "—",
+      items: hg.items,
+      confirmed: hg.relevantAssignmentIds.length > 0 && hg.relevantAssignmentIds.every((id) => confirmedHeatSet.has(`${hg.heatId}:${id}`)),
+    }));
+  }
+
   return {
     roundId,
     divisionName: round.division.category.name,
@@ -421,6 +593,7 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
     scoredCount,
     totalCount: items.length,
     confirmed,
+    heats,
   };
 }
 

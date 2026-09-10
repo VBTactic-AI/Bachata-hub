@@ -20,9 +20,12 @@ const judgeAssignmentFindUnique = vi.fn();
 const judgeAssignmentFindMany = vi.fn();
 const judgeRoundConfirmationFindUnique = vi.fn();
 const judgeRoundConfirmationFindMany = vi.fn();
+const judgeHeatConfirmationFindUnique = vi.fn();
+const judgeHeatConfirmationFindMany = vi.fn();
 const roundFindUniqueOrThrow = vi.fn();
 const roundFindMany = vi.fn();
 const heatFindMany = vi.fn();
+const heatFindFirstOrThrow = vi.fn();
 const txFinalJudgeScoreFindUnique = vi.fn();
 const txFinalJudgeScoreFindFirst = vi.fn();
 const txFinalJudgeScoreUpsert = vi.fn();
@@ -31,6 +34,8 @@ const txHeatFindMany = vi.fn();
 const txFinalResultFindUnique = vi.fn();
 const txJudgeRoundConfirmationFindUnique = vi.fn();
 const txJudgeRoundConfirmationCreate = vi.fn();
+const txJudgeHeatConfirmationFindUnique = vi.fn();
+const txJudgeHeatConfirmationCreate = vi.fn();
 const auditCreate = vi.fn();
 // pg_advisory_xact_lock перед проверкой конфликта места (final-scoring.ts,
 // защита от гонки двух одновременных запросов) — в тестах транзакция не
@@ -54,6 +59,7 @@ const fakeTx = {
   // обычные раунды (scoring.ts).
   finalResult: { findUnique: txFinalResultFindUnique, findFirst: txFinalResultFindUnique },
   judgeRoundConfirmation: { findUnique: txJudgeRoundConfirmationFindUnique, findFirst: txJudgeRoundConfirmationFindUnique, create: txJudgeRoundConfirmationCreate },
+  judgeHeatConfirmation: { findUnique: txJudgeHeatConfirmationFindUnique, findFirst: txJudgeHeatConfirmationFindUnique, create: txJudgeHeatConfirmationCreate },
   auditLog: { create: auditCreate },
 };
 
@@ -68,18 +74,28 @@ vi.mock("@/lib/prisma", () => ({
       findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a),
       findMany: (...a: unknown[]) => roundFindMany(...a),
     },
-    heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
+    heat: {
+      findMany: (...a: unknown[]) => heatFindMany(...a),
+      findFirstOrThrow: (...a: unknown[]) => heatFindFirstOrThrow(...a),
+    },
     // "Готово" по финалу (confirmFinalJudgeRoundDone, 2026-09-07) — та же
     // проверка "судья уже подтвердил", что и в обычных раундах (scoring.ts).
     judgeRoundConfirmation: {
       findUnique: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a), findFirst: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a),
       findMany: (...a: unknown[]) => judgeRoundConfirmationFindMany(...a),
     },
+    // "Готово" ПО ЗАХОДУ, только JUDGES_DANCE (2026-09-10, confirmFinalJudgeHeatDone).
+    judgeHeatConfirmation: {
+      findUnique: (...a: unknown[]) => judgeHeatConfirmationFindUnique(...a), findFirst: (...a: unknown[]) => judgeHeatConfirmationFindUnique(...a),
+      findMany: (...a: unknown[]) => judgeHeatConfirmationFindMany(...a),
+    },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { submitFinalJudgeScore, confirmFinalJudgeRoundDone, listMyActiveFinalRounds, getFinalJudgeQueue } = await import("@/server/judging/final-scoring");
+const { submitFinalJudgeScore, confirmFinalJudgeRoundDone, confirmFinalJudgeHeatDone, listMyActiveFinalRounds, getFinalJudgeQueue } = await import(
+  "@/server/judging/final-scoring"
+);
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -111,11 +127,16 @@ beforeEach(() => {
   judgeAssignmentFindMany.mockReset();
   judgeRoundConfirmationFindUnique.mockReset().mockResolvedValue(null);
   judgeRoundConfirmationFindMany.mockReset().mockResolvedValue([]);
+  judgeHeatConfirmationFindUnique.mockReset().mockResolvedValue(null);
+  judgeHeatConfirmationFindMany.mockReset().mockResolvedValue([]);
   roundFindUniqueOrThrow.mockReset();
   roundFindMany.mockReset();
   heatFindMany.mockReset();
+  heatFindFirstOrThrow.mockReset();
   txJudgeRoundConfirmationFindUnique.mockReset();
   txJudgeRoundConfirmationCreate.mockReset();
+  txJudgeHeatConfirmationFindUnique.mockReset();
+  txJudgeHeatConfirmationCreate.mockReset();
   txFinalJudgeScoreFindUnique.mockReset().mockResolvedValue(null);
   txFinalJudgeScoreFindFirst.mockReset().mockResolvedValue(null);
   txFinalJudgeScoreUpsert.mockReset();
@@ -321,6 +342,140 @@ describe("confirmFinalJudgeRoundDone()", () => {
   });
 });
 
+// confirmFinalJudgeHeatDone() — "Готово" ПО ЗАХОДУ, только JUDGES_DANCE
+// (2026-09-10, по жалобе пользователя: "судья оценил партнёров, дальше
+// должен оценить вторую табличку — не может, потому что уже нажато Готово").
+// В отличие от confirmFinalJudgeRoundDone (весь раунд разом), "обязательные
+// клетки" считаются ТОЛЬКО по участникам ЭТОГО захода.
+describe("confirmFinalJudgeHeatDone()", () => {
+  const judgesDanceCriteria = [{ id: "crit1", name: "Техника", priority: 1, minScore: 0, maxScore: 10, step: 1 }];
+  const heatBase = {
+    id: "heat1",
+    status: "RUNNING",
+    round: {
+      id: "round1",
+      status: "SCORING",
+      division: { id: "div1", competitionId: "comp1" },
+      finalSession: { format: "JUDGES_DANCE" as const, config: {}, criteriaSnapshot: judgesDanceCriteria },
+    },
+  };
+
+  function withParticipants(scoredJudgeIds: string[]) {
+    heatFindFirstOrThrow.mockResolvedValue({
+      ...heatBase,
+      draws: [{ participants: [{ role: "LEADER", finalJudgeScores: scoredJudgeIds.map((judgeAssignmentId) => ({ judgeAssignmentId, criterionId: "crit1" })) }] }],
+    });
+  }
+
+  it("фиксирует подтверждение ПО ЭТОМУ заходу, если у судьи проставлены все обязательные оценки", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "LEADER" }]);
+    withParticipants(["assign1"]);
+    txJudgeHeatConfirmationFindUnique.mockResolvedValue(null);
+    txJudgeHeatConfirmationCreate.mockResolvedValue({ id: "conf1" });
+
+    await confirmFinalJudgeHeatDone("heat1");
+
+    expect(txJudgeHeatConfirmationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ heatId: "heat1", judgeAssignmentId: "assign1", yesCount: 1 }) })
+    );
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "final_judge.confirm_heat" }) }));
+  });
+
+  it('отклоняет "Готово" по заходу, если оценены не все обязательные клетки этого захода', async () => {
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "LEADER" }]);
+    withParticipants([]); // ни одной оценки этого судьи в этом заходе
+    txJudgeHeatConfirmationFindUnique.mockResolvedValue(null);
+
+    await expect(confirmFinalJudgeHeatDone("heat1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txJudgeHeatConfirmationCreate).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет для форматов финала, где заходы формируются все сразу (не JUDGES_DANCE)", async () => {
+    heatFindFirstOrThrow.mockResolvedValue({
+      ...heatBase,
+      round: { ...heatBase.round, finalSession: { format: "NORMAL", config: {}, criteriaSnapshot: criteria } },
+      draws: [{ participants: [] }],
+    });
+
+    await expect(confirmFinalJudgeHeatDone("heat1")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("отклоняет, если заход ещё не начался (PENDING)", async () => {
+    heatFindFirstOrThrow.mockResolvedValue({ ...heatBase, status: "PENDING", draws: [{ participants: [] }] });
+
+    await expect(confirmFinalJudgeHeatDone("heat1")).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it("повторное нажатие после уже принятого подтверждения — не ошибка, просто ничего не делает", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "LEADER" }]);
+    withParticipants(["assign1"]);
+    txJudgeHeatConfirmationFindUnique.mockResolvedValue({ id: "already-confirmed" });
+
+    await confirmFinalJudgeHeatDone("heat1");
+
+    expect(txJudgeHeatConfirmationCreate).not.toHaveBeenCalled();
+  });
+
+  it("не трогает JudgeRoundConfirmation вовсе — подтверждение по заходу не должно создавать/проверять раундовую запись", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", role: "LEADER" }]);
+    withParticipants(["assign1"]);
+    txJudgeHeatConfirmationFindUnique.mockResolvedValue(null);
+    txJudgeHeatConfirmationCreate.mockResolvedValue({ id: "conf1" });
+
+    await confirmFinalJudgeHeatDone("heat1");
+
+    expect(txJudgeRoundConfirmationFindUnique).not.toHaveBeenCalled();
+    expect(txJudgeRoundConfirmationCreate).not.toHaveBeenCalled();
+  });
+});
+
+// Регрессия (2026-09-10, жалоба пользователя): в JUDGES_DANCE заходы стадий
+// формируются НЕ все сразу (final-judges-dance.ts) — судья, назначенный на
+// обе роли, подтверждал "Готово" после стадии 1 (тогда это было всё, что
+// видно), а когда позже появлялась стадия 2, submitFinalJudgeScore проверял
+// JudgeRoundConfirmation "на весь раунд" и блокировал НОВЫЕ обязательные
+// клетки, которых на момент подтверждения ещё не существовало.
+// submitFinalJudgeScore теперь проверяет JudgeHeatConfirmation (по заходу)
+// для JUDGES_DANCE — старая раундовая запись больше не мешает.
+describe("submitFinalJudgeScore() — JUDGES_DANCE проверяет подтверждение ПО ЗАХОДУ, не по раунду", () => {
+  const judgesDanceParticipant = {
+    id: "dp1",
+    scored: true,
+    role: "LEADER" as const,
+    registrationId: "reg1",
+    draw: {
+      heat: {
+        id: "heat1",
+        status: "RUNNING",
+        round: {
+          id: "round1",
+          status: "SCORING",
+          division: { id: "div1", competitionId: "comp1" },
+          finalSession: { format: "JUDGES_DANCE", config: {}, criteriaSnapshot: criteria },
+        },
+      },
+    },
+  };
+
+  it('отклоняет, если судья уже нажал "Готово" именно по ЭТОМУ заходу (JudgeHeatConfirmation)', async () => {
+    participantFindUniqueOrThrow.mockResolvedValue(judgesDanceParticipant);
+    judgeHeatConfirmationFindUnique.mockResolvedValue({ id: "heat-conf1" });
+
+    await expect(submitFinalJudgeScore("dp1", "crit1", 7, "sub-1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txFinalJudgeScoreUpsert).not.toHaveBeenCalled();
+  });
+
+  it("НЕ блокирует отправку из-за устаревшего JudgeRoundConfirmation на весь раунд (сам баг) — только JudgeHeatConfirmation этого захода имеет значение", async () => {
+    participantFindUniqueOrThrow.mockResolvedValue(judgesDanceParticipant);
+    judgeHeatConfirmationFindUnique.mockResolvedValue(null); // по ЭТОМУ заходу не подтверждал
+    judgeRoundConfirmationFindUnique.mockResolvedValue({ id: "stale-round-conf" }); // но раньше подтвердил стадию 1 на весь раунд
+
+    await submitFinalJudgeScore("dp1", "crit1", 7, "sub-1");
+
+    expect(txFinalJudgeScoreUpsert).toHaveBeenCalled();
+  });
+});
+
 // listMyActiveFinalRounds() — баннер "Финал открыт" на странице судьи
 // (/judging/[competitionId]). Пока висит нерешённая перетанцовка за место
 // (FULL_RANK/RANK_ALL, TIEBREAK-001/A22) — на экране самого финала уже
@@ -406,5 +561,63 @@ describe("getFinalJudgeQueue() — не показывает участнико�
     const queue = await getFinalJudgeQueue("comp1", "final1");
 
     expect(queue?.items.map((it) => it.drawParticipantId).sort()).toEqual(["dp1", "dp2"]);
+  });
+});
+
+// heats: FinalJudgeQueueHeat[] (2026-09-10, по жалобе пользователя) — только
+// JUDGES_DANCE: каждый заход своим списком и СВОИМ "confirmed"
+// (JudgeHeatConfirmation), не общим на весь раунд. Экран судьи
+// (FinalJudgingScreen) переключается на вкладки по этому полю.
+describe("getFinalJudgeQueue() — heats: группировка по заходам, только JUDGES_DANCE", () => {
+  const finalist = (id: string, role: "LEADER" | "FOLLOWER", bib: string) => ({
+    id,
+    role,
+    scored: true,
+    registrationId: `reg-${id}`,
+    registration: { dancer: { displayName: `Танцор ${id}` }, checkIn: { bibNumber: bib } },
+    finalJudgeScores: [],
+  });
+
+  it("группирует items по заходу и считает confirmed НЕЗАВИСИМО для каждого", async () => {
+    // Судья роли FOLLOWER: crit1 ("танцующий") виден ему у LEADER-участников
+    // (стадия 1, allowedJudgeRole — противоположная роль), crit2 (обычный)
+    // виден ему у FOLLOWER-участников (стадия 2, своя роль) — та же
+    // асимметрия, что и в реальном JUDGES_DANCE (final-scoring-matrix.ts).
+    const twoCriteria = [
+      { id: "crit1", name: "Партнёрство", priority: 1, minScore: 0, maxScore: 10, step: 1 },
+      { id: "crit2", name: "Музыкальность", priority: 2, minScore: 0, maxScore: 10, step: 1 },
+    ];
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", divisionId: "div1", judgeUserId: "judge1", role: "FOLLOWER" }]);
+    roundFindUniqueOrThrow.mockResolvedValue({
+      division: { id: "div1", competitionId: "comp1", category: { name: "Любители" } },
+      finalSession: { format: "JUDGES_DANCE", config: { dancingJudgeCriteriaIds: ["crit1"] }, currentStage: 2, criteriaSnapshot: twoCriteria },
+      heats: [
+        { id: "heat1", number: 1, status: "FINISHED", draws: [{ participants: [finalist("dp1", "LEADER", "1")] }] },
+        { id: "heat2", number: 2, status: "RUNNING", draws: [{ participants: [finalist("dp2", "FOLLOWER", "2")] }] },
+      ],
+    });
+    // Заход 1 подтверждён этим судьёй, заход 2 — ещё нет.
+    judgeHeatConfirmationFindMany.mockResolvedValue([{ heatId: "heat1", judgeAssignmentId: "assign1" }]);
+
+    const queue = await getFinalJudgeQueue("comp1", "final1");
+
+    expect(queue?.heats).toHaveLength(2);
+    expect(queue?.heats?.[0]).toMatchObject({ heatId: "heat1", heatNumber: 1, roleLabel: "Партнёры", confirmed: true });
+    expect(queue?.heats?.[0]?.items.map((it) => it.drawParticipantId)).toEqual(["dp1"]);
+    expect(queue?.heats?.[1]).toMatchObject({ heatId: "heat2", heatNumber: 2, roleLabel: "Партнёрши", confirmed: false });
+    expect(queue?.heats?.[1]?.items.map((it) => it.drawParticipantId)).toEqual(["dp2"]);
+  });
+
+  it("не строит heats вовсе для форматов, где заходы формируются все сразу (не JUDGES_DANCE)", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", divisionId: "div1", judgeUserId: "judge1", role: "LEADER" }]);
+    roundFindUniqueOrThrow.mockResolvedValue({
+      division: { id: "div1", competitionId: "comp1", category: { name: "Любители" } },
+      finalSession: { format: "NORMAL", config: {}, criteriaSnapshot: criteria },
+      heats: [{ id: "heat1", number: 1, status: "RUNNING", draws: [{ participants: [finalist("dp1", "LEADER", "1")] }] }],
+    });
+
+    const queue = await getFinalJudgeQueue("comp1", "final1");
+
+    expect(queue?.heats).toBeUndefined();
   });
 });
