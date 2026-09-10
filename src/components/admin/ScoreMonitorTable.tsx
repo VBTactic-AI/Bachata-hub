@@ -223,6 +223,13 @@ export function PrelimRoleTable({
       </div>
       {table.judges.length === 0 ? (
         <p className="m-0 px-4 py-3 text-sm text-admin-muted">Судьи на эту роль не назначены.</p>
+      ) : table.notJudged ? (
+        // Реальных участников этой роли не больше, чем мест — все проходят
+        // дальше автоматически, судьи её в этом раунде не оценивают
+        // (rolesNotNeedingJudging, draw-engine.ts). Пустая сетка прочерков
+        // тут выглядела бы как "судьи забыли оценить" (жалоба пользователя,
+        // 2026-09-10).
+        <p className="m-0 px-4 py-3 text-sm text-admin-muted">{title} не оцениваются в этом раунде — проходят автоматически.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">

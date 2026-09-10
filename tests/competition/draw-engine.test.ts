@@ -347,6 +347,41 @@ describe("formDrawInTx() — заходы примерно равны по чи�
     expect(result.leaderCount).toBe(10);
     expect(result.followerCount).toBe(10);
   });
+
+  // Живой репорт пользователя (2026-09-10): 7 партнёров/10 партнёрш,
+  // полуфинал (не проходной раунд — обе роли реально судятся). Старая
+  // формула делила партнёров ceil(7/2)=4/3 по заходам и в ОБА захода звала
+  // помощника, хотя 7 реальных вполне заполнили бы первый заход целиком.
+  it("7 партнёров/10 партнёрш, вместимость 10, 2 захода — первый заход 5/5 без единого помощника", async () => {
+    mockLeadersAndFollowers7and10();
+    heatCountTx.mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 0 : 2));
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+      finalistsCount: 0, // не проходной раунд — обе роли судятся по-настоящему
+      isFinalStage: false,
+      roundType: null,
+    });
+
+    expect(result.leaderCount).toBe(5); // не 4 (ceil(7/2)) — забит реальными людьми под квоту партнёрш
+    expect(result.followerCount).toBe(5);
+    expect(createdParticipants().filter((p) => p.helperSource)).toHaveLength(0);
+  });
+
+  function mockLeadersAndFollowers7and10() {
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string; divisionId: string } }) => {
+      if (where.divisionId !== "div1") return Promise.resolve([]);
+      const count = where.role === "LEADER" ? 7 : 10;
+      const prefix = where.role === "LEADER" ? "l" : "f";
+      return Promise.resolve(Array.from({ length: count }, (_, i) => reg(`${prefix}${i}`, String(i))));
+    });
+  }
 });
 
 // Роль, которую в этом раунде не нужно оценивать (rolesNotNeedingJudging —
@@ -450,8 +485,19 @@ describe("formDrawInTx() — роль без оценивания не дели�
       roundType: null,
     });
 
-    // Партнёров тоже делит поровну (чётный сплит), а не отдаёт всех сразу.
-    expect(result.leaderCount).toBe(4); // ceil(7/2)
+    // isFinalStage сама по себе больше НЕ отличается от обычного раунда в
+    // квоте меньшей роли (2026-09-10, см. описание блока выше "заходы примерно
+    // равны") — партнёров (7, меньший пул) подтягивает под квоту партнёрш
+    // (14/2=7), реальными людьми хватает на весь заход без единого помощника.
+    // Раньше здесь ожидался чётный сплит (4 = ceil(7/2)), потому что только
+    // passthrough-роли получали "квоту = как у другой роли"; теперь эту же
+    // квоту получает любая роль с меньшим остатком пула, независимо от
+    // isFinalStage/passthrough — passthroughRoles остаётся пустым (роль
+    // считается проходной ТОЛЬКО не на финале), но на итоговую квоту это
+    // больше не влияет.
+    expect(result.leaderCount).toBe(7);
+    const rows = createdParticipants();
+    expect(rows.filter((r) => r.helperSource)).toHaveLength(0);
   });
 });
 

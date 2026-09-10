@@ -50,6 +50,13 @@ export type PrelimScoreMonitorTable = {
   judges: ScoreMonitorJudgeColumn[];
   rows: { drawParticipantId: string; bibNumber: string | null; scores: Record<string, number | null> }[];
   totals: ScoreMonitorTotal[];
+  // Роль не нужно оценивать в этом раунде — реальных участников этой роли не
+  // больше, чем мест, все и так проходят дальше (rolesNotNeedingJudging,
+  // draw-engine.ts). Таблица без этого флага показывала пустую сетку
+  // прочерков ("—" по каждому судье у каждого участника) — выглядело так,
+  // будто судьи просто забыли оценить, хотя оценивать было и не нужно
+  // (жалоба пользователя, 2026-09-10).
+  notJudged: boolean;
 };
 
 export type PrelimScoreMonitor = {
@@ -170,7 +177,7 @@ export async function getPrelimScoreMonitor(roundId: string): Promise<PrelimScor
       return { judgeAssignmentId: a.id, required, submitted, complete: submitted >= required, confirmed };
     });
 
-    return { judges, rows, totals };
+    return { judges, rows, totals, notJudged: skippedRoles.has(role) };
   }
 
   return {

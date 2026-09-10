@@ -50,14 +50,28 @@ const ROLE_BORDER_CLASS: Record<"LEADER" | "FOLLOWER", string> = {
 export function FinalResultsTable({
   criteria,
   results,
+  format,
+  judges,
 }: {
   criteria: { id: string; name: string; priority: number }[];
   results: FinalResultRow[];
+  // RELATIVE_PLACEMENT (скейтинг) — единственный критерий "Место" не несёт
+  // суммы баллов: каждый судья ставит МЕСТО напрямую, итог — не сумма, а
+  // majorityPlace (CLAUDE.md §18, final-ranking.ts). criteriaTotals для этого
+  // формата хранит место каждого судьи ключом judgeAssignmentId, а НЕ
+  // criterionId (final-advancement.ts) — колонка "по критерию" всегда была
+  // бы пустышкой (id критерия там просто не встречается), поэтому для этого
+  // формата нужны колонки по судьям, а не по критериям (жалоба пользователя,
+  // 2026-09-10: "не показывается оценка по категории Место, а сразу итого").
+  format?: string;
+  judges?: { id: string; displayName: string; role: "LEADER" | "FOLLOWER" }[];
 }) {
+  const isRelativePlacement = format === "RELATIVE_PLACEMENT";
   const sortedCriteria = [...criteria].sort((a, b) => a.priority - b.priority);
   const roles = (["LEADER", "FOLLOWER"] as const).filter((role) => results.some((r) => r.role === role));
   const [active, setActive] = useState<"LEADER" | "FOLLOWER">(roles[0] ?? "LEADER");
   const role = roles.includes(active) ? active : (roles[0] ?? "LEADER");
+  const roleJudges = (judges ?? []).filter((j) => j.role === role);
 
   const rows = results
     .filter((r) => r.role === role)
@@ -96,12 +110,18 @@ export function FinalResultsTable({
               <tr className="text-admin-muted">
                 <th className="px-3 py-1.5 text-left font-semibold">Место</th>
                 <th className="whitespace-nowrap px-3 text-left font-semibold">Участник</th>
-                {sortedCriteria.map((c) => (
-                  <th key={c.id} className="whitespace-nowrap px-3 text-right font-semibold">
-                    {c.name}
-                  </th>
-                ))}
-                <th className="px-3 text-right font-semibold">Итого</th>
+                {isRelativePlacement
+                  ? roleJudges.map((j) => (
+                      <th key={j.id} className="whitespace-nowrap px-3 text-right font-semibold" title={j.displayName}>
+                        {j.displayName}
+                      </th>
+                    ))
+                  : sortedCriteria.map((c) => (
+                      <th key={c.id} className="whitespace-nowrap px-3 text-right font-semibold">
+                        {c.name}
+                      </th>
+                    ))}
+                <th className="px-3 text-right font-semibold">{isRelativePlacement ? "Итог (большинство)" : "Итого"}</th>
               </tr>
             </thead>
             <tbody>
@@ -123,18 +143,24 @@ export function FinalResultsTable({
                     <td className="whitespace-nowrap px-3 py-1.5 text-night-text">
                       №{r.bibNumber ?? "—"} {r.displayName}
                     </td>
-                    {sortedCriteria.map((c) => (
-                      <td key={c.id} className="px-3 text-right tabular-nums text-admin-muted">
-                        {r.criteriaTotals[c.id] ?? 0}
-                      </td>
-                    ))}
+                    {isRelativePlacement
+                      ? roleJudges.map((j) => (
+                          <td key={j.id} className="px-3 text-right tabular-nums text-admin-muted">
+                            {r.criteriaTotals[j.id] ?? "—"}
+                          </td>
+                        ))
+                      : sortedCriteria.map((c) => (
+                          <td key={c.id} className="px-3 text-right tabular-nums text-admin-muted">
+                            {r.criteriaTotals[c.id] ?? 0}
+                          </td>
+                        ))}
                     <td className="px-3 text-right font-bold tabular-nums text-night-text">{r.totalScore}</td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={sortedCriteria.length + 3} className="px-3 py-3 text-center text-admin-muted">
+                  <td colSpan={(isRelativePlacement ? roleJudges.length : sortedCriteria.length) + 3} className="px-3 py-3 text-center text-admin-muted">
                     Нет данных.
                   </td>
                 </tr>

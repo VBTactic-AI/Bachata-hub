@@ -120,6 +120,29 @@ export async function setFinalCriteria(divisionId: string, input: SetFinalCriter
   return await prisma.$transaction(async (tx) => {
     if (toDelete.length > 0) {
       await tx.finalCriterion.deleteMany({ where: { id: { in: toDelete.map((c) => c.id) } } });
+      // CODE-002 (найдено по жалобе пользователя, 2026-09-10): удаление
+      // критерия, на который ссылается FinalSettings.config.dancingJudgeCriteriaIds
+      // (JUDGES_DANCE — "какие критерии оценивает танцующий судья"), раньше
+      // оставляло в config ссылку на уже удалённый id — checkFinalReadiness
+      // (start-final.ts) находила её и блокировала старт финала с непонятной
+      // организатору ошибкой "указан несуществующий критерий", хотя сам
+      // критерий давно заменён другим через эту же форму. Чистим ссылку сразу
+      // здесь, в одной транзакции с удалением — единственное место, которое
+      // реально удаляет FinalCriterion, поэтому единственное надёжное место
+      // держать это в согласованном состоянии.
+      const settings = await tx.finalSettings.findUnique({ where: { divisionId } });
+      const config = settings?.config as { dancingJudgeCriteriaIds?: string[] } | null;
+      const dancingIds = config?.dancingJudgeCriteriaIds;
+      if (settings && Array.isArray(dancingIds)) {
+        const deletedIds = new Set(toDelete.map((c) => c.id));
+        const cleaned = dancingIds.filter((id) => !deletedIds.has(id));
+        if (cleaned.length !== dancingIds.length) {
+          await tx.finalSettings.update({
+            where: { divisionId },
+            data: { config: { ...config, dancingJudgeCriteriaIds: cleaned } as Prisma.InputJsonValue },
+          });
+        }
+      }
     }
     // Сначала сбрасываем priority существующих в заведомо непересекающиеся
     // отрицательные значения — иначе обновление на финальные значения может

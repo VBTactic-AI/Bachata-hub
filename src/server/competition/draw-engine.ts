@@ -437,8 +437,31 @@ export async function formDrawInTx(
 
   const leaderPool = await orderedEligiblePool(tx, { divisionId, role: "LEADER", excludeIds, callOrder, seed, onlyRegistrationIds });
   const followerPool = await orderedEligiblePool(tx, { divisionId, role: "FOLLOWER", excludeIds, callOrder, seed, onlyRegistrationIds });
-  let leaderQuota = Math.min(heatCapacity, Math.ceil(leaderPool.length / heatsRemaining));
-  let followerQuota = Math.min(heatCapacity, Math.ceil(followerPool.length / heatsRemaining));
+
+  // Роль с МЕНЬШИМ остатком пула (на этот момент раскладки) не делится поровну
+  // по оставшимся заходам сама по себе — иначе она дробится тонким слоем на
+  // каждый заход и в КАЖДОМ из них не хватает пары, хотя реальных людей этой
+  // роли хватило бы забить некоторые заходы целиком без единого помощника
+  // (найдено по жалобе пользователя, 2026-09-10: 7 партнёров/10 партнёрш,
+  // полуфинал, вместимость 5, 2 захода — старая формула делила партнёров
+  // 4+3 и в ОБА захода звала гостя/помощника, хотя 7 реальных вполне
+  // заполнили бы весь первый заход и часть второго). Роль с БОЛЬШИМ (или
+  // равным) остатком по-прежнему делится поровну по заходам (Math.ceil) —
+  // она задаёт темп/размер захода (A9, "заходы примерно равны"); дефицитная
+  // роль просто подтягивается под эту квоту реальными людьми, пока они не
+  // кончатся ("пока можем взять из своих — берём, помощник только когда свои
+  // кончились" — формулировка пользователя), не раньше. Остаток недостающих
+  // мест как и раньше закрывает fillHelperShortage() ниже — он же сам
+  // предпочитает переиспользовать уже станцевавших своих (preferOwnFirst).
+  let leaderQuota: number;
+  let followerQuota: number;
+  if (leaderPool.length <= followerPool.length) {
+    followerQuota = Math.min(heatCapacity, Math.ceil(followerPool.length / heatsRemaining));
+    leaderQuota = Math.min(heatCapacity, followerQuota, leaderPool.length);
+  } else {
+    leaderQuota = Math.min(heatCapacity, Math.ceil(leaderPool.length / heatsRemaining));
+    followerQuota = Math.min(heatCapacity, leaderQuota, followerPool.length);
+  }
 
   // Роль, которую в этом раунде не нужно оценивать (rolesNotNeedingJudging —
   // реальных участников этой роли не больше, чем мест, все и так проходят

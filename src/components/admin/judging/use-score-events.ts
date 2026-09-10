@@ -49,6 +49,21 @@ const TOKEN_REFRESH_MS = 8 * 60 * 1000;
 // Разрыв WS кратковременный/штатный — не мигаем "переподключение…" сразу,
 // только если реально не восстановилось дольше этого времени (2026-09-07).
 const DISCONNECT_DELAY_MS = 10000;
+// Полный пересинк ТАКЖЕ по таймеру, не только при (пере)подключении канала
+// (2026-09-10, жалоба пользователя: открыл монитор оценок на раунде из
+// нескольких заходов, первый заход судился и обновлялся живьём, но когда
+// начался ВТОРОЙ заход — его оценки не подтягивались без перезагрузки
+// страницы, хотя WS-канал ни разу не разрывался). Первичный снимок содержит
+// только участников, существовавших на момент открытия монитора; applyEvent
+// в ScoreMonitorTable.tsx молча отбрасывает событие, если drawParticipantId
+// не найден среди уже загруженных строк (rowIdx === -1) — единственный
+// штатный способ подхватить строки, появившиеся ПОЗЖЕ (новый заезд, добор
+// помощника), сейчас это пересинк по onOpen. Без периодического пересинка
+// канал, который ни разу не разорвался за всё время просмотра, никогда не
+// узнал бы о них. Раз в RESYNC_INTERVAL_MS — тот же самооздоравливающийся
+// приём, что уже применяется к самому реконнекту (комментарий у onOpen
+// ниже), только без необходимости ждать разрыва связи.
+const RESYNC_INTERVAL_MS = 20000;
 
 // onOpen вызывается при КАЖДОМ (пере)подключении канала — не только при
 // первом монтировании: у Realtime-подписки нет истории "додай то, что
@@ -83,6 +98,7 @@ export function useScoreEvents(
     let channel: RealtimeChannel | null = null;
     let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let resyncTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
     function scheduleDisconnectBadge() {
@@ -170,6 +186,10 @@ export function useScoreEvents(
         const fresh = await fetchRealtimeToken(roundId);
         if (fresh) await supabase.realtime.setAuth(fresh);
       }, TOKEN_REFRESH_MS);
+
+      // См. комментарий у RESYNC_INTERVAL_MS выше — самостоятельный пересинк,
+      // не завязанный на разрыв соединения.
+      resyncTimer = setInterval(() => onOpenRef.current(), RESYNC_INTERVAL_MS);
     }
 
     void start();
@@ -178,6 +198,7 @@ export function useScoreEvents(
       cancelled = true;
       if (disconnectTimer) clearTimeout(disconnectTimer);
       if (refreshTimer) clearInterval(refreshTimer);
+      if (resyncTimer) clearInterval(resyncTimer);
       if (channel) supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -867,6 +867,12 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     const finalResultsTable = finalResultsRound ? (
       <FinalResultsTable
         criteria={finalResultsRound.finalSession!.criteriaSnapshot as unknown as { id: string; name: string; priority: number }[]}
+        format={finalResultsRound.finalSession!.format}
+        judges={d.judgeAssignments.map((ja) => ({
+          id: ja.id,
+          displayName: judgeNameByUserId.get(ja.judgeUserId) ?? "—",
+          role: ja.role,
+        }))}
         results={finalResultsRound.finalResults.map((r) => ({
           registrationId: r.registrationId,
           role: r.role,
@@ -1186,7 +1192,17 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       hasFinalResultsTable,
       resultsHref,
       scoresHref,
-      generateRounds: canManageRounds ? <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} /> : null,
+      // Кнопка исчезает, как только хоть один раунд дивизиона зафиксирован
+      // (DRAW_LOCKED и дальше) — сервис generateRounds() и так отклоняет
+      // перегенерацию в этом случае (пересборка удалила бы реальные заезды/
+      // судейство), но раньше кнопка оставалась видимой и нажимаемой, и клик
+      // просто возвращал непонятную ошибку вместо того, чтобы не показываться
+      // вовсе (жалоба пользователя, 2026-09-10). Тот же порог статусов, что
+      // и guard в generate-rounds.ts (lockedRound).
+      generateRounds:
+        canManageRounds && !d.rounds.some((r) => r.status !== "DRAFT" && r.status !== "READY" && r.status !== "DRAWING") ? (
+          <GenerateRoundsButton divisionId={d.id} hasExistingRounds={d.rounds.length > 0} />
+        ) : null,
     };
   });
 
