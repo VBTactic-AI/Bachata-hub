@@ -14,12 +14,22 @@ export type JudgesDanceHeatView = {
   id: string;
   number: number;
   status: HeatStatus;
-  roleLabel: string; // "Партнёры" | "Партнёрши" — танцующая роль ЭТОГО захода
-  judgeRole: "LEADER" | "FOLLOWER"; // роль судей/помощников — противоположная roleLabel
+  dancerRole: "LEADER" | "FOLLOWER"; // танцующая роль ЭТОГО захода
+  roleLabel: string; // "Партнёры" | "Партнёрши" — подпись dancerRole
+  judgeRole: "LEADER" | "FOLLOWER"; // роль судей/помощников — противоположная dancerRole
   finalists: { id: string; bibNumber: string | null; displayName: string }[];
   realJudges: { id: string; displayName: string }[];
   helpers: { id: string; bibNumber: string | null; displayName: string; sourceLabel: string }[];
 };
+
+// Цвет — по РОЛИ содержимого колонки, не по её позиции (2026-09-11, по
+// прямому запросу пользователя). Раньше левая колонка была жёстко синей, а
+// правая — жёстко розовой (как и везде в обычной жеребьёвке, где слева
+// всегда партнёры) — для JUDGES_DANCE это ломается: на стадии партнёрш
+// именно они (розовый цвет по конвенции всего приложения, CompetitionMonitor/
+// ScoreMonitorTable) оказываются в ЛЕВОЙ колонке, а судьи-мужчины (синий) — в
+// правой. Единый источник цвета для обеих колонок этого экрана.
+const ROLE_COLOR: Record<"LEADER" | "FOLLOWER", string> = { LEADER: "#60a5fa", FOLLOWER: "#f472b6" };
 
 const HEAT_STATUS_TONE: Record<HeatStatus, string> = {
   PENDING: "bg-admin-disabled",
@@ -113,11 +123,13 @@ export function JudgesDanceDrawPanel({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="flex flex-col rounded-app border border-admin-border bg-admin-card2">
                   <div className="flex items-center gap-2 border-b border-admin-border px-3.5 py-3">
-                    <span className="text-[#60a5fa]" aria-hidden="true">
+                    <span style={{ color: ROLE_COLOR[active.dancerRole] }} aria-hidden="true">
                       <PersonIcon />
                     </span>
                     <h4 className="m-0 text-[13px] font-extrabold uppercase tracking-wide text-night-text">{active.roleLabel}</h4>
-                    <span className="ml-auto text-xl font-extrabold tabular-nums leading-none text-[#60a5fa]">{active.finalists.length}</span>
+                    <span className="ml-auto text-xl font-extrabold tabular-nums leading-none" style={{ color: ROLE_COLOR[active.dancerRole] }}>
+                      {active.finalists.length}
+                    </span>
                   </div>
                   {active.finalists.length === 0 ? (
                     <p className="m-0 px-3.5 py-3 text-sm text-admin-muted">Пусто.</p>
@@ -125,7 +137,10 @@ export function JudgesDanceDrawPanel({
                     <ul className="m-0 flex list-none flex-col gap-1 p-2">
                       {active.finalists.map((p) => (
                         <li key={p.id} className="flex items-center gap-x-3 rounded-app-sm px-2 py-1.5">
-                          <span className="grid h-9 min-w-[48px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-base font-extrabold tabular-nums text-[#60a5fa]">
+                          <span
+                            className="grid h-9 min-w-[48px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-base font-extrabold tabular-nums"
+                            style={{ color: ROLE_COLOR[active.dancerRole] }}
+                          >
                             {p.bibNumber ?? "—"}
                           </span>
                           <span className="truncate text-sm font-semibold text-night-text">{p.displayName}</span>
@@ -137,11 +152,11 @@ export function JudgesDanceDrawPanel({
 
                 <div className="flex flex-col rounded-app border border-admin-border bg-admin-card2">
                   <div className="flex items-center gap-2 border-b border-admin-border px-3.5 py-3">
-                    <span className="text-[#f472b6]" aria-hidden="true">
+                    <span style={{ color: ROLE_COLOR[active.judgeRole] }} aria-hidden="true">
                       <JudgesIcon />
                     </span>
                     <h4 className="m-0 text-[13px] font-extrabold uppercase tracking-wide text-night-text">Судьи</h4>
-                    <span className="ml-auto text-xl font-extrabold tabular-nums leading-none text-[#f472b6]">
+                    <span className="ml-auto text-xl font-extrabold tabular-nums leading-none" style={{ color: ROLE_COLOR[active.judgeRole] }}>
                       {active.realJudges.length + active.helpers.length}
                     </span>
                   </div>
@@ -159,7 +174,10 @@ export function JudgesDanceDrawPanel({
                       ))}
                       {active.helpers.map((p) => (
                         <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-app-sm px-2 py-1.5">
-                          <span className="grid h-9 min-w-[48px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-base font-extrabold tabular-nums text-[#f472b6]">
+                          <span
+                            className="grid h-9 min-w-[48px] shrink-0 place-items-center rounded-app-sm border border-admin-border bg-admin-bg/70 text-base font-extrabold tabular-nums"
+                            style={{ color: ROLE_COLOR[active.judgeRole] }}
+                          >
                             {p.bibNumber ?? "—"}
                           </span>
                           <span className="flex min-w-0 flex-1 flex-col">

@@ -1030,6 +1030,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 id: heat.id,
                 number: displayNumber,
                 status: heat.status,
+                dancerRole,
                 roleLabel: REGISTRATION_ROLE_LABELS_PLURAL[dancerRole] ?? dancerRole,
                 judgeRole,
                 finalists: participants
