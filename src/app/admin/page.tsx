@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
+import { can, isJudgeOnlyActor } from "@/server/rbac/authorize";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
 import { buttonVariants } from "@/components/ui/button";
 import { StatCard } from "@/components/admin/StatCard";
@@ -18,6 +18,11 @@ import { cn } from "@/lib/cn";
 export default async function AdminDashboardPage() {
   const actor = await getActor();
   if (!actor) redirect("/login");
+  // Судья — только судья, без каких-либо других ролей — не должен видеть
+  // "Панель управления" вообще (CLAUDE.md §40/§52, жалоба пользователя,
+  // 2026-09-10): у него нет ни одной причины сюда заходить, его место —
+  // прямая ссылка на /judging/[competitionId], которую даёт организатор.
+  if (isJudgeOnlyActor(actor)) redirect("/");
   const user = await getCurrentUser();
 
   const isSuperAdmin = can(actor, "competition:create");

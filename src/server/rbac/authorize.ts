@@ -2,6 +2,39 @@ import { getActor, type Actor } from "./actor";
 import type { Permission } from "./permissions";
 import { AuthenticationRequiredError, NotCompetitionMemberError, PermissionDeniedError } from "../errors";
 
+// Права, которые выдаёт роль JUDGE и ТОЛЬКО она (prisma/seed-layer3.ts) —
+// судья не должен видеть "Панель управления" /admin вообще (CLAUDE.md
+// §40/§52: судейский UI не перегружается админскими функциями), даже в
+// урезанном виде, где почти все секции и так уже скрыты индивидуальными
+// can()-проверками (жалоба пользователя, 2026-09-10: сама возможность
+// попасть на /admin с ролью судьи — уже лишнее). Используется как
+// редирект-гейт на страницах, у которых нет дублирующей публичной роли
+// (в отличие от /admin/competitions[/[id]], куда намеренно тоже заходят
+// танцоры — см. комментарий в тех страницах).
+const JUDGE_ONLY_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  "score:submit",
+  "score:view_own",
+  "judge:ranking_submit",
+  "judge:conflict_declare",
+]);
+
+// true, если ВСЕ права актёра (глобальные + по всем соревнованиям, вместе)
+// укладываются в набор роли JUDGE — если он ещё где-то EVENT_ADMIN/
+// HEAD_JUDGE/SCORER/DJ и т.п. хотя бы в одном соревновании, не трогаем.
+// Актёр вовсе без прав (гость, ещё не назначенный никуда) — не "только
+// судья", это отдельный случай, здесь не решаем.
+export function isJudgeOnlyActor(actor: Actor): boolean {
+  if (actor.globalPermissions.size > 0) return false;
+  let hasAny = false;
+  for (const set of actor.permissionsByCompetition.values()) {
+    for (const p of set) {
+      hasAny = true;
+      if (!JUDGE_ONLY_PERMISSIONS.has(p)) return false;
+    }
+  }
+  return hasAny;
+}
+
 // Реализует шаги "Authentication -> RBAC -> competition membership" конвейера
 // авторизации (03 §3). Шаги "resource ownership/assignment", "state
 // validation" и "business rule validation" — ответственность вызывающего
