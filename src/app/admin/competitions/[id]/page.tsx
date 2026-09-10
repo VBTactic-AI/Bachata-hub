@@ -799,6 +799,12 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const divisionOverviewRows: DivisionOverviewRow[] = competition.divisions.map((d) => ({
     id: d.id,
     categoryName: d.category.name,
+    // Клик по названию категории — сразу в "Монитор" этой же категории (по
+    // прямому запросу пользователя, 2026-09-10): тот же приём, что и у
+    // resultsHref/scoresHref ниже (настоящая Next.js-навигация на ?tab=
+    // /?category=, монитор и вкладки уже реагируют на неё, см. useEffect
+    // на searchParams в CompetitionMonitor.tsx/CompetitionWorkspaceTabs.tsx).
+    monitorHref: `/admin/competitions/${competition.id}?tab=monitor&category=${d.id}`,
     heatCapacity: d.heatCapacity,
     rotationMode: d.rotationMode,
     rotationIntervalSec: d.rotationIntervalSec,
@@ -807,6 +813,18 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     judgingMaxScoreLabel: JUDGING_MAX_SCORE_LABELS[d.judgingMaxScore] ?? String(d.judgingMaxScore),
     finalFormatLabel: FINAL_FORMAT_LABELS[d.finalSettings?.format ?? "NORMAL"],
     stagePlan: d.stagePlan.map((p) => ({ stageId: p.stageId, participantCount: p.participantCount })),
+    // Зарегистрировано по ролям (промт пользователя, 2026-09-10) — те же
+    // groupBy-счётчики, что уже считаются для "Зарегистрировано" в Мониторе
+    // (registeredCountsPromise выше), без нового запроса.
+    registeredLeaders: countFor(registeredCounts, d.id, "LEADER"),
+    registeredFollowers: countFor(registeredCounts, d.id, "FOLLOWER"),
+    // Раунды уже сгенерированы — план по этапам "зафиксирован" в них
+    // (CLAUDE.md §50-51), редактирование плана заблокировано. Вместимость
+    // паркета из этого исключена (по прямому запросу пользователя,
+    // 2026-09-10 — организатору бывает нужно поменять её на живом
+    // соревновании, например пришлось сдвинуть границы паркета): она
+    // остаётся редактируемой всегда, форма в locked-режиме просто не
+    // показывает больше ничего, кроме этого поля.
     locked: d.rounds.length > 0,
   }));
 
@@ -1203,8 +1221,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       id: d.id,
       name: d.category.name,
       order: d.category.order,
-      registeredLeaders: countFor(registeredCounts, d.id, "LEADER"),
-      registeredFollowers: countFor(registeredCounts, d.id, "FOLLOWER"),
       checkedInLeaders: countFor(checkedInCounts, d.id, "LEADER"),
       checkedInFollowers: countFor(checkedInCounts, d.id, "FOLLOWER"),
       stagePlanLabel:

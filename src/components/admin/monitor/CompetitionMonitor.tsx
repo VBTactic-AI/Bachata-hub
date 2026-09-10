@@ -521,23 +521,26 @@ export function CompetitionMonitor({
         </div>
       )}
 
-      {/* ── Зарегистрировано в категории ──────────────────────── */}
+      {/* ── Check-in в категории ──────────────────────────────── */}
       {/* Постоянно видимый счётчик — не только пока раундов ещё нет
           (раньше был только в пустом состоянии ниже и пропадал после
           генерации раундов; после этого оставалось только "Из 0 партнёров и
           0 партнёрш этого этапа" в AdvancementCard — это число ВЫЗВАННЫХ на
           паркет, а не зарегистрированных, и легко перепутать одно с другим,
           найдено по прямому замечанию пользователя на живом тесте
-          соревнования, 2026-09-09). */}
+          соревнования, 2026-09-09). Раньше здесь была цифра "зарегистрировано"
+          с check-in мелким текстом в скобках — по прямому запросу
+          пользователя (2026-09-10) заменили на сам check-in большой цифрой:
+          организатору на живом паркете важно, кто РЕАЛЬНО пришёл, а не
+          сколько всего когда-то зарегистрировалось (это число теперь видно
+          на вкладке "Категории", DivisionsOverviewTable). */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-app border border-admin-border bg-admin-card/50 px-4 py-2.5 text-sm">
-        <span className="font-semibold text-night-text">Зарегистрировано:</span>
+        <span className="font-semibold text-night-text">Check-in:</span>
         <span className={ROLE_TEXT_CLASS.LEADER}>
-          Партнёров <span className="font-bold tabular-nums">{category.registeredLeaders}</span>
-          <span className="text-admin-disabled"> ({category.checkedInLeaders} check-in)</span>
+          Партнёров <span className="font-bold tabular-nums">{category.checkedInLeaders}</span>
         </span>
         <span className={ROLE_TEXT_CLASS.FOLLOWER}>
-          Партнёрш <span className="font-bold tabular-nums">{category.registeredFollowers}</span>
-          <span className="text-admin-disabled"> ({category.checkedInFollowers} check-in)</span>
+          Партнёрш <span className="font-bold tabular-nums">{category.checkedInFollowers}</span>
         </span>
       </div>
 

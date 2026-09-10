@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,11 @@ type RotationMode = "TRACK_AUTO_SHIFT" | "SEGMENT_MANUAL_SHIFT";
 export type DivisionOverviewRow = {
   id: string;
   categoryName: string;
+  // Клик по названию — сразу на вкладку "Монитор" этой категории (2026-09-10).
+  monitorHref: string;
   heatCapacity: number;
+  registeredLeaders: number;
+  registeredFollowers: number;
   // Ротация не редактируется здесь (пользователь ещё не решил, где ей быть
   // окончательно, 2026-09-09) — передаётся только как есть, чтобы PATCH
   // /api/divisions/[id] (общий эндпоинт для всех настроек дивизиона) не
@@ -27,10 +32,12 @@ export type DivisionOverviewRow = {
   judgingMaxScoreLabel: string;
   finalFormatLabel: string;
   stagePlan: { stageId: string; participantCount: number }[];
-  // Раунды уже сгенерированы — план по этапам и вместимость паркета
-  // "зафиксированы" в них, редактирование заблокировано целиком (по прямому
-  // решению пользователя, 2026-09-09: кнопка редактирования становится
-  // неактивной, а не просто урезанной).
+  // Раунды уже сгенерированы — план по этапам "зафиксирован" в них
+  // (по решению пользователя, 2026-09-09). Вместимость паркета из этого
+  // исключена (2026-09-10, по прямому запросу пользователя — меняется в
+  // любой момент, даже пока категория уже идёт): locked теперь урезает
+  // форму редактирования до одного поля "Мест на паркете", а не блокирует
+  // кнопку целиком.
   locked: boolean;
 };
 
@@ -102,6 +109,8 @@ export function DivisionsOverviewTable({
                 <tr>
                   <th className="px-3 py-2.5 font-semibold">№</th>
                   <th className="px-3 py-2.5 font-semibold">Категория</th>
+                  <th className="px-3 py-2.5 font-semibold">Партнёров</th>
+                  <th className="px-3 py-2.5 font-semibold">Партнёрш</th>
                   <th className="px-3 py-2.5 font-semibold">Мест на паркете</th>
                   <th className="px-3 py-2.5 font-semibold">Метод судейства</th>
                   <th className="px-3 py-2.5 font-semibold">Финал</th>
@@ -114,11 +123,13 @@ export function DivisionsOverviewTable({
                   <tr key={d.id} className="border-t border-admin-border">
                     <td className="px-3 py-3 align-middle text-admin-muted">{i + 1}</td>
                     <td className="px-3 py-3 align-middle font-medium text-night-text">
-                      <span className="flex items-center gap-2 whitespace-nowrap">
+                      <Link href={d.monitorHref} className="flex items-center gap-2 whitespace-nowrap text-night-text no-underline hover:text-admin-primaryHover hover:underline">
                         <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: DOT_COLORS[i % DOT_COLORS.length] }} aria-hidden="true" />
                         {d.categoryName}
-                      </span>
+                      </Link>
                     </td>
+                    <td className="px-3 py-3 align-middle tabular-nums text-admin-muted">{d.registeredLeaders}</td>
+                    <td className="px-3 py-3 align-middle tabular-nums text-admin-muted">{d.registeredFollowers}</td>
                     <td className="px-3 py-3 align-middle text-admin-muted">{d.heatCapacity}</td>
                     <td className="px-3 py-3 align-middle text-admin-muted">{d.judgingMaxScoreLabel}</td>
                     <td className="px-3 py-3 align-middle text-admin-muted">{d.finalFormatLabel}</td>
@@ -129,11 +140,10 @@ export function DivisionsOverviewTable({
                       <div className="flex items-center justify-end gap-3">
                         <button
                           type="button"
-                          disabled={d.locked}
                           onClick={() => setPanel({ mode: "edit", division: d })}
-                          title={d.locked ? "Для категории уже сгенерированы раунды — редактирование недоступно" : "Редактировать"}
+                          title={d.locked ? "Для категории уже сгенерированы раунды — можно изменить только вместимость паркета" : "Редактировать"}
                           aria-label={`Редактировать категорию ${d.categoryName}`}
-                          className="text-admin-muted hover:text-night-text disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-admin-muted"
+                          className="text-admin-muted hover:text-night-text"
                         >
                           <PencilIcon />
                         </button>
@@ -185,6 +195,11 @@ function DivisionForm({
   onCancel: () => void;
 }) {
   const isEdit = panel.mode === "edit";
+  // Раунды уже сгенерированы — план по этапам менять нельзя (сервер отклонит,
+  // add-division.ts), форма его просто не показывает. Вместимость паркета
+  // из этого исключена по прямому запросу пользователя (2026-09-10) —
+  // остаётся редактируемой и в locked-режиме.
+  const locked = isEdit && panel.division.locked;
   const [categoryId, setCategoryId] = useState(availableCategories[0]?.id ?? "");
   const [heatCapacity, setHeatCapacity] = useState(isEdit ? String(panel.division.heatCapacity) : "10");
   const [stagePlan, setStagePlan] = useState<Record<string, string>>(() =>
@@ -227,7 +242,11 @@ function DivisionForm({
             rotationIntervalSec: panel.division.rotationIntervalSec,
             rotationShiftMin: panel.division.rotationShiftMin,
             rotationShiftMax: panel.division.rotationShiftMax,
-            stagePlan: stagePlanEntries,
+            // locked (раунды уже есть) — план по этапам не отправляем вовсе,
+            // не пустым массивом: сервер отклоняет уже сам ПРИСУТСТВИЕ поля
+            // stagePlan при hasRounds (add-division.ts), а не только непустой
+            // список.
+            ...(locked ? {} : { stagePlan: stagePlanEntries }),
           }),
         })
       : await fetch(`/api/competitions/${competitionId}/divisions`, {
@@ -269,7 +288,13 @@ function DivisionForm({
         <Input type="number" min={1} value={heatCapacity} onChange={(e) => setHeatCapacity(e.target.value)} className={FIELD_CLASS} />
       </Label>
 
-      {stages.length > 0 && (
+      {locked && (
+        <p className="m-0 text-[12.5px] leading-snug text-admin-disabled">
+          Для категории уже сгенерированы раунды — план по этапам менять нельзя, доступна только вместимость паркета.
+        </p>
+      )}
+
+      {!locked && stages.length > 0 && (
         <div className="flex flex-col gap-2">
           <p className="m-0 text-sm font-semibold text-night-text">Этапы и количество участников</p>
           <div className="flex flex-col gap-2">

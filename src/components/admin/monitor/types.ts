@@ -128,8 +128,10 @@ export type MonitorCategory = {
   // категории (draw-helper-candidates.ts возвращает категорию каждой группы
   // с её собственным order, сравнение — на клиенте, без нового запроса).
   order: number;
-  registeredLeaders: number;
-  registeredFollowers: number;
+  // Сколько прошли check-in (не "зарегистрировано" — по прямому запросу
+  // пользователя, 2026-09-10: организатору на живом паркете важно, кто
+  // РЕАЛЬНО пришёл; общее число зарегистрированных теперь смотрят на
+  // вкладке "Категории", DivisionsOverviewTable.registeredLeaders/Followers).
   checkedInLeaders: number;
   checkedInFollowers: number;
   stagePlanLabel: string | null;

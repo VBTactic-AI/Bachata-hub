@@ -98,21 +98,23 @@ describe("updateDivisionSettings() — вместимость/ротация у�
   });
 });
 
-// Вместимость паркета и план по этапам стали редактируемыми через панель
-// категории (2026-09-09, разворот A14), но только пока для категории не
-// сгенерированы раунды — организатор сам назвал это границей "категория
-// стартовала".
-describe("updateDivisionSettings() — вместимость и план по этапам заблокированы после генерации раундов", () => {
+// План по этапам стал редактируемым через панель категории (2026-09-09,
+// разворот A14), но только пока для категории не сгенерированы раунды —
+// организатор сам назвал это границей "категория стартовала". Вместимость
+// паркета из этого ограничения исключена по прямому запросу пользователя
+// (2026-09-10) — редактируется в любой момент, даже когда раунды уже есть.
+describe("updateDivisionSettings() — план по этапам заблокирован после генерации раундов, вместимость паркета — нет", () => {
   it("разрешает менять вместимость, если раундов ещё нет", async () => {
     await updateDivisionSettings("div1", validInput);
     expect(txDivisionUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ heatCapacity: 12 }) }));
   });
 
-  it("отклоняет изменение вместимости, если раунды уже сгенерированы", async () => {
+  it("разрешает менять вместимость, даже если раунды уже сгенерированы", async () => {
     divisionFindUniqueOrThrow.mockResolvedValue({ ...currentSettings, _count: { rounds: 2 } });
 
-    await expect(updateDivisionSettings("div1", validInput)).rejects.toBeInstanceOf(ValidationFailedError);
-    expect(txDivisionUpdate).not.toHaveBeenCalled();
+    await updateDivisionSettings("div1", validInput);
+
+    expect(txDivisionUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ heatCapacity: 12 }) }));
   });
 
   it("разрешает менять план по этапам, если раундов ещё нет", async () => {
