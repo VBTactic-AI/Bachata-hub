@@ -196,7 +196,15 @@ type CriterionSnapshot = { id: string; name: string; priority: number; minScore:
 
 export type FinalScoreMonitorTable = {
   criteria: { id: string; name: string }[];
-  judges: ScoreMonitorJudgeColumn[];
+  // criteriaIds — КАКИЕ из criteria этот конкретный судья реально оценивает
+  // у этой роли участников (allowedJudgeRole, final-scoring-matrix.ts) — в
+  // JUDGES_DANCE у разных судей на одну и ту же роль участника разный набор
+  // (жалоба пользователя, 2026-09-10: судья-партнёрша в таблице партнёров
+  // показывала ВСЕ критерии, хотя реально оценивает только один — "она
+  // появилась со всеми критериями"). Вынесено на сервер (не в React,
+  // CLAUDE.md §48), чтобы клиент рендерил только применимые столбцы, не
+  // вычисляя allowedJudgeRole сам.
+  judges: (ScoreMonitorJudgeColumn & { criteriaIds: string[] })[];
   // judgeAssignmentId -> criterionId -> значение. null означает и "ещё не
   // оценено", и "этот судья не оценивает этот критерий у этого участника"
   // (JUDGES_DANCE, allowedJudgeRole) — таблица намеренно не различает эти
@@ -283,7 +291,11 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
     const roleParticipants = [...participants.filter((p) => p.role === role)].sort(
       (a, b) => Number(a.registration.checkIn?.bibNumber ?? 0) - Number(b.registration.checkIn?.bibNumber ?? 0)
     );
-    const judges = roleAssignments.map((a) => ({ judgeAssignmentId: a.id, ...judgeDisplayName(a.judge) }));
+    const judges = roleAssignments.map((a) => ({
+      judgeAssignmentId: a.id,
+      ...judgeDisplayName(a.judge),
+      criteriaIds: criteria.filter((c) => allowedJudgeRole(c.id, role, format, config) === a.role).map((c) => c.id),
+    }));
 
     const rows = roleParticipants.map((p) => {
       const scores: Record<string, Record<string, number | null>> = {};

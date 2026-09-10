@@ -355,7 +355,15 @@ export function FinalScoreMonitor({
 }
 
 export function FinalRoleTable({ title, role, table }: { title: string; role: DancerRole; table: FinalTable }) {
-  const criteriaCount = table.criteria.length || 1;
+  // Каждый судья показывает СВОИ критерии, не все подряд (жалоба
+  // пользователя, 2026-09-10): в JUDGES_DANCE судья-партнёрша в таблице
+  // партнёров реально оценивает только "танцующие" критерии (напр. одно
+  // "Взаимодействие" из четырёх) — остальные столбцы у неё были бы всегда
+  // "—", это не её работа вообще, а не "ещё не оценено". Список её критериев
+  // (judge.criteriaIds) уже посчитан сервером (allowedJudgeRole,
+  // score-monitor.ts) — здесь только подставляем названия по id.
+  const criteriaById = new Map(table.criteria.map((c) => [c.id, c]));
+  const totalColumns = table.judges.reduce((sum, j) => sum + (j.criteriaIds.length || 1), 0);
   return (
     <div className={`overflow-hidden rounded-app border ${ROLE_PANEL_CLASS[role]}`}>
       <div className="flex items-center gap-2 border-b border-admin-border px-4 py-2.5">
@@ -375,7 +383,7 @@ export function FinalRoleTable({ title, role, table }: { title: string; role: Da
                 {table.judges.map((j) => {
                   const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
                   return (
-                    <th key={j.judgeAssignmentId} colSpan={criteriaCount} className="border-b border-admin-border px-3 py-2.5 align-top">
+                    <th key={j.judgeAssignmentId} colSpan={j.criteriaIds.length || 1} className="border-b border-admin-border px-3 py-2.5 align-top">
                       <JudgeChip judge={j} role={role} total={total} />
                     </th>
                   );
@@ -383,12 +391,12 @@ export function FinalRoleTable({ title, role, table }: { title: string; role: Da
               </tr>
               <tr>
                 {table.judges.flatMap((j) =>
-                  table.criteria.map((c) => (
+                  j.criteriaIds.map((cid) => (
                     <th
-                      key={`${j.judgeAssignmentId}:${c.id}`}
+                      key={`${j.judgeAssignmentId}:${cid}`}
                       className="border-b border-admin-border bg-admin-bg/40 px-1 py-1 text-center text-[10px] font-semibold text-admin-muted"
                     >
-                      {c.name}
+                      {criteriaById.get(cid)?.name ?? "—"}
                     </th>
                   ))
                 )}
@@ -397,7 +405,7 @@ export function FinalRoleTable({ title, role, table }: { title: string; role: Da
             <tbody>
               {table.rows.length === 0 && (
                 <tr>
-                  <td className="px-3 py-3 text-sm text-admin-muted" colSpan={1 + table.judges.length * criteriaCount}>
+                  <td className="px-3 py-3 text-sm text-admin-muted" colSpan={1 + totalColumns}>
                     Участников пока нет.
                   </td>
                 </tr>
@@ -408,11 +416,11 @@ export function FinalRoleTable({ title, role, table }: { title: string; role: Da
                     №{r.bibNumber ?? "—"}
                   </td>
                   {table.judges.flatMap((j) =>
-                    table.criteria.map((c) => {
-                      const value = r.scores[j.judgeAssignmentId]?.[c.id] ?? null;
+                    j.criteriaIds.map((cid) => {
+                      const value = r.scores[j.judgeAssignmentId]?.[cid] ?? null;
                       return (
                         <td
-                          key={`${j.judgeAssignmentId}:${c.id}`}
+                          key={`${j.judgeAssignmentId}:${cid}`}
                           className={`border-b border-admin-border px-1 py-2 text-center ${
                             value === null ? "text-admin-disabled" : "font-semibold text-night-text"
                           }`}

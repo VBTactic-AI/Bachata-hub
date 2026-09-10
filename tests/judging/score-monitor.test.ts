@@ -374,7 +374,59 @@ describe("getFinalScoreMonitor()", () => {
 
     expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j2", required: 1, submitted: 1, complete: true, confirmed: false }]);
     expect(monitor!.leader.judges.map((j) => j.judgeAssignmentId)).toEqual(["j2"]);
+    expect(monitor!.leader.judges[0].criteriaIds).toEqual(["partnership"]);
     expect(monitor!.leader.rows[0].scores.j2).toEqual({ partnership: 7 });
+  });
+
+  it("JUDGES_DANCE: у каждого судьи в judges.criteriaIds только ЕГО критерии, не все критерии финала", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      division: { competitionId: "comp1" },
+      finalSession: {
+        format: "JUDGES_DANCE",
+        // "partnership" — танцующий (оценивает противоположная роль,
+        // FOLLOWER для LEADER-участника), "technique" — обычный (оценивает
+        // судья ТОЙ ЖЕ роли, LEADER).
+        config: { dancingJudgeCriteriaIds: ["partnership"] },
+        criteriaSnapshot: [
+          { id: "technique", name: "Техника", priority: 1, minScore: 0, maxScore: 10, step: 1 },
+          { id: "partnership", name: "Взаимодействие", priority: 2, minScore: 0, maxScore: 10, step: 1 },
+        ],
+      },
+    });
+    judgeAssignmentFindMany.mockResolvedValue([
+      judgeAssignment("j1", "LEADER", { email: "j1@x.com", dancerDisplayName: "Судья Л" }),
+      judgeAssignment("j2", "FOLLOWER", { email: "j2@x.com", dancerDisplayName: "Судья П" }),
+    ]);
+    heatFindMany.mockResolvedValue([
+      {
+        draws: [
+          {
+            participants: [
+              {
+                id: "pA",
+                role: "LEADER",
+                registration: { checkIn: { bibNumber: "1" } },
+                finalJudgeScores: [
+                  { judgeAssignmentId: "j1", criterionId: "technique", value: 8 },
+                  { judgeAssignmentId: "j2", criterionId: "partnership", value: 7 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    const monitor = await getFinalScoreMonitor("round1");
+
+    // Жалоба пользователя (2026-09-10): судья-партнёрша (j2) в таблице
+    // партнёров показывала ВСЕ критерии финала (включая "Техника", который
+    // она не оценивает вовсе) — должен остаться только тот, что реально её.
+    const j1 = monitor!.leader.judges.find((j) => j.judgeAssignmentId === "j1")!;
+    const j2 = monitor!.leader.judges.find((j) => j.judgeAssignmentId === "j2")!;
+    expect(j1.criteriaIds).toEqual(["technique"]);
+    expect(j2.criteriaIds).toEqual(["partnership"]);
   });
 });
 
