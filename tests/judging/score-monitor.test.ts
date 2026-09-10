@@ -437,6 +437,7 @@ describe("getScoreMonitorSnapshot() — полный ресинк для кли�
       finalistsCount: 1,
       order: 1,
       type: null,
+      status: "RUNNING",
       judgingMaxScore: 5,
       division: { competitionId: "comp1" },
       finalSession: null,
@@ -446,11 +447,13 @@ describe("getScoreMonitorSnapshot() — полный ресинк для кли�
     const snapshot = await getScoreMonitorSnapshot("round1");
 
     expect(snapshot.kind).toBe("prelim");
+    expect(snapshot.roundStatus).toBe("RUNNING");
   });
 
   it("раунд с finalSession — kind: 'final'", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({
       divisionId: "div1",
+      status: "SCORING",
       division: { competitionId: "comp1" },
       finalSession: { format: "NORMAL", config: {}, criteriaSnapshot: [] },
     });
@@ -459,5 +462,30 @@ describe("getScoreMonitorSnapshot() — полный ресинк для кли�
     const snapshot = await getScoreMonitorSnapshot("round1");
 
     expect(snapshot.kind).toBe("final");
+    expect(snapshot.roundStatus).toBe("SCORING");
+  });
+
+  // 2026-09-10, жалоба пользователя: "пусть когда все судьи нажмут готово,
+  // обновится монитор" — JudgesLivePanel сравнивает roundStatus снимка с
+  // серверным пропом и сам вызывает router.refresh(), когда они расходятся
+  // (см. JudgesLivePanel.tsx). Раунд может смениться (RUNNING -> SCORING ->
+  // COMPLETED, advancement.ts) между двумя пересинками — снимок обязан
+  // отражать АКТУАЛЬНЫЙ статус, иначе этот механизм не сработает.
+  it("roundStatus в снимке — актуальный статус раунда на момент запроса, не запомненный", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      finalistsCount: 1,
+      order: 1,
+      type: null,
+      status: "COMPLETED",
+      judgingMaxScore: 5,
+      division: { competitionId: "comp1" },
+      finalSession: null,
+    });
+    heatFindMany.mockResolvedValue([]);
+
+    const snapshot = await getScoreMonitorSnapshot("round1");
+
+    expect(snapshot.roundStatus).toBe("COMPLETED");
   });
 });

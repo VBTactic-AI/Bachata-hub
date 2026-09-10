@@ -1,4 +1,4 @@
-import type { FinalFormat, RegistrationRole } from "@prisma/client";
+import type { FinalFormat, RegistrationRole, RoundStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { isFinalStageInTx, rolesNotNeedingJudging } from "./advancement";
@@ -342,16 +342,31 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
 // точечного апдейта, но гарантирует, что таблица не "зависает" молча
 // устаревшей после обрыва, а сама себя чинит.
 export type ScoreMonitorSnapshot =
-  | { kind: "prelim"; maxValue: number; finalistsCount: number; leader: PrelimScoreMonitorTable; follower: PrelimScoreMonitorTable }
-  | { kind: "final"; format: FinalFormat; leader: FinalScoreMonitorTable; follower: FinalScoreMonitorTable }
-  | { kind: "none" };
+  | { kind: "prelim"; roundStatus: RoundStatus; maxValue: number; finalistsCount: number; leader: PrelimScoreMonitorTable; follower: PrelimScoreMonitorTable }
+  | { kind: "final"; roundStatus: RoundStatus; format: FinalFormat; leader: FinalScoreMonitorTable; follower: FinalScoreMonitorTable }
+  | { kind: "none"; roundStatus: RoundStatus | null };
 
+// roundStatus в снимке (2026-09-10, по прямому запросу пользователя —
+// "пусть когда все судьи нажмут готово, обновится монитор") — сам по себе
+// живой канал оценок (use-score-events.ts) уже открыт на этом экране ради
+// "✓ Готово" по каждому судье; JudgesLivePanel сравнивает это поле с
+// серверным пропом roundStatus и сам просит router.refresh(), когда раунд
+// реально сдвинулся (RUNNING -> SCORING -> COMPLETED и т.п.) — без отдельного
+// канала на таблицу Round (RLS/realtime для неё нет и не нужен, у этого
+// раунда уже есть токен на score-monitor:{roundId}).
 export async function getScoreMonitorSnapshot(roundId: string): Promise<ScoreMonitorSnapshot> {
-  const round = await prisma.round.findUniqueOrThrow({ where: { id: roundId }, select: { finalSession: { select: { id: true } } } });
+  const round = await prisma.round.findUniqueOrThrow({ where: { id: roundId }, select: { status: true, finalSession: { select: { id: true } } } });
   if (round.finalSession) {
     const final = await getFinalScoreMonitor(roundId);
-    return final ? { kind: "final", format: final.format, leader: final.leader, follower: final.follower } : { kind: "none" };
+    return final ? { kind: "final", roundStatus: round.status, format: final.format, leader: final.leader, follower: final.follower } : { kind: "none", roundStatus: round.status };
   }
   const prelim = await getPrelimScoreMonitor(roundId);
-  return { kind: "prelim", maxValue: prelim.maxValue, finalistsCount: prelim.finalistsCount, leader: prelim.leader, follower: prelim.follower };
+  return {
+    kind: "prelim",
+    roundStatus: round.status,
+    maxValue: prelim.maxValue,
+    finalistsCount: prelim.finalistsCount,
+    leader: prelim.leader,
+    follower: prelim.follower,
+  };
 }

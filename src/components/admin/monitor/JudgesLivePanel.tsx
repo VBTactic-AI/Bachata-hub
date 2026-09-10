@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { RoundStatus } from "@prisma/client";
 import type { ScoreMonitorTotal } from "@/server/judging/score-monitor";
 import { fetchScoreMonitorSnapshot, useScoreEvents } from "../judging/use-score-events";
@@ -119,12 +120,32 @@ export function JudgesLivePanel({
   const live = canViewLive && LIVE_ROUND_STATUSES.has(roundStatus);
   const [totals, setTotals] = useState<Map<string, ScoreMonitorTotal>>(new Map());
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const router = useRouter();
+  // roundStatus в пропе — серверный снимок на момент рендера страницы, не
+  // живой. Раньше единственным способом узнать, что раунд сдвинулся дальше
+  // (например, последний судья нажал "Готово", и это само завершило раунд —
+  // RUNNING/SCORING -> COMPLETED, advancement.ts), была перезагрузка
+  // страницы вручную (жалоба пользователя, 2026-09-10). Раз здесь уже открыт
+  // живой канал ради "✓ Готово" по каждому судье, переиспользуем его же
+  // пересинк: если свежий снимок говорит, что статус раунда стал другим,
+  // просим Next.js перерендерить страницу целиком (router.refresh() —
+  // настоящий поход на сервер, но только один раз на переход, не на каждую
+  // оценку). refreshedRef не даёт запросить это повторно, пока страница не
+  // перерендерится с новым пропом.
+  const refreshedRef = useRef(false);
+  useEffect(() => {
+    refreshedRef.current = false;
+  }, [roundStatus]);
 
   const resync = useCallback(async () => {
     const snapshot = await fetchScoreMonitorSnapshot(roundId);
     if (!snapshot) return;
     setTotals(totalsOf(snapshot));
-  }, [roundId]);
+    if (!refreshedRef.current && snapshot.roundStatus !== null && snapshot.roundStatus !== roundStatus) {
+      refreshedRef.current = true;
+      router.refresh();
+    }
+  }, [roundId, roundStatus, router]);
 
   const scheduleResync = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
