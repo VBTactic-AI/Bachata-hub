@@ -254,6 +254,10 @@ export type JudgeQueueItem = {
   // подсказка, не ограничение — судьи независимы, сумма баллов по ВСЕМ
   // судьям решает cutoff, а не то, сколько именно "да" поставил один судья.
   finalistsCount: number;
+  // Название этапа (Round.stage.name) — для контекст-бара на экране судьи
+  // (2026-09-10, по запросу пользователя: "категория, этап, заход" сверху).
+  // null у служебных раундов (TIE_BREAK/DANCE_OFF, Round.type вместо stageId).
+  stageName: string | null;
 };
 
 // Раунд/роль, где судья назначен, но оценивать не нужно — участников этой
@@ -309,6 +313,7 @@ export async function getJudgeQueue(competitionId: string): Promise<JudgeQueue> 
           finalistsCount: true,
           order: true,
           type: true,
+          stage: { select: { name: true } },
           division: { select: { category: { select: { name: true } } } },
         },
       },
@@ -392,6 +397,7 @@ export async function getJudgeQueue(competitionId: string): Promise<JudgeQueue> 
         myScore: myScore?.value ?? null,
         maxValue: heat.round.judgingMaxScore,
         finalistsCount: heat.round.finalistsCount ?? 0,
+        stageName: heat.round.stage?.name ?? null,
       });
     }
   }

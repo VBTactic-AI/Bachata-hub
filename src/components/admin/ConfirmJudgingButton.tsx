@@ -33,7 +33,7 @@ export function ConfirmJudgingButton({ roundId, final = false }: { roundId: stri
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <Button type="button" size="touch" disabled={loading} onClick={onClick} className="border-none bg-gradient-night-cta">
+      <Button type="button" size="touch" variant="admin" disabled={loading} onClick={onClick}>
         Готово
       </Button>
       {error && <span className="text-sm text-red-400">{error}</span>}

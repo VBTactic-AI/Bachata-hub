@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
+import { ContextBar } from "@/components/admin/judging/ContextBar";
+import { ProgressBar } from "@/components/admin/judging/ProgressBar";
 import {
   enqueueFinalJudgeScore,
   getQueuedFinalScore,
@@ -12,10 +14,10 @@ import {
 
 export type FinalCriterionInfo = { id: string; name: string; priority: number; minScore: number; maxScore: number; step: number };
 
-// Цвета мест для RELATIVE_PLACEMENT (скейтинг) — по бренд-палитре "night"
-// (tailwind.config.ts: primary/success — остальное подобрано в тон, чтобы
-// вписаться в тёмную тему раздела /judging). Индекс 5 (жёлтый) — единственный,
-// которому нужен тёмный текст вместо белого.
+// Цвета мест для RELATIVE_PLACEMENT (скейтинг) — фиксированный семантический
+// набор, НЕ токены темы (CLAUDE.md §64.4) — не меняются при перекраске
+// экрана в admin-* (2026-09-10). Индекс 5 (жёлтый) — единственный, которому
+// нужен тёмный текст вместо белого.
 const PLACE_COLORS = ["#ff2d8a", "#37d67a", "#a78bfa", "#fb923c", "#22d3ee", "#facc15", "#ff9ac9", "#94a3b8"];
 function placeColor(place: number): string {
   return PLACE_COLORS[(place - 1) % PLACE_COLORS.length];
@@ -23,6 +25,15 @@ function placeColor(place: number): string {
 function placeTextColor(place: number): string {
   return (place - 1) % PLACE_COLORS.length === 5 ? "#241c00" : "#ffffff";
 }
+
+const FORMAT_LABELS: Record<string, string> = {
+  NORMAL: "Критерии",
+  JUDGES_DANCE: "Судейский танец",
+  RANDOM_COUPLES: "Случайные пары",
+  RELATIVE_PLACEMENT: "Скейтинг",
+};
+const ROLE_GROUP_LABELS: Record<string, string> = { LEADER: "Ведущие", FOLLOWER: "Ведомые" };
+
 export type FinalQueueItem = {
   drawParticipantId: string;
   role: "LEADER" | "FOLLOWER";
@@ -35,12 +46,28 @@ export type FinalQueueItem = {
   criteriaIds: string[];
 };
 
-// Судейский экран финала (CLAUDE.md §40 — быстро, без админских функций;
-// промт пользователя, п.40-41): один участник на экране, критерии подряд,
-// "ИТОГО"/"МОЕ МЕСТО" пересчитываются мгновенно при любом клике. Отправка —
-// через офлайн-очередь (final-judge-score-queue.ts, тот же приём, что и в
-// обычных раундах, CLAUDE.md §17): клик сохраняет локально и пытается
-// отправить сразу, без связи — досылается сама.
+// Судейский экран финала (CLAUDE.md §40 — быстро, без админских функций).
+// Два принципиально разных режима:
+// - RELATIVE_PLACEMENT (скейтинг) — судья расставляет МЕСТА, список
+//   участников с местом рядом с каждым, тап открывает лист выбора места.
+// - Остальные форматы (NORMAL/JUDGES_DANCE/RANDOM_COUPLES) — судья ставит
+//   БАЛЛЫ по нескольким критериям. Раньше это было последовательное
+//   пролистывание "один участник за раз" (Предыдущий/Следующий); по прямому
+//   запросу пользователя (2026-09-10) заменено на матрицу: номера участников
+//   по строкам, критерии по столбцам, вся категория на одном экране без
+//   горизонтальной прокрутки (компактные ячейки), тап по ячейке — лист
+//   выбора оценки в диапазоне критерия. Предварительная сумма и место в
+//   строке считаются ТЕМ ЖЕ алгоритмом, что и подсказка "Моё место" раньше
+//   (сумма по критериям судьи, при равенстве — приоритет критериев) — это
+//   локальная клиентская подсказка, не официальный результат
+//   (RankingEngine/final-ranking.ts на сервере), поэтому конфликтов с
+//   реальным подсчётом при равенстве баллов быть не может: подсказка явно
+//   не претендует на официальность (тот же текст предупреждения, что и
+//   раньше был на вкладке "Мой рейтинг").
+//
+// Отправка — через офлайн-очередь (final-judge-score-queue.ts, CLAUDE.md
+// §17): клик сохраняет локально и пытается отправить сразу, без связи —
+// досылается сама.
 export function FinalJudgingScreen({
   roundId,
   format,
@@ -59,24 +86,21 @@ export function FinalJudgingScreen({
 }) {
   // RELATIVE_PLACEMENT (скейтинг-система) — судья вводит МЕСТО (меньше
   // лучше), а не баллы (больше лучше) — единственный критерий формата.
-  // "Мой рейтинг"/"моя сумма" ниже — чисто клиентская подсказка судье (как и
-  // для остальных форматов, промт пользователя п.5), но направление
-  // сравнения должно быть развёрнуто, иначе подсказка была бы буквально
-  // задом наперёд (участник с местом "6" показывался бы как лучший).
   const lowerIsBetter = format === "RELATIVE_PLACEMENT";
   const router = useRouter();
-  const [tab, setTab] = useState<"score" | "rating">("score");
-  const [index, setIndex] = useState(0);
   // Открытая карточка выбора места (скейтинг) — id участника, для которого
   // сейчас показан лист с местами 1..N, либо null, если лист закрыт.
   const [placeSheetFor, setPlaceSheetFor] = useState<string | null>(null);
+  // Открытая ячейка матрицы (не-скейтинг форматы) — участник + критерий, для
+  // которых сейчас показан лист выбора оценки.
+  const [scoreSheetFor, setScoreSheetFor] = useState<{ drawParticipantId: string; criterionId: string } | null>(null);
   // Участники, освобождённые атомарной подменой места (final-scoring.ts:
   // "клиент занял их место — сервер обнулил их запись") — судья должен
   // видеть "—" СРАЗУ, не дожидаясь router.refresh() (промт пользователя,
   // 2026-09-07: "в UI пусто отображается сразу"). Чисто оптимистичная
   // клиентская подсказка: сбрасывается целиком, как только придут свежие
-  // серверные props (items) — то есть подтверждённое состояние всегда
-  // побеждает предположение.
+  // серверные props — то есть подтверждённое состояние всегда побеждает
+  // предположение.
   const [optimisticallyCleared, setOptimisticallyCleared] = useState<Set<string>>(new Set());
   useEffect(() => {
     setOptimisticallyCleared(new Set());
@@ -85,22 +109,14 @@ export function FinalJudgingScreen({
   // (эффективные значения читаются заново из очереди/пропсов при рендере).
   const [, setTick] = useState(0);
   // Как только очередь ДОСТАВИЛА оценку (ключ пропал из очереди без ошибки),
-  // серверные props (items) устарели — без router.refresh() "МОЯ СУММА"
-  // откатилась бы к старому значению из первоначального рендера, как только
-  // локальная очередь опустеет (баг, найденный вживую 2026-09-04: сумма
-  // визуально обнулялась после отправки всех критериев, хотя в БД всё
-  // сохранялось верно). Тот же приём, что и в JudgeScoreButtons.tsx.
+  // серверные props (items) устарели — без router.refresh() сумма/место
+  // откатились бы к старому значению из первоначального рендера, как только
+  // локальная очередь опустеет (баг, найденный вживую 2026-09-04).
   const pendingKeysRef = useRef<Set<string>>(new Set());
   // Дебаунс router.refresh(), а не вызов на каждую доставленную оценку —
   // при догоне очереди после офлайна несколько критериев/участников
-  // доставляются подряд, каждый через отдельное состояние очереди; без
-  // дебаунса это была бы серия последовательных RSC-рефетчей одной и той же
-  // страницы (тот же шторм, что и в JudgeScoreButtons.tsx, 2026-09-07).
+  // доставляются подряд (тот же приём, что и в JudgeScoreButtons.tsx).
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // UX-002: очередь и раньше отслеживала реальные (не сетевые) ошибки
-  // отправки — но этот экран нигде их не показывал, в отличие от
-  // JudgeScoreButtons.tsx (обычные раунды). Судья видел, что кнопка просто
-  // "откатилась" без единого объяснения, будто ничего и не нажимал.
   const [errorsByKey, setErrorsByKey] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -146,11 +162,12 @@ export function FinalJudgingScreen({
   }
 
   const scoredCount = items.filter(isFullyScored).length;
+  const pct = items.length > 0 ? (scoredCount / items.length) * 100 : 0;
 
   // Локальный рейтинг ЭТОГО судьи — сумма DESC, при равенстве сумма по
   // критерию приоритета #1, затем #2 и т.д. (тот же порядок сравнения, что
   // и в official ranking engine, только чисто на клиенте для подсказки судье
-  // — промт пользователя, п.5: "не является официальным рейтингом").
+  // — "не является официальным рейтингом").
   const ranked = useMemo(() => {
     const sign = lowerIsBetter ? -1 : 1;
     return [...items].sort((a, b) => {
@@ -168,20 +185,16 @@ export function FinalJudgingScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, sortedCriteria, lowerIsBetter]);
 
-  if (items.length === 0) {
-    return <p className="text-sm text-night-muted">Пока нет вызванных участников вашей роли для оценки.</p>;
+  function rankOf(item: FinalQueueItem): number {
+    return ranked.findIndex((r) => r.drawParticipantId === item.drawParticipantId) + 1;
   }
 
-  const current = items[Math.min(index, items.length - 1)];
-  const currentSum = effectiveSum(current);
-  const currentRank = ranked.findIndex((r) => r.drawParticipantId === current.drawParticipantId) + 1;
+  const rolesPresent = (["LEADER", "FOLLOWER"] as const).filter((r) => items.some((it) => it.role === r));
+  const categoryLabel = rolesPresent.map((r) => ROLE_GROUP_LABELS[r]).join(" / ") || "—";
 
-  // RELATIVE_PLACEMENT — вместо табов "Оценка"/"Мой рейтинг" со сквозным
-  // пролистыванием одного участника за раз, судья видит сразу весь список
-  // своей роли с местом рядом с каждым (промт пользователя, 2026-09-07:
-  // "место отображается сразу, чтобы всегда было перед глазами"). Формат
-  // гарантированно имеет ровно один критерий (FinalSettingsPanel.tsx,
-  // валидация "требует ровно один критерий") — это он и есть.
+  // RELATIVE_PLACEMENT — судья видит сразу весь список своей роли с местом
+  // рядом с каждым. Формат гарантированно имеет ровно один критерий
+  // (FinalSettingsPanel.tsx, валидация "требует ровно один критерий").
   const placementCriterion = format === "RELATIVE_PLACEMENT" ? sortedCriteria[0] : undefined;
 
   function placeOf(item: FinalQueueItem): number | null {
@@ -196,26 +209,14 @@ export function FinalJudgingScreen({
   function holderAtPlace(role: "LEADER" | "FOLLOWER", place: number, excludeId: string) {
     return roleGroup(role).find((it) => it.drawParticipantId !== excludeId && placeOf(it) === place);
   }
-  // Переставить участника на место — идёт через ту же офлайн-очередь
-  // (final-judge-score-queue.ts), что и обычная оценка: один "PATCH" на
-  // (drawParticipantId, criterionId). Если место уже занято другим
-  // участником той же роли — сервер (final-scoring.ts) сам атомарно
-  // освобождает прежнего обладателя в одной транзакции с записью нового
-  // значения (промт пользователя, 2026-09-07); клиенту достаточно один раз
-  // сказать "хочу вот это место", свап целиком на сервере. holderId, если
-  // передан, — только для мгновенной оптимистичной подсказки в UI (см.
-  // optimisticallyCleared), к самой отправке отношения не имеет.
+  // Переставить участника на место — идёт через ту же офлайн-очередь, что и
+  // обычная оценка. Если место уже занято другим участником той же роли —
+  // сервер (final-scoring.ts) сам атомарно освобождает прежнего обладателя в
+  // одной транзакции с записью нового значения; клиенту достаточно один раз
+  // сказать "хочу вот это место". holderId, если передан, — только для
+  // мгновенной оптимистичной подсказки в UI.
   function assignPlace(item: FinalQueueItem, place: number, holderId?: string) {
     if (!placementCriterion || confirmed) return;
-    // БАГ (промт пользователя, 2026-09-07): раньше сюда добавлялся только
-    // holderId — сам item.drawParticipantId, если он ПРЕЖДЕ уже был обнулён
-    // оптимистично (он же сейчас — прежний держатель чужого места), из
-    // optimisticallyCleared не убирался. Он получал новое значение через
-    // очередь, но placeOf() всё равно проверяет optimisticallyCleared ПЕРВЫМ
-    // делом и продолжал показывать "—", какое бы место дальше ни выбрали —
-    // до следующего router.refresh(). Явное новое значение всегда должно
-    // перекрывать более раннюю оптимистичную пометку "пусто" для ЭТОГО ЖЕ
-    // участника.
     setOptimisticallyCleared((prev) => {
       const next = new Set(prev);
       next.delete(item.drawParticipantId);
@@ -224,58 +225,63 @@ export function FinalJudgingScreen({
     });
     enqueueFinalJudgeScore(item.drawParticipantId, placementCriterion.id, place);
   }
-  const rolesPresent = (["LEADER", "FOLLOWER"] as const).filter((r) => items.some((it) => it.role === r));
   const placedCount = placementCriterion ? items.filter((it) => placeOf(it) !== null).length : 0;
   const sheetItem = placeSheetFor ? (items.find((it) => it.drawParticipantId === placeSheetFor) ?? null) : null;
 
-  return (
-    <div className="flex flex-col gap-3">
-      {!placementCriterion && (
-        <div className="flex flex-col gap-1 rounded-app bg-night-card p-4">
-          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-night-muted">
-            Пара {index + 1} из {items.length} · оценено {scoredCount}
-          </p>
-          <p className="m-0 text-lg font-bold text-night-text">
-            №{current.bibNumber ?? "—"} {current.displayName} · {current.role === "LEADER" ? "Партнёр" : "Партнёрша"}
-          </p>
-        </div>
-      )}
+  const scoreSheetItem = scoreSheetFor ? (items.find((it) => it.drawParticipantId === scoreSheetFor.drawParticipantId) ?? null) : null;
+  const scoreSheetCriterion = scoreSheetFor ? sortedCriteria.find((c) => c.id === scoreSheetFor.criterionId) : undefined;
+  function setScore(item: FinalQueueItem, criterionId: string, value: number) {
+    if (confirmed) return;
+    enqueueFinalJudgeScore(item.drawParticipantId, criterionId, value);
+    setScoreSheetFor(null);
+  }
 
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-app border border-night-border bg-night-card p-3">
-        <p className={`m-0 text-sm font-semibold ${scoredCount < items.length ? "text-night-muted" : "text-night-success"}`}>
+  if (items.length === 0) {
+    return <p className="text-sm text-admin-muted">Пока нет вызванных участников вашей роли для оценки.</p>;
+  }
+
+  const footer = (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className={`m-0 text-sm font-semibold ${scoredCount < items.length ? "text-admin-muted" : "text-night-success"}`}>
           Оценено {scoredCount} из {items.length}
         </p>
         {confirmed ? (
           <span className="rounded-full border border-night-success/40 bg-night-success/10 px-3 py-1 text-sm font-semibold text-night-success">
-            ✓ Готово — оценки зафиксированы
+            ✓ Готово
           </span>
         ) : (
           <ConfirmJudgingButton roundId={roundId} final />
         )}
       </div>
+      <ProgressBar pct={pct} />
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <ContextBar categoryLabel={categoryLabel} stageLabel={FORMAT_LABELS[format]} />
 
       {placementCriterion ? (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 rounded-app bg-night-card p-3">
-            <span className="shrink-0 text-xs font-semibold text-night-muted">
+          <div className="flex items-center gap-2 rounded-app border border-admin-border bg-admin-card p-3">
+            <span className="shrink-0 text-xs font-semibold text-admin-muted">
               {placedCount} / {items.length}
             </span>
             <div className="flex flex-1 gap-1">
               {items.map((it) => (
                 <span
                   key={it.drawParticipantId}
-                  className={`h-1.5 flex-1 rounded-full ${placeOf(it) !== null ? "bg-night-primary" : "bg-night-card2"}`}
+                  className={`h-1.5 flex-1 rounded-full ${placeOf(it) !== null ? "bg-admin-primary" : "bg-admin-card2"}`}
                 />
               ))}
             </div>
           </div>
 
           {rolesPresent.map((role) => (
-            <div key={role} className="flex flex-col gap-1 rounded-app bg-night-card p-2">
+            <div key={role} className="flex flex-col gap-1 rounded-app border border-admin-border bg-admin-card p-2">
               {rolesPresent.length > 1 && (
-                <p className="m-0 px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-night-muted">
-                  {role === "LEADER" ? "Партнёры" : "Партнёрши"}
-                </p>
+                <p className="m-0 px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-admin-muted">{ROLE_GROUP_LABELS[role]}</p>
               )}
               {roleGroup(role).map((it) => {
                 const place = placeOf(it);
@@ -285,12 +291,12 @@ export function FinalJudgingScreen({
                     type="button"
                     disabled={confirmed}
                     onClick={() => setPlaceSheetFor(it.drawParticipantId)}
-                    className="grid grid-cols-[40px_1fr_52px] items-center gap-2 rounded-app-sm border-b border-night-border/60 px-2 py-3 text-left last:border-b-0 disabled:opacity-60"
+                    className="grid grid-cols-[40px_1fr_52px] items-center gap-2 rounded-app-sm border-b border-admin-border/60 px-2 py-3 text-left last:border-b-0 disabled:opacity-60"
                   >
-                    <span className="font-night text-sm font-bold text-night-muted">{it.bibNumber ?? "—"}</span>
+                    <span className="font-night text-sm font-bold text-admin-muted">{it.bibNumber ?? "—"}</span>
                     <span className="min-w-0 truncate text-[0.95rem] text-night-text">{it.displayName}</span>
                     <span
-                      className="flex h-9 w-full items-center justify-center rounded-app-sm border border-night-border text-base font-extrabold text-night-muted"
+                      className="flex h-9 w-full items-center justify-center rounded-app-sm border border-admin-border text-base font-extrabold text-admin-muted"
                       style={place !== null ? { background: placeColor(place), color: placeTextColor(place), borderColor: "transparent" } : undefined}
                     >
                       {place ?? "—"}
@@ -302,120 +308,28 @@ export function FinalJudgingScreen({
           ))}
         </div>
       ) : (
-        <>
-          <div className="flex gap-2 rounded-full bg-night-card p-1">
-            <button
-              type="button"
-              onClick={() => setTab("score")}
-              className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "score" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
-            >
-              Оценка
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab("rating")}
-              className={`flex-1 rounded-full py-2 font-night text-sm font-semibold transition-colors ${tab === "rating" ? "bg-gradient-night-cta text-white" : "text-night-muted"}`}
-            >
-              Мой рейтинг
-            </button>
-          </div>
-
-          {tab === "score" && (
-            <div className="flex flex-col gap-3">
-              {myCriteriaFor(current).map((c) => {
-                const value = effectiveValue(current, c.id);
-                const criterionError = errorsByKey[`${current.drawParticipantId}:${c.id}`];
-                const canDec = value !== null && value - c.step >= c.minScore;
-                const canInc = value === null ? true : value + c.step <= c.maxScore;
-                return (
-                  <div key={c.id} className="flex items-center gap-3 rounded-app bg-night-card p-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="m-0 text-[0.95rem] font-semibold text-night-text">{c.name}</p>
-                      <p className="m-0 text-xs text-night-muted">
-                        {c.minScore}–{c.maxScore}
-                      </p>
-                      {criterionError && <p className="m-0 mt-1 text-xs text-red-400">{criterionError}</p>}
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!canDec || confirmed}
-                      onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.max(c.minScore, (value ?? c.minScore) - c.step))}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
-                    >
-                      −
-                    </button>
-                    <span className="w-9 shrink-0 text-center text-xl font-bold text-night-text">{value ?? "–"}</span>
-                    <button
-                      type="button"
-                      disabled={!canInc || confirmed}
-                      onClick={() => enqueueFinalJudgeScore(current.drawParticipantId, c.id, Math.min(c.maxScore, (value ?? c.minScore) + c.step))}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-app-sm border border-night-border bg-night-card2 text-xl text-night-text disabled:opacity-30"
-                    >
-                      +
-                    </button>
-                  </div>
-                );
-              })}
-
-              <div className="flex items-center justify-between px-1">
-                <div>
-                  <p className="m-0 text-xs uppercase tracking-wide text-night-muted">{lowerIsBetter ? "Место" : "Моя сумма"}</p>
-                  <p className="m-0 text-2xl font-bold text-night-text">{currentSum}</p>
-                </div>
-                {!lowerIsBetter && (
-                  <div className="text-right">
-                    <p className="m-0 text-xs uppercase tracking-wide text-night-muted">Моё место</p>
-                    <p className="m-0 text-2xl font-bold text-night-primary">#{currentRank}</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={index === 0}
-                  onClick={() => setIndex((i) => Math.max(0, i - 1))}
-                  className="border-night-border bg-transparent text-night-text hover:bg-night-card2"
-                >
-                  ← Предыдущий
-                </Button>
-                <Button
-                  type="button"
-                  disabled={index >= items.length - 1}
-                  onClick={() => setIndex((i) => Math.min(items.length - 1, i + 1))}
-                  className="border-none bg-gradient-night-cta"
-                >
-                  Следующий →
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {tab === "rating" && (
-            <div className="rounded-app bg-night-card p-4">
-              <p className="m-0 mb-3 text-sm text-night-muted">Мой рейтинг — не является официальным результатом соревнования.</p>
-              <ol className="m-0 flex list-none flex-col gap-2 p-0">
-                {ranked.map((r, i) => (
-                  <li key={r.drawParticipantId} className="flex items-center justify-between gap-2 rounded-app-sm bg-night-card2 px-3 py-2.5 text-sm">
-                    <span className="text-night-text">
-                      #{i + 1} · №{r.bibNumber ?? "—"} {r.displayName}
-                    </span>
-                    <span className="font-bold text-night-primary">{effectiveSum(r)}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-        </>
+        <FinalScoreMatrix
+          items={items}
+          sortedCriteria={sortedCriteria}
+          effectiveValue={effectiveValue}
+          effectiveSum={effectiveSum}
+          rankOf={rankOf}
+          rolesPresent={rolesPresent}
+          roleGroup={roleGroup}
+          confirmed={confirmed}
+          errorsByKey={errorsByKey}
+          onOpenCell={(drawParticipantId, criterionId) => setScoreSheetFor({ drawParticipantId, criterionId })}
+        />
       )}
+
+      <div className="sticky bottom-0 -mx-0 border-t border-admin-border bg-admin-bg px-0 pt-2">{footer}</div>
 
       {sheetItem && placementCriterion && (
         <>
           <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setPlaceSheetFor(null)} />
-          <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[520px] rounded-t-app border-t border-night-border bg-night-card2 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-            <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-night-border" />
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-night-muted">№{sheetItem.bibNumber ?? "—"}</p>
+          <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[520px] rounded-t-app border-t border-admin-border bg-admin-card2 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-admin-border" />
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-admin-muted">№{sheetItem.bibNumber ?? "—"}</p>
             <h3 className="m-0 mb-3 font-night text-lg font-extrabold text-night-text">{sheetItem.displayName}</h3>
             <div className="grid max-h-[50vh] grid-cols-4 gap-2 overflow-y-auto">
               {Array.from(
@@ -436,7 +350,7 @@ export function FinalJudgingScreen({
                       assignPlace(sheetItem, place, holder?.drawParticipantId);
                       setPlaceSheetFor(null);
                     }}
-                    className="flex min-h-[64px] flex-col items-center justify-center gap-0.5 rounded-app-sm border border-night-border px-1 py-2 text-center text-night-muted"
+                    className="flex min-h-[64px] flex-col items-center justify-center gap-0.5 rounded-app-sm border border-admin-border px-1 py-2 text-center text-admin-muted"
                     style={holder || mine ? { background: placeColor(place), color: placeTextColor(place), borderColor: "transparent" } : undefined}
                   >
                     <span className="font-night text-lg font-extrabold">{place}</span>
@@ -447,18 +361,196 @@ export function FinalJudgingScreen({
                 );
               })}
             </div>
-            <p className="m-0 mt-3 text-xs text-night-muted">Если место занято — прежний обладатель освободится автоматически.</p>
+            <p className="m-0 mt-3 text-xs text-admin-muted">Если место занято — прежний обладатель освободится автоматически.</p>
             <Button
               type="button"
               variant="outline"
               onClick={() => setPlaceSheetFor(null)}
-              className="mt-3 w-full border-night-border bg-transparent text-night-text hover:bg-night-card"
+              className="mt-3 w-full border-admin-border bg-transparent text-night-text hover:bg-admin-card"
             >
               Отмена
             </Button>
           </div>
         </>
       )}
+
+      {scoreSheetItem && scoreSheetCriterion && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setScoreSheetFor(null)} />
+          <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[520px] rounded-t-app border-t border-admin-border bg-admin-card2 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-admin-border" />
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-admin-muted">
+              №{scoreSheetItem.bibNumber ?? "—"} · {scoreSheetCriterion.name}
+            </p>
+            <h3 className="m-0 mb-3 font-night text-lg font-extrabold text-night-text">
+              Выбор оценки ({scoreSheetCriterion.minScore}–{scoreSheetCriterion.maxScore})
+            </h3>
+            <div className="grid max-h-[50vh] grid-cols-4 gap-2 overflow-y-auto">
+              {Array.from(
+                { length: Math.floor((scoreSheetCriterion.maxScore - scoreSheetCriterion.minScore) / scoreSheetCriterion.step) + 1 },
+                (_, i) => scoreSheetCriterion.minScore + i * scoreSheetCriterion.step
+              ).map((v) => {
+                const active = effectiveValue(scoreSheetItem, scoreSheetCriterion.id) === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setScore(scoreSheetItem, scoreSheetCriterion.id, v)}
+                    className={`flex h-12 items-center justify-center rounded-app-sm border font-night text-base font-extrabold ${
+                      active ? "border-admin-primary bg-admin-primary text-white" : "border-admin-border bg-admin-bg text-night-text"
+                    }`}
+                  >
+                    {v}
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setScoreSheetFor(null)}
+              className="mt-3 w-full border-admin-border bg-transparent text-night-text hover:bg-admin-card"
+            >
+              Отмена
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Матрица "номера × критерии" на одном экране (2026-09-10, по прямому
+// запросу пользователя — заменяет прежнее пролистывание "один участник за
+// раз"). Компактные ячейки без горизонтальной прокрутки — судья видит сразу
+// всех участников своей роли по всем критериям, тап по ячейке открывает
+// лист выбора оценки (родительский компонент). Σ и Место — предварительная
+// клиентская подсказка (не официальный результат, CLAUDE.md §16/§51 —
+// официальный подсчёт остаётся на сервере, final-ranking.ts).
+function FinalScoreMatrix({
+  items,
+  sortedCriteria,
+  effectiveValue,
+  effectiveSum,
+  rankOf,
+  rolesPresent,
+  roleGroup,
+  confirmed,
+  errorsByKey,
+  onOpenCell,
+}: {
+  items: FinalQueueItem[];
+  sortedCriteria: FinalCriterionInfo[];
+  effectiveValue: (item: FinalQueueItem, criterionId: string) => number | null;
+  effectiveSum: (item: FinalQueueItem) => number;
+  rankOf: (item: FinalQueueItem) => number;
+  rolesPresent: readonly ("LEADER" | "FOLLOWER")[];
+  roleGroup: (role: "LEADER" | "FOLLOWER") => FinalQueueItem[];
+  confirmed: boolean;
+  errorsByKey: Record<string, string>;
+  onOpenCell: (drawParticipantId: string, criterionId: string) => void;
+}) {
+  const hasError = Object.keys(errorsByKey).length > 0;
+  return (
+    <div className="flex flex-col gap-3">
+      {sortedCriteria.length > 1 && (
+        <div className="flex flex-col gap-1.5 rounded-app-sm border border-admin-border bg-admin-card p-2">
+          <p className="m-0 font-mono text-[9.5px] font-bold uppercase tracking-wide text-admin-muted">При равенстве баллов сравниваем:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {sortedCriteria.map((c, i) => (
+              <span key={c.id} className="flex items-center gap-1 rounded-full border border-admin-border bg-admin-card2 py-0.5 pl-0.5 pr-2">
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-admin-primary font-mono text-[9px] font-extrabold text-white">
+                  {i + 1}
+                </span>
+                <span className="text-[10.5px] font-bold text-night-text">{c.name}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {hasError && <p className="m-0 text-xs text-red-400">Не удалось сохранить одну или несколько оценок — откройте ячейку и поставьте заново.</p>}
+
+      {rolesPresent.map((role) => (
+        <div key={role} className="flex flex-col gap-1.5">
+          {rolesPresent.length > 1 && (
+            <p className="m-0 text-[11px] font-semibold uppercase tracking-wide text-admin-disabled">{role === "LEADER" ? "Ведущие" : "Ведомые"}</p>
+          )}
+          <div className="overflow-x-auto rounded-app border border-admin-border">
+            <table className="w-full table-fixed border-collapse">
+              <thead>
+                <tr>
+                  <th className="bg-admin-card2 px-2 py-1.5 text-left font-mono text-[9px] font-bold uppercase text-admin-muted">№</th>
+                  {sortedCriteria.map((c) => (
+                    <th key={c.id} className="bg-admin-card2 px-0.5 py-1.5 text-center font-mono text-[9px] font-bold uppercase text-admin-muted">
+                      {c.name.length > 4 ? c.name.slice(0, 3).toUpperCase() : c.name.toUpperCase()}
+                    </th>
+                  ))}
+                  <th className="bg-admin-card2 px-1 py-1.5 text-center font-mono text-[9px] font-bold uppercase text-admin-muted">Σ</th>
+                  <th className="bg-admin-card2 px-1 py-1.5 text-center font-mono text-[9px] font-bold uppercase text-admin-muted">Мес</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roleGroup(role).map((item) => {
+                  const rank = rankOf(item);
+                  const complete = sortedCriteria.filter((c) => item.criteriaIds.includes(c.id)).every((c) => effectiveValue(item, c.id) !== null);
+                  return (
+                    <tr key={item.drawParticipantId} className="border-t border-admin-bg">
+                      <td className="bg-admin-card px-2 py-1 font-mono text-[13px] font-extrabold text-night-text">{item.bibNumber ?? "—"}</td>
+                      {sortedCriteria.map((c) => {
+                        const applicable = item.criteriaIds.includes(c.id);
+                        const value = applicable ? effectiveValue(item, c.id) : null;
+                        const err = errorsByKey[`${item.drawParticipantId}:${c.id}`];
+                        return (
+                          <td key={c.id} className="bg-admin-card px-0.5 py-1 text-center">
+                            {applicable ? (
+                              <button
+                                type="button"
+                                disabled={confirmed}
+                                onClick={() => onOpenCell(item.drawParticipantId, c.id)}
+                                className={`mx-auto flex h-8 w-full max-w-[38px] items-center justify-center rounded-md border font-mono text-[12px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                                  err
+                                    ? "border-red-400 text-red-400"
+                                    : value !== null
+                                      ? "border-admin-primary/50 bg-admin-primary/15 text-admin-primary"
+                                      : "border-dashed border-admin-border text-admin-disabled"
+                                }`}
+                              >
+                                {value ?? "–"}
+                              </button>
+                            ) : (
+                              <span className="text-admin-disabled">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className={`bg-admin-card px-1 py-1 text-center font-mono text-[12px] font-extrabold ${complete ? "text-night-text" : "text-admin-disabled"}`}>
+                        {effectiveSum(item)}
+                        {!complete && "*"}
+                      </td>
+                      <td className="bg-admin-card px-1 py-1 text-center">
+                        <span
+                          className={`mx-auto flex h-6 w-6 items-center justify-center rounded-md font-mono text-[11px] font-extrabold ${
+                            !complete
+                              ? "bg-admin-border text-admin-disabled"
+                              : rank === 1
+                                ? "bg-admin-primary text-white"
+                                : rank === 2
+                                  ? "bg-admin-primary/35 text-blue-100"
+                                  : "bg-admin-border text-admin-muted"
+                          }`}
+                        >
+                          {complete ? rank : "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+      <p className="m-0 text-[11px] text-admin-muted">Σ и место — предварительная подсказка по вашим оценкам, не официальный результат. * — не все критерии оценены.</p>
     </div>
   );
 }

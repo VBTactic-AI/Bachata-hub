@@ -4,10 +4,12 @@ import { getJudgeQueue, scoreQuotaForScale2, type JudgeQueueItem } from "@/serve
 import { listMyActiveFinalRounds } from "@/server/judging/final-scoring";
 import { measureServerOperation } from "@/lib/performance-debug/server";
 import { DomainError } from "@/server/errors";
-import { JudgeScoreButtons } from "@/components/admin/JudgeScoreButtons";
 import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
 import { JudgingQueueBanner } from "@/components/admin/judging/JudgingQueueBanner";
 import { JudgeQueueRefresher } from "@/components/admin/judging/JudgeQueueRefresher";
+import { JudgingRoundBoard } from "@/components/admin/judging/JudgingRoundBoard";
+import { ContextBar } from "@/components/admin/judging/ContextBar";
+import { ProgressBar } from "@/components/admin/judging/ProgressBar";
 import { REGISTRATION_ROLE_LABELS as ROLE_LABELS } from "@/lib/competition-labels";
 
 // "Отметили X из N" — сколько "Да" судья уже поставил в этом раунде из
@@ -20,7 +22,7 @@ import { REGISTRATION_ROLE_LABELS as ROLE_LABELS } from "@/lib/competition-label
 function YesCounter({ marked, total }: { marked: number; total: number }) {
   const over = marked > total;
   return (
-    <p className={`m-0 text-sm font-semibold ${over ? "text-red-400" : "text-night-muted"}`}>
+    <p className={`m-0 text-sm font-semibold ${over ? "text-red-400" : "text-admin-muted"}`}>
       Отметили {marked} из {total}
       {over && " — это больше, чем нужно"}
     </p>
@@ -44,7 +46,7 @@ function ScoreQuotaCounter({
 }) {
   const off = markedTwos !== twosNeeded || markedOnes !== onesNeeded;
   return (
-    <p className={`m-0 text-sm font-semibold ${off ? "text-red-400" : "text-night-muted"}`}>
+    <p className={`m-0 text-sm font-semibold ${off ? "text-red-400" : "text-admin-muted"}`}>
       Нужно «2»: {markedTwos} из {twosNeeded} · «1»: {markedOnes} из {onesNeeded}
     </p>
   );
@@ -75,7 +77,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
       return (
         <div className="flex flex-col gap-3">
           <h1 className="m-0 font-night text-xl font-extrabold text-night-text">Судейство</h1>
-          <p className="text-sm text-night-muted">{e.userMessage}</p>
+          <p className="text-sm text-admin-muted">{e.userMessage}</p>
         </div>
       );
     }
@@ -102,7 +104,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
             <a
               key={r.roundId}
               href={`/judging/${competitionId}/final/${r.roundId}`}
-              className="rounded-app border border-night-primary/40 bg-night-primary/10 p-3 text-sm font-semibold text-night-primary no-underline"
+              className="rounded-app border border-admin-primary/40 bg-admin-primary/10 p-3 text-sm font-semibold text-admin-primary no-underline"
             >
               Идёт финал «{r.divisionName}» — открыть судейство финала →
             </a>
@@ -112,7 +114,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
       {skippedNotices.length > 0 && (
         <div className="flex flex-col gap-2">
           {skippedNotices.map((n) => (
-            <p key={`${n.roundId}:${n.role}`} className="m-0 rounded-app border border-night-border bg-night-card p-3 text-sm text-night-muted">
+            <p key={`${n.roundId}:${n.role}`} className="m-0 rounded-app border border-admin-border bg-admin-card p-3 text-sm text-admin-muted">
               {n.divisionName} · {ROLE_LABELS[n.role] ?? n.role} не оценивается в этом раунде — участников не больше, чем мест, все проходят
               автоматически.
             </p>
@@ -120,7 +122,7 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
         </div>
       )}
       {items.length === 0 && skippedNotices.length === 0 ? (
-        <p className="text-sm text-night-muted">Пока нет заходов, которые нужно оценить — вы не назначены судьёй ни на одну категорию, или заходы ещё не начались.</p>
+        <p className="text-sm text-admin-muted">Пока нет заходов, которые нужно оценить — вы не назначены судьёй ни на одну категорию, или заходы ещё не начались.</p>
       ) : (
         [...byRound.entries()].map(([roundId, roundItems]) => {
           const byHeat = new Map<string, JudgeQueueItem[]>();
@@ -129,7 +131,11 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
             list.push(item);
             byHeat.set(item.heatId, list);
           }
-          const { maxValue, finalistsCount } = roundItems[0];
+          const heats = [...byHeat.values()]
+            .map((list) => ({ heatId: list[0].heatId, heatNumber: list[0].heatNumber, items: list }))
+            .sort((a, b) => a.heatNumber - b.heatNumber);
+          const { maxValue, finalistsCount, divisionName, stageName } = roundItems[0];
+          const roles = [...new Set(roundItems.map((i) => i.role))];
           const markedYes = roundItems.filter((i) => i.myScore === 1).length;
           const markedTwos = roundItems.filter((i) => i.myScore === 2).length;
           const markedOnes = roundItems.filter((i) => i.myScore === 1).length;
@@ -137,11 +143,18 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
           const scale2Format = maxValue === 2 && finalistsCount > 0;
           const { twosNeeded, onesNeeded } = scoreQuotaForScale2(finalistsCount);
           const confirmed = confirmedSet.has(roundId);
+          const pct = yesNoFormat
+            ? finalistsCount > 0
+              ? (markedYes / finalistsCount) * 100
+              : 0
+            : twosNeeded + onesNeeded > 0
+              ? ((markedTwos + markedOnes) / (twosNeeded + onesNeeded)) * 100
+              : 0;
 
-          return (
-            <div key={roundId} className="flex flex-col gap-3">
-              {(yesNoFormat || scale2Format) && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-app border border-night-border bg-night-card p-3">
+          const footer =
+            yesNoFormat || scale2Format ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   {yesNoFormat ? (
                     <YesCounter marked={markedYes} total={finalistsCount} />
                   ) : (
@@ -149,35 +162,24 @@ export default async function JudgingPage({ params }: { params: Promise<{ compet
                   )}
                   {confirmed ? (
                     <span className="rounded-full border border-night-success/40 bg-night-success/10 px-3 py-1 text-sm font-semibold text-night-success">
-                      ✓ Готово — оценки зафиксированы
+                      ✓ Готово
                     </span>
                   ) : (
                     <ConfirmJudgingButton roundId={roundId} />
                   )}
                 </div>
-              )}
-              {[...byHeat.entries()].map(([heatId, list]) => (
-                <div key={heatId} className="flex flex-col gap-3 rounded-app border border-night-border bg-night-card p-4">
-                  <p className="m-0 text-xs font-semibold uppercase tracking-wide text-night-muted">
-                    {list[0].divisionName} · заход {list[0].heatNumber}
-                  </p>
-                  <div className="flex flex-col gap-3">
-                    {list.map((item) => (
-                      <div key={item.drawParticipantId} className="flex flex-col gap-3 rounded-app-sm bg-night-card2 p-3">
-                        <span className="text-base font-semibold text-night-text">
-                          №{item.bibNumber ?? "—"} {item.displayName}
-                        </span>
-                        <JudgeScoreButtons
-                          drawParticipantId={item.drawParticipantId}
-                          maxValue={item.maxValue}
-                          myScore={item.myScore}
-                          locked={confirmed}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                <ProgressBar pct={pct} />
+              </div>
+            ) : null;
+
+          return (
+            <div key={roundId} className="flex flex-col gap-2">
+              <ContextBar
+                categoryLabel={`${divisionName} · ${roles.map((r) => ROLE_LABELS[r] ?? r).join(" / ")}`}
+                stageLabel={stageName ?? undefined}
+                quotaLabel={yesNoFormat || scale2Format ? `Отобрать ${finalistsCount} из ${roundItems.length}` : undefined}
+              />
+              <JudgingRoundBoard heats={heats} confirmed={confirmed} footer={footer} />
             </div>
           );
         })
