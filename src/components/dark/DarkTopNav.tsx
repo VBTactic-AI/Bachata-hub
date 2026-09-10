@@ -2,6 +2,8 @@ import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
 import { getCurrentUser, canCreateEvents, isModerator } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
+import { getActor } from "@/server/rbac/actor";
+import { isJudgeOnlyActor } from "@/server/rbac/authorize";
 
 const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-underline";
 
@@ -18,9 +20,15 @@ const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-u
 export async function DarkTopNav() {
   const user = await getCurrentUser();
   const dancer = await getMyDancerRef();
-  // "Соревнования" (управление) — любому залогиненному, не только тем, у
-  // кого уже есть роль в движке (тот же комментарий, что и в Header.tsx).
-  const hasCompetitionAccess = !!user;
+  const actor = await getActor();
+  // Судья (роль без единого права на /admin, см. isJudgeOnlyActor) не
+  // должен видеть ссылку на "Панель управления" вообще — раньше кнопка
+  // показывалась любому залогиненному и вела на страницу, которая тут же
+  // редиректила судью обратно (жалоба пользователя, 2026-09-10, продолжение
+  // фикса admin/page.tsx). Для всех остальных условие прежнее — доступ не
+  // завязан на уже назначенную роль в движке (тот же комментарий, что и в
+  // Header.tsx).
+  const hasCompetitionAccess = !!actor && !isJudgeOnlyActor(actor);
 
   return (
     <header className="sticky top-0 z-20 hidden items-center gap-6 border-b border-night-border bg-night-bg/95 px-8 py-4 backdrop-blur-md sm:flex">

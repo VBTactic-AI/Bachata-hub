@@ -110,6 +110,22 @@ export default async function ProfilePage() {
       <p className="text-sm text-night-muted">
         {t.auth.email}: {user.email}
       </p>
+
+      {/* Раньше выйти из аккаунта можно было только через DarkTopNav —
+          десктопную навигацию (hidden sm:flex), на мобильном её место
+          занимает BottomNav без кнопки выхода вовсе (найдено пользователем,
+          2026-09-10). Профиль — единственный экран, который точно видит
+          любой залогиненный пользователь на любом размере экрана, поэтому
+          кнопка здесь, а не только в BottomNav/бургере. Тот же механизм, что
+          и в DarkTopNav.tsx — обычная форма на /api/auth/logout, без JS. */}
+      <form action="/api/auth/logout" method="post">
+        <button
+          type="submit"
+          className="w-full rounded-app border border-night-border bg-night-card py-3 text-sm font-semibold text-night-muted transition-colors hover:border-red-400/60 hover:text-red-400"
+        >
+          {t.nav.logout}
+        </button>
+      </form>
     </div>
   );
 }
