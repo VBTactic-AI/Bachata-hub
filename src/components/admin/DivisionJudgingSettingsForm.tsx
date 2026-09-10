@@ -189,9 +189,9 @@ export function DivisionJudgingSettingsForm({
         criteria: criteria.map((c, i) => ({ id: c.id, name: c.name, priority: i + 1, minScore: c.minScore, maxScore: c.maxScore, step: c.step, catalogId: c.catalogId ?? null })),
       }),
     });
-    setCriteriaLoading(false);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      setCriteriaLoading(false);
       setCriteriaError(data.error || "Не удалось сохранить критерии.");
       return;
     }
@@ -207,6 +207,37 @@ export function DivisionJudgingSettingsForm({
         [...saved].sort((a, b) => a.priority - b.priority).map(({ id, name, minScore, maxScore, step, catalogId }) => ({ id, name, minScore, maxScore, step, catalogId }))
       );
     }
+    // "Танцующий судья" — переключатель живёт прямо в этом списке критериев,
+    // поэтому по прямому запросу пользователя (2026-09-10, "нажать сохранить
+    // критерии — логичнее, т.к. ты редактируешь критерии") кнопка "Сохранить
+    // критерии" теперь сохраняет и его: раньше это делала ТОЛЬКО отдельная
+    // верхняя кнопка "Сохранить", и было неочевидно, какую именно нажимать
+    // после переключения тумблера в списке критериев. Верхняя кнопка
+    // по-прежнему тоже умеет это сохранить (не трогал) — просто теперь это не
+    // единственный путь. Отправляем, только если формат JUDGES_DANCE
+    // (переключатель вообще существует только в этом формате) и фильтруем
+    // dancingIds по РЕАЛЬНО сохранённым id (saved) — если какой-то критерий в
+    // этом же сохранении пересоздался с новым id (добавлен через справочник
+    // заново), его старая пометка "танцующий" не переживает пересоздание (то
+    // же самое уже верно и для верхней кнопки, ничего не меняет) — но сама
+    // ссылка на уже удалённый id гарантированно не уйдёт на сервер.
+    if (finalFormat === "JUDGES_DANCE") {
+      const validIds = new Set(saved.length > 0 ? saved.map((c) => c.id).filter((id): id is string => !!id) : criteria.map((c) => c.id).filter((id): id is string => !!id));
+      const cleanedDancingIds = [...dancingIds].filter((id) => validIds.has(id));
+      const config = { ...(finalConfig as Record<string, unknown> | null), dancingJudgeCriteriaIds: cleanedDancingIds };
+      const settingsRes = await fetch(`/api/divisions/${divisionId}/final-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: finalFormat, tracksCount: finalTracksCount, partnerChangeEnabled: finalPartnerChangeEnabled, config }),
+      });
+      if (!settingsRes.ok) {
+        const settingsData = await settingsRes.json().catch(() => ({}));
+        setCriteriaLoading(false);
+        setCriteriaError(settingsData.error || "Критерии сохранены, но не удалось сохранить «Танцующий судья».");
+        return;
+      }
+    }
+    setCriteriaLoading(false);
     router.refresh();
   }
 

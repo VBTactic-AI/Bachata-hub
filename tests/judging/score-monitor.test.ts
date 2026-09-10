@@ -326,7 +326,7 @@ describe("getFinalScoreMonitor()", () => {
     expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 1, submitted: 1, complete: true, confirmed: true }]);
   });
 
-  it("JUDGES_DANCE: критерий «танцующего судьи» не входит в required судьи ЭТОЙ ЖЕ роли участника", async () => {
+  it("JUDGES_DANCE: критерий «танцующего судьи» оценивает судья ПРОТИВОПОЛОЖНОЙ роли — он попадает в колонки этой роли, а не судья той же роли", async () => {
     roundFindUniqueOrThrow.mockResolvedValue({
       divisionId: "div1",
       division: { competitionId: "comp1" },
@@ -336,19 +336,45 @@ describe("getFinalScoreMonitor()", () => {
         criteriaSnapshot: [{ id: "partnership", name: "Партнёрство", priority: 1, minScore: 0, maxScore: 10, step: 1 }],
       },
     });
-    // Судья роли LEADER оценивает партнёрство у FOLLOWER-участников (allowedJudgeRole
-    // возвращает противоположную роль для критерия из dancingJudgeCriteriaIds) — то
-    // есть в табличке "для судей-ведущих" (роль LEADER) участников роли LEADER
-    // этот критерий не требуется вообще (required=0), его ставит судья FOLLOWER.
-    judgeAssignmentFindMany.mockResolvedValue([judgeAssignment("j1", "LEADER", { email: "j1@x.com", dancerDisplayName: "Судья Л" })]);
+    // j1 (LEADER) — "судья со стороны" для LEADER-участников, но единственный
+    // критерий целиком "танцующий" (для LEADER-участника его ставит судья
+    // ПРОТИВОПОЛОЖНОЙ роли, FOLLOWER) — j1 самому нечего оценивать у
+    // LEADER-участников, значит он вообще не должен быть колонкой в таблице
+    // LEADER. j2 (FOLLOWER) — "танцующий" судья, именно он физически
+    // партнёрит LEADER-участника pA и ставит ему partnership — обязан быть
+    // колонкой/totals в таблице LEADER, хотя роль судьи (FOLLOWER) не
+    // совпадает с ролью участника (LEADER). Раньше (CODE-003, найдено
+    // пользователем на живом тесте формата "Танцы с судьями", 2026-09-10)
+    // колонки набирались только по assignments.role === роль участника — j2
+    // не попадал в таблицу LEADER вовсе: ни счётчик "сдал/нужно" в "Судьи
+    // категории", ни сама оценка ("Взаимодействие"/"Партнёрство" от
+    // судьи-партнёрши) нигде не отображались, хотя в БД записывались.
+    judgeAssignmentFindMany.mockResolvedValue([
+      judgeAssignment("j1", "LEADER", { email: "j1@x.com", dancerDisplayName: "Судья Л" }),
+      judgeAssignment("j2", "FOLLOWER", { email: "j2@x.com", dancerDisplayName: "Судья П" }),
+    ]);
     heatFindMany.mockResolvedValue([
-      { draws: [{ participants: [{ id: "pA", role: "LEADER", registration: { checkIn: { bibNumber: "1" } }, finalJudgeScores: [] }] }] },
+      {
+        draws: [
+          {
+            participants: [
+              {
+                id: "pA",
+                role: "LEADER",
+                registration: { checkIn: { bibNumber: "1" } },
+                finalJudgeScores: [{ judgeAssignmentId: "j2", criterionId: "partnership", value: 7 }],
+              },
+            ],
+          },
+        ],
+      },
     ]);
 
     const monitor = await getFinalScoreMonitor("round1");
 
-    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j1", required: 0, submitted: 0, complete: true, confirmed: false }]);
-    expect(monitor!.leader.rows[0].scores.j1).toEqual({ partnership: null });
+    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j2", required: 1, submitted: 1, complete: true, confirmed: false }]);
+    expect(monitor!.leader.judges.map((j) => j.judgeAssignmentId)).toEqual(["j2"]);
+    expect(monitor!.leader.rows[0].scores.j2).toEqual({ partnership: 7 });
   });
 });
 

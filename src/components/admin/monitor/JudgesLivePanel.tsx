@@ -26,9 +26,40 @@ const RESYNC_DEBOUNCE_MS = 600;
 // вовсе (вкладка монитора остаётся в DOM даже когда открыта другая).
 const LIVE_ROUND_STATUSES = new Set<RoundStatus>(["RUNNING", "PAUSED", "SCORING"]);
 
-function totalsOf(snapshot: Awaited<ReturnType<typeof fetchScoreMonitorSnapshot>>): ScoreMonitorTotal[] {
-  if (!snapshot || snapshot.kind === "none") return [];
-  return [...snapshot.leader.totals, ...snapshot.follower.totals];
+// CODE-003 (жалоба пользователя, 2026-09-10, JUDGES_DANCE): в этом формате
+// один и тот же судья теперь законно встречается в totals ОБЕИХ таблиц —
+// leader.totals (как "танцующий" на критериях партнёров, стадия 1) и
+// follower.totals (как судья "со стороны" на партнёршах, стадия 2, и
+// наоборот для судьи другой роли) — это ДВЕ РАЗНЫЕ порции его общей работы
+// по этому раунду, не дубликат одной и той же. Раньше judgeAssignmentId
+// просто клался ключом в Map — при совпадении id вторая запись (обычно с
+// required=0, пока соответствующая стадия ещё не началась) молча
+// ЗАТИРАЛА первую с реальным прогрессом. Явно суммируем required/submitted
+// по обеим таблицам — единственный корректный способ показать общий
+// прогресс судьи по всему финалу, а не по одной его половине.
+function totalsOf(snapshot: Awaited<ReturnType<typeof fetchScoreMonitorSnapshot>>): Map<string, ScoreMonitorTotal> {
+  const merged = new Map<string, ScoreMonitorTotal>();
+  if (!snapshot || snapshot.kind === "none") return merged;
+  for (const t of [...snapshot.leader.totals, ...snapshot.follower.totals]) {
+    const existing = merged.get(t.judgeAssignmentId);
+    if (!existing) {
+      merged.set(t.judgeAssignmentId, t);
+      continue;
+    }
+    const required = existing.required + t.required;
+    const submitted = existing.submitted + t.submitted;
+    merged.set(t.judgeAssignmentId, {
+      judgeAssignmentId: t.judgeAssignmentId,
+      required,
+      submitted,
+      complete: submitted >= required,
+      // JudgeRoundConfirmation — одна строка на судью на раунд (не на
+      // роль участника), поэтому в обеих записях всегда одно и то же
+      // значение — просто берём то, что есть.
+      confirmed: existing.confirmed ?? t.confirmed,
+    });
+  }
+  return merged;
 }
 
 function JudgeRow({ judge, total }: { judge: MonitorJudge; total: ScoreMonitorTotal | null }) {
@@ -92,7 +123,7 @@ export function JudgesLivePanel({
   const resync = useCallback(async () => {
     const snapshot = await fetchScoreMonitorSnapshot(roundId);
     if (!snapshot) return;
-    setTotals(new Map(totalsOf(snapshot).map((t) => [t.judgeAssignmentId, t])));
+    setTotals(totalsOf(snapshot));
   }, [roundId]);
 
   const scheduleResync = useCallback(() => {

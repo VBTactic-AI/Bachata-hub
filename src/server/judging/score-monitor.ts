@@ -266,7 +266,20 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
   );
 
   function buildTable(role: RegistrationRole): FinalScoreMonitorTable {
-    const roleAssignments = assignments.filter((a) => a.role === role);
+    // CODE-003 (жалоба пользователя, 2026-09-10, живой тест JUDGES_DANCE):
+    // раньше колонки судей набирались просто по assignments.role === role
+    // (роль УЧАСТНИКА) — верно для NORMAL/RANDOM_COUPLES/RELATIVE_PLACEMENT
+    // (там судья своей роли и оценивает свою роль), но НЕ для JUDGES_DANCE:
+    // "танцующего" судью критериев из dancingJudgeCriteriaIds участнику
+    // назначает ПРОТИВОПОЛОЖНАЯ роль (allowedJudgeRole, final-scoring-matrix.ts)
+    // — партнёров на паркете физически судит судья-партнёрша. Со старым
+    // фильтром судья противоположной роли не попадал в колонки вообще: ни
+    // счётчик "сдал/нужно" в мониторе, ни сама оценка ("Взаимодействие" от
+    // судьи-партнёрши) нигде не отображались, хотя в БД записывались. Берём
+    // любого судью, у которого есть хоть один применимый к ЭТОЙ роли критерий
+    // (для NORMAL и т.п. allowedJudgeRole всегда возвращает participantRole —
+    // выражение ниже вырождается в прежнее "a.role === role", без изменений).
+    const roleAssignments = assignments.filter((a) => criteria.some((c) => allowedJudgeRole(c.id, role, format, config) === a.role));
     const roleParticipants = [...participants.filter((p) => p.role === role)].sort(
       (a, b) => Number(a.registration.checkIn?.bibNumber ?? 0) - Number(b.registration.checkIn?.bibNumber ?? 0)
     );
