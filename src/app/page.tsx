@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { t } from "@/lib/i18n/dictionary";
@@ -78,6 +79,14 @@ export default async function HomePage() {
       <DarkTopNav />
       <div className="flex flex-col gap-6 px-4 pb-24 pt-4 sm:mx-auto sm:max-w-[1240px] sm:px-8 sm:pb-12 sm:pt-8">
         <section className="relative flex min-h-[240px] flex-col justify-end overflow-hidden rounded-app bg-gradient-night-hero p-6 sm:min-h-[320px] sm:p-10">
+          {/* Фото пары на главном хиро (2026-09-11, по прямому запросу
+              пользователя) — bg-gradient-night-hero остаётся под картинкой
+              как фон на случай, если фото не загрузится. Затемнение снизу
+              вверх (from-night-bg до прозрачного) — то же, для чего нужен
+              был сам градиент: текст сидит внизу (justify-end) и должен
+              читаться поверх фотографии. */}
+          <Image src="/branding/jnj-couple.png" alt="" fill priority sizes="(min-width: 640px) 1240px, 100vw" className="object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-night-bg via-night-bg/70 to-night-bg/10" aria-hidden="true" />
           <div className="relative flex max-w-[420px] flex-col gap-3">
             <h1 className="m-0 font-night text-[1.75rem] font-extrabold leading-[1.05] tracking-tight text-night-text sm:text-4xl">
               {t.home.heroTitle}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
@@ -160,14 +161,21 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
       className="flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-admin-border bg-admin-bg pb-3 font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-b-0 sm:border-r sm:bg-admin-card/30 sm:px-3 sm:pb-6 sm:pt-6"
       aria-label="Разделы админки"
     >
-      <Link
-        href="/admin"
-        className="mb-1 hidden items-center gap-2 px-3 pb-5 no-underline hover:no-underline sm:flex"
-      >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-app-sm bg-gradient-admin-cta text-sm font-extrabold text-white">
-          JK
-        </span>
-        <span className="text-[0.95rem] font-extrabold tracking-tight text-night-text">Jack &amp; Kill</span>
+      <Link href="/admin" className="mb-1 hidden px-3 pb-5 no-underline hover:no-underline sm:block" aria-label="Jack &amp; Jill">
+        {/* Логотип JNJ (2026-09-11, по прямому запросу пользователя) — только
+            картинка, без дублирующего текста рядом (в самом лого уже есть
+            надпись "JNJ Dance Competition"). mix-blend-screen "растворяет"
+            собственный чёрный фон PNG в admin-* панели — чёрный при screen-
+            блендинге эквивалентен прозрачному, остаётся только золотой узор
+            логотипа поверх тёмного фона сайдбара, без видимого прямоугольника. */}
+        <Image
+          src="/branding/jnj-logo.png"
+          alt="Jack & Jill"
+          width={483}
+          height={343}
+          className="h-auto w-full mix-blend-screen"
+          priority
+        />
       </Link>
 
       <div className="flex shrink-0 gap-1.5 sm:flex-col sm:gap-0.5">
