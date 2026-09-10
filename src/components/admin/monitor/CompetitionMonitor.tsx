@@ -5,7 +5,12 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { HeatStatus, RegistrationRole, RoundStatus } from "@prisma/client";
 import { setShallowQueryParams } from "@/lib/shallow-query";
-import { HEAT_STATUS_LABELS, REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL, ROUND_STATUS_LABELS } from "@/lib/competition-labels";
+import {
+  HEAT_STATUS_LABELS,
+  REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL,
+  REGISTRATION_ROLE_LABELS_PLURAL,
+  ROUND_STATUS_LABELS,
+} from "@/lib/competition-labels";
 import { categoryDotColor } from "../category-colors";
 import { AddDrawHelperForm } from "../AddDrawHelperForm";
 import { AddHeatButton } from "../AddHeatButton";
@@ -92,11 +97,18 @@ function ParticipantRow({
   heatId,
   role,
   canEditDraw,
+  roleNotJudged,
 }: {
   participant: MonitorParticipant;
   heatId: string;
   role: RegistrationRole;
   canEditDraw: boolean;
+  // Роль не оценивается в этом раунде целиком (rolesNotNeedingJudging) —
+  // помечаем РЕАЛЬНЫХ (не-помощников) участников этой роли отдельным
+  // бейджем, иначе на живом паркете непонятно, почему часть партнёров/
+  // партнёрш не получает оценок (по прямому запросу пользователя,
+  // 2026-09-10). Помощников не помечаем — у них уже есть свой бейдж.
+  roleNotJudged: boolean;
 }) {
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-app-sm px-2 py-1.5 transition-colors hover:bg-admin-card/70">
@@ -112,8 +124,12 @@ function ParticipantRow({
           <span className="truncate text-[11px] text-admin-disabled">{participant.helperCategoryName}</span>
         )}
       </span>
-      {participant.isHelper && (
+      {participant.isHelper ? (
         <span className="shrink-0 rounded-full bg-night-warning/15 px-2 py-0.5 text-[10px] font-bold text-night-warning">помощник</span>
+      ) : (
+        roleNotJudged && (
+          <span className="shrink-0 rounded-full bg-admin-violet/15 px-2 py-0.5 text-[10px] font-bold text-admin-violet">не оценивается</span>
+        )
       )}
       {/* «Убрать» — ПЕРЕД «заменить» в разметке (по прямому запросу
           пользователя, 2026-09-09): flex-wrap переносит элемент на новую
@@ -141,6 +157,7 @@ function SideColumn({
   categoryName,
   categoryOrder,
   roundName,
+  notJudgedRoles,
 }: {
   heat: MonitorHeat;
   role: RegistrationRole;
@@ -149,9 +166,11 @@ function SideColumn({
   categoryName: string;
   categoryOrder: number;
   roundName: string;
+  notJudgedRoles: RegistrationRole[];
 }) {
   const list = role === "LEADER" ? heat.leaders : heat.followers;
   const isNeeded = heat.neededRole === role;
+  const roleNotJudged = notJudgedRoles.includes(role);
   return (
     <div className="flex flex-col rounded-app border border-admin-border bg-admin-card2">
       <div className="flex items-center gap-2 border-b border-admin-border px-3.5 py-3">
@@ -167,7 +186,14 @@ function SideColumn({
       ) : (
         <ul className="m-0 flex list-none flex-col gap-1 p-2">
           {list.map((p) => (
-            <ParticipantRow key={p.id} participant={p} heatId={heat.id} role={role} canEditDraw={heat.canEditDraw} />
+            <ParticipantRow
+              key={p.id}
+              participant={p}
+              heatId={heat.id}
+              role={role}
+              canEditDraw={heat.canEditDraw}
+              roleNotJudged={roleNotJudged}
+            />
           ))}
         </ul>
       )}
@@ -211,6 +237,7 @@ function HeatPanel({
   categoryOrder,
   roundName,
   rotationSettingsPanel,
+  notJudgedRoles,
 }: {
   heat: MonitorHeat;
   roundStatus: RoundStatus;
@@ -218,6 +245,7 @@ function HeatPanel({
   categoryOrder: number;
   roundName: string;
   rotationSettingsPanel: ReactNode;
+  notJudgedRoles: RegistrationRole[];
 }) {
   const deficit = Math.abs(heat.leaders.length - heat.followers.length);
 
@@ -249,6 +277,7 @@ function HeatPanel({
               categoryName={categoryName}
               categoryOrder={categoryOrder}
               roundName={roundName}
+              notJudgedRoles={notJudgedRoles}
             />
             <SideColumn
               heat={heat}
@@ -258,6 +287,7 @@ function HeatPanel({
               categoryName={categoryName}
               categoryOrder={categoryOrder}
               roundName={roundName}
+              notJudgedRoles={notJudgedRoles}
             />
           </div>
 
@@ -602,6 +632,16 @@ export function CompetitionMonitor({
                     Финал: <span className="text-night-text">{round.finalFormatLabel}</span>
                   </span>
                 )}
+                {/* Видно с момента жеребьёвки, не только на SCORING (по
+                    прямому запросу пользователя, 2026-09-10) — организатор
+                    должен понимать ДО подсчёта, что часть роли не оценивается,
+                    а не только когда раунд уже дошёл до подсчёта баллов. */}
+                {round.notJudgedRoles.length > 0 && (
+                  <span className="rounded-full border border-admin-violet/40 bg-admin-violet/10 px-2.5 py-1 text-xs font-semibold text-admin-violet">
+                    {round.notJudgedRoles.map((r) => REGISTRATION_ROLE_LABELS_PLURAL[r] ?? r).join(", ")} не оценивается —
+                    проходят автоматически
+                  </span>
+                )}
                 <span className="ml-auto flex flex-wrap items-center gap-2">
                   <RoundStatusControls roundId={round.id} status={round.status} />
                   {/* "Перегенерировать раунды" — категория целиком, не этот
@@ -674,6 +714,7 @@ export function CompetitionMonitor({
                           categoryOrder={category.order}
                           roundName={round.name}
                           rotationSettingsPanel={category.rotationSettingsPanel}
+                          notJudgedRoles={round.notJudgedRoles}
                         />
                       )
                     )}

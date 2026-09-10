@@ -311,10 +311,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // мест — все проходят автоматически, по запросу пользователя,
   // 2026-09-04) — из уже загруженного дерева, без доп. запросов; "финал" —
   // раунд, после которого в этом же дивизионе нет другого обычного раунда.
+  // Считается для ЛЮБОГО статуса раунда (не только SCORING, по прямому
+  // запросу пользователя, 2026-09-10) — организатору нужно видеть это с
+  // момента жеребьёвки, на живом паркете, а не только когда раунд уже дошёл
+  // до подсчёта; для раундов без жеребьёвки roleCounts остаётся 0/0, и
+  // rolesNotNeedingJudging(count>0 && ...) сама ничего не вернёт.
   const skippedRolesByRoundId = new Map<string, RegistrationRole[]>();
   for (const d of competition.divisions) {
     for (const round of d.rounds) {
-      if (round.status !== "SCORING" || round.type === "TIE_BREAK") continue;
+      if (round.type === "TIE_BREAK") continue;
       const roleCounts: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
       for (const heat of round.heats) {
         for (const p of heat.draws[0]?.participants ?? []) {
@@ -947,23 +952,11 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           }
 
           if (round.status === "SCORING" && round.type !== "TIE_BREAK") {
-            panels.push(
-              <div key="scoring-progress" className="flex flex-col gap-3">
-                {skippedRolesByRoundId.has(round.id) && (
-                  <p className="m-0 rounded-app-sm border border-night-warning/30 bg-night-warning/[0.09] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#f8cf8d]">
-                    <span className="font-bold text-night-warning">
-                      {skippedRolesByRoundId
-                        .get(round.id)!
-                        .map((r) => ROLE_LABELS[r] ?? r)
-                        .join(", ")}{" "}
-                      не оценивается —
-                    </span>{" "}
-                    участников не больше, чем мест, проходят автоматически.
-                  </p>
-                )}
-                <ScoringProgress {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />
-              </div>
-            );
+            // Уведомление "роль не оценивается" переехало в постоянный бейдж
+            // в шапке раунда (CompetitionMonitor.tsx, round.notJudgedRoles) —
+            // видно с момента жеребьёвки, а не только здесь на SCORING, так
+            // что дублировать его в этой панели больше не нужно.
+            panels.push(<ScoringProgress key="scoring-progress" {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />);
           }
 
           if (round.status === "SCORING" && round.type === "TIE_BREAK" && isFinalTieBreak && canDecideTieBreak) {
@@ -1142,6 +1135,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             calledLeaders: calledOf("LEADER"),
             calledFollowers: calledOf("FOLLOWER"),
             heats,
+            notJudgedRoles: skippedRolesByRoundId.get(round.id) ?? [],
             panels,
             advancementPublishPanel,
           };
