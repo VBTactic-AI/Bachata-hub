@@ -183,7 +183,20 @@ export async function generateRounds(divisionId: string): Promise<{ createdRound
         },
       });
 
-      const heatCount = Math.ceil(step.participantCount / division.heatCapacity);
+      // Первый реально формируемый раунд считает число заходов по факту явки
+      // (по большей из ролей среди живых зарегистрированных+зачекиненных),
+      // а не по плану дивизиона: план — это предположение организатора на
+      // момент создания дивизиона ("сколько пар будет участвовать"), а
+      // реальная явка к моменту генерации может оказаться меньше — раньше
+      // здесь всегда использовался план (step.participantCount), из-за чего
+      // при плане "10" и реальных 7/8 получалось 2 захода (ceil(10/8)),
+      // хотя всем реальным людям хватило бы одного — второй оставался
+      // навсегда пустым (найдено пользователем на реальном соревновании
+      // "Тест с 0", дивизион "Любители"). Для последующих раундов этой же
+      // генерации по-прежнему используется план — реальный результат
+      // судейства следующих этапов на момент генерации ещё не известен.
+      const heatSizeBasis = i === 0 ? Math.max(liveLeaders, liveFollowers) : step.participantCount;
+      const heatCount = Math.max(1, Math.ceil(heatSizeBasis / division.heatCapacity));
       for (let number = 1; number <= heatCount; number++) {
         const heat = await tx.heat.create({ data: { roundId: round.id, number } });
         auditEntries.push({

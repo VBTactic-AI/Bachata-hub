@@ -14,6 +14,7 @@ const drawFindFirst = vi.fn();
 const heatFindMany = vi.fn();
 const heatFindFirstTx = vi.fn();
 const heatCreateTx = vi.fn();
+const heatCountTx = vi.fn();
 const registrationFindMany = vi.fn();
 const divisionFindUniqueOrThrow = vi.fn();
 const divisionFindMany = vi.fn();
@@ -31,7 +32,7 @@ const roundResultFindMany = vi.fn();
 
 const fakeTx = {
   draw: { findFirst: drawFindFirst, create: drawCreate },
-  heat: { findMany: heatFindMany, findFirst: heatFindFirstTx, create: heatCreateTx },
+  heat: { findMany: heatFindMany, findFirst: heatFindFirstTx, create: heatCreateTx, count: heatCountTx },
   registration: { findMany: registrationFindMany },
   division: { findUniqueOrThrow: divisionFindUniqueOrThrow, findFirstOrThrow: divisionFindUniqueOrThrow, findMany: divisionFindMany },
   round: { findFirst: roundFindFirstTx },
@@ -77,6 +78,11 @@ beforeEach(() => {
   drawFindFirst.mockReset().mockResolvedValue(null);
   heatFindMany.mockReset().mockResolvedValue([]); // нет других заездов с уже станцевавшими
   heatFindFirstTx.mockReset().mockResolvedValue(null);
+  // По умолчанию — раунд из ОДНОГО захода (heatsRemaining=1): равномерное
+  // распределение по нескольким заходам вырождается в прежнее "взять всех
+  // до вместимости", ничего в существующих тестах этого файла не меняя.
+  // Тесты про сам равномерный сплит переопределяют это явно.
+  heatCountTx.mockReset().mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 0 : 1));
   roundFindFirstTx.mockReset().mockResolvedValue(null); // нет предыдущего раунда — пул не ограничен
   roundResultFindMany.mockReset().mockResolvedValue([]);
   heatCreateTx.mockReset().mockImplementation(({ data }: { data: { number: number } }) =>
@@ -199,6 +205,110 @@ describe("formDrawInTx() — базовое формирование списк�
       actor,
     });
     expect(drawCreate.mock.calls[0][0].data.seed).toBeNull();
+  });
+});
+
+// Заходы примерно равны по численности, а не "забить до вместимости,
+// остаток — в следующий" (по прямому запросу пользователя, 2026-09-10):
+// 12 пар при вместимости 10 — лучше 6/6, чем 10/2 (меньше саппортов и
+// перекоса на паркете). heatCountTx имитирует реальную структуру раунда —
+// сколько всего заходов и сколько из них (кроме текущего) уже разложены.
+describe("formDrawInTx() — заходы примерно равны по численности, не забиты до вместимости", () => {
+  function mockLeadersAndFollowers(count: number) {
+    registrationFindMany.mockImplementation(({ where }: { where: { role: string } }) => {
+      const prefix = where.role === "LEADER" ? "l" : "f";
+      return Promise.resolve(Array.from({ length: count }, (_, i) => reg(`${prefix}${i}`, String(i))));
+    });
+  }
+
+  it("12 пар, вместимость 10, раунд из 2 заходов — первый заход получает 6, а не 10", async () => {
+    mockLeadersAndFollowers(12);
+    heatCountTx.mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 0 : 2)); // 2 захода всего, 0 из них (кроме этого) уже разложены
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(result.leaderCount).toBe(6);
+    expect(result.followerCount).toBe(6);
+  });
+
+  it("тот же раунд, второй заход (первый уже разложен) — получает оставшихся 6", async () => {
+    mockLeadersAndFollowers(12);
+    // Первый заход (heat1) уже разложен и забрал l0..l5/f0..f5 — та же форма,
+    // что использует alreadyScoredElsewhereInRound (см. тест выше по файлу).
+    heatFindMany.mockResolvedValue([
+      {
+        draws: [
+          {
+            participants: [
+              ...Array.from({ length: 6 }, (_, i) => ({ registrationId: `l${i}` })),
+              ...Array.from({ length: 6 }, (_, i) => ({ registrationId: `f${i}` })),
+            ],
+          },
+        ],
+      },
+    ]);
+    heatCountTx.mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 1 : 2)); // 2 всего, 1 (heat1) уже разложен
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat2",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(result.leaderCount).toBe(6);
+    expect(result.followerCount).toBe(6);
+    const leaderIds = createdParticipants()
+      .filter((p) => p.role === "LEADER")
+      .map((p) => p.registrationId);
+    expect(leaderIds.sort()).toEqual(["l10", "l11", "l6", "l7", "l8", "l9"].sort());
+  });
+
+  it("13 пар (не делится ровно), вместимость 10, 2 захода — 7/6, не 10/3", async () => {
+    mockLeadersAndFollowers(13);
+    heatCountTx.mockImplementation(({ where }: { where: { id?: unknown } }) => Promise.resolve(where.id ? 0 : 2));
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(result.leaderCount).toBe(7); // ceil(13/2)
+    expect(result.followerCount).toBe(7);
+  });
+
+  it("раунд из одного захода — ведёт себя как раньше (до вместимости)", async () => {
+    mockLeadersAndFollowers(15);
+    // heatCountTx по умолчанию (beforeEach) уже имитирует "1 заход всего".
+
+    const result = await formDrawInTx(fakeTx as never, {
+      heatId: "heat1",
+      roundId: "round1",
+      roundOrder: 1,
+      divisionId: "div1",
+      heatCapacity: 10,
+      callOrder: "SEQUENTIAL",
+      actor,
+    });
+
+    expect(result.leaderCount).toBe(10);
+    expect(result.followerCount).toBe(10);
   });
 });
 

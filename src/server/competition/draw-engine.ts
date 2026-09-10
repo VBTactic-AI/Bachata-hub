@@ -328,12 +328,28 @@ export async function formDrawInTx(
   const excludeIds = await alreadyScoredElsewhereInRound(tx, roundId, heatId);
   const onlyRegistrationIds = await advancedRegistrationIdsFromPreviousRound(tx, divisionId, roundOrder);
 
-  const leaders = (
-    await orderedEligiblePool(tx, { divisionId, role: "LEADER", excludeIds, callOrder, seed, onlyRegistrationIds })
-  ).slice(0, heatCapacity);
-  const followers = (
-    await orderedEligiblePool(tx, { divisionId, role: "FOLLOWER", excludeIds, callOrder, seed, onlyRegistrationIds })
-  ).slice(0, heatCapacity);
+  // Заходы примерно РАВНЫ по численности, а не "забить до вместимости,
+  // остаток — в следующий" (по прямому запросу пользователя, 2026-09-10):
+  // 12 пар при вместимости 10 — лучше 6/6, чем 10/2. Меньший перекос внутри
+  // каждого захода заодно означает меньше саппортов дальше (fillHelperShortage
+  // ниже добирает только реальную нехватку между ролями, а не любой ценой
+  // подгоняет под вместимость). heatsRemaining — сколько заходов раунда (считая
+  // этот) ЕЩЁ не имеют своего списка: при первичной раскладке (startRoundDrawing
+  // вызывает formDrawInTx по кругу для каждого захода) на первом заходе это все
+  // заходы раунда, дальше по одному убывает; при пересборке ОДНОГО захода
+  // (rerollHeatDraw) остальные уже разложены — остаётся ровно этот, квота
+  // естественно становится "весь оставшийся пул", то есть прежним поведением.
+  const totalHeatsInRound = await tx.heat.count({ where: { roundId } });
+  const heatsDrawnElsewhere = await tx.heat.count({ where: { roundId, id: { not: heatId }, draws: { some: {} } } });
+  const heatsRemaining = Math.max(1, totalHeatsInRound - heatsDrawnElsewhere);
+
+  const leaderPool = await orderedEligiblePool(tx, { divisionId, role: "LEADER", excludeIds, callOrder, seed, onlyRegistrationIds });
+  const followerPool = await orderedEligiblePool(tx, { divisionId, role: "FOLLOWER", excludeIds, callOrder, seed, onlyRegistrationIds });
+  const leaderQuota = Math.min(heatCapacity, Math.ceil(leaderPool.length / heatsRemaining));
+  const followerQuota = Math.min(heatCapacity, Math.ceil(followerPool.length / heatsRemaining));
+
+  const leaders = leaderPool.slice(0, leaderQuota);
+  const followers = followerPool.slice(0, followerQuota);
 
   const draw = await tx.draw.create({
     data: { heatId, version, seed, algorithmVersion: DRAW_ALGORITHM_VERSION, createdById: actor.userId, reason },

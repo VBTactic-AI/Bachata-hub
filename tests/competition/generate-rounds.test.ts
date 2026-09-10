@@ -300,6 +300,67 @@ describe("generateRounds() — автопропуск этапов без отс
   });
 });
 
+// Число заездов первого реально формируемого раунда — по факту явки, а не
+// по плану дивизиона (найдено пользователем на реальном соревновании
+// "Тест с 0", дивизион "Любители": план Отборочный(20)->Четвертьфинал(15)->
+// Полуфинал(10)->Финал(6), heatCapacity=8, реально 7 ведущих/8 ведомых —
+// Отборочный и Четвертьфинал пропущены (никого не отсеивают), первым
+// реально создаётся "Полуфинал" с participantCount=10 из плана, хотя живых
+// участников для НЕГО ЖЕ только 8 по большей роли; раньше число заездов
+// считалось ceil(10/8)=2, второй навсегда оставался пустым).
+describe("generateRounds() — число заездов первого раунда по факту явки", () => {
+  const PLAN_WITH_QUALIFYING = [
+    { stageId: "st-qual", participantCount: 20, stage: { name: "Отборочный", order: 1 } },
+    { stageId: "st-qf", participantCount: 15, stage: { name: "Четвертьфинал", order: 2 } },
+    { stageId: "st-sf", participantCount: 10, stage: { name: "Полуфинал", order: 3 } },
+    { stageId: "st-final", participantCount: 6, stage: { name: "Финал", order: 4 } },
+  ];
+
+  function mockLiveCounts(leaders: number, followers: number) {
+    registrationCount.mockImplementation((args: { where: { role: "LEADER" | "FOLLOWER" } }) =>
+      Promise.resolve(args.where.role === "LEADER" ? leaders : followers)
+    );
+  }
+
+  it("план первого реально создаваемого этапа (10) больше факта (7/8) — заездов по факту (ceil(8/8)=1), не по плану (ceil(10/8)=2)", async () => {
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING, heatCapacity: 8 });
+    mockLiveCounts(7, 8);
+
+    await generateRounds("div1");
+
+    const stageIds = roundCreate.mock.calls.map((c) => c[0].data.stageId);
+    expect(stageIds).toEqual(["st-sf", "st-final"]); // Отборочный/Четвертьфинал пропущены
+    // Полуфинал (первый реальный, факт 8) -> 1 заезд; Финал (план 6, cap 8) -> 1 заезд.
+    expect(heatCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("реальная явка (0/0, ещё никто не отметился) — всё равно хотя бы 1 заезд, не 0", async () => {
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING, heatCapacity: 8 });
+    mockLiveCounts(0, 0);
+
+    await generateRounds("div1");
+
+    // Ни один промежуточный этап не пропущен (0 <= порога — верно для всех,
+    // но общий цикл всё равно останавливается только на последнем этапе по
+    // правилу "не пропускать последний"), первый реально созданный — "Отборочный".
+    const stageIds = roundCreate.mock.calls.map((c) => c[0].data.stageId);
+    expect(stageIds[0]).toBe("st-final");
+    expect(heatCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("план первого этапа (10) МЕНЬШЕ факта (12/12) — заездов по факту (ceil(12/8)=2), не по плану (ceil(10/8)=2, тут совпадает) — проверка на большем перекосе (30/30)", async () => {
+    mockDivision({ stagePlan: PLAN_WITH_QUALIFYING, heatCapacity: 8 });
+    mockLiveCounts(30, 30);
+
+    await generateRounds("div1");
+
+    const stageIds = roundCreate.mock.calls.map((c) => c[0].data.stageId);
+    expect(stageIds).toEqual(["st-qual", "st-qf", "st-sf", "st-final"]);
+    // Отборочный (первый реальный, факт 30) -> ceil(30/8)=4; остальные три по плану: qf ceil(15/8)=2, sf ceil(10/8)=2, final ceil(6/8)=1.
+    expect(heatCreate).toHaveBeenCalledTimes(4 + 2 + 2 + 1);
+  });
+});
+
 describe("selectStepsToGenerate() — чистая функция", () => {
   const steps = [
     { stageId: "qual", stageName: "Отборочный", participantCount: 25, finalistsCount: 20 },
