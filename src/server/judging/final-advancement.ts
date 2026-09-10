@@ -45,15 +45,56 @@ export async function getFinalScoringProgressInTx(tx: PrismaTx | typeof prisma, 
   const heats = await tx.heat.findMany({
     where: { roundId },
     select: {
+      id: true,
       draws: { orderBy: { version: "desc" }, take: 1, select: { participants: { where: { scored: true }, select: { id: true, role: true } } } },
     },
   });
-  const participants = heats.flatMap((h) => h.draws[0]?.participants ?? []);
-  if (participants.length === 0 || criteria.length === 0) return { required: 0, submitted: 0, complete: true };
+  const heatsWithParticipants = heats
+    .map((h) => ({ id: h.id, participants: h.draws[0]?.participants ?? [] }))
+    .filter((h) => h.participants.length > 0);
+  if (heatsWithParticipants.length === 0 || criteria.length === 0) return { required: 0, submitted: 0, complete: true };
 
   const assignments = await tx.judgeAssignment.findMany({ where: { divisionId: round.divisionId }, select: { id: true, role: true } });
+  const format = round.finalSession.format;
+  const config = round.finalSession.config;
+
+  // JUDGES_DANCE подтверждает ПО ЗАХОДУ (JudgeHeatConfirmation, 2026-09-10,
+  // confirmFinalJudgeHeatDone) — заходы стадий формируются не все сразу, и
+  // "Готово" на весь раунд сразу (JudgeRoundConfirmation) для этого формата
+  // больше не пишется вовсе. До этой правки прогресс/завершение раунда
+  // по-прежнему считались через JudgeRoundConfirmation.count(), который для
+  // JUDGES_DANCE всегда 0 — раунд молча никогда не досчитывал результат, а
+  // монитор организатора показывал "0 из N оценок собрано", даже когда все
+  // судьи реально нажали "Готово" по каждому своему заходу (жалоба
+  // пользователя, 2026-09-10). required/submitted считаются по парам
+  // (заход, назначение), у которых в ЭТОМ заходе действительно есть что
+  // оценивать — тот же критерий "required > 0", что и в
+  // confirmFinalJudgeHeatDone/getFinalJudgeQueue, чтобы не разойтись.
+  if (format === "JUDGES_DANCE") {
+    const pairs: { heatId: string; assignmentId: string }[] = [];
+    for (const h of heatsWithParticipants) {
+      for (const a of assignments) {
+        if (countRequiredForJudgeRole(h.participants, criteria, format, config, a.role) > 0) {
+          pairs.push({ heatId: h.id, assignmentId: a.id });
+        }
+      }
+    }
+    if (pairs.length === 0) return { required: 0, submitted: 0, complete: true };
+    const confirmations = await tx.judgeHeatConfirmation.findMany({
+      where: {
+        heatId: { in: [...new Set(pairs.map((p) => p.heatId))] },
+        judgeAssignmentId: { in: [...new Set(pairs.map((p) => p.assignmentId))] },
+      },
+      select: { heatId: true, judgeAssignmentId: true },
+    });
+    const confirmedSet = new Set(confirmations.map((c) => `${c.heatId}:${c.judgeAssignmentId}`));
+    const submitted = pairs.filter((p) => confirmedSet.has(`${p.heatId}:${p.assignmentId}`)).length;
+    return { required: pairs.length, submitted, complete: submitted >= pairs.length };
+  }
+
+  const participants = heatsWithParticipants.flatMap((h) => h.participants);
   const relevantAssignmentIds = assignments
-    .filter((a) => countRequiredForJudgeRole(participants, criteria, round.finalSession!.format, round.finalSession!.config, a.role) > 0)
+    .filter((a) => countRequiredForJudgeRole(participants, criteria, format, config, a.role) > 0)
     .map((a) => a.id);
   if (relevantAssignmentIds.length === 0) return { required: 0, submitted: 0, complete: true };
 

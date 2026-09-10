@@ -55,6 +55,7 @@ const prismaFinalResultFindMany = vi.fn();
 const prismaHeatFindMany = vi.fn();
 const prismaJudgeAssignmentFindMany = vi.fn();
 const prismaJudgeRoundConfirmationCount = vi.fn();
+const prismaJudgeHeatConfirmationFindMany = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -64,6 +65,7 @@ vi.mock("@/lib/prisma", () => ({
     finalResult: { findMany: prismaFinalResultFindMany },
     judgeAssignment: { findMany: (...a: unknown[]) => prismaJudgeAssignmentFindMany(...a) },
     judgeRoundConfirmation: { count: (...a: unknown[]) => prismaJudgeRoundConfirmationCount(...a) },
+    judgeHeatConfirmation: { findMany: (...a: unknown[]) => prismaJudgeHeatConfirmationFindMany(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => prismaTransaction(fn),
   },
 }));
@@ -361,5 +363,72 @@ describe("getFinalScoringProgress()", () => {
     expect(prismaJudgeRoundConfirmationCount).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ judgeAssignmentId: { in: ["assign1"] } }) })
     );
+  });
+});
+
+// JUDGES_DANCE — регрессия на реальную жалобу пользователя (2026-09-10):
+// confirmFinalJudgeHeatDone (final-scoring.ts) пишет ТОЛЬКО
+// JudgeHeatConfirmation (заходы стадий формируются не все сразу — общее
+// подтверждение на весь раунд блокировало бы ещё не созданную стадию 2).
+// getFinalScoringProgressInTx до этой правки продолжал читать
+// JudgeRoundConfirmation, который для этого формата больше никогда не
+// заполняется — раунд молча никогда не считал результат, монитор
+// организатора показывал "0 из N" даже когда судьи реально нажали "Готово"
+// по каждому своему заходу.
+describe("getFinalScoringProgress() — JUDGES_DANCE подтверждает ПО ЗАХОДУ (JudgeHeatConfirmation)", () => {
+  // heat1 — стадия 1, танцуют LEADER (партнёры); "танцующий" критерий
+  // crit1 в dancingJudgeCriteriaIds — судит ПРОТИВОПОЛОЖНАЯ роль (FOLLOWER).
+  // heat2 — стадия 2, танцуют FOLLOWER; судит LEADER.
+  const roundJudgesDance = {
+    divisionId: "div1",
+    finalSession: {
+      format: "JUDGES_DANCE",
+      config: { dancingJudgeCriteriaIds: ["crit1"] },
+      criteriaSnapshot: [{ id: "crit1", name: "Взаимодействие", priority: 1, minScore: 0, maxScore: 10, step: 1 }],
+    },
+  };
+
+  beforeEach(() => {
+    prismaRoundFindUniqueOrThrow.mockReset().mockResolvedValue(roundJudgesDance);
+    prismaHeatFindMany.mockReset().mockResolvedValue([
+      { id: "heat1", draws: [{ participants: [{ id: "p1", role: "LEADER" }] }] },
+      { id: "heat2", draws: [{ participants: [{ id: "p2", role: "FOLLOWER" }] }] },
+    ]);
+    prismaJudgeAssignmentFindMany.mockReset().mockResolvedValue([
+      { id: "assignL", role: "LEADER" },
+      { id: "assignF", role: "FOLLOWER" },
+    ]);
+    prismaJudgeRoundConfirmationCount.mockReset();
+    prismaJudgeHeatConfirmationFindMany.mockReset().mockResolvedValue([]);
+  });
+
+  it("complete=true, когда оба судьи нажали «Готово» по СВОЕМУ заходу — без единой строки JudgeRoundConfirmation", async () => {
+    prismaJudgeHeatConfirmationFindMany.mockResolvedValue([
+      { heatId: "heat1", judgeAssignmentId: "assignF" },
+      { heatId: "heat2", judgeAssignmentId: "assignL" },
+    ]);
+
+    const progress = await getFinalScoringProgress("round1");
+
+    expect(progress).toEqual({ required: 2, submitted: 2, complete: true });
+    expect(prismaJudgeRoundConfirmationCount).not.toHaveBeenCalled();
+  });
+
+  it("complete=false, пока подтверждён только один из двух заходов", async () => {
+    prismaJudgeHeatConfirmationFindMany.mockResolvedValue([{ heatId: "heat1", judgeAssignmentId: "assignF" }]);
+
+    const progress = await getFinalScoringProgress("round1");
+
+    expect(progress).toEqual({ required: 2, submitted: 1, complete: false });
+  });
+
+  it("подтверждение по ЧУЖОМУ заходу не засчитывается судье другой стадии", async () => {
+    // assignL подтвердил heat1 — но там required у него нет (heat1 нужен
+    // assignF), значит это подтверждение вообще не входит ни в одну пару.
+    prismaJudgeHeatConfirmationFindMany.mockResolvedValue([{ heatId: "heat1", judgeAssignmentId: "assignL" }]);
+
+    const progress = await getFinalScoringProgress("round1");
+
+    expect(progress).toEqual({ required: 2, submitted: 0, complete: false });
   });
 });

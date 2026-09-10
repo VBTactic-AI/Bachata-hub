@@ -234,6 +234,7 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
   const heats = await prisma.heat.findMany({
     where: { roundId },
     select: {
+      id: true,
       draws: {
         orderBy: { version: "desc" },
         take: 1,
@@ -251,7 +252,7 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
       },
     },
   });
-  const participants = heats.flatMap((h) => h.draws[0]?.participants ?? []);
+  const participants = heats.flatMap((h) => (h.draws[0]?.participants ?? []).map((p) => ({ ...p, heatId: h.id })));
 
   const assignments = await prisma.judgeAssignment.findMany({
     where: { divisionId: round.divisionId },
@@ -259,19 +260,43 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
     orderBy: { createdAt: "asc" },
   });
 
-  // Финал теперь тоже подтверждается кнопкой "Готово" (confirmFinalJudgeRoundDone,
-  // final-scoring.ts, 2026-09-07) — та же таблица JudgeRoundConfirmation, что
-  // и у обычных раундов.
-  const confirmedAssignmentIds = new Set(
-    assignments.length === 0
-      ? []
-      : (
-          await prisma.judgeRoundConfirmation.findMany({
-            where: { roundId, judgeAssignmentId: { in: assignments.map((a) => a.id) } },
-            select: { judgeAssignmentId: true },
-          })
-        ).map((c) => c.judgeAssignmentId)
-  );
+  // "Готово" — по-разному, в зависимости от формата (та же развилка, что и
+  // в submitFinalJudgeScore/getFinalScoringProgressInTx):
+  // JUDGES_DANCE подтверждает ПО ЗАХОДУ (JudgeHeatConfirmation) — заходы
+  // стадий формируются не все сразу, "на весь раунд" (JudgeRoundConfirmation)
+  // для этого формата больше не пишется вовсе. Раньше монитор здесь всегда
+  // читал JudgeRoundConfirmation — для JUDGES_DANCE она пустая, галочка
+  // "✓ Готово" никогда не появлялась, даже когда судья реально нажал
+  // "Готово" по каждому своему заходу (жалоба пользователя, 2026-09-10).
+  // Остальные форматы (NORMAL/RANDOM_COUPLES/RELATIVE_PLACEMENT) формируют
+  // все заходы сразу — для них подтверждение по-прежнему на весь раунд, без
+  // изменений (2026-09-07).
+  const confirmedAssignmentIds =
+    format === "JUDGES_DANCE"
+      ? new Set<string>()
+      : new Set(
+          assignments.length === 0
+            ? []
+            : (
+                await prisma.judgeRoundConfirmation.findMany({
+                  where: { roundId, judgeAssignmentId: { in: assignments.map((a) => a.id) } },
+                  select: { judgeAssignmentId: true },
+                })
+              ).map((c) => c.judgeAssignmentId)
+        );
+  const confirmedHeatPairs =
+    format !== "JUDGES_DANCE"
+      ? new Set<string>()
+      : new Set(
+          assignments.length === 0
+            ? []
+            : (
+                await prisma.judgeHeatConfirmation.findMany({
+                  where: { heatId: { in: heats.map((h) => h.id) }, judgeAssignmentId: { in: assignments.map((a) => a.id) } },
+                  select: { heatId: true, judgeAssignmentId: true },
+                })
+              ).map((c) => `${c.heatId}:${c.judgeAssignmentId}`)
+        );
 
   function buildTable(role: RegistrationRole): FinalScoreMonitorTable {
     // CODE-003 (жалоба пользователя, 2026-09-10, живой тест JUDGES_DANCE):
@@ -312,6 +337,14 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
       return { drawParticipantId: p.id, bibNumber: p.registration.checkIn?.bibNumber ?? null, scores };
     });
 
+    // JUDGES_DANCE — участники этой роли (танцующие в этом заходе) все из
+    // одного захода (у каждой стадии свой единственный заход), поэтому
+    // "подтверждён" здесь = у судьи есть JudgeHeatConfirmation по ВСЕМ
+    // заходам, где реально танцуют участники этой роли (обычно один заход;
+    // общий вид на случай, если участников роли когда-нибудь раскинут по
+    // нескольким заходам).
+    const roleHeatIds = [...new Set(roleParticipants.map((p) => p.heatId))];
+
     const totals: ScoreMonitorTotal[] = roleAssignments.map((a) => {
       let required = 0;
       let submitted = 0;
@@ -322,7 +355,11 @@ export async function getFinalScoreMonitor(roundId: string): Promise<FinalScoreM
           if (p.finalJudgeScores.some((s) => s.criterionId === c.id && s.judgeAssignmentId === a.id)) submitted += 1;
         }
       }
-      return { judgeAssignmentId: a.id, required, submitted, complete: submitted >= required, confirmed: confirmedAssignmentIds.has(a.id) };
+      const confirmed =
+        format === "JUDGES_DANCE"
+          ? roleHeatIds.length > 0 && roleHeatIds.every((hid) => confirmedHeatPairs.has(`${hid}:${a.id}`))
+          : confirmedAssignmentIds.has(a.id);
+      return { judgeAssignmentId: a.id, required, submitted, complete: submitted >= required, confirmed };
     });
 
     return { criteria: criteria.map((c) => ({ id: c.id, name: c.name })), judges, rows, totals };

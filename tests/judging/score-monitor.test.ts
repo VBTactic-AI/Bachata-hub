@@ -9,6 +9,7 @@ const roundCount = vi.fn();
 const heatFindMany = vi.fn();
 const judgeAssignmentFindMany = vi.fn();
 const judgeRoundConfirmationFindMany = vi.fn();
+const judgeHeatConfirmationFindMany = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -16,6 +17,7 @@ vi.mock("@/lib/prisma", () => ({
     heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
     judgeAssignment: { findMany: (...a: unknown[]) => judgeAssignmentFindMany(...a) },
     judgeRoundConfirmation: { findMany: (...a: unknown[]) => judgeRoundConfirmationFindMany(...a) },
+    judgeHeatConfirmation: { findMany: (...a: unknown[]) => judgeHeatConfirmationFindMany(...a) },
   },
 }));
 
@@ -38,6 +40,7 @@ beforeEach(() => {
   heatFindMany.mockReset().mockResolvedValue([]);
   judgeAssignmentFindMany.mockReset().mockResolvedValue([]);
   judgeRoundConfirmationFindMany.mockReset().mockResolvedValue([]);
+  judgeHeatConfirmationFindMany.mockReset().mockResolvedValue([]);
 });
 
 describe("getPrelimScoreMonitor() — числовая шкала (не Да/Нет)", () => {
@@ -376,6 +379,50 @@ describe("getFinalScoreMonitor()", () => {
     expect(monitor!.leader.judges.map((j) => j.judgeAssignmentId)).toEqual(["j2"]);
     expect(monitor!.leader.judges[0].criteriaIds).toEqual(["partnership"]);
     expect(monitor!.leader.rows[0].scores.j2).toEqual({ partnership: 7 });
+  });
+
+  // Регрессия (жалоба пользователя, 2026-09-10): "✓ Готово" в "Судьи
+  // категории" (JudgesLivePanel) никогда не загоралась для JUDGES_DANCE —
+  // confirmed читался из JudgeRoundConfirmation, а этот формат подтверждает
+  // "Готово" ПО ЗАХОДУ (JudgeHeatConfirmation, confirmFinalJudgeHeatDone),
+  // общая строка на весь раунд для него больше не пишется вовсе.
+  it("JUDGES_DANCE: confirmed=true, когда судья нажал «Готово» по заходу СВОЕЙ стадии (JudgeHeatConfirmation, не JudgeRoundConfirmation)", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      divisionId: "div1",
+      division: { competitionId: "comp1" },
+      finalSession: {
+        format: "JUDGES_DANCE",
+        config: { dancingJudgeCriteriaIds: ["partnership"] },
+        criteriaSnapshot: [{ id: "partnership", name: "Партнёрство", priority: 1, minScore: 0, maxScore: 10, step: 1 }],
+      },
+    });
+    judgeAssignmentFindMany.mockResolvedValue([judgeAssignment("j2", "FOLLOWER", { email: "j2@x.com", dancerDisplayName: "Судья П" })]);
+    heatFindMany.mockResolvedValue([
+      {
+        id: "heat1",
+        draws: [
+          {
+            participants: [
+              {
+                id: "pA",
+                role: "LEADER",
+                registration: { checkIn: { bibNumber: "1" } },
+                finalJudgeScores: [{ judgeAssignmentId: "j2", criterionId: "partnership", value: 7 }],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    // Ни одной строки JudgeRoundConfirmation — только JudgeHeatConfirmation
+    // по конкретному заходу, ровно как теперь пишет confirmFinalJudgeHeatDone.
+    judgeRoundConfirmationFindMany.mockResolvedValue([]);
+    judgeHeatConfirmationFindMany.mockResolvedValue([{ heatId: "heat1", judgeAssignmentId: "j2" }]);
+
+    const monitor = await getFinalScoreMonitor("round1");
+
+    expect(monitor!.leader.totals).toEqual([{ judgeAssignmentId: "j2", required: 1, submitted: 1, complete: true, confirmed: true }]);
+    expect(judgeRoundConfirmationFindMany).not.toHaveBeenCalled();
   });
 
   it("JUDGES_DANCE: у каждого судьи в judges.criteriaIds только ЕГО критерии, не все критерии финала", async () => {
