@@ -612,6 +612,16 @@ function FinalScoreMatrix({
   onOpenCell: (drawParticipantId: string, criterionId: string) => void;
 }) {
   const hasError = Object.keys(errorsByKey).length > 0;
+  // Только критерии, которые реально оценивает ХОТЬ КТО-ТО из показанных
+  // участников (JUDGES_DANCE, "танцующий"/сторонний судья видят разные
+  // подмножества, final-scoring-matrix.ts) — раньше матрица всегда рисовала
+  // ВСЕ критерии финала, а неприменимые судье колонки показывала пустым "—"
+  // без единой пояснительной надписи: судья не понимал, что там нужно
+  // поставить (жалоба пользователя, 2026-09-10). Все участники одной очереди
+  // судьи танцуют в одной и той же роли (стадии не смешиваются), поэтому
+  // набор видимых критериев здесь и так одинаков у каждой строки — просто не
+  // рисуем колонку, которая целиком не про этого судью.
+  const visibleCriteria = sortedCriteria.filter((c) => items.some((it) => it.criteriaIds.includes(c.id)));
   return (
     <div className="flex flex-col gap-3">
       {hasError && <p className="m-0 text-xs text-red-400">Не удалось сохранить одну или несколько оценок — откройте ячейку и поставьте заново.</p>}
@@ -626,7 +636,7 @@ function FinalScoreMatrix({
               <thead>
                 <tr>
                   <th className="bg-admin-card2 px-2 py-2 text-left font-mono text-[10px] font-bold uppercase text-admin-muted">№</th>
-                  {sortedCriteria.map((c) => (
+                  {visibleCriteria.map((c) => (
                     <th key={c.id} className="bg-admin-card2 px-0.5 py-2 text-center font-mono text-[10px] font-bold uppercase text-admin-muted">
                       {c.name.length > 4 ? c.name.slice(0, 3).toUpperCase() : c.name.toUpperCase()}
                     </th>
@@ -648,7 +658,7 @@ function FinalScoreMatrix({
                       >
                         {item.bibNumber ?? "—"}
                       </td>
-                      {sortedCriteria.map((c) => {
+                      {visibleCriteria.map((c) => {
                         const applicable = item.criteriaIds.includes(c.id);
                         const value = applicable ? effectiveValue(item, c.id) : null;
                         const err = errorsByKey[`${item.drawParticipantId}:${c.id}`];
