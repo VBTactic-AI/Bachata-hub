@@ -20,7 +20,6 @@ import { JudgesWorkspace, type JudgingDivision } from "@/components/admin/Judges
 import { AddCompetitionJudgeForm } from "@/components/admin/AddCompetitionJudgeForm";
 import { JudgeRegistryPanel, type RegistryJudge } from "@/components/admin/JudgeRegistryPanel";
 import { categoryDotColor } from "@/components/admin/category-colors";
-import { ScoringProgress } from "@/components/admin/ScoringProgress";
 import { PeopleIcon, CheckCircleIcon, GridIcon, JudgesIcon } from "@/components/admin/icons";
 import { CompetitionProgressStepper } from "@/components/admin/CompetitionProgressStepper";
 import { TieBreakAlertBanner } from "@/components/admin/TieBreakAlertBanner";
@@ -1067,14 +1066,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
                 }))}
               />
             );
-          }
-
-          if (round.status === "SCORING" && round.type !== "TIE_BREAK") {
-            // Уведомление "роль не оценивается" переехало в постоянный бейдж
-            // в шапке раунда (CompetitionMonitor.tsx, round.notJudgedRoles) —
-            // видно с момента жеребьёвки, а не только здесь на SCORING, так
-            // что дублировать его в этой панели больше не нужно.
-            panels.push(<ScoringProgress key="scoring-progress" {...(scoringProgressByRoundId.get(round.id) ?? { required: 0, submitted: 0 })} />);
           }
 
           if (round.status === "SCORING" && round.type === "TIE_BREAK" && isFinalTieBreak && canDecideTieBreak) {
