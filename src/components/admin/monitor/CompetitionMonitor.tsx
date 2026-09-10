@@ -25,7 +25,6 @@ import { ReplaceDrawHelperButton } from "../ReplaceDrawHelperButton";
 import { RerollDrawButton } from "../RerollDrawButton";
 import { RotationPanel } from "../RotationPanel";
 import { RoundStatusControls } from "../RoundStatusControls";
-import { SplitHeatButton } from "../SplitHeatButton";
 import { StartDrawingForm } from "../StartDrawingForm";
 import { JudgesLivePanel } from "./JudgesLivePanel";
 import { defaultCategoryId, defaultHeatId, defaultRoundId, hasActiveRound, resolveSelected } from "./selection";
@@ -347,7 +346,6 @@ function HeatPanel({
             {heat.canManuallyEdit ? (
               <span className="ml-auto flex flex-wrap items-center gap-2">
                 <RerollDrawButton heatId={heat.id} />
-                {heat.hasRealImbalance && <SplitHeatButton heatId={heat.id} />}
               </span>
             ) : (
               <p className="m-0 ml-auto max-w-[340px] text-right text-[11.5px] text-admin-disabled">
@@ -444,6 +442,19 @@ export function CompetitionMonitor({
 
   const round = resolveSelected(category.rounds, roundId, defaultRoundId(category.rounds));
   const heat = round ? resolveSelected(round.heats, heatId, defaultHeatId(round.heats)) : null;
+
+  // "Перегенерировать раунды" удаляет старые Round/Heat и создаёт новые (с
+  // другими id) — roundId в состоянии остаётся прежним (устаревшим), но
+  // resolveSelected сам откатится на дефолтный этап категории, и его id уже
+  // будет другим. selectRound/selectCategory ниже сбрасывают editMode при
+  // явном клике по вкладке, но регенерация происходит НЕ через них — этот
+  // эффект ловит и такую смену раунда "снизу", по прямому запросу
+  // пользователя (2026-09-10): иначе режим редактирования остаётся
+  // незаметно включённым на новом, только что созданном раунде.
+  useEffect(() => {
+    setEditMode(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round?.id]);
 
   // Тот же случай, что и в CompetitionWorkspaceTabs.tsx: настоящий переход по
   // ссылке на эту же категорию/этап (score-monitor "← Назад", 2026-09-09) не
@@ -756,7 +767,7 @@ export function CompetitionMonitor({
                         // выше, только для переключения между заходами внутри
                         // одного раунда (сам сценарий со скриншота
                         // пользователя): HeatStatusControls/RerollDrawButton/
-                        // SplitHeatButton/AddDrawHelperForm/RotationPanel
+                        // AddDrawHelperForm/RotationPanel
                         // иначе не размонтируются при смене захода.
                         <HeatPanel
                           key={heat.id}

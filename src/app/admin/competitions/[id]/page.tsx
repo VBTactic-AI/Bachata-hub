@@ -1052,14 +1052,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             const participants = draw?.participants ?? [];
             const leaderCount = participants.filter((p) => p.role === "LEADER").length;
             const followerCount = participants.filter((p) => p.role === "FOLLOWER").length;
-            // "Разбить" смотрит на РЕАЛЬНЫЙ (не считая помощников) дисбаланс —
-            // доступно, даже если помощники уже сгладили общее число, это
-            // альтернативный способ, не зависящий от них. Если меньшая
-            // сторона — 0 реальных участников, разбивка унесла бы их всех в
-            // новый заезд и текущий остался бы пустым (сервер такое тоже
-            // отклонит, 2026-09-04).
-            const scoredLeaderCount = participants.filter((p) => p.role === "LEADER" && p.scored).length;
-            const scoredFollowerCount = participants.filter((p) => p.role === "FOLLOWER" && p.scored).length;
             const toMonitorParticipant = (p: (typeof participants)[number]): MonitorParticipant => ({
               id: p.id,
               bibNumber: p.registration.checkIn?.bibNumber ?? null,
@@ -1083,7 +1075,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               // поровну, помощь не нужна вообще (docs/00_DECISIONS.md,
               // 2026-09-04).
               neededRole: leaderCount === followerCount ? null : leaderCount < followerCount ? "LEADER" : "FOLLOWER",
-              hasRealImbalance: scoredLeaderCount !== scoredFollowerCount && Math.min(scoredLeaderCount, scoredFollowerCount) > 0,
               // Та же узкая область, что и на сервере (create-heat.ts,
               // deleteHeat) — только пустой PENDING-заход без жеребьёвки.
               canDelete: heat.status === "PENDING" && !draw,
