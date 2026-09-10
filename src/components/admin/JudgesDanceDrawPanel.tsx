@@ -172,11 +172,29 @@ export function JudgesDanceDrawPanel({
                       ))}
                     </ul>
                   )}
-                  {active.status === "PENDING" && (
-                    <div className="mt-auto flex flex-wrap items-center gap-2.5 border-t border-admin-border px-3.5 py-2.5 text-xs">
-                      <AddJudgesDanceHelperForm heatId={active.id} roleLabel={active.roleLabel} />
-                    </div>
-                  )}
+                  {active.status === "PENDING" &&
+                    (() => {
+                      // Кнопка "+ Судья на помощь" — только пока реально не
+                      // хватает (судей+помощников меньше, чем финалистов в
+                      // заходе), тем же правилом, что и обычная жеребьёвка
+                      // (SideColumn/AddDrawHelperForm, isNeeded). Раньше
+                      // показывалась всегда, пока заход PENDING — даже когда
+                      // авто-каскад при формировании списка уже добрал ровно
+                      // столько, сколько нужно (найдено по жалобе
+                      // пользователя, 2026-09-10, скриншот "6/6, а кнопка
+                      // всё равно есть").
+                      const deficit = active.finalists.length - (active.realJudges.length + active.helpers.length);
+                      return deficit > 0 ? (
+                        <div className="mt-auto flex flex-wrap items-center gap-2.5 border-t border-admin-border px-3.5 py-2.5 text-xs">
+                          <span className="font-semibold text-night-warning">Не хватает: {deficit}</span>
+                          <span className="ml-auto">
+                            <AddJudgesDanceHelperForm heatId={active.id} roleLabel={active.roleLabel} />
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="mt-auto border-t border-admin-border px-3.5 py-2.5 text-xs text-admin-muted">Хватает судей</div>
+                      );
+                    })()}
                 </div>
               </div>
             </div>
