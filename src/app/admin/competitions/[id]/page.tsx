@@ -307,30 +307,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     )
   );
 
-  // Роли, которых в раунде не нужно оценивать (участников не больше, чем
-  // мест — все проходят автоматически, по запросу пользователя,
-  // 2026-09-04) — из уже загруженного дерева, без доп. запросов; "финал" —
-  // раунд, после которого в этом же дивизионе нет другого обычного раунда.
-  // Считается для ЛЮБОГО статуса раунда (не только SCORING, по прямому
-  // запросу пользователя, 2026-09-10) — организатору нужно видеть это с
-  // момента жеребьёвки, на живом паркете, а не только когда раунд уже дошёл
-  // до подсчёта; для раундов без жеребьёвки roleCounts остаётся 0/0, и
-  // rolesNotNeedingJudging(count>0 && ...) сама ничего не вернёт.
-  const skippedRolesByRoundId = new Map<string, RegistrationRole[]>();
-  for (const d of competition.divisions) {
-    for (const round of d.rounds) {
-      if (round.type === "TIE_BREAK") continue;
-      const roleCounts: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
-      for (const heat of round.heats) {
-        for (const p of heat.draws[0]?.participants ?? []) {
-          if (p.scored) roleCounts[p.role]++;
-        }
-      }
-      const isFinal = !d.rounds.some((r) => r.type === null && r.order > round.order);
-      const skipped = rolesNotNeedingJudging(roleCounts, round.finalistsCount ?? 0, isFinal, round.type);
-      if (skipped.size > 0) skippedRolesByRoundId.set(round.id, [...skipped]);
-    }
-  }
 
   // Официальный протокол результатов (Этап 10) — виден, только когда
   // финальный раунд дивизиона (последний обычный по order) уже COMPLETED, и
@@ -399,6 +375,57 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
 
   const scoringProgressByRoundId = new Map(scoringProgressEntries);
   const divisionResultsById: Map<string, Awaited<ReturnType<typeof getCurrentDivisionResults>>> = new Map(divisionResultEntries);
+
+  // Роли, которых в раунде не нужно оценивать (участников не больше, чем
+  // мест — все проходят автоматически, по запросу пользователя,
+  // 2026-09-04) — из уже загруженного дерева, без доп. запросов; "финал" —
+  // раунд, после которого в этом же дивизионе нет другого обычного раунда.
+  // Считается для ЛЮБОГО статуса раунда (не только SCORING, по прямому
+  // запросу пользователя, 2026-09-10) — организатору нужно видеть это с
+  // момента жеребьёвки, на живом паркете, а не только когда раунд уже дошёл
+  // до подсчёта.
+  //
+  // Считать нужно от ПОЛНОГО пула, реально доступного этому раунду (сколько
+  // зарегистрировано+зачекинено в дивизионе, а для второго и следующих
+  // раундов — сколько реально ADVANCED в предыдущем; тот же пул, что
+  // getRoundEligiblePool в draw-engine.ts), а НЕ от того, сколько участников
+  // уже физически лежит в заходах ПРЯМО СЕЙЧАС — раньше считали именно
+  // последнее (сумма heat.draws[0].participants по всем заходам раунда), и
+  // это совпадало с полным пулом всегда, пока раунды заполнялись только
+  // автоматически (formDrawInTx сразу распределяет ВЕСЬ пул). С ручным
+  // добавлением (режим редактирования, 2026-09-10) появилось промежуточное
+  // состояние — раунд уже DRAWING, но часть реального пула ещё не разложена
+  // по заходам, — и старый расчёт ошибочно показывал "не оценивается" по
+  // тому, что успели добавить, а не по тому, сколько человек реально
+  // подходит этому раунду (найдено пользователем на живом тесте: 7 партнёров
+  // в дивизионе, из них вручную добавлены 2 — раунд показывал "не
+  // оценивается", хотя итоговые 7 могут как раз превышать порог).
+  const skippedRolesByRoundId = new Map<string, RegistrationRole[]>();
+  for (const d of competition.divisions) {
+    const regularRoundsByOrder = [...d.rounds].filter((r) => r.type === null).sort((a, b) => a.order - b.order);
+    for (const round of d.rounds) {
+      if (round.type === "TIE_BREAK") continue;
+      const previous = [...regularRoundsByOrder].reverse().find((r) => r.order < round.order) ?? null;
+      const roleCounts: Record<RegistrationRole, number> = { LEADER: 0, FOLLOWER: 0 };
+      if (previous && previous.status === "COMPLETED") {
+        // Пул этого раунда ограничен реально прошедшими предыдущий (A9,
+        // draw-engine.ts, advancedRegistrationIdsFromPreviousRound) — те же
+        // данные, previous.results уже загружены в общем дереве.
+        for (const res of previous.results) {
+          if (res.status === "ADVANCED") roleCounts[res.registration.role]++;
+        }
+      } else {
+        // Первый раунд дивизиона (или предыдущий ещё не завершён — тогда
+        // пул пока не сужен) — весь дивизион, реально зарегистрированные и
+        // зачекиненные.
+        roleCounts.LEADER = countFor(checkedInCounts, d.id, "LEADER");
+        roleCounts.FOLLOWER = countFor(checkedInCounts, d.id, "FOLLOWER");
+      }
+      const isFinal = !d.rounds.some((r) => r.type === null && r.order > round.order);
+      const skipped = rolesNotNeedingJudging(roleCounts, round.finalistsCount ?? 0, isFinal, round.type);
+      if (skipped.size > 0) skippedRolesByRoundId.set(round.id, [...skipped]);
+    }
+  }
 
   // Формы регистрации ждут { id, name } — категория дивизиона теперь и есть
   // его "имя" для пользователя.
