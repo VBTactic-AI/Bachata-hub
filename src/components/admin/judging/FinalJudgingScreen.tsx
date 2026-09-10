@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmJudgingButton } from "@/components/admin/ConfirmJudgingButton";
 import { ContextBar } from "@/components/admin/judging/ContextBar";
 import { ProgressBar } from "@/components/admin/judging/ProgressBar";
+import { REGISTRATION_ROLE_LABELS_PLURAL as ROLE_LABELS_PLURAL } from "@/lib/competition-labels";
 import {
   enqueueFinalJudgeScore,
   getQueuedFinalScore,
@@ -32,7 +33,6 @@ const FORMAT_LABELS: Record<string, string> = {
   RANDOM_COUPLES: "Случайные пары",
   RELATIVE_PLACEMENT: "Скейтинг",
 };
-const ROLE_GROUP_LABELS: Record<string, string> = { LEADER: "Ведущие", FOLLOWER: "Ведомые" };
 
 export type FinalQueueItem = {
   drawParticipantId: string;
@@ -190,7 +190,7 @@ export function FinalJudgingScreen({
   }
 
   const rolesPresent = (["LEADER", "FOLLOWER"] as const).filter((r) => items.some((it) => it.role === r));
-  const categoryLabel = rolesPresent.map((r) => ROLE_GROUP_LABELS[r]).join(" / ") || "—";
+  const categoryLabel = rolesPresent.map((r) => ROLE_LABELS_PLURAL[r]).join(" / ") || "—";
 
   // RELATIVE_PLACEMENT — судья видит сразу весь список своей роли с местом
   // рядом с каждым. Формат гарантированно имеет ровно один критерий
@@ -281,7 +281,7 @@ export function FinalJudgingScreen({
           {rolesPresent.map((role) => (
             <div key={role} className="flex flex-col gap-1 rounded-app border border-admin-border bg-admin-card p-2">
               {rolesPresent.length > 1 && (
-                <p className="m-0 px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-admin-muted">{ROLE_GROUP_LABELS[role]}</p>
+                <p className="m-0 px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-admin-muted">{ROLE_LABELS_PLURAL[role]}</p>
               )}
               {roleGroup(role).map((it) => {
                 const place = placeOf(it);
@@ -473,7 +473,7 @@ function FinalScoreMatrix({
       {rolesPresent.map((role) => (
         <div key={role} className="flex flex-col gap-1.5">
           {rolesPresent.length > 1 && (
-            <p className="m-0 text-[11px] font-semibold uppercase tracking-wide text-admin-disabled">{role === "LEADER" ? "Ведущие" : "Ведомые"}</p>
+            <p className="m-0 text-[11px] font-semibold uppercase tracking-wide text-admin-disabled">{ROLE_LABELS_PLURAL[role]}</p>
           )}
           <div className="overflow-x-auto rounded-app border border-admin-border">
             <table className="w-full table-fixed border-collapse">
