@@ -1028,6 +1028,15 @@ model Draw {
 enum DrawHelperSource {
   GUEST_HIGHER_CATEGORY
   REUSED_ALREADY_SCORED
+  // Ниже — источники для судей-партнёров JUDGES_DANCE (final-judges-dance.ts),
+  // когда реальных назначенных судей противоположной роли не хватает на всех
+  // финалистов захода. Порядок каскада (по прямому запросу пользователя,
+  // 2026-09-10): категория выше (GUEST_HIGHER_CATEGORY, уже есть) -> своя
+  // категория, не прошедшие в этот финал (SAME_CATEGORY_NON_FINALIST) ->
+  // финалисты противоположной роли ЭТОГО ЖЕ финала, ещё не танцевавшие свою
+  // стадию (OWN_FINAL_OPPOSITE_ROLE).
+  SAME_CATEGORY_NON_FINALIST
+  OWN_FINAL_OPPOSITE_ROLE
 }
 
 model DrawParticipant {

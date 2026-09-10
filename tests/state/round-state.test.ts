@@ -10,6 +10,10 @@ const maybeCalculateOnEntryMock = vi.fn();
 vi.mock("@/server/judging/advancement", () => ({
   maybeCalculateOnEntryInTx: (...a: unknown[]) => maybeCalculateOnEntryMock(...a),
 }));
+const maybeCalculateFinalOnEntryMock = vi.fn();
+vi.mock("@/server/judging/final-advancement", () => ({
+  maybeCalculateFinalOnEntryInTx: (...a: unknown[]) => maybeCalculateFinalOnEntryMock(...a),
+}));
 
 const roundFindUniqueOrThrow = vi.fn();
 const txRoundFindFirst = vi.fn();
@@ -62,6 +66,7 @@ beforeEach(() => {
   txRegistrationFindMany.mockReset().mockResolvedValue([]);
   auditCreate.mockReset();
   maybeCalculateOnEntryMock.mockReset();
+  maybeCalculateFinalOnEntryMock.mockReset();
 });
 
 describe("transitionRound() — DRAWING только через отдельное действие", () => {
@@ -427,5 +432,44 @@ describe("autoAdvanceRoundIfAllHeatsFinishedInTx()", () => {
 
     expect(txRoundUpdateMany).toHaveBeenCalledOnce();
     expect(maybeCalculateOnEntryMock).not.toHaveBeenCalled();
+  });
+
+  // JUDGES_DANCE (final-judges-dance.ts, 2026-09-10): заходы стадии 1
+  // теперь завершаются обычным transitionHeat (несколько заходов на стадию,
+  // формируются все сразу через generateJudgesDanceStage) — когда финиширует
+  // ПОСЛЕДНИЙ заход стадии 1, заходов стадии 2 в базе ещё нет вовсе (их
+  // создаёт отдельное действие организатора). "Все заходы раунда завершены"
+  // в этот момент было бы истинно ПРЕЖДЕВРЕМЕННО — раунд не должен
+  // финишировать после одной стадии из двух.
+  it("JUDGES_DANCE, currentStage=1 — не завершает раунд, даже если все существующие заходы FINISHED (стадия 2 ещё не сформирована)", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue({
+      id: "round1",
+      status: "RUNNING",
+      statusVersion: 1,
+      finalSession: { id: "session1", format: "JUDGES_DANCE", currentStage: 1 },
+    });
+
+    await autoAdvanceRoundIfAllHeatsFinishedInTx(fakeTx as never, "round1", actor);
+
+    expect(txHeatCount).not.toHaveBeenCalled();
+    expect(txRoundUpdateMany).not.toHaveBeenCalled();
+    expect(maybeCalculateFinalOnEntryMock).not.toHaveBeenCalled();
+  });
+
+  it("JUDGES_DANCE, currentStage=2 — считает как обычно (обе стадии сформированы, реально все заходы завершены)", async () => {
+    txRoundFindUniqueOrThrow.mockResolvedValue({
+      id: "round1",
+      status: "RUNNING",
+      statusVersion: 1,
+      finalSession: { id: "session1", format: "JUDGES_DANCE", currentStage: 2 },
+    });
+    txHeatCount.mockResolvedValue(0);
+    txRoundUpdateMany.mockResolvedValue({ count: 1 });
+
+    await autoAdvanceRoundIfAllHeatsFinishedInTx(fakeTx as never, "round1", actor);
+
+    expect(txHeatCount).toHaveBeenCalled();
+    expect(txRoundUpdateMany).toHaveBeenCalledTimes(2);
+    expect(maybeCalculateFinalOnEntryMock).toHaveBeenCalledWith(fakeTx, "round1", actor);
   });
 });

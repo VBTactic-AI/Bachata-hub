@@ -713,7 +713,9 @@ export function CompetitionMonitor({
               </div>
 
               <div className="p-[18px]">
-                {round.showsHeats ? (
+                {round.judgesDrawPanel ? (
+                  round.judgesDrawPanel
+                ) : round.showsHeats ? (
                   <div className="flex flex-col gap-4">
                     {/* "+ Заход" раньше был виден всегда рядом со списком
                         заходов; теперь на его месте тумблер "Режим

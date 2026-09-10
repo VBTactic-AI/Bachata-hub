@@ -5,38 +5,39 @@ const requirePermissionMock = vi.fn();
 vi.mock("@/server/rbac/authorize", () => ({ requirePermission: (...a: unknown[]) => requirePermissionMock(...a) }));
 
 const getRoundEligiblePoolMock = vi.fn();
-vi.mock("@/server/competition/draw-engine", () => ({ getRoundEligiblePool: (...a: unknown[]) => getRoundEligiblePoolMock(...a) }));
+const pickHigherCategoryHelpersMock = vi.fn();
+vi.mock("@/server/competition/draw-engine", () => ({
+  getRoundEligiblePool: (...a: unknown[]) => getRoundEligiblePoolMock(...a),
+  pickHigherCategoryHelpers: (...a: unknown[]) => pickHigherCategoryHelpersMock(...a),
+}));
 
-const transitionHeatMock = vi.fn();
-vi.mock("@/server/state/heat-state", () => ({ transitionHeat: (...a: unknown[]) => transitionHeatMock(...a) }));
-
-const roundFindUniqueOrThrow = vi.fn();
-const txHeatFindFirst = vi.fn();
-const txHeatUpdateMany = vi.fn();
+const roundFindFirstOrThrow = vi.fn();
+const txJudgeAssignmentCount = vi.fn();
+const txRegistrationFindMany = vi.fn();
 const txHeatCreate = vi.fn();
 const txDrawCreate = vi.fn();
 const txDrawParticipantCreateMany = vi.fn();
-const txRegistrationFindMany = vi.fn();
 const txFinalSessionUpdate = vi.fn();
 const auditCreate = vi.fn();
 
 const fakeTx = {
-  heat: { findFirst: txHeatFindFirst, updateMany: txHeatUpdateMany, create: txHeatCreate },
+  registration: { findMany: txRegistrationFindMany },
+  judgeAssignment: { count: txJudgeAssignmentCount },
+  heat: { create: txHeatCreate },
   draw: { create: txDrawCreate },
   drawParticipant: { createMany: txDrawParticipantCreateMany },
-  registration: { findMany: txRegistrationFindMany },
   finalSession: { update: txFinalSessionUpdate },
   auditLog: { create: auditCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    round: { findUniqueOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a), findFirstOrThrow: (...a: unknown[]) => roundFindUniqueOrThrow(...a) },
+    round: { findFirstOrThrow: (...a: unknown[]) => roundFindFirstOrThrow(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { advanceJudgesDanceStage } = await import("@/server/judging/final-judges-dance");
+const { generateJudgesDanceStage } = await import("@/server/judging/final-judges-dance");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "admin1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -44,47 +45,54 @@ const actor: Actor = { userId: "admin1", email: "a@b.by", globalPermissions: new
 const baseRound = {
   id: "final1",
   order: 5,
+  heatCapacity: null as number | null,
   divisionId: "div1",
   status: "RUNNING",
-  division: { id: "div1", competitionId: "comp1" },
+  division: { id: "div1", competitionId: "comp1", heatCapacity: 8, category: { order: 3 } },
   finalSession: { id: "session1", format: "JUDGES_DANCE", currentStage: null as number | null },
-  heats: [] as { id: string; number: number; status: string; statusVersion: number }[],
+  heats: [] as { id: string; number: number; status: string }[],
 };
+
+// Две регистрации-финалистки (roundEligiblePool для роли, которая ТАНЦУЕТ в
+// этой стадии) — используются почти во всех тестах как "обычный" случай, где
+// реальных судей хватает (helperNeeded=0), чтобы не грузить каждый тест
+// каскадом помощников.
+const dancerRegs = [
+  { id: "reg1", checkIn: { bibNumber: "1" } },
+  { id: "reg2", checkIn: { bibNumber: "2" } },
+];
 
 beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
   getRoundEligiblePoolMock.mockReset().mockResolvedValue(new Set(["reg1", "reg2"]));
-  transitionHeatMock.mockReset().mockResolvedValue(undefined);
-  roundFindUniqueOrThrow.mockReset().mockResolvedValue(baseRound);
-  txHeatFindFirst.mockReset().mockResolvedValue(null);
-  txHeatUpdateMany.mockReset().mockResolvedValue({ count: 1 });
-  txHeatCreate.mockReset().mockResolvedValue({ id: "heat1" });
+  pickHigherCategoryHelpersMock.mockReset().mockResolvedValue([]);
+  roundFindFirstOrThrow.mockReset().mockResolvedValue(baseRound);
+  txJudgeAssignmentCount.mockReset().mockResolvedValue(2); // хватает на обоих финалистов без помощников
+  txRegistrationFindMany.mockReset().mockResolvedValueOnce(dancerRegs); // 1-й вызов — сами финалисты
+  txHeatCreate.mockReset().mockImplementation(({ data }: { data: { number: number } }) => Promise.resolve({ id: `heat${data.number}` }));
   txDrawCreate.mockReset().mockResolvedValue({ id: "draw1" });
   txDrawParticipantCreateMany.mockReset();
-  txRegistrationFindMany.mockReset().mockResolvedValue([
-    { id: "reg1", checkIn: { bibNumber: "1" } },
-    { id: "reg2", checkIn: { bibNumber: "2" } },
-  ]);
   txFinalSessionUpdate.mockReset();
   auditCreate.mockReset();
 });
 
-describe("advanceJudgesDanceStage()", () => {
+describe("generateJudgesDanceStage()", () => {
   it("отклоняет для раунда не JUDGES_DANCE", async () => {
-    roundFindUniqueOrThrow.mockResolvedValue({ ...baseRound, finalSession: { ...baseRound.finalSession, format: "NORMAL" } });
-    await expect(advanceJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
+    roundFindFirstOrThrow.mockResolvedValue({ ...baseRound, finalSession: { ...baseRound.finalSession, format: "NORMAL" } });
+    await expect(generateJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
   it("отклоняет, если финал уже завершён", async () => {
-    roundFindUniqueOrThrow.mockResolvedValue({ ...baseRound, status: "COMPLETED" });
-    await expect(advanceJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
+    roundFindFirstOrThrow.mockResolvedValue({ ...baseRound, status: "COMPLETED" });
+    await expect(generateJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
-  it("currentStage=null -> создаёт заход стадии 1 (LEADER), не трогая другие заходы", async () => {
-    const result = await advanceJudgesDanceStage("final1");
-    expect(result).toEqual({ stage: 1 });
+  it("currentStage=null -> формирует заход стадии 1 (LEADER) PENDING'ом, не RUNNING", async () => {
+    const result = await generateJudgesDanceStage("final1");
+
+    expect(result.stage).toBe(1);
     expect(getRoundEligiblePoolMock).toHaveBeenCalledWith(fakeTx, { divisionId: "div1", roundOrder: 5, role: "LEADER" });
-    expect(txHeatCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ roundId: "final1", number: 1, status: "RUNNING" }) }));
+    expect(txHeatCreate).toHaveBeenCalledWith({ data: { roundId: "final1", number: 1, status: "PENDING" } });
     expect(txDrawParticipantCreateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: [
@@ -94,61 +102,87 @@ describe("advanceJudgesDanceStage()", () => {
       })
     );
     expect(txFinalSessionUpdate).toHaveBeenCalledWith({ where: { id: "session1" }, data: { currentStage: 1 } });
-    expect(txHeatUpdateMany).not.toHaveBeenCalled(); // ничего не завершаем на этом шаге
   });
 
-  it("отклоняет старт стадии 1, если на паркете уже идёт другой заход соревнования (A4)", async () => {
-    txHeatFindFirst.mockResolvedValue({ id: "other-heat" });
-    await expect(advanceJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
+  it("currentStage=null, но заходы уже есть — отклоняет повторное формирование", async () => {
+    roundFindFirstOrThrow.mockResolvedValue({ ...baseRound, heats: [{ id: "heat1", number: 1, status: "PENDING" }] });
+    await expect(generateJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
     expect(txHeatCreate).not.toHaveBeenCalled();
   });
 
-  it("currentStage=1 -> завершает заход стадии 1 И создаёт заход стадии 2 (FOLLOWER) в ОДНОЙ транзакции", async () => {
-    roundFindUniqueOrThrow.mockResolvedValue({
+  it("больше финалистов, чем вместимость захода — делит на несколько PENDING заходов подряд по номеру", async () => {
+    roundFindFirstOrThrow.mockResolvedValue({ ...baseRound, division: { ...baseRound.division, heatCapacity: 1 } });
+    getRoundEligiblePoolMock.mockResolvedValue(new Set(["reg1", "reg2"]));
+    txJudgeAssignmentCount.mockResolvedValue(1);
+
+    const result = await generateJudgesDanceStage("final1");
+
+    expect(result.heatIds).toEqual(["heat1", "heat2"]);
+    expect(txHeatCreate).toHaveBeenNthCalledWith(1, { data: { roundId: "final1", number: 1, status: "PENDING" } });
+    expect(txHeatCreate).toHaveBeenNthCalledWith(2, { data: { roundId: "final1", number: 2, status: "PENDING" } });
+  });
+
+  it("currentStage=1, не все заходы стадии 1 завершены — отклоняет формирование стадии 2", async () => {
+    roundFindFirstOrThrow.mockResolvedValue({
       ...baseRound,
       finalSession: { id: "session1", format: "JUDGES_DANCE", currentStage: 1 },
-      heats: [{ id: "heat1", number: 1, status: "RUNNING", statusVersion: 1 }],
+      heats: [{ id: "heat1", number: 1, status: "RUNNING" }],
+    });
+    await expect(generateJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
+    expect(txHeatCreate).not.toHaveBeenCalled();
+  });
+
+  it("currentStage=1, все заходы стадии 1 FINISHED -> формирует стадию 2 (FOLLOWER), нумерация продолжается", async () => {
+    roundFindFirstOrThrow.mockResolvedValue({
+      ...baseRound,
+      finalSession: { id: "session1", format: "JUDGES_DANCE", currentStage: 1 },
+      heats: [{ id: "heat1", number: 1, status: "FINISHED" }],
     });
 
-    const result = await advanceJudgesDanceStage("final1");
+    const result = await generateJudgesDanceStage("final1");
 
-    expect(result).toEqual({ stage: 2 });
-    // Заход стадии 1 завершён напрямую (не через transitionHeat — иначе
-    // autoAdvanceRoundIfAllHeatsFinishedInTx решил бы, что раунд закончен).
-    expect(txHeatUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "heat1", statusVersion: 1 }, data: expect.objectContaining({ status: "FINISHED" }) })
-    );
-    expect(transitionHeatMock).not.toHaveBeenCalled();
-    // Заход стадии 2 — для роли FOLLOWER.
+    expect(result.stage).toBe(2);
     expect(getRoundEligiblePoolMock).toHaveBeenCalledWith(fakeTx, { divisionId: "div1", roundOrder: 5, role: "FOLLOWER" });
-    expect(txHeatCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ number: 2, status: "RUNNING" }) }));
+    expect(txHeatCreate).toHaveBeenCalledWith({ data: { roundId: "final1", number: 2, status: "PENDING" } });
     expect(txFinalSessionUpdate).toHaveBeenCalledWith({ where: { id: "session1" }, data: { currentStage: 2 } });
   });
 
-  it("currentStage=1, но заход стадии 1 уже изменён кем-то другим (гонка) — отклоняет", async () => {
-    roundFindUniqueOrThrow.mockResolvedValue({
-      ...baseRound,
-      finalSession: { id: "session1", format: "JUDGES_DANCE", currentStage: 1 },
-      heats: [{ id: "heat1", number: 1, status: "RUNNING", statusVersion: 1 }],
-    });
-    txHeatUpdateMany.mockResolvedValue({ count: 0 });
-    await expect(advanceJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
-  });
-
-  it("currentStage=2 -> завершает заход стадии 2 через обычный transitionHeat (переиспользует автозавершение раунда)", async () => {
-    roundFindUniqueOrThrow.mockResolvedValue({
+  it("currentStage=2 -> отклоняет (обе стадии уже сформированы)", async () => {
+    roundFindFirstOrThrow.mockResolvedValue({
       ...baseRound,
       finalSession: { id: "session1", format: "JUDGES_DANCE", currentStage: 2 },
       heats: [
-        { id: "heat1", number: 1, status: "FINISHED", statusVersion: 2 },
-        { id: "heat2", number: 2, status: "RUNNING", statusVersion: 1 },
+        { id: "heat1", number: 1, status: "FINISHED" },
+        { id: "heat2", number: 2, status: "FINISHED" },
       ],
     });
-
-    const result = await advanceJudgesDanceStage("final1");
-
-    expect(result).toEqual({ stage: null });
-    expect(transitionHeatMock).toHaveBeenCalledWith("heat2", "FINISHED", expect.objectContaining({ reason: expect.any(String) }));
+    await expect(generateJudgesDanceStage("final1")).rejects.toBeInstanceOf(ValidationFailedError);
     expect(txHeatCreate).not.toHaveBeenCalled();
+  });
+
+  it("реальных судей не хватает — добирает помощников каскадом: категория выше -> своя не в финале -> финалисты этого финала", async () => {
+    // 3 финалиста-ведущих, 1 реальный судья-Ведомая -> нужно 2 помощника.
+    getRoundEligiblePoolMock.mockImplementation((_tx: unknown, { role }: { role: string }) =>
+      Promise.resolve(role === "LEADER" ? new Set(["reg1", "reg2", "reg3"]) : new Set(["followerFinalist1"]))
+    );
+    txRegistrationFindMany
+      .mockReset()
+      .mockResolvedValueOnce([
+        { id: "reg1", checkIn: { bibNumber: "1" } },
+        { id: "reg2", checkIn: { bibNumber: "2" } },
+        { id: "reg3", checkIn: { bibNumber: "3" } },
+      ]) // финалисты-ведущие (стадия 1)
+      .mockResolvedValueOnce([{ id: "sameCatHelper", checkIn: { bibNumber: "9" } }]) // уровень 2: своя категория, не в финале
+      .mockResolvedValueOnce([{ id: "followerFinalist1", checkIn: { bibNumber: "5" } }]); // уровень 3: финалистки, ждущие стадии 2
+    pickHigherCategoryHelpersMock.mockResolvedValue(["higherCatHelper"]); // уровень 1: категория выше
+    txJudgeAssignmentCount.mockResolvedValue(1); // 1 реальный судья-Ведомая, нужно ещё 2
+
+    await generateJudgesDanceStage("final1");
+
+    const created = txDrawParticipantCreateMany.mock.calls[0][0].data as { registrationId: string; role: string; scored: boolean; helperSource?: string }[];
+    const helpers = created.filter((p) => !p.scored);
+    expect(helpers.map((h) => h.registrationId)).toEqual(["higherCatHelper", "sameCatHelper"]);
+    expect(helpers[0]).toMatchObject({ role: "FOLLOWER", helperSource: "GUEST_HIGHER_CATEGORY" });
+    expect(helpers[1]).toMatchObject({ role: "FOLLOWER", helperSource: "SAME_CATEGORY_NON_FINALIST" });
   });
 });

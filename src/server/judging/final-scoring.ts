@@ -359,6 +359,10 @@ export async function getFinalJudgeQueue(competitionId: string, roundId: string)
 
   const items: FinalJudgeQueueItem[] = [];
   for (const heat of round.heats) {
+    // JUDGES_DANCE (2026-09-10): заходы стадии формируются все сразу
+    // (generateJudgesDanceStage), но PENDING — судья не должен видеть и
+    // оценивать финалистов заходов, которые ещё не вызваны на паркет.
+    if (heat.status === "PENDING") continue;
     const draw = heat.draws[0];
     if (!draw) continue;
     for (const p of draw.participants) {

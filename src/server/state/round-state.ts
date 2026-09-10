@@ -243,8 +243,22 @@ export async function transitionRound(
 // намеренно осталась: дешёвая страховка на случай прямой правки БД (как,
 // собственно, и обнаружился исходный баг), ничего не стоит и не мешает.
 export async function autoAdvanceRoundIfAllHeatsFinishedInTx(tx: PrismaTx, roundId: string, actor: Actor): Promise<void> {
-  const round = await tx.round.findUniqueOrThrow({ where: { id: roundId }, include: { finalSession: { select: { id: true } } } });
+  const round = await tx.round.findUniqueOrThrow({
+    where: { id: roundId },
+    include: { finalSession: { select: { id: true, format: true, currentStage: true } } },
+  });
   if (round.status !== "RUNNING" && round.status !== "PAUSED") return;
+
+  // JUDGES_DANCE (final-judges-dance.ts, 2026-09-10): заходы стадии 1
+  // завершаются ОБЫЧНЫМ transitionHeat (в отличие от прежней версии, где
+  // стадия 1 завершалась вручную в обход этой функции) — когда завершается
+  // ПОСЛЕДНИЙ заход стадии 1, заходов стадии 2 в базе ещё нет вовсе (они
+  // формируются отдельным действием организатора, generateJudgesDanceStage),
+  // поэтому "все заходы раунда завершены" в этот момент было бы истинным
+  // ПРЕЖДЕВРЕМЕННО — раунд завершился бы и результат посчитался бы по одной
+  // стадии из двух. Ждём, пока currentStage перейдёт на 2 (это происходит
+  // ДО того, как стартует хоть один заход стадии 2).
+  if (round.finalSession?.format === "JUDGES_DANCE" && round.finalSession.currentStage === 1) return;
 
   const unfinished = await tx.heat.count({ where: { roundId, status: { not: "FINISHED" } } });
   if (unfinished > 0) return;

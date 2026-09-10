@@ -261,7 +261,11 @@ export async function allRoundParticipantIds(tx: PrismaTx | typeof prisma, round
 // это уже не "гость повыше", а отдельное решение, которое должен
 // подтвердить организатор (добор ниже доступен только вручную через
 // "+ Помощник").
-async function pickHigherCategoryHelpers(
+// Экспортирована (была локальной) для переиспользования тем же каскадом
+// "категория выше" в final-judges-dance.ts — судьи-партнёры JUDGES_DANCE,
+// когда реальных назначенных судей не хватает на всех финалистов захода
+// (2026-09-10, см. DrawHelperSource в schema.prisma).
+export async function pickHigherCategoryHelpers(
   tx: PrismaTx,
   params: {
     competitionId: string;

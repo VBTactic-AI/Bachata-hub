@@ -41,7 +41,7 @@ import { getFinalScoringProgress } from "@/server/judging/final-advancement";
 import { StartFinalPanel } from "@/components/admin/StartFinalPanel";
 import { FinalResultsTable } from "@/components/admin/FinalResultsTable";
 import { FinalTieBreakDecisionForm } from "@/components/admin/FinalTieBreakDecisionForm";
-import { JudgesDanceStagePanel } from "@/components/admin/JudgesDanceStagePanel";
+import { JudgesDanceDrawPanel, type JudgesDanceHeatView } from "@/components/admin/JudgesDanceDrawPanel";
 import { RandomCouplesPanel } from "@/components/admin/RandomCouplesPanel";
 import { DivisionResultsPanel } from "@/components/admin/DivisionResultsPanel";
 import { CompetitionResultsPanel } from "@/components/admin/CompetitionResultsPanel";
@@ -59,11 +59,13 @@ import { ResultsWorkspace, type ResultsCategory } from "@/components/admin/Resul
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
+  REGISTRATION_ROLE_LABELS_PLURAL,
   REGISTRATION_STATUS_LABELS,
   ROUND_TYPE_LABELS,
   HEAT_STATUS_LABELS,
   JUDGING_MAX_SCORE_LABELS,
   FINAL_FORMAT_LABELS,
+  DRAW_HELPER_SOURCE_LABELS,
 } from "@/lib/competition-labels";
 
 export default async function CompetitionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -963,8 +965,55 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             panels.push(<StartFinalPanel key="start-final" roundId={round.id} />);
           }
 
-          if (isJudgesDance && round.status !== "COMPLETED" && canManageFinal) {
-            panels.push(<JudgesDanceStagePanel key="judges-dance" roundId={round.id} currentStage={round.finalSession!.currentStage} />);
+          // JUDGES_DANCE (2026-09-10) — заходы формируются на обычных Heat/
+          // Draw/DrawParticipant (см. final-judges-dance.ts), поэтому здесь
+          // собирается judgesDrawPanel в общем стиле жеребьёвки вместо
+          // отдельной панели прогресса стадий + read-only списка (было раньше).
+          let judgesDrawPanel: ReactNode | null = null;
+          if (isJudgesDance && canManageFinal) {
+            const realJudgesByRole: Record<RegistrationRole, { id: string; displayName: string }[]> = {
+              LEADER: d.judgeAssignments.filter((ja) => ja.role === "LEADER").map((ja) => ({ id: ja.id, displayName: judgeNameByUserId.get(ja.judgeUserId) ?? "—" })),
+              FOLLOWER: d.judgeAssignments.filter((ja) => ja.role === "FOLLOWER").map((ja) => ({ id: ja.id, displayName: judgeNameByUserId.get(ja.judgeUserId) ?? "—" })),
+            };
+            const heatViews: JudgesDanceHeatView[] = round.heats.map((heat) => {
+              const participants = heat.draws[0]?.participants ?? [];
+              const dancerRole: RegistrationRole = (participants.find((p) => p.scored)?.role ?? "LEADER") as RegistrationRole;
+              const judgeRole: RegistrationRole = dancerRole === "LEADER" ? "FOLLOWER" : "LEADER";
+              return {
+                id: heat.id,
+                number: heat.number,
+                status: heat.status,
+                roleLabel: REGISTRATION_ROLE_LABELS_PLURAL[dancerRole] ?? dancerRole,
+                judgeRole,
+                finalists: participants
+                  .filter((p) => p.scored)
+                  .map((p) => ({ id: p.id, bibNumber: p.registration.checkIn?.bibNumber ?? null, displayName: p.registration.dancer.displayName })),
+                realJudges: realJudgesByRole[judgeRole],
+                helpers: participants
+                  .filter((p) => !p.scored)
+                  .map((p) => ({
+                    id: p.id,
+                    bibNumber: p.registration.checkIn?.bibNumber ?? null,
+                    displayName: p.registration.dancer.displayName,
+                    sourceLabel: DRAW_HELPER_SOURCE_LABELS[p.helperSource ?? ""] ?? "помощник",
+                  })),
+              };
+            });
+            const currentStage = round.finalSession!.currentStage;
+            const allCurrentHeatsFinished = round.heats.length > 0 && round.heats.every((h) => h.status === "FINISHED");
+            const canGenerateNextStage =
+              round.status !== "COMPLETED" &&
+              ((currentStage === null && round.heats.length === 0) || (currentStage === 1 && allCurrentHeatsFinished));
+            const nextStageLabel = currentStage === null ? REGISTRATION_ROLE_LABELS_PLURAL.LEADER : currentStage === 1 ? REGISTRATION_ROLE_LABELS_PLURAL.FOLLOWER : null;
+            judgesDrawPanel = (
+              <JudgesDanceDrawPanel
+                roundId={round.id}
+                roundStatus={round.status}
+                heats={heatViews}
+                canGenerateNextStage={canGenerateNextStage}
+                nextStageLabel={nextStageLabel}
+              />
+            );
           }
 
           if (isRandomCouples && round.status !== "COMPLETED" && canManageFinal) {
@@ -1039,32 +1088,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               />
             ) : null;
 
-          if (isJudgesDance) {
-            // JUDGES_DANCE не использует Draw Engine (партнёр участника — судья,
-            // не другой финалист, A5) — заходы управляются целиком через
-            // JudgesDanceStagePanel выше, здесь только read-only список
-            // вызванных по стадиям.
-            panels.push(
-              <div key="judges-dance-stages" className="stack gap-1.5">
-                {round.heats.map((heat) => (
-                  <div key={heat.id}>
-                    <p className="m-0 text-sm text-admin-muted">
-                      Стадия {heat.number} ({heat.number === 1 ? "Партнёры" : "Партнёрши"}) ·{" "}
-                      {HEAT_STATUS_LABELS[heat.status] ?? heat.status}
-                    </p>
-                    <ul className="stack gap-0.5 m-0 pl-4 text-sm text-night-text">
-                      {(heat.draws[0]?.participants ?? []).map((p) => (
-                        <li key={p.id}>
-                          №{p.registration.checkIn?.bibNumber ?? "—"} {p.registration.dancer.displayName}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            );
-          }
-
           if (isRandomCouples) {
             // Список пар уже виден в RandomCouplesPanel выше (с именами/треком)
             // — здесь только статус захода каждой пары, для контроля "кто
@@ -1130,6 +1153,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             judgingMethodLabel: JUDGING_MAX_SCORE_LABELS[round.judgingMaxScore] ?? String(round.judgingMaxScore),
             finalFormatLabel: isFinalRound ? FINAL_FORMAT_LABELS[d.finalSettings?.format ?? "NORMAL"] : null,
             showsHeats: !usesCustomFinalFlow,
+            judgesDrawPanel,
             // После DRAW_LOCKED у каждого захода уже обязана быть жеребьёвка
             // (round-state.ts) — новый заход без списка нарушил бы это.
             canAddHeat:

@@ -19,6 +19,7 @@ const participantFindUniqueOrThrow = vi.fn();
 const judgeAssignmentFindUnique = vi.fn();
 const judgeAssignmentFindMany = vi.fn();
 const judgeRoundConfirmationFindUnique = vi.fn();
+const judgeRoundConfirmationFindMany = vi.fn();
 const roundFindUniqueOrThrow = vi.fn();
 const roundFindMany = vi.fn();
 const heatFindMany = vi.fn();
@@ -70,12 +71,15 @@ vi.mock("@/lib/prisma", () => ({
     heat: { findMany: (...a: unknown[]) => heatFindMany(...a) },
     // "Готово" по финалу (confirmFinalJudgeRoundDone, 2026-09-07) — та же
     // проверка "судья уже подтвердил", что и в обычных раундах (scoring.ts).
-    judgeRoundConfirmation: { findUnique: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a), findFirst: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a) },
+    judgeRoundConfirmation: {
+      findUnique: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a), findFirst: (...a: unknown[]) => judgeRoundConfirmationFindUnique(...a),
+      findMany: (...a: unknown[]) => judgeRoundConfirmationFindMany(...a),
+    },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
-const { submitFinalJudgeScore, confirmFinalJudgeRoundDone, listMyActiveFinalRounds } = await import("@/server/judging/final-scoring");
+const { submitFinalJudgeScore, confirmFinalJudgeRoundDone, listMyActiveFinalRounds, getFinalJudgeQueue } = await import("@/server/judging/final-scoring");
 const { ValidationFailedError } = await import("@/server/errors");
 
 const actor: Actor = { userId: "judge1", email: "j@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -106,6 +110,7 @@ beforeEach(() => {
   judgeAssignmentFindUnique.mockReset().mockResolvedValue({ id: "assign1" });
   judgeAssignmentFindMany.mockReset();
   judgeRoundConfirmationFindUnique.mockReset().mockResolvedValue(null);
+  judgeRoundConfirmationFindMany.mockReset().mockResolvedValue([]);
   roundFindUniqueOrThrow.mockReset();
   roundFindMany.mockReset();
   heatFindMany.mockReset();
@@ -350,5 +355,56 @@ describe("listMyActiveFinalRounds() — скрывает финал, пока н
 
     expect(rounds).toEqual([]);
     expect(roundFindMany).not.toHaveBeenCalled();
+  });
+});
+
+// JUDGES_DANCE (final-judges-dance.ts, 2026-09-10): заходы стадии
+// формируются ВСЕ СРАЗУ (generateJudgesDanceStage), но PENDING — судья не
+// должен видеть и оценивать финалистов заходов, которые ещё не вызваны на
+// паркет (до этой правки round.heats отдавал ВСЕ заходы раунда без разбора
+// статуса, что раньше было безопасно только потому, что заходы JUDGES_DANCE
+// создавались строго по одному, именно перед стартом).
+describe("getFinalJudgeQueue() — не показывает участников заходов, которые ещё не запущены", () => {
+  const finalist = (id: string, bib: string) => ({
+    id,
+    role: "LEADER" as const,
+    scored: true,
+    registrationId: `reg-${id}`,
+    registration: { dancer: { displayName: `Танцор ${id}` }, checkIn: { bibNumber: bib } },
+    finalJudgeScores: [],
+  });
+
+  beforeEach(() => {
+    judgeAssignmentFindMany.mockResolvedValue([{ id: "assign1", divisionId: "div1", judgeUserId: "judge1", role: "FOLLOWER" }]);
+  });
+
+  it("пропускает заход в статусе PENDING целиком", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      division: { id: "div1", competitionId: "comp1", category: { name: "Дебютанты" } },
+      finalSession: { format: "JUDGES_DANCE", config: { dancingJudgeCriteriaIds: ["crit1"] }, currentStage: 1, criteriaSnapshot: criteria },
+      heats: [
+        { status: "PENDING", draws: [{ participants: [finalist("dp1", "1")] }] },
+        { status: "RUNNING", draws: [{ participants: [finalist("dp2", "2")] }] },
+      ],
+    });
+
+    const queue = await getFinalJudgeQueue("comp1", "final1");
+
+    expect(queue?.items.map((it) => it.drawParticipantId)).toEqual(["dp2"]);
+  });
+
+  it("показывает участников FINISHED заходов (продолжают быть видны/редактируемы после завершения)", async () => {
+    roundFindUniqueOrThrow.mockResolvedValue({
+      division: { id: "div1", competitionId: "comp1", category: { name: "Дебютанты" } },
+      finalSession: { format: "JUDGES_DANCE", config: { dancingJudgeCriteriaIds: ["crit1"] }, currentStage: 2, criteriaSnapshot: criteria },
+      heats: [
+        { status: "FINISHED", draws: [{ participants: [finalist("dp1", "1")] }] },
+        { status: "RUNNING", draws: [{ participants: [finalist("dp2", "2")] }] },
+      ],
+    });
+
+    const queue = await getFinalJudgeQueue("comp1", "final1");
+
+    expect(queue?.items.map((it) => it.drawParticipantId).sort()).toEqual(["dp1", "dp2"]);
   });
 });

@@ -269,6 +269,13 @@ export const replaceDrawHelperSchema = z.object({
 });
 export type ReplaceDrawHelperInput = z.infer<typeof replaceDrawHelperSchema>;
 
+// Судья-помощник JUDGES_DANCE (final-judges-dance.ts) — роль не передаётся,
+// сервер сам определяет её как противоположную танцующим в этом заходе.
+export const addJudgesDanceHelperSchema = z.object({
+  registrationId: z.string().min(1),
+});
+export type AddJudgesDanceHelperInput = z.infer<typeof addJudgesDanceHelperSchema>;
+
 // --- Живой танцпол / ротация партнёров (Этап 6, docs/00_DECISIONS.md A12) ---
 
 export const nextTrackSchema = z.object({

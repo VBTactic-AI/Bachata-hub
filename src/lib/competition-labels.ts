@@ -70,6 +70,16 @@ export const HEAT_STATUS_LABELS: Record<string, string> = {
   FINISHED: "Завершён",
 };
 
+// Источник судьи-помощника в заходе JUDGES_DANCE (final-judges-dance.ts) —
+// та же схема "DrawHelperSource", что и у обычных помощников жеребьёвки,
+// плюс два значения, добавленных под этот каскад (2026-09-10).
+export const DRAW_HELPER_SOURCE_LABELS: Record<string, string> = {
+  GUEST_HIGHER_CATEGORY: "категория выше",
+  REUSED_ALREADY_SCORED: "уже станцевал(а) в этом раунде",
+  SAME_CATEGORY_NON_FINALIST: "своя категория, не в финале",
+  OWN_FINAL_OPPOSITE_ROLE: "ждёт свою стадию",
+};
+
 export const ROTATION_MODE_LABELS: Record<string, string> = {
   TRACK_AUTO_SHIFT: "Смены внутри трека (автоматически)",
   SEGMENT_MANUAL_SHIFT: "Смена между отрезками (вручную, диджей называет число)",

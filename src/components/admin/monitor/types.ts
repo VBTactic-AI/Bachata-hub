@@ -69,6 +69,13 @@ export type MonitorRound = {
   // JUDGES_DANCE/RANDOM_COUPLES не используют Draw Engine — заходами
   // управляют собственные панели, обычную сетку заходов не показываем.
   showsHeats: boolean;
+  // JUDGES_DANCE (2026-09-10) — заходы формируются на тех же Heat/Draw/
+  // DrawParticipant, что и обычная жеребьёвка, поэтому визуально показаны в
+  // том же общем стиле (CLAUDE.md §64), но данные для правой колонки
+  // (реальные судьи + помощники) собираются иначе, чем обычный MonitorHeat —
+  // готовый узел приходит с сервера вместо showsHeats/heats выше. null для
+  // всех остальных раундов (и для RANDOM_COUPLES — у него своя панель ниже).
+  judgesDrawPanel: ReactNode | null;
   canAddHeat: boolean;
   showStartDrawing: boolean;
   scoreMonitorHref: string | null;
