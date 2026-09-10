@@ -36,6 +36,21 @@ export function JudgeScoreButtons({
   // гидратации и синхронно отдаёт текущее состояние очереди при подписке.
   const [pending, setPending] = useState<ReturnType<typeof getQueuedScore>>(undefined);
   const [error, setError] = useState<string | null>(null);
+  // Аудит судейских экранов (жалоба пользователя, 2026-09-10): "нажал — видно
+  // сразу — запрос ушёл — кнопка ОТЖАЛАСЬ — и снова нажалась" — кнопка мигала
+  // между кликом и router.refresh(). Причина: очередь удаляет доставленную
+  // запись СРАЗУ (judge-score-queue.ts), `pending` становится undefined
+  // раньше, чем серверный проп myScore обновится (router.refresh()
+  // дебаунсится на 400мс) — на это окно кнопка падала на СТАРОЕ myScore и
+  // "отжималась", а через 400мс снова "нажималась" на верное значение. override
+  // держит то, что судья реально выбрал, ПОСЛЕ того как запись ушла из
+  // очереди — до тех пор, пока myScore (из базы) сам не подтвердит то же
+  // самое значение: тогда локальное и серверное совпадают, экран не мигает
+  // (тот принцип, который описал пользователь).
+  const [override, setOverride] = useState<number | null>(null);
+  useEffect(() => {
+    if (override !== null && myScore === override) setOverride(null);
+  }, [myScore, override]);
 
   // router.refresh() после доставки оценки — не отсюда: одна такая кнопка на
   // экране далеко не одна (см. judging/[competitionId]/page.tsx), и если
@@ -47,11 +62,16 @@ export function JudgeScoreButtons({
     return subscribeJudgeScoreQueue((state) => {
       const item = state.queue.find((q) => q.drawParticipantId === drawParticipantId);
       setPending(item);
-      setError(state.errors[drawParticipantId] ?? null);
+      const err = state.errors[drawParticipantId] ?? null;
+      setError(err);
+      // Сервер отклонил — откатываем override, иначе кнопка навсегда
+      // показывала бы то, что судья пытался поставить, хотя это не
+      // сохранилось (myScore до этого значения никогда не дойдёт).
+      if (err) setOverride(null);
     });
   }, [drawParticipantId]);
 
-  const savedValue = pending ? pending.value : myScore;
+  const savedValue = pending ? pending.value : (override ?? myScore);
   // Визуальный дефолт "0"/"Нет" (по прямому запросу пользователя, 2026-09-10:
   // "где Да/Нет — там всегда горит Нет, надо нажать Да") — ТОЛЬКО подсветка
   // кнопки, не запись в БД: savedValue (реальное состояние, влияющее на
@@ -88,7 +108,10 @@ export function JudgeScoreButtons({
                 key={v}
                 type="button"
                 disabled={locked}
-                onClick={() => enqueueJudgeScore(drawParticipantId, v)}
+                onClick={() => {
+                  setOverride(v);
+                  enqueueJudgeScore(drawParticipantId, v);
+                }}
                 className={`h-11 min-w-[44px] rounded-app-sm border font-night text-sm font-bold uppercase tracking-wide transition-colors disabled:cursor-not-allowed ${
                   isYesNo ? "" : "flex-1 px-3"
                 } ${

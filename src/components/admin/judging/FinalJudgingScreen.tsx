@@ -105,6 +105,33 @@ export function FinalJudgingScreen({
   useEffect(() => {
     setOptimisticallyCleared(new Set());
   }, [items]);
+  // Аудит судейских экранов (жалоба пользователя, 2026-09-10): то же мигание
+  // "нажал — отжалось — снова нажалось", что и в JudgeScoreButtons.tsx —
+  // effectiveValue() падал на серверный item.scores сразу после того, как
+  // запись уходила из очереди (доставлена), а router.refresh() ещё не успел
+  // подвезти свежие props (дебаунс 400мс ниже). overrides держит то, что
+  // судья реально выбрал (ключ "drawParticipantId:criterionId"), пока
+  // серверные props сами не подтвердят то же значение — тогда запись из
+  // overrides просто больше не нужна (оба источника совпадают, экран не
+  // меняется — тот же принцип, что описал пользователь).
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+  useEffect(() => {
+    setOverrides((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+      const byId = new Map(items.map((it) => [it.drawParticipantId, it]));
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(prev)) {
+        const sep = key.indexOf(":");
+        const serverValue = byId.get(key.slice(0, sep))?.scores[key.slice(sep + 1)] ?? null;
+        if (serverValue === prev[key]) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [items]);
   // Реактивный тик — просто чтобы перерисоваться, когда очередь меняется
   // (эффективные значения читаются заново из очереди/пропсов при рендере).
   const [, setTick] = useState(0);
@@ -130,7 +157,25 @@ export function FinalJudgingScreen({
         if (!currentKeys.has(k) && !state.errors[k]) delivered = true;
       }
       pendingKeysRef.current = currentKeys;
-      setErrorsByKey(Object.fromEntries(Object.entries(state.errors).filter(([k]) => relevantIds.has(k.split(":")[0]))));
+      const relevantErrors = Object.fromEntries(Object.entries(state.errors).filter(([k]) => relevantIds.has(k.split(":")[0])));
+      setErrorsByKey(relevantErrors);
+      // Сервер отклонил — откатываем override для этого ключа, иначе ячейка
+      // навсегда показывала бы то, что судья пытался поставить (см.
+      // аналогичный откат в JudgeScoreButtons.tsx).
+      const erroredKeys = Object.keys(relevantErrors);
+      if (erroredKeys.length > 0) {
+        setOverrides((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const k of erroredKeys) {
+            if (k in next) {
+              delete next[k];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
       setTick((t) => t + 1);
       if (delivered) {
         if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -145,6 +190,8 @@ export function FinalJudgingScreen({
   function effectiveValue(item: FinalQueueItem, criterionId: string): number | null {
     const pending = getQueuedFinalScore(item.drawParticipantId, criterionId);
     if (pending) return pending.value;
+    const key = `${item.drawParticipantId}:${criterionId}`;
+    if (key in overrides) return overrides[key];
     return item.scores[criterionId] ?? null;
   }
 
@@ -223,6 +270,7 @@ export function FinalJudgingScreen({
       if (holderId) next.add(holderId);
       return next;
     });
+    setOverrides((prev) => ({ ...prev, [`${item.drawParticipantId}:${placementCriterion.id}`]: place }));
     enqueueFinalJudgeScore(item.drawParticipantId, placementCriterion.id, place);
   }
   const placedCount = placementCriterion ? items.filter((it) => placeOf(it) !== null).length : 0;
@@ -232,6 +280,7 @@ export function FinalJudgingScreen({
   const scoreSheetCriterion = scoreSheetFor ? sortedCriteria.find((c) => c.id === scoreSheetFor.criterionId) : undefined;
   function setScore(item: FinalQueueItem, criterionId: string, value: number) {
     if (confirmed) return;
+    setOverrides((prev) => ({ ...prev, [`${item.drawParticipantId}:${criterionId}`]: value }));
     enqueueFinalJudgeScore(item.drawParticipantId, criterionId, value);
     setScoreSheetFor(null);
   }
