@@ -230,6 +230,28 @@ export async function alreadyScoredElsewhereInRound(
   return new Set(ids);
 }
 
+// Все, кто СЕЙЧАС в каком-либо заходе этого раунда (в последней версии
+// каждой жеребьёвки) — реальные участники И помощники вместе, без разбора
+// по scored/заходу. В отличие от alreadyScoredElsewhereInRound (только
+// scored=true, без текущего захода) — нужен для режима ручного
+// редактирования (draw-manual.ts): кандидата в "добавить участника" нельзя
+// предлагать, если он уже где-то на паркете этого раунда в любом качестве —
+// иначе один и тот же человек мог бы оказаться сразу в двух заходах.
+export async function allRoundParticipantIds(tx: PrismaTx | typeof prisma, roundId: string): Promise<Set<string>> {
+  const heats = await tx.heat.findMany({
+    where: { roundId },
+    select: {
+      draws: {
+        orderBy: { version: "desc" },
+        take: 1,
+        select: { participants: { select: { registrationId: true } } },
+      },
+    },
+  });
+  const ids = heats.flatMap((h) => h.draws[0]?.participants.map((p) => p.registrationId) ?? []);
+  return new Set(ids);
+}
+
 // Гости для авто-добора при дисбалансе — каскадом ЧЕРЕЗ КАЖДУЮ категорию
 // строго выше по уровню, от ближайшей к дальней (не только ближайшую) —
 // докладываем до нужного количества, переходя выше, пока не наберём или не

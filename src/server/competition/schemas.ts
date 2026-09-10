@@ -258,6 +258,12 @@ export const addDrawHelperSchema = z.object({
 });
 export type AddDrawHelperInput = z.infer<typeof addDrawHelperSchema>;
 
+// Та же форма тела запроса, что и у помощника (registrationId + role) —
+// отдельный алиас только для читаемости на стороне режима редактирования
+// (draw-manual.ts), схема валидации не должна расходиться между ними.
+export const addRealParticipantSchema = addDrawHelperSchema;
+export type AddRealParticipantInput = AddDrawHelperInput;
+
 export const replaceDrawHelperSchema = z.object({
   registrationId: z.string().min(1),
 });

@@ -105,6 +105,12 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "draw:generate",
     "draw:reroll",
     "draw:lock",
+    // Режим редактирования жеребьёвки (draw-manual.ts, 2026-09-10) — раньше
+    // draw:override был только у HEAD_JUDGE/SUPER_ADMIN (используется для
+    // помощников/разбивки захода); по прямому решению пользователя EVENT_ADMIN
+    // как основной организатор соревнования тоже должен иметь доступ к режиму
+    // редактирования (добавление/удаление реальных участников, помощники).
+    "draw:override",
     "round:create",
     "round:start",
     "round:pause",

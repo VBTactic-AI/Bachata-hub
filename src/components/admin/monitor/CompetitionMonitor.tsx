@@ -14,10 +14,13 @@ import {
 import { categoryDotColor } from "../category-colors";
 import { AddDrawHelperForm } from "../AddDrawHelperForm";
 import { AddHeatButton } from "../AddHeatButton";
+import { AddRealParticipantForm } from "../AddRealParticipantForm";
 import { DeleteIconButton } from "../DeleteIconButton";
+import { EditModeToggle } from "../EditModeToggle";
 import { HeatStatusControls } from "../HeatStatusControls";
 import { CheckCircleIcon, ChevronRightIcon, JudgesIcon, PersonIcon, TrophyIcon } from "../icons";
 import { RemoveDrawHelperButton } from "../RemoveDrawHelperButton";
+import { RemoveRealParticipantButton } from "../RemoveRealParticipantButton";
 import { ReplaceDrawHelperButton } from "../ReplaceDrawHelperButton";
 import { RerollDrawButton } from "../RerollDrawButton";
 import { RotationPanel } from "../RotationPanel";
@@ -98,6 +101,7 @@ function ParticipantRow({
   role,
   canEditDraw,
   roleNotJudged,
+  editMode,
 }: {
   participant: MonitorParticipant;
   heatId: string;
@@ -109,6 +113,12 @@ function ParticipantRow({
   // партнёрш не получает оценок (по прямому запросу пользователя,
   // 2026-09-10). Помощников не помечаем — у них уже есть свой бейдж.
   roleNotJudged: boolean;
+  // Режим редактирования (2026-09-10) — показывает "убрать" и для РЕАЛЬНОГО
+  // участника, не только для помощника (тот уже убирался всегда, без этого
+  // флага). canEditDraw здесь достаточен вместо более широкого
+  // canManuallyEdit — раз участник вообще есть в списке, Draw уже
+  // существует, разница между двумя флагами тут не проявляется.
+  editMode: boolean;
 }) {
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-app-sm px-2 py-1.5 transition-colors hover:bg-admin-card/70">
@@ -145,6 +155,9 @@ function ParticipantRow({
           <ReplaceDrawHelperButton heatId={heatId} participantId={participant.id} role={role} />
         </>
       )}
+      {!participant.isHelper && editMode && canEditDraw && (
+        <RemoveRealParticipantButton participantId={participant.id} heatId={heatId} role={role} />
+      )}
     </li>
   );
 }
@@ -158,6 +171,7 @@ function SideColumn({
   categoryOrder,
   roundName,
   notJudgedRoles,
+  editMode,
 }: {
   heat: MonitorHeat;
   role: RegistrationRole;
@@ -167,6 +181,7 @@ function SideColumn({
   categoryOrder: number;
   roundName: string;
   notJudgedRoles: RegistrationRole[];
+  editMode: boolean;
 }) {
   const list = role === "LEADER" ? heat.leaders : heat.followers;
   const isNeeded = heat.neededRole === role;
@@ -193,6 +208,7 @@ function SideColumn({
               role={role}
               canEditDraw={heat.canEditDraw}
               roleNotJudged={roleNotJudged}
+              editMode={editMode}
             />
           ))}
         </ul>
@@ -213,6 +229,16 @@ function SideColumn({
             прямому запросу пользователя, 2026-09-09 — раньше была одна общая
             под обеими колонками). Раскрытый список кандидатов теперь модалка
             (AddDrawHelperForm), поэтому ширина колонки ему больше не мешает. */}
+        {/* Добавить реального участника — доступно в режиме редактирования
+            всегда (не только при дисбалансе, в отличие от помощника ниже) и
+            даже до первой жеребьёвки захода (canManuallyEdit не требует
+            существующего Draw — добавление первого же участника создаёт его
+            само, draw-manual.ts). */}
+        {editMode && heat.canManuallyEdit && (
+          <span className={isNeeded ? "" : "ml-auto"}>
+            <AddRealParticipantForm heatId={heat.id} role={role} categoryName={categoryName} roundName={roundName} heatNumber={heat.number} />
+          </span>
+        )}
         {isNeeded && heat.canEditDraw && (
           <span className="ml-auto">
             <AddDrawHelperForm
@@ -238,6 +264,7 @@ function HeatPanel({
   roundName,
   rotationSettingsPanel,
   notJudgedRoles,
+  editMode,
 }: {
   heat: MonitorHeat;
   roundStatus: RoundStatus;
@@ -246,8 +273,13 @@ function HeatPanel({
   roundName: string;
   rotationSettingsPanel: ReactNode;
   notJudgedRoles: RegistrationRole[];
+  editMode: boolean;
 }) {
   const deficit = Math.abs(heat.leaders.length - heat.followers.length);
+  // В режиме редактирования колонки видны, даже если жеребьёвки ещё не было
+  // — само добавление первого участника создаёт Draw (draw-manual.ts),
+  // раньше пустой заход без жеребьёвки был тупиком в интерфейсе.
+  const showColumns = heat.hasDraw || (editMode && heat.canManuallyEdit);
 
   return (
     <div className="flex flex-col gap-4">
@@ -266,7 +298,7 @@ function HeatPanel({
         </span>
       </div>
 
-      {heat.hasDraw ? (
+      {showColumns ? (
         <>
           <div className="grid gap-3.5 sm:grid-cols-2">
             <SideColumn
@@ -278,6 +310,7 @@ function HeatPanel({
               categoryOrder={categoryOrder}
               roundName={roundName}
               notJudgedRoles={notJudgedRoles}
+              editMode={editMode}
             />
             <SideColumn
               heat={heat}
@@ -288,6 +321,7 @@ function HeatPanel({
               categoryOrder={categoryOrder}
               roundName={roundName}
               notJudgedRoles={notJudgedRoles}
+              editMode={editMode}
             />
           </div>
 
@@ -295,16 +329,22 @@ function HeatPanel({
             <div>
               <p className="m-0 text-[10.5px] font-bold uppercase tracking-wider text-admin-disabled">Жеребьёвка захода</p>
               <p className="m-0 mt-1 text-xs tabular-nums text-admin-muted">
-                версия <span className="font-bold text-night-text">{heat.drawVersion}</span>
-                {heat.drawSeed && (
+                {heat.hasDraw ? (
                   <>
-                    {" · seed "}
-                    <span className="font-mono text-[11.5px] text-admin-primaryHover">{heat.drawSeed}</span>
+                    версия <span className="font-bold text-night-text">{heat.drawVersion}</span>
+                    {heat.drawSeed && (
+                      <>
+                        {" · seed "}
+                        <span className="font-mono text-[11.5px] text-admin-primaryHover">{heat.drawSeed}</span>
+                      </>
+                    )}
                   </>
+                ) : (
+                  "список ещё не сформирован — добавьте участников кнопками выше или соберите автоматически"
                 )}
               </p>
             </div>
-            {heat.canEditDraw ? (
+            {heat.canManuallyEdit ? (
               <span className="ml-auto flex flex-wrap items-center gap-2">
                 <RerollDrawButton heatId={heat.id} />
                 {heat.hasRealImbalance && <SplitHeatButton heatId={heat.id} />}
@@ -393,6 +433,11 @@ export function CompetitionMonitor({
   const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("category") ?? fallbackCategoryId);
   const [roundId, setRoundId] = useState<string | null>(searchParams.get("round"));
   const [heatId, setHeatId] = useState<string | null>(searchParams.get("heat"));
+  // "Режим редактирования" (промт пользователя, 2026-09-10) — чисто клиентское
+  // состояние, у самого раунда его нет: сбрасывается при смене раунда (см.
+  // selectRound ниже), чтобы не оставаться незаметно включённым после
+  // переключения на другой этап.
+  const [editMode, setEditMode] = useState(false);
 
   const category = resolveSelected(categories, categoryId, fallbackCategoryId);
   if (!category) return <p className="text-sm text-admin-muted">Категорий пока нет.</p>;
@@ -420,12 +465,14 @@ export function CompetitionMonitor({
     // сработало то же правило "показать то, что идёт сейчас".
     setRoundId(null);
     setHeatId(null);
+    setEditMode(false);
     setShallowQueryParams({ category: id, round: null, heat: null });
   }
 
   function selectRound(id: string) {
     setRoundId(id);
     setHeatId(null);
+    setEditMode(false);
     setShallowQueryParams({ round: id, heat: null });
   }
 
@@ -657,12 +704,16 @@ export function CompetitionMonitor({
               <div className="p-[18px]">
                 {round.showsHeats ? (
                   <div className="flex flex-col gap-4">
-                    {/* "+ Заход" — справа от списка заходов (по прямому запросу
-                        пользователя, 2026-09-09), в той же строке-полоске, что
-                        и сами вкладки заходов; показывается, даже если заходов
-                        ещё 0 или 1 (тогда сама полоска состоит из одной этой
-                        кнопки). */}
-                    {(round.heats.length > 1 || round.canAddHeat) && (
+                    {/* "+ Заход" раньше был виден всегда рядом со списком
+                        заходов; теперь на его месте тумблер "Режим
+                        редактирования" (по прямому запросу пользователя,
+                        2026-09-10) — сама кнопка "+ Заход" показывается,
+                        только пока режим включён (кроме самого первого захода
+                        категории — иначе в него было бы не попасть). */}
+                    {(round.heats.length > 1 ||
+                      round.canAddHeat ||
+                      round.status === "READY" ||
+                      round.status === "DRAWING") && (
                       <div className="flex items-center gap-1.5 overflow-x-auto rounded-app-sm bg-admin-card2/50 p-1.5" role="tablist" aria-label="Заходы">
                         {round.heats.length > 1 &&
                           round.heats.map((h) => {
@@ -689,11 +740,12 @@ export function CompetitionMonitor({
                               </button>
                             );
                           })}
-                        {round.canAddHeat && (
-                          <span className="ml-auto shrink-0">
-                            <AddHeatButton roundId={round.id} />
-                          </span>
-                        )}
+                        <span className="ml-auto flex shrink-0 items-center gap-2.5">
+                          {(round.status === "READY" || round.status === "DRAWING") && (
+                            <EditModeToggle roundId={round.id} roundStatus={round.status} checked={editMode} onChange={setEditMode} />
+                          )}
+                          {(editMode || round.heats.length === 0) && round.canAddHeat && <AddHeatButton roundId={round.id} />}
+                        </span>
                       </div>
                     )}
                     {round.heats.length === 0 ? (
@@ -715,6 +767,7 @@ export function CompetitionMonitor({
                           roundName={round.name}
                           rotationSettingsPanel={category.rotationSettingsPanel}
                           notJudgedRoles={round.notJudgedRoles}
+                          editMode={editMode}
                         />
                       )
                     )}

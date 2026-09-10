@@ -1077,6 +1077,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
               drawVersion: draw?.version ?? null,
               drawSeed: draw?.seed ?? null,
               canEditDraw: round.status === "DRAWING" && heat.status === "PENDING" && !!draw,
+              canManuallyEdit: round.status === "DRAWING" && heat.status === "PENDING",
               // Кого звать в помощь — определяется по факту (какой стороны
               // сейчас меньше в списке), а не выбором организатора: если уже
               // поровну, помощь не нужна вообще (docs/00_DECISIONS.md,
