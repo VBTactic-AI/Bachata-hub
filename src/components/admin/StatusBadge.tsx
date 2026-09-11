@@ -10,13 +10,15 @@ const DOT_VARIANTS = {
   neutral: "bg-admin-disabled",
 } as const;
 
+export type StatusBadgeVariant = keyof typeof DOT_VARIANTS;
+
 export function StatusBadge({
   label,
   variant = "neutral",
   className,
 }: {
   label: string;
-  variant?: keyof typeof DOT_VARIANTS;
+  variant?: StatusBadgeVariant;
   className?: string;
 }) {
   return (

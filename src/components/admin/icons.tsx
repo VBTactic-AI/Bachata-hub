@@ -49,6 +49,16 @@ export function CardIcon() {
     </svg>
   );
 }
+export function InfoIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5.5" strokeLinecap="round" />
+      <circle cx="12" cy="7.7" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function AlertIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

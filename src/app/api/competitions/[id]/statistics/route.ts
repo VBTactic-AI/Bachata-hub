@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCompetitionStatistics } from "@/server/statistics/competition-statistics";
 import { getJudgeStatisticsForCompetition } from "@/server/statistics/judge-statistics";
+import { getTopFinalParticipants } from "@/server/statistics/judging-analytics";
 import { respondToDomainError } from "@/server/http";
 
 // Статистика по запросу, а не на каждой загрузке карточки соревнования.
@@ -19,11 +20,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
 
   try {
-    const [competition, judges] = await Promise.all([
+    const [competition, judges, topFinalParticipants] = await Promise.all([
       getCompetitionStatistics(id),
       getJudgeStatisticsForCompetition(id),
+      getTopFinalParticipants(id),
     ]);
-    return NextResponse.json({ ok: true, competition, judges });
+    return NextResponse.json({ ok: true, competition, judges, topFinalParticipants });
   } catch (e) {
     return respondToDomainError(e);
   }

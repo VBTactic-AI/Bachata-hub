@@ -11,7 +11,13 @@ import { mean, stdDev, spearmanCorrelation } from "./stats-math";
 // потребовало бы сопоставления с моментом старта захода, отдельная задача.
 export type JudgeStatistics = {
   judgeUserId: string;
-  judgeEmail: string;
+  // Имя судьи для отображения — displayName профиля танцора, если он есть,
+  // иначе email как единственный доступный запасной вариант (тот же
+  // fallback, что уже применяется к публичным именам судей, A25/A28: у
+  // судьи не обязан существовать Dancer-профиль). По прямому запросу
+  // пользователя (2026-09-11) email в интерфейсе организатора не показываем
+  // вовсе, кроме как раз этого запасного случая, когда показать больше нечего.
+  judgeName: string;
   scoresCount: number;
   averageScore: number | null; // нормализовано 0..1 (доля от максимума шкалы/критерия)
   scoreStdDev: number | null;
@@ -26,12 +32,12 @@ export async function getJudgeStatisticsForCompetition(competitionId: string): P
 
   const assignments = await prisma.judgeAssignment.findMany({
     where: { division: { competitionId } },
-    select: { id: true, judgeUserId: true, judge: { select: { email: true } } },
+    select: { id: true, judgeUserId: true, judge: { select: { email: true, dancer: { select: { displayName: true } } } } },
   });
   if (assignments.length === 0) return [];
   const assignmentIds = assignments.map((a) => a.id);
   const judgeByAssignmentId = new Map(assignments.map((a) => [a.id, a.judgeUserId]));
-  const emailByJudgeUserId = new Map(assignments.map((a) => [a.judgeUserId, a.judge.email]));
+  const nameByJudgeUserId = new Map(assignments.map((a) => [a.judgeUserId, a.judge.dancer?.displayName ?? a.judge.email]));
 
   const [judgeScores, finalJudgeScores] = await Promise.all([
     prisma.judgeScore.findMany({
@@ -151,7 +157,7 @@ export async function getJudgeStatisticsForCompetition(competitionId: string): P
       const judgeCorrelations = correlations.get(judgeUserId) ?? [];
       return {
         judgeUserId,
-        judgeEmail: emailByJudgeUserId.get(judgeUserId) ?? judgeUserId,
+        judgeName: nameByJudgeUserId.get(judgeUserId) ?? judgeUserId,
         scoresCount: own.length,
         averageScore: mean(own),
         scoreStdDev: stdDev(own),
@@ -159,5 +165,5 @@ export async function getJudgeStatisticsForCompetition(competitionId: string): P
         outlierRate: outliers.length > 0 ? outliers.filter(Boolean).length / outliers.length : null,
       };
     })
-    .sort((a, b) => a.judgeEmail.localeCompare(b.judgeEmail));
+    .sort((a, b) => a.judgeName.localeCompare(b.judgeName));
 }
