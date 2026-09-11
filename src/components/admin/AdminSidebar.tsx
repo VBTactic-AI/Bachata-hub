@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
+import { ShieldIcon, ChatIcon, BuildingIcon, AlertIcon, PeopleIcon, GridIcon } from "@/components/admin/icons";
 
 // Иконки — тот же приём, что и в compete/BottomNav.tsx: инлайн SVG-путь на
 // currentColor, без иконочного шрифта/библиотеки (CLAUDE.md §14).
@@ -115,6 +116,24 @@ function referenceItems(): NavItem[] {
   ];
 }
 
+// Раздел "Модерация" — перенесён с общесайтовой кнопки в AdminTopBar сюда,
+// отдельной раскрывающейся группой сайдбара (2026-09-11, по прямому запросу
+// пользователя), по образцу "Справочники": каждый пункт — своя страница под
+// /admin/moderation/**. Гейт — тот же isAdminUser (SUPER_ADMIN), что и у
+// "Справочники"/"Приз зрительских симпатий": пока раздел временно закрыт для
+// MODERATOR (см. docs/00_DECISIONS.md) — ограниченный режим для модераторов
+// школы вынесен на будущее и здесь не реализован.
+function moderationItems(): NavItem[] {
+  return [
+    { href: "/admin/moderation", label: "Обзор", icon: <GridIcon />, match: (p) => p === "/admin/moderation" },
+    { href: "/admin/moderation/events", label: t.moderation.events, icon: <AlertIcon />, match: (p) => p.startsWith("/admin/moderation/events") },
+    { href: "/admin/moderation/reviews", label: t.moderation.reviews, icon: <ChatIcon />, match: (p) => p.startsWith("/admin/moderation/reviews") },
+    { href: "/admin/moderation/schools", label: t.moderation.schoolClaims, icon: <BuildingIcon />, match: (p) => p.startsWith("/admin/moderation/schools") },
+    { href: "/admin/moderation/users", label: t.moderation.users, icon: <PeopleIcon />, match: (p) => p.startsWith("/admin/moderation/users") },
+    { href: "/admin/moderation/log", label: "Журнал", icon: <BookIcon />, match: (p) => p.startsWith("/admin/moderation/log") },
+  ];
+}
+
 // Отдельный самостоятельный пункт, не внутри "Справочники" — по прямому
 // запросу пользователя (2026-09-11): это не общий справочник, а сводный
 // отчёт по всем соревнованиям, и его не должно быть видно там же, где
@@ -160,6 +179,10 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
   // запросу пользователя, 2026-09-09 — раньше список был всегда развёрнут
   // безусловно, теперь сворачивается кликом по заголовку).
   const [referencesOpen, setReferencesOpen] = useState(referenceActive);
+
+  const moderationLinks = moderationItems();
+  const moderationActive = moderationLinks.some((item) => item.match(pathname));
+  const [moderationOpen, setModerationOpen] = useState(moderationActive);
 
   const competitionsActive = pathname.startsWith("/admin/competitions");
   // "new" — форма создания, не id конкретного соревнования; для неё пункта
@@ -291,6 +314,40 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
             <div className="min-h-0 overflow-hidden">
               <div className="flex shrink-0 flex-col gap-0.5 pt-0.5 sm:pl-1">
                 {referenceLinks.map((item) => (
+                  <NavLink key={item.href} item={item} active={item.match(pathname)} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAdminUser && (
+        <div className="mt-0 flex shrink-0 items-center gap-1.5 sm:mt-0.5 sm:flex-col sm:items-stretch sm:gap-0.5">
+          <button
+            type="button"
+            onClick={() => setModerationOpen((v) => !v)}
+            aria-expanded={moderationOpen}
+            className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-app-sm px-3 py-2 text-sm font-medium transition-colors sm:w-full ${
+              moderationActive ? "text-night-text" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+            }`}
+          >
+            <span className={moderationActive ? "text-admin-primary" : "text-admin-disabled"}>
+              <ShieldIcon />
+            </span>
+            <span className="flex-1 text-left">{t.nav.admin}</span>
+            <span className={moderationActive ? "text-admin-primary" : "text-admin-disabled"}>
+              <ChevronIcon open={moderationOpen} />
+            </span>
+          </button>
+          <div
+            className={`grid shrink-0 transition-[grid-template-rows] duration-300 ease-out sm:w-full ${
+              moderationOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            }`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex shrink-0 flex-col gap-0.5 pt-0.5 sm:pl-1">
+                {moderationLinks.map((item) => (
                   <NavLink key={item.href} item={item} active={item.match(pathname)} />
                 ))}
               </div>

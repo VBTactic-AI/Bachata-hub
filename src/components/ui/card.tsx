@@ -2,7 +2,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
 
 // cardVariants экспортируется отдельно, потому что часть карточек в проекте —
-// это <Link> (например, плитки в /moderation), а не <div>.
+// это <Link> (например, плитки в /admin/moderation), а не <div>.
 export const cardVariants = cva(
   "block rounded-app border border-line bg-surface p-[18px] shadow-sm transition duration-200 ease-brand",
   {

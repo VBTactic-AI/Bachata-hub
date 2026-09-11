@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
-import { getCurrentUser, isModerator } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
 
 // Компактная шапка /admin — заменяет общесайтовый DarkTopNav именно в этом
@@ -8,6 +8,10 @@ import { getMyDancerRef } from "@/lib/dancer";
 // сайта (Календарь/Соревнования/Школы) внутри админки, только выход и
 // сервисные ссылки. Действия те же, что и были у DarkTopNav на /admin —
 // ничего не убрано, просто вынесено в свою, более компактную шапку.
+//
+// Ссылка "Модерация" отсюда убрана (2026-09-11) — раздел переехал внутрь
+// самой админки отдельной группой сайдбара (AdminSidebar), дублировать её
+// здесь больше не нужно.
 export async function AdminTopBar() {
   const user = await getCurrentUser();
   const dancer = await getMyDancerRef();
@@ -22,11 +26,6 @@ export async function AdminTopBar() {
       </Link>
       {user ? (
         <div className="flex flex-wrap items-center gap-3 font-night text-sm sm:gap-4">
-          {isModerator(user) && (
-            <Link href="/moderation" className="text-admin-muted no-underline hover:text-night-text hover:no-underline">
-              {t.nav.admin}
-            </Link>
-          )}
           {dancer && (
             <Link href="/profile" className="text-admin-muted no-underline hover:text-night-text hover:no-underline">
               {t.nav.profile}

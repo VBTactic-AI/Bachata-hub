@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
-import { getCurrentUser, canCreateEvents, isModerator } from "@/lib/auth";
+import { getCurrentUser, canCreateEvents, isAdmin } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
 import { getActor } from "@/server/rbac/actor";
 import { isJudgeOnlyActor } from "@/server/rbac/authorize";
@@ -15,8 +15,10 @@ const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-u
 // Ссылки на /admin/**, /moderation и /events/new раньше были только в
 // светлом Header — когда его скрыли на этих маршрутах (07.09.2026), доступ
 // к админке и модерации пропал из интерфейса целиком (найдено пользователем).
-// Права те же, что и в Header.tsx: hasCompetitionAccess/isModerator/isAdmin/
-// canCreateEvents, не выдумываем новые.
+// Права те же, что и в Header.tsx: hasCompetitionAccess/isAdmin/
+// canCreateEvents, не выдумываем новые. Ссылка "Модерация" ведёт в
+// /admin/moderation (2026-09-11, перенесена туда из отдельного /moderation) —
+// временно доступна только isAdmin (SUPER_ADMIN), см. docs/00_DECISIONS.md.
 export async function DarkTopNav() {
   const user = await getCurrentUser();
   const dancer = await getMyDancerRef();
@@ -50,8 +52,8 @@ export async function DarkTopNav() {
             {t.nav.addEvent}
           </Link>
         )}
-        {isModerator(user) && (
-          <Link href="/moderation" className={NAV_LINK}>
+        {isAdmin(user) && (
+          <Link href="/admin/moderation" className={NAV_LINK}>
             {t.nav.admin}
           </Link>
         )}

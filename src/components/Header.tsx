@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
-import { getCurrentUser, canCreateEvents, isModerator, isAdmin } from "@/lib/auth";
+import { getCurrentUser, canCreateEvents, isAdmin } from "@/lib/auth";
 import { getActiveCities } from "@/lib/cities";
 import { getMyDancerRef } from "@/lib/dancer";
 import { getPreferredCity } from "@/lib/city-preference";
@@ -51,8 +51,8 @@ export async function Header() {
               {t.nav.addEvent}
             </Link>
           )}
-          {isModerator(user) && (
-            <Link href="/moderation" className="text-ink hover:text-primary hover:no-underline">
+          {isAdmin(user) && (
+            <Link href="/admin/moderation" className="text-ink hover:text-primary hover:no-underline">
               {t.nav.admin}
             </Link>
           )}
