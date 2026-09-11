@@ -1,4 +1,5 @@
 import type { FloorSpotlight as FloorSpotlightData } from "@/lib/competition-overview";
+import { LiveDot } from "@/components/LiveDot";
 
 // Цвета ролей — те же литералы, что и в CompetitionMonitor.tsx/
 // ScoreMonitorTable.tsx/DivisionResultsPanel.tsx (ROLE_TEXT_CLASS и т.п.,
@@ -39,7 +40,7 @@ export function FloorSpotlight({ data }: { data: FloorSpotlightData }) {
     <div className="rounded-app border border-admin-border bg-gradient-to-br from-[#111a30] to-admin-card p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2 pt-0.5 text-[0.75rem] font-extrabold uppercase tracking-wide text-night-success">
-          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-night-success motion-reduce:animate-none" />
+          <LiveDot />
           Сейчас на паркете
         </div>
         {/* Обычный <a>, не next/link: Монитор и переключатель вкладок читают

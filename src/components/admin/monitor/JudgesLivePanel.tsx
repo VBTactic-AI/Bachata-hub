@@ -7,6 +7,7 @@ import type { RoundStatus } from "@prisma/client";
 import type { ScoreMonitorTotal } from "@/server/judging/score-monitor";
 import { fetchScoreMonitorSnapshot, useScoreEvents } from "../judging/use-score-events";
 import type { MonitorJudge } from "./types";
+import { LiveDot } from "@/components/LiveDot";
 
 // Судьи текущей категории прямо в мониторе: кто судит партнёров, кто
 // партнёрш, и сколько каждый уже сдал. Оценки — единственное на этом экране,
@@ -201,8 +202,15 @@ export function JudgesLivePanel({
           <h3 className="m-0 text-sm font-extrabold text-night-text">Судьи категории</h3>
           <span className="rounded-full bg-admin-card2 px-2.5 py-0.5 text-xs font-bold tabular-nums text-admin-muted">{total}</span>
           {live && (
-            <span className={`ml-auto text-xs font-semibold ${connected ? "text-night-success" : "text-red-400"}`}>
-              {connected ? "● live" : "○ переподключение…"}
+            <span className={`ml-auto inline-flex items-center gap-1.5 text-xs font-semibold ${connected ? "text-night-success" : "text-red-400"}`}>
+              {connected ? (
+                <>
+                  <LiveDot />
+                  live
+                </>
+              ) : (
+                "○ переподключение…"
+              )}
             </span>
           )}
         </div>

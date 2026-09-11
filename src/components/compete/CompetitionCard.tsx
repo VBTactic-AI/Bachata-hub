@@ -45,9 +45,12 @@ function StatusPill({ status, isRegistered }: { status: CompetitionStatus; isReg
 export function CompetitionCard({ competition }: { competition: CompetitionCardData }) {
   const { id, name, startAt, venue, cityName, status, coverUrl, isRegistered, divisionNames, registrationsCount } = competition;
   const place = [cityName, venue].filter(Boolean).join(", ");
+  // group-hover срабатывает только у десктопной карточки (у неё есть класс
+  // `group`) — на мобильной компактной строке (без group, наведения и так
+  // нет) это просто ничего не делает, безопасно шарить один и тот же JSX.
   const cover = (
     <div
-      className="bg-gradient-night-hero bg-cover bg-center"
+      className="h-full w-full bg-gradient-night-hero bg-cover bg-center transition-transform duration-500 ease-out group-hover:scale-110"
       style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}
       aria-hidden="true"
     />
@@ -77,9 +80,9 @@ export function CompetitionCard({ competition }: { competition: CompetitionCardD
       {/* Десктопный вариант — карточка с картинкой сверху, как в макете JBJ Platform */}
       <Link
         href={`/compete/${id}`}
-        className="hidden flex-col overflow-hidden rounded-app border border-night-border bg-night-card no-underline transition-colors hover:border-night-primary/60 hover:bg-night-card2 sm:flex"
+        className="group hidden flex-col overflow-hidden rounded-app border border-night-border bg-night-card no-underline transition-[transform,box-shadow,background-color,border-color] duration-300 ease-out hover:z-10 hover:scale-[1.05] hover:border-night-primary/60 hover:bg-night-card2 hover:shadow-[0_25px_50px_-15px_rgba(0,0,0,0.6)] sm:flex"
       >
-        <div className="h-[150px] w-full">{cover}</div>
+        <div className="h-[150px] w-full overflow-hidden">{cover}</div>
         <div className="flex flex-col gap-2 p-5">
           <div className="flex items-start justify-between gap-2">
             <p className="m-0 font-night text-[1.05rem] font-semibold leading-snug text-night-text">{name}</p>

@@ -151,11 +151,20 @@ export default {
           "0%, 60%": { backgroundPosition: "-60% 0%" },
           "100%": { backgroundPosition: "160% 0%" },
         },
+        // "Live Score Glow" (2026-09-11, по прямому запросу пользователя) —
+        // пульсирующий зелёный индикатор live-состояния везде в проекте
+        // (LiveDot.tsx): дышащий цветной box-shadow + лёгкий scale, а не
+        // просто opacity как у стандартного Tailwind animate-pulse.
+        "live-glow": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(55,214,122,0.6)", transform: "scale(1)" },
+          "50%": { boxShadow: "0 0 8px 4px rgba(55,214,122,0)", transform: "scale(1.2)" },
+        },
       },
       animation: {
         "card-in": "card-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both",
         "heart-pop": "heart-pop 380ms cubic-bezier(0.16, 1, 0.3, 1) both",
         "card-sweep": "card-sweep 4200ms ease-in-out infinite",
+        "live-glow": "live-glow 1.8s ease-in-out infinite",
       },
     },
   },

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { LiveDot } from "@/components/LiveDot";
 
 export type JudgeStageStatus = "NOT_STARTED" | "CURRENT" | "DONE";
 
@@ -91,7 +92,7 @@ export function JudgeCategoryTabs({ categories }: { categories: JudgeCategoryTab
                 >
                   {s.label}
                   {s.status === "DONE" && <span aria-hidden="true">✓</span>}
-                  {s.status === "CURRENT" && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-night-success" aria-hidden="true" />}
+                  {s.status === "CURRENT" && <LiveDot className="h-1.5 w-1.5" />}
                 </button>
               );
             })}

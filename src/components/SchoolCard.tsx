@@ -16,12 +16,14 @@ export function SchoolCard({ school }: { school: SchoolWithCity }) {
   return (
     <Card
       interactive
-      className="flex flex-row items-start gap-3.5 border-night-border bg-night-card p-3 hover:-translate-y-0 hover:border-night-primary/60 hover:shadow-none"
+      className="group flex flex-row items-start gap-3.5 border-night-border bg-night-card p-3 transition-[transform,box-shadow,border-color] duration-300 ease-out hover:-translate-y-0 hover:scale-[1.05] hover:border-night-primary/60 hover:shadow-[0_25px_50px_-15px_rgba(0,0,0,0.6)]"
     >
-      <div
-        className="h-[66px] w-[66px] shrink-0 overflow-hidden rounded-app-sm bg-gradient-night-hero bg-cover bg-center"
-        aria-hidden="true"
-      />
+      <div className="h-[66px] w-[66px] shrink-0 overflow-hidden rounded-app-sm">
+        <div
+          className="h-full w-full bg-gradient-night-hero bg-cover bg-center transition-transform duration-500 ease-out group-hover:scale-110"
+          aria-hidden="true"
+        />
+      </div>
       <div className="min-w-0 flex-1">
         <VerificationBadge status={school.verificationStatus} />
         <h3 className="m-0 mt-1.5 truncate font-night text-[0.95rem] font-semibold text-night-text">

@@ -6,6 +6,7 @@ import { InfoCard } from "@/components/compete/InfoCard";
 import { CategoryProgressAccordion } from "@/components/compete/CategoryProgressAccordion";
 import { getPublicCompetitionView } from "@/server/public/public-competition-view";
 import { pluralizeRu } from "@/lib/format";
+import { LiveDot } from "@/components/LiveDot";
 
 const DATE_FMT = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 
@@ -75,9 +76,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {view.liveStatus && (
         <Link
           href={`/screen/${id}`}
-          className="block rounded-app border border-night-success/40 bg-night-success/10 px-4 py-3 text-center text-sm font-bold text-night-success no-underline"
+          className="flex items-center justify-center gap-2 rounded-app border border-night-success/40 bg-night-success/10 px-4 py-3 text-center text-sm font-bold text-night-success no-underline"
         >
-          ● Сейчас идёт: {view.liveStatus.divisionCategoryName} · {view.liveStatus.roundLabel} · Заход {view.liveStatus.heatNumber} — открыть табло →
+          <LiveDot />
+          Сейчас идёт: {view.liveStatus.divisionCategoryName} · {view.liveStatus.roundLabel} · Заход {view.liveStatus.heatNumber} — открыть табло →
         </Link>
       )}
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useScoreEvents, fetchScoreMonitorSnapshot, type ScoreEvent } from "./judging/use-score-events";
+import { LiveDot } from "@/components/LiveDot";
 import type {
   FinalScoreMonitorTable as FinalTable,
   PrelimScoreMonitorTable as PrelimTable,
@@ -120,9 +121,13 @@ function JudgeChip({
 }
 
 function LiveBadge({ connected }: { connected: boolean }) {
+  if (!connected) {
+    return <span className="text-xs font-semibold text-red-400">○ переподключение…</span>;
+  }
   return (
-    <span className={`text-xs font-semibold ${connected ? "text-night-success" : "text-red-400"}`}>
-      {connected ? "● live" : "○ переподключение…"}
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-night-success">
+      <LiveDot />
+      live
     </span>
   );
 }
