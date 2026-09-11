@@ -118,6 +118,11 @@ export default {
         "gradient-admin-cta": "linear-gradient(100deg, #3b82f6, #2563eb)",
         "gradient-night-hero":
           "radial-gradient(120% 90% at 25% 10%, rgba(255,45,138,0.4) 0%, transparent 58%), radial-gradient(100% 80% at 85% 95%, rgba(108,43,255,0.35) 0%, transparent 62%), linear-gradient(165deg, #331629, #120a12)",
+        // Диагональный блик для "Card Light Sweep" (стеклянные карточки
+        // событий/школ на главной, 2026-09-11) — двигается через
+        // background-position, не через отдельный skew-элемент.
+        "card-sweep":
+          "linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.14) 45%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0.14) 55%, transparent 70%)",
       },
       transitionTimingFunction: {
         brand: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -135,10 +140,22 @@ export default {
           "60%": { transform: "scale(0.92)" },
           "100%": { transform: "scale(1)" },
         },
+        // Блик "паркуется" за левым краем карточки первые 60% цикла (не
+        // виден, background-position за пределами background-size), затем
+        // за оставшиеся ~40% пробегает по диагонали до правого края — редкий
+        // ambient-повтор, а не постоянное мельтешение. Работает одинаково на
+        // hover (desktop) и без него (мобильный — там наведения нет, CLAUDE.md
+        // §40 mobile-first), задержка перед стартом рандомизируется по
+        // карточке через animation-delay (см. использование в page.tsx).
+        "card-sweep": {
+          "0%, 60%": { backgroundPosition: "-60% 0%" },
+          "100%": { backgroundPosition: "160% 0%" },
+        },
       },
       animation: {
         "card-in": "card-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both",
         "heart-pop": "heart-pop 380ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        "card-sweep": "card-sweep 4200ms ease-in-out infinite",
       },
     },
   },

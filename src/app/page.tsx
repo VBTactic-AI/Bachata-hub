@@ -6,6 +6,7 @@ import { getPreferredCity } from "@/lib/city-preference";
 import { eventsForHome } from "@/lib/events";
 import { formatEventTime, formatRelativeDayLabel } from "@/lib/format";
 import { CityPicker } from "@/components/CityPicker";
+import { CardLightSweep } from "@/components/CardLightSweep";
 import { prisma } from "@/lib/prisma";
 import { DarkTopNav } from "@/components/dark/DarkTopNav";
 import { BottomNavGate } from "@/components/compete/BottomNavGate";
@@ -16,14 +17,14 @@ type EventWithRelations = Event & { city: City; school: School | null };
 // Компактная строка события в стиле макета JBJ Platform (экран "ГЛАВНАЯ") —
 // не переиспользует общий (светлый) EventCard: он общий с /events, который
 // пока остаётся светлым (06.09.2026).
-function HomeEventRow({ event }: { event: EventWithRelations }) {
+function HomeEventRow({ event, sweepDelay = 0 }: { event: EventWithRelations; sweepDelay?: number }) {
   const relativeDay = formatRelativeDayLabel(event.startsAt);
   const meta = [event.city.nameRu, event.school?.name].filter(Boolean).join(" · ");
 
   return (
     <Link
       href={`/events/${event.slug}`}
-      className="flex items-center gap-3.5 rounded-app bg-night-card p-3 no-underline transition-colors hover:bg-night-card2"
+      className="relative flex items-center gap-3.5 overflow-hidden rounded-app border border-white/10 bg-night-card/75 p-3 no-underline backdrop-blur-md transition-colors hover:border-white/20 hover:bg-night-card2/85"
     >
       <span
         className="h-[68px] w-[68px] shrink-0 rounded-app-sm bg-gradient-night-hero bg-cover bg-center"
@@ -38,6 +39,7 @@ function HomeEventRow({ event }: { event: EventWithRelations }) {
         </span>
         {meta && <span className="truncate text-xs text-night-muted">{meta}</span>}
       </span>
+      <CardLightSweep sweepDelay={sweepDelay} />
     </Link>
   );
 }
@@ -45,15 +47,16 @@ function HomeEventRow({ event }: { event: EventWithRelations }) {
 // Тизер школы для горизонтальной ленты "Популярные школы" — своя (не
 // SchoolCard: тот вёрстан строкой для списка /schools, здесь нужна узкая
 // вертикальная карточка, как в макете).
-function HomeSchoolTeaser({ school }: { school: School & { city: City } }) {
+function HomeSchoolTeaser({ school, sweepDelay = 0 }: { school: School & { city: City }; sweepDelay?: number }) {
   return (
     <Link
       href={`/schools/${school.slug}`}
-      className="flex w-[132px] shrink-0 flex-col overflow-hidden rounded-app bg-night-card pb-3 no-underline transition-colors hover:bg-night-card2"
+      className="relative flex w-[132px] shrink-0 flex-col overflow-hidden rounded-app border border-white/10 bg-night-card/75 pb-3 no-underline backdrop-blur-md transition-colors hover:border-white/20 hover:bg-night-card2/85"
     >
       <span className="block h-[92px] bg-gradient-night-hero" aria-hidden="true" />
       <span className="mt-2.5 truncate px-3 text-[0.85rem] font-semibold text-night-text">{school.name}</span>
       <span className="mt-0.5 truncate px-3 text-xs text-night-muted">{school.city.nameRu}</span>
+      <CardLightSweep sweepDelay={sweepDelay} />
     </Link>
   );
 }
@@ -124,8 +127,8 @@ export default async function HomePage() {
             <p className="m-0 text-sm text-night-muted">{t.home.noEventsToday}</p>
           ) : (
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-              {today.map((e) => (
-                <HomeEventRow key={e.id} event={e} />
+              {today.map((e, i) => (
+                <HomeEventRow key={e.id} event={e} sweepDelay={(i % 5) * 0.5} />
               ))}
             </div>
           )}
@@ -137,8 +140,8 @@ export default async function HomePage() {
             <p className="m-0 text-sm text-night-muted">{t.home.noEventsToday}</p>
           ) : (
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-              {thisWeek.map((e) => (
-                <HomeEventRow key={e.id} event={e} />
+              {thisWeek.map((e, i) => (
+                <HomeEventRow key={e.id} event={e} sweepDelay={(i % 5) * 0.5} />
               ))}
             </div>
           )}
@@ -157,8 +160,8 @@ export default async function HomePage() {
               </Link>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
-              {popularSchools.map((s) => (
-                <HomeSchoolTeaser key={s.id} school={s} />
+              {popularSchools.map((s, i) => (
+                <HomeSchoolTeaser key={s.id} school={s} sweepDelay={(i % 5) * 0.5} />
               ))}
             </div>
           </section>
