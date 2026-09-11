@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { getCurrentUser, isAdmin } from "@/lib/auth";
+import { getCurrentUser, isAdmin, canCreateEvents } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminTopBar } from "@/components/admin/AdminTopBar";
 import { BottomNavGate } from "@/components/compete/BottomNavGate";
@@ -26,7 +26,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           фиксе фона главной страницы (src/app/page.tsx): весь настоящий
           контент в одном слое поверх декоративного фона (z-0). */}
       <div className="relative z-10 flex min-h-[100dvh] flex-col sm:flex-row">
-        <AdminSidebar isAdminUser={isAdmin(user)} />
+        <AdminSidebar isAdminUser={isAdmin(user)} canManageContent={canCreateEvents(user)} />
         <div className="flex min-w-0 flex-1 flex-col">
           <AdminTopBar />
           <main className="min-w-0 flex-1 px-4 pb-24 pt-5 sm:pb-12 sm:pl-2 sm:pr-8 sm:pt-7">

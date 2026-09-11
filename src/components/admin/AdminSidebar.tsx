@@ -67,6 +67,18 @@ function BookIcon() {
     </svg>
   );
 }
+// "Контент" (2026-09-11, по прямому запросу пользователя) — документ со
+// знаком "+", для раздела с формой "Добавить событие" (перенесена сюда из
+// общесайтовой кнопки Header/DarkTopNav).
+function ContentIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M6 3.5h8l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 19V5A1.5 1.5 0 0 1 6 3.5Z" strokeLinejoin="round" />
+      <path d="M13.5 3.5V8h4.5" strokeLinejoin="round" />
+      <path d="M9 14.5h6M12 11.5v6" strokeLinecap="round" />
+    </svg>
+  );
+}
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
@@ -147,6 +159,19 @@ const AUDIENCE_VOTE_STATS_ITEM: NavItem = {
   match: (p) => p.startsWith("/admin/audience-vote-stats"),
 };
 
+// "Контент" — пока один пункт (форма "Добавить событие", перенесена из
+// общесайтовой навигации, 2026-09-11), поэтому обычная ссылка, а не
+// раскрывающаяся группа, как "Справочники"/"Модерация". Доступ — тот же
+// canCreateEvents, что уже был у кнопки в Header/DarkTopNav (SCHOOL_REP/
+// ORGANIZER/MODERATOR/ADMIN), не сужен до isAdminUser: сужать состав тех,
+// кто может добавить событие, никто не просил.
+const CONTENT_ITEM: NavItem = {
+  href: "/admin/content",
+  label: "Контент",
+  icon: <ContentIcon />,
+  match: (p) => p.startsWith("/admin/content"),
+};
+
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
     <Link
@@ -171,7 +196,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 // горизонтальной прокрутки (полноценный off-canvas drawer — Phase 11
 // Responsive), но с той же новой раскраской, чтобы не заводить два разных
 // визуальных языка на переходный период.
-export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
+export function AdminSidebar({ isAdminUser, canManageContent }: { isAdminUser: boolean; canManageContent: boolean }) {
   const pathname = usePathname() ?? "";
   const referenceLinks = referenceItems();
   const referenceActive = referenceLinks.some((item) => item.match(pathname));
@@ -283,6 +308,12 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
           </div>
         )}
       </div>
+
+      {canManageContent && (
+        <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-0.5 sm:flex-col sm:gap-0.5">
+          <NavLink item={CONTENT_ITEM} active={CONTENT_ITEM.match(pathname)} />
+        </div>
+      )}
 
       {isAdminUser && (
         <div className="mt-0 flex shrink-0 items-center gap-1.5 sm:mt-5 sm:flex-col sm:items-stretch sm:gap-0.5">

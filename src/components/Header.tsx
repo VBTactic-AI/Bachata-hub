@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
-import { getCurrentUser, canCreateEvents, isAdmin } from "@/lib/auth";
+import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { getActiveCities } from "@/lib/cities";
 import { getMyDancerRef } from "@/lib/dancer";
 import { getPreferredCity } from "@/lib/city-preference";
@@ -46,16 +46,6 @@ export async function Header() {
           <Link href="/schools" className="text-ink hover:text-primary hover:no-underline">
             {t.nav.schools}
           </Link>
-          {canCreateEvents(user) && (
-            <Link href="/events/new" className="text-ink hover:text-primary hover:no-underline">
-              {t.nav.addEvent}
-            </Link>
-          )}
-          {isAdmin(user) && (
-            <Link href="/admin/moderation" className="text-ink hover:text-primary hover:no-underline">
-              {t.nav.admin}
-            </Link>
-          )}
           <Link href="/compete" className="text-ink hover:text-primary hover:no-underline">
             {t.nav.competitions}
           </Link>
