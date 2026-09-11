@@ -110,6 +110,11 @@ model User {
   publishedRoundAdvancements Round[]              @relation("RoundAdvancementPublishedBy")
   publishedResults           Result[]             @relation("ResultPublishedBy")
   createdResults             Result[]             @relation("ResultCreatedBy")
+  audienceVoteBallotsCast    AudienceVoteBallot[]  @relation("AudienceVoteBallotVoter")
+  startedAudienceVotes       AudienceVote[]        @relation("AudienceVoteStartedBy")
+  closedAudienceVotes        AudienceVote[]        @relation("AudienceVoteClosedBy")
+  publishedAudienceVotes     AudienceVote[]        @relation("AudienceVotePublishedBy")
+  confirmedAudienceWinners   AudienceVoteWinner[]  @relation("AudienceVoteWinnerConfirmedBy")
 
   @@index([role])
 }
@@ -401,6 +406,11 @@ model Dancer {
   selfLevel   DanceLevel?
   avatarUrl   String?
   createdAt   DateTime    @default(now())
+  // Приз зрительских симпатий (Audience Vote) виден на публичном профиле
+  // (/dancers/[id]) остальным посетителям только если сам танцор это включил;
+  // самому танцору и SUPER_ADMIN — виден всегда, независимо от этого поля
+  // (docs/00_DECISIONS.md, план "Приз зрительских симпатий").
+  showAudienceAwardsPublicly Boolean @default(false)
 
   attendances   Attendance[]
   achievements  Achievement[]
@@ -811,6 +821,7 @@ model Division {
   finalCriteria    FinalCriterion[]
   finalSettings    FinalSettings?
   results          Result[]
+  audienceVote     AudienceVote?
 
   @@unique([competitionId, categoryId])
   @@index([categoryId])
@@ -1542,6 +1553,8 @@ model Registration {
   finalPairsAsLeader   FinalPair[]       @relation("FinalPairLeader")
   finalPairsAsFollower FinalPair[]       @relation("FinalPairFollower")
   officialResults      Result[]
+  audienceVoteBallots  AudienceVoteBallot[]
+  audienceVoteWins     AudienceVoteWinner[]
 
   // Одна роль на дивизион на человека — нельзя зарегистрироваться в одном
   // дивизионе одновременно и LEADER, и FOLLOWER (docs/00_DECISIONS.md, B6).
@@ -1575,4 +1588,107 @@ model CheckIn {
   @@unique([competitionId, bibNumber])
   @@index([registrationId])
   @@index([checkedInById])
+}
+
+// ---------------------------------------------------------------------------
+// Приз зрительских симпатий (Audience Vote) — отдельная от судейского
+// движка подсистема голосования, по одной на Division. Жизненный цикл
+// ЛИНЕЙНЫЙ, без повторного открытия: IDLE -> RUNNING -> CLOSED -> PUBLISHED
+// (и обратно в CLOSED только через явный Unpublish с причиной, как у
+// Result/unpublishCompetitionResults). Явное упрощение по сравнению с
+// Round/Heat — здесь нет PAUSED и нет возврата CLOSED -> RUNNING (см. план
+// реализации, whimsical-juggling-thompson.md).
+// ---------------------------------------------------------------------------
+
+enum AudienceVoteMode {
+  GENERAL // один голос за любого участника категории (любой роли)
+  BY_ROLE // отдельно голос за партнёра и за партнёршу, по одному от пользователя
+}
+
+enum AudienceVoteDisplayMode {
+  NUMBER_ONLY
+  NUMBER_AND_NAME
+}
+
+enum AudienceVoteStatus {
+  IDLE
+  RUNNING
+  CLOSED
+  PUBLISHED
+}
+
+// ANY — только режим GENERAL (голос не привязан к роли участника);
+// LEADER/FOLLOWER — режим BY_ROLE, а также ключ роли в AudienceVoteWinner
+// независимо от режима (GENERAL хранит своего единственного победителя под ANY).
+enum AudienceVoteRole {
+  LEADER
+  FOLLOWER
+  ANY
+}
+
+model AudienceVote {
+  id         String   @id @default(cuid())
+  divisionId String   @unique
+  division   Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+
+  mode        AudienceVoteMode
+  displayMode AudienceVoteDisplayMode @default(NUMBER_AND_NAME)
+  infoText    String?
+
+  status        AudienceVoteStatus @default(IDLE)
+  statusVersion Int                @default(0) // optimistic locking, как Competition/Round
+
+  startedAt   DateTime?
+  startedById String?
+  startedBy   User?     @relation("AudienceVoteStartedBy", fields: [startedById], references: [id])
+  closesAt    DateTime? // null = без таймера, закрытие только вручную
+
+  closedAt   DateTime?
+  closedById String?
+  closedBy   User?     @relation("AudienceVoteClosedBy", fields: [closedById], references: [id])
+
+  publishedAt   DateTime?
+  publishedById String?
+  publishedBy   User?     @relation("AudienceVotePublishedBy", fields: [publishedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ballots AudienceVoteBallot[]
+  winners AudienceVoteWinner[]
+}
+
+model AudienceVoteBallot {
+  id             String       @id @default(cuid())
+  audienceVoteId String
+  audienceVote   AudienceVote @relation(fields: [audienceVoteId], references: [id], onDelete: Cascade)
+  voterUserId    String
+  voterUser      User         @relation("AudienceVoteBallotVoter", fields: [voterUserId], references: [id], onDelete: Cascade)
+  role           AudienceVoteRole // ANY для GENERAL, LEADER/FOLLOWER для BY_ROLE
+  registrationId String
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Сам механизм "1 голос на роль на пользователя" — зритель может передумать
+  // (апсерт по этому ключу), пока голосование RUNNING, но не проголосовать
+  // дважды за разных участников одновременно.
+  @@unique([audienceVoteId, voterUserId, role])
+  @@index([audienceVoteId, registrationId])
+}
+
+model AudienceVoteWinner {
+  id             String       @id @default(cuid())
+  audienceVoteId String
+  audienceVote   AudienceVote @relation(fields: [audienceVoteId], references: [id], onDelete: Cascade)
+  role           AudienceVoteRole
+  registrationId String
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  voteCount      Int // снимок числа голосов на момент подтверждения организатором
+  confirmedById  String
+  confirmedBy    User         @relation("AudienceVoteWinnerConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedAt    DateTime     @default(now())
+
+  @@unique([audienceVoteId, role, registrationId])
+  @@index([registrationId])
 }

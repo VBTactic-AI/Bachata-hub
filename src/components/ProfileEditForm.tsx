@@ -14,6 +14,7 @@ type Dancer = {
   danceRole: "LEADER" | "FOLLOWER" | "BOTH" | null;
   selfLevel: "BEGINNER" | "ALL_LEVELS" | "ADVANCED" | null;
   avatarUrl: string | null;
+  showAudienceAwardsPublicly: boolean;
 };
 
 export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: City[] }) {
@@ -24,6 +25,7 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
   const [danceRole, setDanceRole] = useState(dancer.danceRole ?? "");
   const [selfLevel, setSelfLevel] = useState(dancer.selfLevel ?? "");
   const [avatarUrl, setAvatarUrl] = useState(dancer.avatarUrl ?? "");
+  const [showAudienceAwardsPublicly, setShowAudienceAwardsPublicly] = useState(dancer.showAudienceAwardsPublicly);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
     const res = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ displayName, cityId, gender, danceRole, selfLevel, avatarUrl }),
+      body: JSON.stringify({ displayName, cityId, gender, danceRole, selfLevel, avatarUrl, showAudienceAwardsPublicly }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -112,6 +114,15 @@ export function ProfileEditForm({ dancer, cities }: { dancer: Dancer; cities: Ci
         {t.dancer.avatarUrlLabel}
         <Input type="url" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} className={selectClass} />
       </Label>
+      <label className="flex items-center gap-2 text-sm text-night-muted">
+        <input
+          type="checkbox"
+          checked={showAudienceAwardsPublicly}
+          onChange={(e) => setShowAudienceAwardsPublicly(e.target.checked)}
+          className="accent-night-primary"
+        />
+        Показывать приз зрительских симпатий всем в публичном профиле
+      </label>
       {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
         <Button size="sm" type="submit" disabled={loading} className="border-none bg-gradient-night-cta">

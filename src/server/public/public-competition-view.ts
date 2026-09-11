@@ -57,6 +57,18 @@ export type PublicCompetitionView = {
   liveStatus: PublicLiveStatus;
   divisionProgress: PublicDivisionProgress[];
   stats: { registrationsCount: number; leadersCount: number; followersCount: number; divisionsCount: number };
+  audienceVotes: PublicAudienceVoteSummary[];
+};
+
+// Приз зрительских симпатий — список категорий, где организатор хоть раз
+// настроил голосование (IDLE и дальше), для карточки-ссылки на публичной
+// странице соревнования (docs/00_DECISIONS.md, план "Приз зрительских
+// симпатий"). Сам тираж голосов сюда не попадает — его отдаёт отдельно
+// getAudienceVotePublicView, и только после PUBLISHED.
+export type PublicAudienceVoteSummary = {
+  divisionId: string;
+  categoryName: string;
+  status: "IDLE" | "RUNNING" | "CLOSED" | "PUBLISHED";
 };
 
 export function roundLabel(round: { stage: { name: string } | null; type: string | null }): string {
@@ -85,7 +97,8 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
   });
   if (!competition || competition.status === "DRAFT") return null;
 
-  const [divisions, judgeAssignments, activeHeat, resultRows, registrationsByRole, progressRounds, progressRegistrations] = await Promise.all([
+  const [divisions, judgeAssignments, activeHeat, resultRows, registrationsByRole, progressRounds, progressRegistrations, audienceVoteRows] =
+    await Promise.all([
     prisma.division.findMany({
       where: { competitionId },
       select: {
@@ -150,6 +163,10 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         dancer: { select: { displayName: true } },
         checkIn: { select: { bibNumber: true } },
       },
+    }),
+    prisma.audienceVote.findMany({
+      where: { division: { competitionId } },
+      select: { divisionId: true, status: true, division: { select: { category: { select: { name: true } } } } },
     }),
   ]);
 
@@ -239,6 +256,7 @@ export async function getPublicCompetitionView(competitionId: string): Promise<P
         }
       : null,
     divisionProgress,
+    audienceVotes: audienceVoteRows.map((v) => ({ divisionId: v.divisionId, categoryName: v.division.category.name, status: v.status })),
     stats: {
       registrationsCount: leadersCount + followersCount,
       leadersCount,

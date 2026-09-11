@@ -52,6 +52,9 @@ export const PERMISSIONS = [
   "final:configure",
   "final:manage",
 
+  "audience_vote:manage",
+  "audience_vote:publish",
+
   "penalty:create",
   "disqualification:create",
 

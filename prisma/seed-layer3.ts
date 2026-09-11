@@ -68,6 +68,9 @@ const PERMISSIONS = [
   ["final:configure", "Настройка финала (формат, критерии оценки)"],
   ["final:manage", "Управление ходом финала (старт, пары, стадии)"],
 
+  ["audience_vote:manage", "Управление голосованием зрителей (настройки, старт/стоп, победитель)"],
+  ["audience_vote:publish", "Публикация результатов голосования зрителей"],
+
   ["penalty:create", "Назначение штрафа/нарушения"],
   ["disqualification:create", "Дисквалификация участника"],
 
@@ -126,6 +129,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "tie_break:decide",
     "final:configure",
     "final:manage",
+    "audience_vote:manage",
+    "audience_vote:publish",
     "penalty:create",
     "disqualification:create",
     "audit:view",
@@ -154,6 +159,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "tie_break:decide",
     "final:configure",
     "final:manage",
+    "audience_vote:manage",
+    "audience_vote:publish",
     "penalty:create",
     "disqualification:create",
     "audit:view",

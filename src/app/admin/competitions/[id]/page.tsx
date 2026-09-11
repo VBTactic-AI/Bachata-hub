@@ -56,6 +56,7 @@ import { ParticipantsPanel } from "@/components/admin/ParticipantsPanel";
 import { StatCard } from "@/components/admin/StatCard";
 import { RoundResultsList } from "@/components/admin/RoundResultsList";
 import { ResultsWorkspace, type ResultsCategory } from "@/components/admin/ResultsWorkspace";
+import { AudienceVotePanel } from "@/components/admin/audience-vote/AudienceVotePanel";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -194,6 +195,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   const canPublishResults = can(actor, "result:publish", competition.id);
   const canViewStatistics = can(actor, "statistics:view", competition.id);
   const canViewScoreMonitor = can(actor, "score:view_all", competition.id);
+  const canManageAudienceVote = can(actor, "audience_vote:manage", competition.id);
   const canEditPublicInfo = can(actor, "competition:settings_update", competition.id);
   // Без competitionId — глобальное право, как competition:create: по сиду
   // им обладает только SUPER_ADMIN, EVENT_ADMIN конкретного соревнования его
@@ -1299,6 +1301,22 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     </div>
   );
 
+  // "Голосование" — приз зрительских симпатий (docs/00_DECISIONS.md, план
+  // "Приз зрительских симпатий"), по одной карточке AudienceVotePanel на
+  // категорию — та же вкладка видна и без права audience_vote:manage
+  // (organizer без прав видит пояснение, как и "Монитор" для canManageRounds).
+  const votingContent = (
+    <div className="flex flex-col gap-4">
+      {!canManageAudienceVote ? (
+        <p className="m-0 text-sm text-admin-muted">Нет прав на управление голосованием зрителей.</p>
+      ) : competition.divisions.length === 0 ? (
+        <p className="m-0 text-sm text-admin-muted">В соревновании ещё нет категорий.</p>
+      ) : (
+        competition.divisions.map((d) => <AudienceVotePanel key={d.id} divisionId={d.id} categoryName={d.category.name} />)
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <CompetitionHeader
@@ -1320,6 +1338,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             { id: "categories", label: "Категории", content: categoriesContent },
             { id: "monitor", label: "Монитор", content: monitorContent },
             { id: "results", label: "Результаты", content: resultsContent },
+            { id: "voting", label: "Голосование", content: votingContent },
             { id: "participants", label: "Участники", content: participantsContent },
             { id: "judges", label: "Судьи", content: judgesContent },
             { id: "charts", label: "Графики", content: chartsContent },

@@ -425,3 +425,33 @@ export const swapResultPlacementsSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 export type SwapResultPlacementsInput = z.infer<typeof swapResultPlacementsSchema>;
+
+// --- Приз зрительских симпатий (Audience Vote) ---
+
+export const audienceVoteModeSchema = z.enum(["GENERAL", "BY_ROLE"]);
+export const audienceVoteDisplayModeSchema = z.enum(["NUMBER_ONLY", "NUMBER_AND_NAME"]);
+export const audienceVoteRoleSchema = z.enum(["LEADER", "FOLLOWER", "ANY"]);
+
+export const configureAudienceVoteSchema = z.object({
+  mode: audienceVoteModeSchema,
+  displayMode: audienceVoteDisplayModeSchema.default("NUMBER_AND_NAME"),
+  infoText: z.string().max(2000).nullable().optional(),
+});
+export type ConfigureAudienceVoteInput = z.infer<typeof configureAudienceVoteSchema>;
+
+export const startAudienceVoteSchema = z.object({
+  durationMinutes: z.coerce.number().int().positive().max(24 * 60).optional(),
+});
+export type StartAudienceVoteInput = z.infer<typeof startAudienceVoteSchema>;
+
+export const confirmAudienceVoteWinnersSchema = z.object({
+  role: audienceVoteRoleSchema,
+  registrationIds: z.array(z.string().min(1)),
+});
+export type ConfirmAudienceVoteWinnersInput = z.infer<typeof confirmAudienceVoteWinnersSchema>;
+
+export const castAudienceVoteBallotSchema = z.object({
+  role: audienceVoteRoleSchema,
+  registrationId: z.string().min(1),
+});
+export type CastAudienceVoteBallotInput = z.infer<typeof castAudienceVoteBallotSchema>;

@@ -47,6 +47,16 @@ function StarIcon() {
     </svg>
   );
 }
+function HeartIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path
+        d="M12 20.5s-7.5-4.6-9.8-9.3C.7 7.7 2.4 4.5 5.7 4c2.1-.3 4 .7 6.3 3 2.3-2.3 4.2-3.3 6.3-3 3.3.5 5 3.7 3.5 7.2-2.3 4.7-9.8 9.3-9.8 9.3Z"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 function BookIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -102,6 +112,12 @@ function referenceItems(): NavItem[] {
     { href: "/admin/division-categories", label: t.nav.divisionCategories, icon: <TagIcon />, match: (p) => p.startsWith("/admin/division-categories") },
     { href: "/admin/round-stages", label: t.nav.roundStages, icon: <StepsIcon />, match: (p) => p.startsWith("/admin/round-stages") },
     { href: "/admin/judging-criteria", label: t.nav.judgingCriteria, icon: <StarIcon />, match: (p) => p.startsWith("/admin/judging-criteria") },
+    {
+      href: "/admin/audience-vote-stats",
+      label: t.nav.audienceVoteStats,
+      icon: <HeartIcon />,
+      match: (p) => p.startsWith("/admin/audience-vote-stats"),
+    },
   ];
 }
 

@@ -154,6 +154,30 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         </div>
       )}
 
+      {view.audienceVotes.some((v) => v.status !== "IDLE") && (
+        <div>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">🏆 Приз зрительских симпатий</h2>
+          <div className="flex flex-col gap-2">
+            {view.audienceVotes
+              .filter((v) => v.status !== "IDLE")
+              .map((v) => (
+                <Link
+                  key={v.divisionId}
+                  href={`/compete/${id}/vote/${v.divisionId}`}
+                  className="flex items-center justify-between gap-2 rounded-app border border-night-border bg-night-card px-4 py-3 no-underline transition hover:border-night-primary"
+                >
+                  <span className="text-sm font-semibold text-night-text">{v.categoryName}</span>
+                  <span className="text-xs font-semibold text-night-pink">
+                    {v.status === "RUNNING" && "Идёт голосование →"}
+                    {v.status === "CLOSED" && "Ждём публикации →"}
+                    {v.status === "PUBLISHED" && "Результаты →"}
+                  </span>
+                </Link>
+              ))}
+          </div>
+        </div>
+      )}
+
       {view.mediaUrl && (
         <a
           href={view.mediaUrl}

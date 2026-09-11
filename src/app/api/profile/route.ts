@@ -10,6 +10,7 @@ const schema = z.object({
   danceRole: z.enum(["LEADER", "FOLLOWER", "BOTH"]).optional().or(z.literal("")),
   selfLevel: z.enum(["BEGINNER", "ALL_LEVELS", "ADVANCED"]).optional().or(z.literal("")),
   avatarUrl: z.string().url().optional().or(z.literal("")),
+  showAudienceAwardsPublicly: z.boolean().optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -30,6 +31,7 @@ export async function PATCH(req: NextRequest) {
       danceRole: data.danceRole || null,
       selfLevel: data.selfLevel || null,
       avatarUrl: data.avatarUrl || null,
+      ...(data.showAudienceAwardsPublicly !== undefined ? { showAudienceAwardsPublicly: data.showAudienceAwardsPublicly } : {}),
     },
   });
 

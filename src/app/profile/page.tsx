@@ -9,6 +9,7 @@ import { ProfileEditForm } from "@/components/ProfileEditForm";
 import { AchievementForm } from "@/components/AchievementForm";
 import { CompetitorStatisticsCard } from "@/components/CompetitorStatisticsCard";
 import { getCompetitorStatistics } from "@/server/statistics/competitor-statistics";
+import { getAudienceAwardsForDancer } from "@/server/statistics/audience-vote-statistics";
 import { isNoShow } from "@/server/competition/no-show";
 import { Card } from "@/components/ui/card";
 import {
@@ -48,7 +49,7 @@ export default async function ProfilePage() {
 
   // "Мои соревнования" (слой 3) — данные были готовы с этапа 3, здесь
   // впервые выводятся в интерфейсе участника, а не только организатора.
-  const [registrations, statistics] = await Promise.all([
+  const [registrations, statistics, audienceAwards] = await Promise.all([
     prisma.registration.findMany({
       where: { dancerId: dancer.id },
       include: {
@@ -59,6 +60,9 @@ export default async function ProfilePage() {
       orderBy: { createdAt: "desc" },
     }),
     getCompetitorStatistics(dancer.id),
+    // Себе — всегда, независимо от showAudienceAwardsPublicly (тот
+    // переключатель управляет видимостью для ОСТАЛЬНЫХ на /dancers/[id]).
+    getAudienceAwardsForDancer(dancer.id),
   ]);
 
   return (
@@ -66,7 +70,7 @@ export default async function ProfilePage() {
       <div className="flex justify-end gap-2">
         <ProfileEditForm dancer={dancer} cities={cities} />
       </div>
-      <DancerProfileView dancer={dancer} editable />
+      <DancerProfileView dancer={dancer} editable audienceAwards={audienceAwards} />
 
       <CompetitorStatisticsCard statistics={statistics} />
 

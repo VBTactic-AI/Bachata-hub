@@ -127,9 +127,18 @@ export default {
           from: { opacity: "0", transform: "translateY(12px)" },
           to: { opacity: "1", transform: "none" },
         },
+        // Тап по сердечку на странице голосования (Приз зрительских
+        // симпатий) — CSS-анимация без внешней библиотеки (CLAUDE.md §14).
+        "heart-pop": {
+          "0%": { transform: "scale(1)" },
+          "35%": { transform: "scale(1.35)" },
+          "60%": { transform: "scale(0.92)" },
+          "100%": { transform: "scale(1)" },
+        },
       },
       animation: {
         "card-in": "card-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        "heart-pop": "heart-pop 380ms cubic-bezier(0.16, 1, 0.3, 1) both",
       },
     },
   },

@@ -8,6 +8,7 @@ const roundFindMany = vi.fn();
 const resultFindMany = vi.fn();
 const registrationGroupBy = vi.fn();
 const registrationFindMany = vi.fn();
+const audienceVoteFindMany = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -18,6 +19,7 @@ vi.mock("@/lib/prisma", () => ({
     round: { findMany: (...a: unknown[]) => roundFindMany(...a) },
     result: { findMany: (...a: unknown[]) => resultFindMany(...a) },
     registration: { groupBy: (...a: unknown[]) => registrationGroupBy(...a), findMany: (...a: unknown[]) => registrationFindMany(...a) },
+    audienceVote: { findMany: (...a: unknown[]) => audienceVoteFindMany(...a) },
   },
 }));
 
@@ -49,6 +51,7 @@ beforeEach(() => {
   resultFindMany.mockReset().mockResolvedValue([]);
   registrationGroupBy.mockReset().mockResolvedValue([]);
   registrationFindMany.mockReset().mockResolvedValue([]);
+  audienceVoteFindMany.mockReset().mockResolvedValue([]);
 });
 
 describe("roundLabel()", () => {
@@ -191,5 +194,11 @@ describe("getPublicCompetitionView()", () => {
     divisionFindMany.mockResolvedValue([{ id: "d1", category: { name: "A" }, _count: { registrations: 10 } }]);
     const view = await getPublicCompetitionView("comp1");
     expect(view!.stats).toEqual({ registrationsCount: 10, leadersCount: 6, followersCount: 4, divisionsCount: 1 });
+  });
+
+  it("отдаёт статус голосования (Приз зрительских симпатий) по категориям, где оно настроено", async () => {
+    audienceVoteFindMany.mockResolvedValue([{ divisionId: "d1", status: "RUNNING", division: { category: { name: "Дебютанты" } } }]);
+    const view = await getPublicCompetitionView("comp1");
+    expect(view!.audienceVotes).toEqual([{ divisionId: "d1", categoryName: "Дебютанты", status: "RUNNING" }]);
   });
 });

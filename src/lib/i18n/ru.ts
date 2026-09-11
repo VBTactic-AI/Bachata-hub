@@ -37,6 +37,7 @@ export const ru = {
     divisionCategories: "Категории",
     roundStages: "Этапы отбора",
     judgingCriteria: "Оценочные показатели",
+    audienceVoteStats: "Приз зрительских симпатий",
     references: "Справочники",
   },
   city: {

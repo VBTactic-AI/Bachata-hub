@@ -2,14 +2,32 @@ import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
 import { formatDateTime } from "@/lib/format";
 import type { getDancerProfile } from "@/lib/dancer";
+import type { AudienceAward } from "@/server/statistics/audience-vote-statistics";
 import { AchievementItem } from "./AchievementItem";
 
 type Dancer = NonNullable<Awaited<ReturnType<typeof getDancerProfile>>>;
 
+const AUDIENCE_VOTE_ROLE_LABEL: Record<string, string> = { LEADER: "партнёр", FOLLOWER: "партнёрша", ANY: "участник" };
+
 // editable=true только на собственной странице профиля (/profile) — на
 // публичной странице танцора (/dancers/[id]) редактировать/удалять чужие
 // достижения нельзя, поэтому проп там не передаётся (по умолчанию false).
-export function DancerProfileView({ dancer, editable = false }: { dancer: Dancer; editable?: boolean }) {
+//
+// audienceAwards — приз зрительских симпатий (docs/00_DECISIONS.md, план
+// "Приз зрительских симпатий"): передаётся страницей-вызывающим кодом ТОЛЬКО
+// если смотреть можно (сам танцор/SUPER_ADMIN — всегда; остальным — только
+// если dancer.showAudienceAwardsPublicly true) — решение принимается на
+// сервере ДО рендера, приватные данные не уходят в клиент ради последующего
+// сокрытия CSS (CLAUDE.md §42).
+export function DancerProfileView({
+  dancer,
+  editable = false,
+  audienceAwards,
+}: {
+  dancer: Dancer;
+  editable?: boolean;
+  audienceAwards?: AudienceAward[];
+}) {
   const going = dancer.attendances.filter((a) => a.status === "GOING");
   const went = dancer.attendances.filter((a) => a.status === "WENT");
   const attendedEvents = went.map((a) => a.event);
@@ -52,6 +70,22 @@ export function DancerProfileView({ dancer, editable = false }: { dancer: Dancer
           </ul>
         )}
       </div>
+
+      {audienceAwards && audienceAwards.length > 0 && (
+        <div>
+          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">🏆 Приз зрительских симпатий</h2>
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {audienceAwards.map((a, i) => (
+              <li key={i} className="rounded-app border border-night-border bg-night-card p-3 text-sm text-night-text">
+                <strong>{a.competitionName}</strong>
+                <p className="m-0 mt-1 text-night-muted">
+                  {a.categoryName} · {AUDIENCE_VOTE_ROLE_LABEL[a.role] ?? a.role} · {a.voteCount} голос(ов)
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div>
         <h2 className="m-0 mb-1 font-night text-base font-bold text-night-text">{t.dancer.history}</h2>
