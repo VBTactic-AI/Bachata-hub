@@ -112,14 +112,21 @@ function referenceItems(): NavItem[] {
     { href: "/admin/division-categories", label: t.nav.divisionCategories, icon: <TagIcon />, match: (p) => p.startsWith("/admin/division-categories") },
     { href: "/admin/round-stages", label: t.nav.roundStages, icon: <StepsIcon />, match: (p) => p.startsWith("/admin/round-stages") },
     { href: "/admin/judging-criteria", label: t.nav.judgingCriteria, icon: <StarIcon />, match: (p) => p.startsWith("/admin/judging-criteria") },
-    {
-      href: "/admin/audience-vote-stats",
-      label: t.nav.audienceVoteStats,
-      icon: <HeartIcon />,
-      match: (p) => p.startsWith("/admin/audience-vote-stats"),
-    },
   ];
 }
+
+// Отдельный самостоятельный пункт, не внутри "Справочники" — по прямому
+// запросу пользователя (2026-09-11): это не общий справочник, а сводный
+// отчёт по всем соревнованиям, и его не должно быть видно там же, где
+// настройка категорий/этапов/критериев. Доступ — тот же isAdminUser
+// (SUPER_ADMIN, см. страницу /admin/audience-vote-stats — там та же
+// проверка через can(actor, "statistics:view") без competitionId).
+const AUDIENCE_VOTE_STATS_ITEM: NavItem = {
+  href: "/admin/audience-vote-stats",
+  label: t.nav.audienceVoteStats,
+  icon: <HeartIcon />,
+  match: (p) => p.startsWith("/admin/audience-vote-stats"),
+};
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
@@ -289,6 +296,12 @@ export function AdminSidebar({ isAdminUser }: { isAdminUser: boolean }) {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {isAdminUser && (
+        <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-0.5 sm:flex-col sm:gap-0.5">
+          <NavLink item={AUDIENCE_VOTE_STATS_ITEM} active={AUDIENCE_VOTE_STATS_ITEM.match(pathname)} />
         </div>
       )}
     </nav>
