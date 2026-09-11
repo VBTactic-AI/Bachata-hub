@@ -135,6 +135,38 @@ export function JudgesIcon() {
   );
 }
 
+// Иконки блока "Ключевые показатели" аналитики судейства (2026-09-11).
+export function StarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M12 3.5 14.6 9l6 .9-4.3 4.2 1 6-5.3-2.8-5.3 2.8 1-6L3.4 9.9l6-.9L12 3.5Z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+export function TargetIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4.5" />
+      <circle cx="12" cy="12" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+export function ActivityIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M3 12h4l2.5-7 4 14 2.5-7H21" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+export function BulbIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M9 18h6M10 21h4M8 14.5A5.5 5.5 0 1 1 16 14.5C16 16.3 15 17 14.5 18h-5C9 17 8 16.3 8 14.5Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // Плитка "Результаты" в конце ленты этапов Монитора (redesign 2026-09-09) —
 // тот же нейтральный контурный стиль, что и остальные иконки этого файла.
 export function TrophyIcon() {

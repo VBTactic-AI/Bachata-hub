@@ -25,6 +25,8 @@ const {
   getScoreDisputes,
   getJudgeActivity,
   getJudgingConsensus,
+  getJudgingHighlights,
+  getCriteriaComparisonTable,
 } = await import("@/server/statistics/judging-analytics");
 
 const actor: Actor = { userId: "admin1", email: "a@b.by", globalPermissions: new Set(), permissionsByCompetition: new Map() };
@@ -190,5 +192,113 @@ describe("getJudgingConsensus()", () => {
     const consensus = await getJudgingConsensus("comp1");
     expect(consensus.agreement).toBeCloseTo(1, 5); // оба судьи ставят идентично
     expect(consensus.spread).toBeGreaterThan(0);
+  });
+});
+
+function highlightScoreItem(
+  judgeAssignmentId: string,
+  judgeUserId: string,
+  drawParticipantId: string,
+  value: number,
+  maxValue: number,
+  participant: { name: string; bib: string; role: "LEADER" | "FOLLOWER" }
+) {
+  return {
+    value,
+    maxValue,
+    judgeAssignmentId,
+    drawParticipantId,
+    judgeAssignment: { judgeUserId, judge: { email: `${judgeUserId}@b.by`, dancer: null } },
+    drawParticipant: {
+      registrationId: drawParticipantId,
+      role: participant.role,
+      registration: { dancer: { displayName: participant.name }, checkIn: { bibNumber: participant.bib } },
+      draw: { heat: { roundId: "round1", round: { id: "round1", type: null, stage: { name: "Финал" } } } },
+    },
+  };
+}
+
+describe("getJudgingHighlights()", () => {
+  it("находит судью с наивысшим средним, самого активного судью, самую высокую оценку и самого стабильного участника", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([
+      { id: "ja1", judgeUserId: "j1", judge: { email: "j1@b.by", dancer: null } },
+      { id: "ja2", judgeUserId: "j2", judge: { email: "j2@b.by", dancer: null } },
+    ]);
+    const p1 = { name: "Иван", bib: "1", role: "LEADER" as const };
+    const p2 = { name: "Пётр", bib: "2", role: "LEADER" as const };
+    const p3 = { name: "Соло", bib: "3", role: "LEADER" as const };
+    judgeScoreFindMany.mockResolvedValue([
+      highlightScoreItem("ja1", "j1", "r1", 8, 10, p1), // j1: 0.8
+      highlightScoreItem("ja2", "j2", "r1", 9, 10, p1), // j2: 0.9 — разброс группы r1 = 0.1
+      highlightScoreItem("ja1", "j1", "r2", 6, 10, p2), // j1: 0.6
+      highlightScoreItem("ja2", "j2", "r2", 10, 10, p2), // j2: 1.0 — самая высокая оценка, разброс группы r2 = 0.4
+      highlightScoreItem("ja1", "j1", "r3", 5, 10, p3), // единственный судья p3 — вне групп споров (< 2 судей)
+    ]);
+
+    const highlights = await getJudgingHighlights("comp1");
+
+    // j2: avg = (0.9+1.0)/2 = 0.95; j1: avg = (0.8+0.6+0.5)/3 ≈ 0.633
+    expect(highlights.topAverageJudge?.judgeName).toBe("j2@b.by");
+    // j1 поставил 3 оценки, j2 — только 2
+    expect(highlights.mostActiveJudge).toEqual({ judgeName: "j1@b.by", scoresCount: 3 });
+    // 10/10 у Петра (r2) — выше, чем 9/10 у Ивана (r1); p3 не участвует (нет группы)
+    expect(highlights.highestSingleScore).toMatchObject({ name: "Пётр", bibNumber: "2", rawValue: 10, rawMax: 10 });
+    // r1 (Иван, 0.8/0.9) стабильнее r2 (Пётр, 0.6/1.0)
+    expect(highlights.mostStableParticipant).toMatchObject({ name: "Иван", bibNumber: "1" });
+    expect(highlights.mostStableParticipant?.spread).toBeCloseTo(0.1, 5);
+  });
+
+  it("null для показателей, которые не из чего посчитать (нет судей/оценок)", async () => {
+    judgeAssignmentFindMany.mockResolvedValue([]);
+    judgeScoreFindMany.mockResolvedValue([]);
+    const highlights = await getJudgingHighlights("comp1");
+    expect(highlights).toEqual({ topAverageJudge: null, mostActiveJudge: null, highestSingleScore: null, mostStableParticipant: null });
+  });
+});
+
+describe("getCriteriaComparisonTable()", () => {
+  it("проверяет право statistics:view и строит таблицу по категориям с критериями", async () => {
+    finalResultFindMany.mockResolvedValue([
+      {
+        registrationId: "r1",
+        role: "LEADER",
+        totalScore: 27,
+        criteriaTotals: { crit1: 9, crit2: 18 },
+        registration: {
+          dancer: { displayName: "Иван" },
+          checkIn: { bibNumber: "1" },
+          division: {
+            category: { name: "Любители" },
+            finalCriteria: [
+              { id: "crit1", name: "Техника", maxScore: 10, sortOrder: 0, isActive: true },
+              { id: "crit2", name: "Артистизм", maxScore: 20, sortOrder: 1, isActive: true },
+              { id: "crit-hidden", name: "Устаревший", maxScore: 10, sortOrder: 2, isActive: false },
+            ],
+          },
+        },
+      },
+    ]);
+    const table = await getCriteriaComparisonTable("comp1");
+    expect(requirePermissionMock).toHaveBeenCalledWith("statistics:view", "comp1");
+    expect(table).toHaveLength(1);
+    expect(table[0]).toMatchObject({ categoryName: "Любители", criteriaNames: ["Техника", "Артистизм"], maxScore: 20 });
+    expect(table[0].rows[0]).toMatchObject({ name: "Иван", bibNumber: "1", total: 27, values: [9, 18] });
+  });
+
+  it("пропускает дивизионы без настроенных критериев (нечего сравнивать)", async () => {
+    finalResultFindMany.mockResolvedValue([
+      {
+        registrationId: "r1",
+        role: "LEADER",
+        totalScore: 1,
+        criteriaTotals: {},
+        registration: {
+          dancer: { displayName: "Иван" },
+          checkIn: { bibNumber: "1" },
+          division: { category: { name: "Скейтинг" }, finalCriteria: [] },
+        },
+      },
+    ]);
+    expect(await getCriteriaComparisonTable("comp1")).toEqual([]);
   });
 });

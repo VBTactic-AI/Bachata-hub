@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { getCriteriaProfile, getJudgeActivity, getJudgingConsensus, getScoreDisputes, getScoreDistribution } from "@/server/statistics/judging-analytics";
+import {
+  getCriteriaComparisonTable,
+  getCriteriaProfile,
+  getJudgeActivity,
+  getJudgingConsensus,
+  getJudgingHighlights,
+  getScoreDisputes,
+  getScoreDistribution,
+} from "@/server/statistics/judging-analytics";
 import { respondToDomainError } from "@/server/http";
 
 // Отдельный (ленивый) роут для тяжёлой части судейской аналитики
@@ -14,14 +22,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
 
   try {
-    const [activity, consensus, distribution, criteriaProfile, disputes] = await Promise.all([
+    const [activity, consensus, distribution, criteriaProfile, disputes, highlights, criteriaComparison] = await Promise.all([
       getJudgeActivity(id),
       getJudgingConsensus(id),
       getScoreDistribution(id),
       getCriteriaProfile(id),
       getScoreDisputes(id, 5),
+      getJudgingHighlights(id),
+      getCriteriaComparisonTable(id),
     ]);
-    return NextResponse.json({ ok: true, activity, consensus, distribution, criteriaProfile, disputes });
+    return NextResponse.json({ ok: true, activity, consensus, distribution, criteriaProfile, disputes, highlights, criteriaComparison });
   } catch (e) {
     return respondToDomainError(e);
   }

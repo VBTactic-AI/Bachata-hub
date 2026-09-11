@@ -74,6 +74,8 @@ export function StatisticsSection({ competitionId }: { competitionId: string }) 
         distribution: json.distribution,
         criteriaProfile: json.criteriaProfile,
         disputes: json.disputes,
+        highlights: json.highlights,
+        criteriaComparison: json.criteriaComparison,
       });
     } catch {
       setJudgingError("Не удалось загрузить аналитику судейства — проверьте соединение.");

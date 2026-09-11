@@ -378,3 +378,122 @@ export async function getJudgingConsensus(competitionId: string): Promise<Judgin
     spread: weightedMean((j) => j.scoreStdDev),
   };
 }
+
+// --- 7. Ключевые показатели (2026-09-11, по референсу дизайна пользователя) —
+// короткая сводка "самое-самое" для верхней панели вкладки. Переиспользует
+// уже посчитанные getJudgeStatisticsForCompetition/collectRawScoreItems, не
+// делает отдельных тяжёлых запросов.
+export type JudgingHighlights = {
+  topAverageJudge: { judgeName: string; averageScore: number } | null;
+  mostActiveJudge: { judgeName: string; scoresCount: number } | null;
+  highestSingleScore: { name: string; bibNumber: string | null; contextLabel: string; rawValue: number; rawMax: number } | null;
+  mostStableParticipant: { name: string; bibNumber: string | null; contextLabel: string; spread: number } | null;
+};
+
+export async function getJudgingHighlights(competitionId: string): Promise<JudgingHighlights> {
+  const [judges, groups] = await Promise.all([getJudgeStatisticsForCompetition(competitionId), buildDisputeGroups(competitionId)]);
+
+  const judgesByAverage = judges.filter((j) => j.averageScore !== null).sort((a, b) => b.averageScore! - a.averageScore!);
+  const judgesByCount = [...judges].sort((a, b) => b.scoresCount - a.scoresCount);
+
+  let highestItem: RawItem | null = null;
+  for (const group of groups) {
+    for (const item of group) {
+      if (!highestItem || item.normalized > highestItem.normalized) highestItem = item;
+    }
+  }
+
+  const mostStable = groups.map(groupToDisputedScore).sort((a, b) => a.spread - b.spread)[0] ?? null;
+
+  return {
+    topAverageJudge: judgesByAverage[0] ? { judgeName: judgesByAverage[0].judgeName, averageScore: judgesByAverage[0].averageScore! } : null,
+    mostActiveJudge: judgesByCount[0] && judgesByCount[0].scoresCount > 0 ? { judgeName: judgesByCount[0].judgeName, scoresCount: judgesByCount[0].scoresCount } : null,
+    highestSingleScore: highestItem
+      ? { name: highestItem.name, bibNumber: highestItem.bibNumber, contextLabel: highestItem.contextLabel, rawValue: highestItem.rawValue, rawMax: highestItem.rawMax }
+      : null,
+    mostStableParticipant: mostStable ? { name: mostStable.name, bibNumber: mostStable.bibNumber, contextLabel: mostStable.contextLabel, spread: mostStable.spread } : null,
+  };
+}
+
+// --- 8. Сравнение участников по критериям — тепловая таблица (2026-09-11,
+// по референсу дизайна пользователя). ТОЛЬКО в пределах одной категории —
+// в отличие от топ-10 (сознательно смешивает дивизионы по прямому решению
+// пользователя), здесь колонки — это конкретные критерии конкретной
+// категории, смешивать их между категориями с разными критериями/шкалами
+// было бы уже не "просто сумма", а откровенно неверным сравнением разных
+// единиц измерения.
+export type CriteriaComparisonRow = {
+  registrationId: string;
+  name: string;
+  bibNumber: string | null;
+  role: string;
+  total: number;
+  values: (number | null)[]; // по одному на каждый criteriaNames[i]
+};
+export type CategoryCriteriaComparison = {
+  categoryName: string;
+  criteriaNames: string[];
+  maxScore: number;
+  rows: CriteriaComparisonRow[];
+};
+
+export async function getCriteriaComparisonTable(competitionId: string, limitPerCategory = 6): Promise<CategoryCriteriaComparison[]> {
+  await requirePermission("statistics:view", competitionId);
+
+  const rows = await prisma.finalResult.findMany({
+    where: {
+      round: { division: { competitionId } },
+      finalSession: { format: { not: "RELATIVE_PLACEMENT" } },
+    },
+    select: {
+      registrationId: true,
+      role: true,
+      totalScore: true,
+      criteriaTotals: true,
+      registration: {
+        select: {
+          dancer: { select: { displayName: true } },
+          checkIn: { select: { bibNumber: true } },
+          division: {
+            select: {
+              category: { select: { name: true } },
+              finalCriteria: { select: { id: true, name: true, maxScore: true, sortOrder: true, isActive: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { totalScore: "desc" },
+  });
+
+  const byCategory = new Map<string, { criteria: { id: string; name: string; maxScore: number }[]; rows: CriteriaComparisonRow[] }>();
+  for (const r of rows) {
+    const categoryName = r.registration.division.category.name;
+    const criteria = [...r.registration.division.finalCriteria]
+      .filter((c) => c.isActive)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    if (criteria.length === 0) continue; // не критериальный финал — сравнивать нечего
+
+    if (!byCategory.has(categoryName)) byCategory.set(categoryName, { criteria, rows: [] });
+    const entry = byCategory.get(categoryName)!;
+    const totals = (r.criteriaTotals ?? {}) as Record<string, number>;
+    if (entry.rows.length >= limitPerCategory) continue;
+    entry.rows.push({
+      registrationId: r.registrationId,
+      name: r.registration.dancer.displayName,
+      bibNumber: r.registration.checkIn?.bibNumber ?? null,
+      role: REGISTRATION_ROLE_LABELS[r.role] ?? r.role,
+      total: r.totalScore,
+      values: criteria.map((c) => totals[c.id] ?? null),
+    });
+  }
+
+  return [...byCategory.entries()]
+    .map(([categoryName, entry]) => ({
+      categoryName,
+      criteriaNames: entry.criteria.map((c) => c.name),
+      maxScore: Math.max(1, ...entry.criteria.map((c) => c.maxScore)),
+      rows: entry.rows,
+    }))
+    .sort((a, b) => a.categoryName.localeCompare(b.categoryName, "ru"));
+}
