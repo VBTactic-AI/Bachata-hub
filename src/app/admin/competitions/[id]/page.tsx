@@ -56,7 +56,7 @@ import { ParticipantsPanel } from "@/components/admin/ParticipantsPanel";
 import { StatCard } from "@/components/admin/StatCard";
 import { RoundResultsList } from "@/components/admin/RoundResultsList";
 import { ResultsWorkspace, type ResultsCategory } from "@/components/admin/ResultsWorkspace";
-import { AudienceVotePanel } from "@/components/admin/audience-vote/AudienceVotePanel";
+import { AudienceVoteWorkspace } from "@/components/admin/audience-vote/AudienceVoteWorkspace";
 import {
   COMPETITION_STATUS_LABELS as STATUS_LABELS,
   REGISTRATION_ROLE_LABELS as ROLE_LABELS,
@@ -1302,9 +1302,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   );
 
   // "Голосование" — приз зрительских симпатий (docs/00_DECISIONS.md, план
-  // "Приз зрительских симпатий"), по одной карточке AudienceVotePanel на
-  // категорию — та же вкладка видна и без права audience_vote:manage
-  // (organizer без прав видит пояснение, как и "Монитор" для canManageRounds).
+  // "Приз зрительских симпатий") — список категорий слева, панель настроек/
+  // результатов выбранной справа (AudienceVoteWorkspace), тот же приём, что
+  // у "Судей"/"Результатов" (по прямому запросу пользователя, 2026-09-11).
   const votingContent = (
     <div className="flex flex-col gap-4">
       {!canManageAudienceVote ? (
@@ -1312,7 +1312,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       ) : competition.divisions.length === 0 ? (
         <p className="m-0 text-sm text-admin-muted">В соревновании ещё нет категорий.</p>
       ) : (
-        competition.divisions.map((d) => <AudienceVotePanel key={d.id} divisionId={d.id} categoryName={d.category.name} />)
+        <AudienceVoteWorkspace divisions={competition.divisions.map((d) => ({ id: d.id, categoryName: d.category.name }))} />
       )}
     </div>
   );
