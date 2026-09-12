@@ -141,6 +141,33 @@
     inset: 0;
     background: radial-gradient(ellipse at center, transparent 30%, rgba(4, 5, 9, 0.8) 100%);
   }
+  /* Тонкий скроллбар без стрелок вверх/вниз для колонок часы/минуты
+     TimeField.tsx (найдено пользователем на скриншоте, 2026-09-12) —
+     нативный скроллбар Windows со стрелками-кнопками совсем не подходит
+     тёмным попапам. scrollbar-color — Firefox, ::-webkit-scrollbar-button
+     display:none убирает именно стрелки в Chrome/Edge (просто width:0 без
+     display:none их не убирает). Полупрозрачный белый подходит обеим
+     тёмным темам (night/admin) без отдельных вариантов на каждую. */
+  .time-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  }
+  .time-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+  .time-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .time-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 9999px;
+  }
+  .time-scroll::-webkit-scrollbar-button {
+    display: none;
+    height: 0;
+    width: 0;
+  }
+
   .jnj-grain {
     position: absolute;
     inset: 0;

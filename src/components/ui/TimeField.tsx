@@ -47,7 +47,7 @@ function TimeColumn({
   }, []);
 
   return (
-    <div className="flex max-h-[180px] w-14 flex-col gap-0.5 overflow-y-auto">
+    <div className="time-scroll flex max-h-[180px] w-14 flex-col gap-0.5 overflow-y-auto">
       {values.map((v) => {
         const isSelected = v === selected;
         return (
