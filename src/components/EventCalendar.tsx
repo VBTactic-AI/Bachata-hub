@@ -111,7 +111,7 @@ export function EventCalendar({ initialYear, initialMonth, initialEvents, cityId
   const selectedEvents = selectedDate ? (eventsByDate.get(selectedDate) ?? []) : null;
 
   return (
-    <div className="flex flex-col gap-5 rounded-app border border-white/10 bg-night-card/75 p-4 backdrop-blur-md sm:flex-row sm:gap-6 sm:p-6">
+    <div className="flex flex-col gap-5 rounded-app border border-white/10 bg-night-card/75 p-4 backdrop-blur-md sm:max-w-[820px] sm:flex-row sm:items-start sm:gap-6 sm:p-6">
       <div className="flex-1">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="m-0 font-night text-base font-bold text-night-text sm:text-lg">
