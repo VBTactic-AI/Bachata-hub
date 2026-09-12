@@ -57,6 +57,53 @@ export function eventsForHome(cityId: string | null) {
   ]);
 }
 
+// month: 1-12 (человеческий номер месяца, не JS-индекс с нуля) — так его
+// удобнее передавать в URL/query-параметрах API и меньше риска ошибиться на
+// вызывающей стороне.
+export function monthRange(year: number, month: number) {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+  return { start, end };
+}
+
+export type CalendarEvent = {
+  id: string;
+  slug: string;
+  title: string;
+  format: EventFormat;
+  startsAt: Date;
+  cityName: string;
+  schoolName: string | null;
+};
+
+// Публичные данные для визуального календаря на главной — тот же принцип
+// allowlist полей, что и у getPublicCompetitionView (CLAUDE.md §42): наружу
+// отдаётся только то, что и так видно на /events карточкой события.
+export async function eventsForCalendarMonth(cityId: string | null, year: number, month: number): Promise<CalendarEvent[]> {
+  const { start, end } = monthRange(year, month);
+  const cityFilter: Prisma.EventWhereInput = cityId ? { cityId } : {};
+
+  const events = await prisma.event.findMany({
+    where: {
+      ...activeEventFilter(),
+      ...cityFilter,
+      startsAt: { gte: start, lt: end },
+    },
+    orderBy: { startsAt: "asc" },
+    include: { city: true, school: true },
+  });
+
+  return events.map((e) => ({
+    id: e.id,
+    slug: e.slug,
+    title: e.title,
+    format: e.format,
+    startsAt: e.startsAt,
+    cityName: e.city.nameRu,
+    schoolName: e.school?.name ?? null,
+  }));
+}
+
 export type EventFilters = {
   citySlug?: string;
   format?: string;

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { t } from "@/lib/i18n/dictionary";
 import { getPreferredCity } from "@/lib/city-preference";
-import { eventsForHome } from "@/lib/events";
+import { eventsForHome, eventsForCalendarMonth } from "@/lib/events";
+import { EventCalendar } from "@/components/EventCalendar";
 import { formatEventTime, formatRelativeDayLabel } from "@/lib/format";
 import { CityPicker } from "@/components/CityPicker";
 import { CardLightSweep } from "@/components/CardLightSweep";
@@ -68,7 +69,11 @@ function HomeSchoolTeaser({ school, sweepDelay = 0 }: { school: School & { city:
 
 export default async function HomePage() {
   const preferredCity = await getPreferredCity();
-  const [[today, thisWeek], cities, popularSchools] = await Promise.all([
+  const now = new Date();
+  const calendarYear = now.getFullYear();
+  const calendarMonth = now.getMonth() + 1;
+
+  const [[today, thisWeek], cities, popularSchools, calendarEvents] = await Promise.all([
     eventsForHome(preferredCity?.id ?? null),
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     // Витрина, не рейтинг: без отдельной метрики популярности показываем
@@ -80,6 +85,7 @@ export default async function HomePage() {
       orderBy: [{ verificationStatus: "asc" }, { name: "asc" }],
       take: 6,
     }),
+    eventsForCalendarMonth(preferredCity?.id ?? null, calendarYear, calendarMonth),
   ]);
 
   return (
@@ -156,6 +162,26 @@ export default async function HomePage() {
                   ))}
                 </div>
               )}
+            </section>
+          </ScrollReveal>
+
+          <ScrollReveal delay={0.7}>
+            <section className="flex flex-col gap-3">
+              <h2 className="m-0 font-night text-lg font-bold text-night-text">{t.nav.calendar}</h2>
+              <EventCalendar
+                initialYear={calendarYear}
+                initialMonth={calendarMonth}
+                initialEvents={calendarEvents.map((e) => ({
+                  id: e.id,
+                  slug: e.slug,
+                  title: e.title,
+                  format: e.format,
+                  startsAt: e.startsAt.toISOString(),
+                  cityName: e.cityName,
+                  schoolName: e.schoolName,
+                }))}
+                cityId={preferredCity?.id ?? null}
+              />
             </section>
           </ScrollReveal>
 
