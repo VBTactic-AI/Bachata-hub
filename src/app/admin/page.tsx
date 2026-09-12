@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can, isJudgeOnlyActor } from "@/server/rbac/authorize";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
+import { mfaRedirectPath } from "@/server/mfa/redirect-target";
 import { getModerationQueueCounts } from "@/lib/moderation";
 import {
   getGlobalOverview,
@@ -12,7 +13,10 @@ import {
   getRecentEventsFeed,
   getSystemHealth,
 } from "@/lib/admin-dashboard";
+import { getDatabaseUsage, SUPABASE_FREE_PLAN_LIMITS } from "@/lib/database-usage";
+import { DatabaseIcon } from "@/components/admin/icons";
 import { t } from "@/lib/i18n/dictionary";
+import { formatBytes } from "@/lib/format";
 import { buttonVariants } from "@/components/ui/button";
 import { StatCard } from "@/components/admin/StatCard";
 import { StatusBadge } from "@/components/admin/StatusBadge";
@@ -39,6 +43,15 @@ export default async function AdminDashboardPage() {
   // 2026-09-10): у него нет ни одной причины сюда заходить, его место —
   // прямая ссылка на /judging/[competitionId], которую даёт организатор.
   if (isJudgeOnlyActor(actor)) redirect("/");
+  // UX-уровень (не единственная защита — requirePermission() всё равно
+  // откажет в любом привилегированном действии на сервере, даже если сюда
+  // как-то попасть в обход этого редиректа): SUPER_ADMIN/EVENT_ADMIN сразу
+  // на настройку/подтверждение MFA, а не в панель, где всё равно ничего не
+  // получится нажать (задача §4 — "не допускать, чтобы пользователь мог
+  // закрыть экран MFA и получить доступ").
+  if (actor.mfaRequired && !actor.mfaSatisfied) {
+    redirect(await mfaRedirectPath("/admin"));
+  }
   const user = await getCurrentUser();
 
   const isSuperAdmin = can(actor, "competition:create");
@@ -70,16 +83,22 @@ export default async function AdminDashboardPage() {
   let recentFeed: FeedEvent[] = [];
   let systemHealth: SystemHealth | null = null;
   let moderationQueue: { pendingEvents: number; pendingClaims: number; newReviews: number } | null = null;
+  let dbUsagePercent: number | null = null;
+  let dbSizeBytes: number | null = null;
 
   if (showGlobalDashboard) {
-    [globalOverview, cityActivity, topSchools, recentFeed, systemHealth, moderationQueue] = await Promise.all([
+    let databaseUsage: Awaited<ReturnType<typeof getDatabaseUsage>>;
+    [globalOverview, cityActivity, topSchools, recentFeed, systemHealth, moderationQueue, databaseUsage] = await Promise.all([
       getGlobalOverview(),
       getCityActivityNetwork(),
       getTopActiveSchools(6),
       getRecentEventsFeed(12),
       getSystemHealth(),
       getModerationQueueCounts(),
+      getDatabaseUsage(),
     ]);
+    dbSizeBytes = databaseUsage.databaseSizeBytes;
+    dbUsagePercent = Math.min(100, Math.round((databaseUsage.databaseSizeBytes / SUPABASE_FREE_PLAN_LIMITS.databaseSizeBytes) * 100));
   }
 
   return (
@@ -190,6 +209,17 @@ export default async function AdminDashboardPage() {
                   </li>
                 </ul>
               </Link>
+
+              {dbUsagePercent !== null && dbSizeBytes !== null && (
+                <StatCard
+                  label={t.databaseUsage.dashboardCardLabel}
+                  value={formatBytes(dbSizeBytes)}
+                  icon={<DatabaseIcon />}
+                  tone={dbUsagePercent >= 90 ? "danger" : "primary"}
+                  percent={dbUsagePercent}
+                  href="/admin/database"
+                />
+              )}
 
               <Card className="border-admin-border bg-admin-card">
                 <LiveEventsFeed initialEvents={recentFeed} />

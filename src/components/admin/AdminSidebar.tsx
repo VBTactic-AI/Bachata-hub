@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
-import { ShieldIcon, ChatIcon, BuildingIcon, AlertIcon, PeopleIcon, GridIcon } from "@/components/admin/icons";
+import { ShieldIcon, ChatIcon, BuildingIcon, AlertIcon, PeopleIcon, GridIcon, DatabaseIcon } from "@/components/admin/icons";
 
 // Иконки — тот же приём, что и в compete/BottomNav.tsx: инлайн SVG-путь на
 // currentColor, без иконочного шрифта/библиотеки (CLAUDE.md §14).
@@ -170,6 +170,18 @@ const CONTENT_ITEM: NavItem = {
   label: "Контент",
   icon: <ContentIcon />,
   match: (p) => p.startsWith("/admin/content"),
+};
+
+// "База данных" (2026-09-12, по прямому запросу пользователя) — использование
+// лимитов бесплатного плана Supabase (размер БД, Storage, ссылка на Egress).
+// Доступ — тот же isAdminUser, что и у "Справочники"/"Модерация"/"Приз
+// зрительских симпатий": это инфраструктурные данные проекта, не для
+// EVENT_ADMIN и ниже.
+const DATABASE_USAGE_ITEM: NavItem = {
+  href: "/admin/database",
+  label: t.databaseUsage.navLabel,
+  icon: <DatabaseIcon />,
+  match: (p) => p.startsWith("/admin/database"),
 };
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
@@ -390,6 +402,12 @@ export function AdminSidebar({ isAdminUser, canManageContent }: { isAdminUser: b
       {isAdminUser && (
         <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-0.5 sm:flex-col sm:gap-0.5">
           <NavLink item={AUDIENCE_VOTE_STATS_ITEM} active={AUDIENCE_VOTE_STATS_ITEM.match(pathname)} />
+        </div>
+      )}
+
+      {isAdminUser && (
+        <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-0.5 sm:flex-col sm:gap-0.5">
+          <NavLink item={DATABASE_USAGE_ITEM} active={DATABASE_USAGE_ITEM.match(pathname)} />
         </div>
       )}
     </nav>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Unbounded, Montserrat } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { t } from "@/lib/i18n/dictionary";
 import { Header } from "@/components/Header";
 import { FooterVisibility } from "@/components/FooterVisibility";
@@ -58,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </footer>
         </FooterVisibility>
         {PERF_PANEL_ENABLED && <PerformanceDebugPanel />}
+        <Analytics />
       </body>
     </html>
   );

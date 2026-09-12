@@ -90,6 +90,34 @@ export const ru = {
     analyticsNote:
       "Аналитика посещений и трафика сайта не подключена — показаны только реальные данные из собственной базы.",
   },
+  databaseUsage: {
+    navLabel: "База данных",
+    title: "База данных",
+    subtitle: "Использование лимитов бесплатного плана Supabase",
+    dbSizeLabel: "Размер базы данных",
+    storageSizeLabel: "Файловое хранилище (Storage)",
+    storageUnavailable: "Не удалось получить данные Storage",
+    storageUnused: "Supabase Storage пока не используется — бакетов нет",
+    usedOfLimit: (used: string, limit: string) => `${used} из ${limit}`,
+    egressTitle: "Egress и Cached egress",
+    egressBody:
+      "Supabase не даёт способа узнать эти цифры из приложения — только через собственную панель. Показывать их здесь означало бы придумать число, поэтому вместо цифры — прямая ссылка.",
+    egressLink: "Открыть Usage в Supabase Dashboard →",
+    mauTitle: "Активные пользователи (MAU)",
+    mauBody:
+      "Не показываем: Supabase Auth ещё не подключён в приложении (таблица auth.users пуста) — миграция на него ведётся, но ещё не завершена. Появится здесь, когда вход через Supabase Auth заработает по-настоящему.",
+    dashboardCardLabel: "База данных: занято",
+    vercelTitle: "Vercel",
+    vercelNotConfigured: "Не подключено — добавьте VERCEL_API_TOKEN и VERCEL_PROJECT_ID в переменные окружения (см. .env.example).",
+    vercelError: "Не удалось получить данные от Vercel API",
+    visitsTitle: "Посещения сайта (Vercel Web Analytics)",
+    visitsHint: "За последние 14 дней",
+    monthEventsLabel: "События Web Analytics в этом месяце",
+    egressNoteVercel: "Расход трафика (bandwidth) — у Vercel тоже нет публичного API для этого, только в их Dashboard → Usage.",
+    deploymentTitle: "Последний деплой",
+    deploymentNone: "Деплоев не найдено",
+    deploymentOpenInVercel: "Открыть в Vercel →",
+  },
   calendar: {
     weekdays: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as readonly string[],
     months: [
@@ -258,6 +286,12 @@ export const ru = {
     invalidCredentials: "Неверный e-mail или пароль",
     emailTaken: "Такой e-mail уже зарегистрирован",
     passwordMismatch: "Пароли не совпадают",
+    continueWithGoogle: "Продолжить с Google",
+    continueWithApple: "Продолжить с Apple",
+    orContinueWithEmail: "или через e-mail",
+    oauthNoCode: "Не удалось войти — провайдер не вернул код авторизации. Попробуйте ещё раз.",
+    oauthExchangeFailed: "Не удалось подтвердить вход через провайдера. Попробуйте ещё раз.",
+    oauthNoEmail: "Провайдер не передал e-mail — без него нельзя создать или найти аккаунт. Попробуйте другой способ входа.",
     schoolRepHint:
       "После регистрации подайте заявку на владение карточкой школы со страницы школы — её проверит модератор.",
     roleNames: {
@@ -303,7 +337,7 @@ export const ru = {
     statsDancersWithHistory: "Танцоров с историей посещений",
     users: "Пользователи",
     adminOnlyAccess: "Доступ только для администратора",
-    searchByEmail: "Поиск по e-mail",
+    searchByEmail: "Поиск по имени или e-mail",
     roleFilterLabel: "Роль",
     registeredAt: "Регистрация",
     lastLoginAt: "Последний вход",
