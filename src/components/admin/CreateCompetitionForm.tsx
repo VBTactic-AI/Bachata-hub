@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Input, Label, Select, Textarea } from "@/components/ui/field";
+import { DateTimeField } from "@/components/ui/DateTimeField";
 
 type City = { id: string; nameRu: string };
 
@@ -73,7 +74,7 @@ export function CreateCompetitionForm({ cities }: { cities: City[] }) {
       </Label>
       <Label className="text-admin-muted">
         Дата и время начала
-        <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className={fieldClass} />
+        <DateTimeField value={startAt} onChange={setStartAt} theme="admin" className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
         Описание

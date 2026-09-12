@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Input, Label, Select, Textarea } from "@/components/ui/field";
+import { DateTimeField } from "@/components/ui/DateTimeField";
 
 type City = { id: string; nameRu: string };
 type School = { id: string; name: string };
@@ -142,13 +143,7 @@ export function AddEventForm({
 
       <Label className="text-night-muted">
         {t.event.date} / {t.event.time}
-        <Input
-          type="datetime-local"
-          required
-          value={startsAt}
-          onChange={(e) => setStartsAt(e.target.value)}
-          className={fieldClass}
-        />
+        <DateTimeField required value={startsAt} onChange={setStartsAt} theme="night" className={fieldClass} />
       </Label>
 
       <Label className="text-night-muted">

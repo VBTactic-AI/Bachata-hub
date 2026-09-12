@@ -6,6 +6,7 @@ import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Input, Label, Select } from "@/components/ui/field";
+import { DateField } from "@/components/ui/DateField";
 
 type AttendedEvent = { id: string; title: string };
 
@@ -30,7 +31,13 @@ export function AchievementItem({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [description, setDescription] = useState(achievement.description);
-  const [achievedAt, setAchievedAt] = useState(achievement.achievedAt.toISOString().slice(0, 10));
+  // Локальные компоненты даты, не toISOString() (тот уходит в UTC и на
+  // отрицательных смещениях от UTC мог показать предыдущий день — тот же
+  // принцип, что и в DateField.tsx).
+  const initialAchievedAt = achievement.achievedAt;
+  const [achievedAt, setAchievedAt] = useState(
+    `${initialAchievedAt.getFullYear()}-${String(initialAchievedAt.getMonth() + 1).padStart(2, "0")}-${String(initialAchievedAt.getDate()).padStart(2, "0")}`
+  );
   const [eventId, setEventId] = useState(achievement.eventId ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,11 +80,11 @@ export function AchievementItem({
           </Label>
           <Label className="text-night-muted">
             {t.dancer.achievementDate}
-            <Input
-              type="date"
+            <DateField
               required
               value={achievedAt}
-              onChange={(e) => setAchievedAt(e.target.value)}
+              onChange={setAchievedAt}
+              theme="night"
               className="border-night-border bg-night-card2 text-night-text focus:border-night-primary focus:ring-night-primary/20"
             />
           </Label>

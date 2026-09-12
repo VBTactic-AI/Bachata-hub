@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Input, Label, Select } from "@/components/ui/field";
+import { DateField } from "@/components/ui/DateField";
 
 type AttendedEvent = { id: string; title: string };
 
@@ -68,7 +69,7 @@ export function AchievementForm({ attendedEvents }: { attendedEvents: AttendedEv
       </Label>
       <Label className="text-night-muted">
         {t.dancer.achievementDate}
-        <Input type="date" required value={achievedAt} onChange={(e) => setAchievedAt(e.target.value)} className={selectClass} />
+        <DateField required value={achievedAt} onChange={setAchievedAt} theme="night" className={selectClass} />
       </Label>
       <Label className="text-night-muted">
         {t.dancer.achievementEventLabel}

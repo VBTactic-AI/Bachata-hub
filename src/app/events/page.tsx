@@ -5,7 +5,8 @@ import { searchEvents } from "@/lib/events";
 import { EventCard } from "@/components/EventCard";
 import { pluralizeRu } from "@/lib/format";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { FiltersForm, Input, Label, Select } from "@/components/ui/field";
+import { FiltersForm, Label, Select } from "@/components/ui/field";
+import { DateFilterField } from "@/components/ui/DateFilterField";
 import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = {
@@ -91,11 +92,11 @@ export default async function EventsPage({
         </Label>
         <Label className="text-night-muted">
           {t.event.filters.dateFrom}
-          <Input type="date" name="from" defaultValue={sp.from ?? ""} className={selectClass} />
+          <DateFilterField name="from" defaultValue={sp.from ?? ""} theme="night" className={selectClass} />
         </Label>
         <Label className="text-night-muted">
           {t.event.filters.dateTo}
-          <Input type="date" name="to" defaultValue={sp.to ?? ""} className={selectClass} />
+          <DateFilterField name="to" defaultValue={sp.to ?? ""} theme="night" className={selectClass} />
         </Label>
         <div className="flex gap-2">
           <Button type="submit" className="border-none bg-gradient-night-cta">
