@@ -21,7 +21,7 @@ export function thisWeekRange() {
   return { start, end };
 }
 
-const activeEventFilter = (): Prisma.EventWhereInput => ({
+export const activeEventFilter = (): Prisma.EventWhereInput => ({
   moderationStatus: "APPROVED",
   isArchived: false,
 });

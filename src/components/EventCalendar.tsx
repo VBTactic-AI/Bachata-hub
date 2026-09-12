@@ -6,6 +6,7 @@ import type { EventFormat } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
 import { formatEventTime } from "@/lib/format";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/Icon";
+import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { cn } from "@/lib/cn";
 
 export type CalendarEventDto = {
@@ -16,18 +17,6 @@ export type CalendarEventDto = {
   startsAt: string; // ISO
   cityName: string;
   schoolName: string | null;
-};
-
-// Цвет — не токен темы (как и PLACE_COLORS в FinalJudgingScreen, CLAUDE.md
-// §64.4): фиксированный семантический акцент поверх night-*, по одному на
-// формат события, чтобы точки в сетке и полоска карточки в списке дня были
-// одним и тем же понятным цветом.
-const FORMAT_DOT_COLOR: Record<EventFormat, string> = {
-  PARTY: "#ff2d8a", // night-primary — самый частый формат, фирменный акцент
-  MASTERCLASS: "#38bdf8",
-  FESTIVAL: "#fbbf24",
-  CONTEST: "#a78bfa",
-  INTENSIVE: "#34d399",
 };
 
 function pad2(n: number) {
@@ -183,7 +172,7 @@ export function EventCalendar({ initialYear, initialMonth, initialEvents, cityId
                       <span
                         key={ev.id}
                         className="h-1.5 w-1.5 rounded-full"
-                        style={{ background: FORMAT_DOT_COLOR[ev.format] }}
+                        style={{ background: EVENT_FORMAT_COLOR[ev.format] }}
                         aria-hidden="true"
                       />
                     ))}
@@ -195,9 +184,9 @@ export function EventCalendar({ initialYear, initialMonth, initialEvents, cityId
         </div>
 
         <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1.5 border-t border-white/10 pt-3">
-          {(Object.keys(FORMAT_DOT_COLOR) as EventFormat[]).map((format) => (
+          {(Object.keys(EVENT_FORMAT_COLOR) as EventFormat[]).map((format) => (
             <span key={format} className="flex items-center gap-1.5 text-[0.7rem] text-night-muted">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: FORMAT_DOT_COLOR[format] }} aria-hidden="true" />
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: EVENT_FORMAT_COLOR[format] }} aria-hidden="true" />
               {t.event.formats[format]}
             </span>
           ))}
@@ -218,7 +207,7 @@ export function EventCalendar({ initialYear, initialMonth, initialEvents, cityId
               key={ev.id}
               href={`/events/${ev.slug}`}
               className="flex flex-col gap-0.5 rounded-app-sm border-l-4 bg-white/5 px-3 py-2 no-underline transition-colors hover:bg-white/10"
-              style={{ borderLeftColor: FORMAT_DOT_COLOR[ev.format] }}
+              style={{ borderLeftColor: EVENT_FORMAT_COLOR[ev.format] }}
             >
               <span className="text-xs font-medium text-night-muted">{formatEventTime(new Date(ev.startsAt))}</span>
               <span className="truncate text-sm font-semibold text-night-text">{ev.title}</span>

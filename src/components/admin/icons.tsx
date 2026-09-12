@@ -210,6 +210,18 @@ export function BuildingIcon() {
   );
 }
 
+// Иконка "Состояние базы" вкладки "Главная" (redesign, 2026-09-12) — три
+// эллипса-"диска", как у стандартной пиктограммы БД.
+export function DatabaseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <ellipse cx="12" cy="5.5" rx="7.5" ry="2.5" />
+      <path d="M4.5 5.5V18.5c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5V5.5" strokeLinecap="round" />
+      <path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

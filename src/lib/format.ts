@@ -33,6 +33,35 @@ export function formatRelativeDayLabel(date: Date, now: Date = new Date()): stri
   return null;
 }
 
+// Размер БД для карточки "Состояние базы" (админка) — реальные байты из
+// pg_database_size(), просто отформатированные для человека.
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  const units = ["КБ", "МБ", "ГБ", "ТБ"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+// Относительное время для "живых" лент (админка) — "N мин назад" и т.д.
+// Округление вниз намеренно (событие, добавленное 30 секунд назад, должно
+// показывать "0 мин назад", а не "1 мин назад" — не приукрашиваем свежесть).
+export function formatTimeAgo(date: Date, now: Date = new Date()): string {
+  const diffSec = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
+  if (diffSec < 60) return "только что";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} ${pluralizeRu(diffMin, ["минуту", "минуты", "минут"])} назад`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours} ${pluralizeRu(diffHours, ["час", "часа", "часов"])} назад`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays} ${pluralizeRu(diffDays, ["день", "дня", "дней"])} назад`;
+  return formatEventDate(date);
+}
+
 // Стандартное склонение существительного после числительного в русском
 // языке: forms = [1 штука, 2-4 штуки, 5+ штук], напр. ["событие", "события", "событий"].
 export function pluralizeRu(count: number, forms: readonly [string, string, string]): string {
