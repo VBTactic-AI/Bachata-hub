@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can, isJudgeOnlyActor } from "@/server/rbac/authorize";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
-import { mfaRedirectPath } from "@/server/mfa/redirect-target";
 import { getModerationQueueCounts } from "@/lib/moderation";
 import {
   getGlobalOverview,
@@ -43,15 +42,6 @@ export default async function AdminDashboardPage() {
   // 2026-09-10): у него нет ни одной причины сюда заходить, его место —
   // прямая ссылка на /judging/[competitionId], которую даёт организатор.
   if (isJudgeOnlyActor(actor)) redirect("/");
-  // UX-уровень (не единственная защита — requirePermission() всё равно
-  // откажет в любом привилегированном действии на сервере, даже если сюда
-  // как-то попасть в обход этого редиректа): SUPER_ADMIN/EVENT_ADMIN сразу
-  // на настройку/подтверждение MFA, а не в панель, где всё равно ничего не
-  // получится нажать (задача §4 — "не допускать, чтобы пользователь мог
-  // закрыть экран MFA и получить доступ").
-  if (actor.mfaRequired && !actor.mfaSatisfied) {
-    redirect(await mfaRedirectPath("/admin"));
-  }
   const user = await getCurrentUser();
 
   const isSuperAdmin = can(actor, "competition:create");
