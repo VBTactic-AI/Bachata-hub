@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { EventFormat, DanceLevel } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
 import { formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
@@ -37,11 +38,12 @@ export function EventCardPreview({ data }: { data: EventCardPreviewData }) {
     <div className="flex flex-col gap-2">
       <p className="m-0 text-xs font-semibold uppercase tracking-wide text-admin-muted">Так это увидят на сайте</p>
       <Card className="flex flex-col overflow-hidden border-night-border bg-night-card p-0">
-        <div
-          className="relative flex aspect-video items-center justify-center bg-gradient-night-hero bg-cover bg-center text-4xl"
-          style={data.photoUrl ? { backgroundImage: `url(${data.photoUrl})` } : undefined}
-        >
-          {!data.photoUrl && <span aria-hidden="true">{FORMAT_EMOJI[data.format]}</span>}
+        <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-gradient-night-hero text-4xl">
+          {data.photoUrl ? (
+            <Image src={data.photoUrl} alt="" fill sizes="360px" className="object-cover" />
+          ) : (
+            <span aria-hidden="true">{FORMAT_EMOJI[data.format]}</span>
+          )}
           {relativeDay && (
             <span className="absolute right-2.5 top-2.5 rounded-full bg-black/60 px-3 py-1 text-[0.72rem] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
               {relativeDay}

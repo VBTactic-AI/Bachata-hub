@@ -426,11 +426,23 @@ model EventMedia {
   storageKey   String // путь объекта в Supabase Storage (бакет "event-images", публичный на чтение) — отдельно от url, чтобы удалять/заменять без парсинга URL
   isMain       Boolean        @default(false)
   sortOrder    Int            @default(0)
+  // mimeType/fileSize — параметры ФИНАЛЬНОГО (обработанного, сохранённого в
+  // Storage) файла, сегодня всегда "image/webp" — сервер больше не хранит
+  // оригинал (задача "Upload/Compression/Cache", 2026-09-12, §6). originalSize
+  // — размер исходника ДО обработки, нужен только для оценки эффективности
+  // сжатия (originalSize/fileSize) — сам коэффициент не хранится отдельным
+  // полем, это производная величина, лишний источник рассинхронизации.
   mimeType     String
   fileSize     Int
+  originalSize Int            @default(0)
   width        Int?
   height       Int?
   originalName String?
+  // SHA-256 обработанного файла — дешёвая защита от случайной повторной
+  // загрузки того же изображения в одно и то же событие (задача §20:
+  // "не усложняй без необходимости" — один хэш-столбец, без отдельного
+  // сервиса/очереди).
+  contentHash  String?
   // "Position" из задачи (§11) — простой выбор стороны для CSS
   // object-position там, где карточка обрезает изображение под
   // object-fit: cover; полноценный визуальный crop-редактор сознательно не
@@ -443,6 +455,7 @@ model EventMedia {
 
   @@index([eventId])
   @@index([eventId, isMain])
+  @@index([eventId, contentHash])
 }
 
 // Варианты цены/билета — общие для PARTY (Early Bird/Regular/At Door) и

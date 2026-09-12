@@ -13,7 +13,7 @@ import { EventForbiddenError, EventNotFoundError } from "@/server/events/event-s
 function mapError(err: unknown) {
   if (err instanceof EventNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (err instanceof EventForbiddenError) return NextResponse.json({ error: err.code }, { status: 403 });
-  if (err instanceof EventMediaValidationError) return NextResponse.json({ error: err.message }, { status: 400 });
+  if (err instanceof EventMediaValidationError) return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
   throw err;
 }
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { City, Event, School } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
 import { formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
@@ -25,11 +26,21 @@ export function EventCard({ event }: { event: EventWithRelations }) {
 
   return (
     <Card interactive className="flex flex-col overflow-hidden border-night-border bg-night-card p-0 hover:-translate-y-0 hover:border-night-primary/60 hover:shadow-none">
-      <div
-        className="relative flex aspect-video items-center justify-center bg-gradient-night-hero bg-cover bg-center text-4xl"
-        style={event.photoUrl ? { backgroundImage: `url(${event.photoUrl})` } : undefined}
-      >
-        {!event.photoUrl && <span aria-hidden="true">{FORMAT_EMOJI[event.format]}</span>}
+      <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-gradient-night-hero text-4xl">
+        {event.photoUrl ? (
+          // Upload/Compression/Cache задача §10/§11 — next/image: браузер сам
+          // получает подходящий по ширине вариант вместо всегда полноразмерной
+          // афиши, плюс ленивая загрузка по умолчанию для карточек списка.
+          <Image
+            src={event.photoUrl}
+            alt={event.title}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 360px"
+            className="object-cover"
+          />
+        ) : (
+          <span aria-hidden="true">{FORMAT_EMOJI[event.format]}</span>
+        )}
         {relativeDay && (
           <span className="absolute right-2.5 top-2.5 rounded-full bg-black/60 px-3 py-1 text-[0.72rem] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
             {relativeDay}

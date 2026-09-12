@@ -16,7 +16,13 @@ import type { WizardMediaItem } from "./wizard-types";
 // а "спрятанный" ранний upload без владельца событий противоречил бы §21
 // (сервер обязан проверять Event ownership на КАЖДОЙ операции).
 
-const ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
+// Клиентская проверка (задача Upload/Compression/Cache §2/§15
+// "client-side preliminary validation") — только UX-подсказка, отсекает
+// заведомо неверный выбор в системном file picker'е раньше отправки на
+// сервер. Источник истины — magic-byte проверка на сервере
+// (src/server/events/image-inspect.ts), эта проверка НЕ заменяет её.
+const ACCEPT = "image/jpeg,image/png,image/webp,image/avif";
+const MAX_SOURCE_SIZE = 10 * 1024 * 1024;
 
 type PendingUpload = { key: string; name: string; progress: number; error: string | null };
 
@@ -74,6 +80,12 @@ export function EventMediaManager({
     if (!eventId) return;
     for (const file of Array.from(files)) {
       const key = `${file.name}-${crypto.randomUUID()}`;
+      // Клиентская предварительная проверка (задача §2/§15) — только UX,
+      // не заменяет серверную (magic bytes + повторный лимит на сервере).
+      if (file.size > MAX_SOURCE_SIZE) {
+        setPending((p) => [...p, { key, name: file.name, progress: 100, error: "Файл слишком большой. Максимальный размер — 10 MB." }]);
+        continue;
+      }
       setPending((p) => [...p, { key, name: file.name, progress: 0, error: null }]);
       uploadWithProgress(apiUrl(eventId), "POST", file, (pct) =>
         setPending((p) => p.map((u) => (u.key === key ? { ...u, progress: pct } : u)))
@@ -225,7 +237,7 @@ export function EventMediaManager({
         </span>
         <p className="m-0 font-medium text-night-text">Upload event images</p>
         <p className="m-0 text-xs text-admin-muted">Drag &amp; drop or click to upload</p>
-        <p className="m-0 text-xs text-admin-disabled">JPG • PNG • WEBP • GIF — до 8 МБ</p>
+        <p className="m-0 text-xs text-admin-disabled">JPG • PNG • WEBP • AVIF — до 10 МБ, автоматически сжимается</p>
         <input
           ref={inputRef}
           type="file"

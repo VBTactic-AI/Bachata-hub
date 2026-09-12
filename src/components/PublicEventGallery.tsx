@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
-export type PublicGalleryImage = { id: string; url: string; objectPosition: string };
+export type PublicGalleryImage = { id: string; url: string; objectPosition: string; width: number | null; height: number | null };
 
 // Event Media Gallery (задача §15) — hero (главная афиша) + сетка остальных
 // фото, с полноэкранным просмотром (next/prev/close, стрелки на десктопе,
 // свайп на мобильном). Без сторонней lightbox-библиотеки (CLAUDE.md §14).
+//
+// Upload/Compression/Cache задача §10 — hero НЕ обрезается в фиксированный
+// aspect-ratio (в отличие от квадратных thumbnails ниже и карточек списка):
+// афиша может быть вертикальной/квадратной/горизонтальной, показываем
+// максимально близко к оригинальным пропорциям. next/image здесь работает в
+// "intrinsic size" режиме (явные width/height из EventMedia, не fill) —
+// именно поэтому реальные пиксельные размеры сохраняются в БД при загрузке.
 export function PublicEventGallery({ images, title }: { images: PublicGalleryImage[]; title: string }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -28,25 +36,34 @@ export function PublicEventGallery({ images, title }: { images: PublicGalleryIma
 
   return (
     <div className="flex flex-col gap-2.5">
-      <img
+      <Image
         src={hero.url}
         alt={title}
+        width={hero.width ?? 1200}
+        height={hero.height ?? 800}
+        // priority — выше fold, грузится сразу, не lazy (задача §12).
+        priority
+        sizes="(max-width: 768px) 100vw, 800px"
         onClick={() => setOpenIndex(0)}
-        className="w-full cursor-zoom-in rounded-app object-cover"
-        style={{ objectPosition: hero.objectPosition, maxHeight: "60vh" }}
+        className="h-auto max-h-[60vh] w-full cursor-zoom-in rounded-app object-cover"
+        style={{ objectPosition: hero.objectPosition }}
       />
 
       {rest.length > 0 && (
         <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
           {rest.map((img, i) => (
-            <img
-              key={img.id}
-              src={img.url}
-              alt=""
-              onClick={() => setOpenIndex(i + 1)}
-              className="aspect-square w-full cursor-zoom-in rounded-app-sm object-cover"
-              style={{ objectPosition: img.objectPosition }}
-            />
+            <div key={img.id} className="relative aspect-square w-full overflow-hidden rounded-app-sm">
+              {/* Остальные фото — ленивая загрузка по умолчанию (next/image), задача §12 */}
+              <Image
+                src={img.url}
+                alt=""
+                fill
+                sizes="150px"
+                onClick={() => setOpenIndex(i + 1)}
+                className="cursor-zoom-in object-cover"
+                style={{ objectPosition: img.objectPosition }}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -64,6 +81,9 @@ export function PublicEventGallery({ images, title }: { images: PublicGalleryIma
             setTouchStartX(null);
           }}
         >
+          {/* Полноэкранный просмотр — размер экрана заранее не известен,
+              обычный img тут уместнее next/image (нет фиксированного intrinsic
+              контейнера под lightbox). */}
           <img
             src={images[openIndex].url}
             alt=""

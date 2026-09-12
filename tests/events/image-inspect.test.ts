@@ -1,33 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { sniffImageType, readImageDimensions } from "@/server/events/image-inspect";
+import { sniffImageType } from "@/server/events/image-inspect";
 
-function pngBuffer(width: number, height: number): Buffer {
+function pngBuffer(): Buffer {
   const buf = Buffer.alloc(33);
-  buf.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); // signature
-  buf.writeUInt32BE(13, 8); // IHDR chunk length
+  buf.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  buf.writeUInt32BE(13, 8);
   buf.write("IHDR", 12, "ascii");
-  buf.writeUInt32BE(width, 16);
-  buf.writeUInt32BE(height, 20);
   return buf;
 }
 
-function gifBuffer(width: number, height: number): Buffer {
-  const buf = Buffer.alloc(10);
-  buf.write("GIF89a", 0, "ascii");
-  buf.writeUInt16LE(width, 6);
-  buf.writeUInt16LE(height, 8);
+function avifBuffer(brand: "avif" | "avis" = "avif"): Buffer {
+  const buf = Buffer.alloc(16);
+  buf.writeUInt32BE(0x1c, 0); // box size (произвольное правдоподобное значение)
+  buf.write("ftyp", 4, "ascii");
+  buf.write(brand, 8, "ascii");
   return buf;
 }
 
-describe("sniffImageType — не доверяет расширению, только реальным байтам", () => {
+describe("sniffImageType — не доверяет расширению, только реальным байтам (задача §2/§7/§18)", () => {
   it("detects PNG by its 8-byte signature", () => {
-    expect(sniffImageType(pngBuffer(100, 50))).toBe("image/png");
+    expect(sniffImageType(pngBuffer())).toBe("image/png");
   });
   it("detects JPEG by FFD8FF", () => {
     expect(sniffImageType(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0]))).toBe("image/jpeg");
   });
-  it("detects GIF87a/GIF89a", () => {
-    expect(sniffImageType(gifBuffer(10, 10))).toBe("image/gif");
+  it("rejects GIF — not in the задача's allowed list (JPEG/PNG/WebP/AVIF only)", () => {
+    const buf = Buffer.alloc(10);
+    buf.write("GIF89a", 0, "ascii");
+    expect(sniffImageType(buf)).toBeNull();
   });
   it("detects WEBP by RIFF....WEBP", () => {
     const buf = Buffer.alloc(16);
@@ -35,19 +35,24 @@ describe("sniffImageType — не доверяет расширению, тол�
     buf.write("WEBP", 8, "ascii");
     expect(sniffImageType(buf)).toBe("image/webp");
   });
+  it("detects AVIF still images (major brand 'avif')", () => {
+    expect(sniffImageType(avifBuffer("avif"))).toBe("image/avif");
+  });
+  it("detects AVIF image sequences (major brand 'avis')", () => {
+    expect(sniffImageType(avifBuffer("avis"))).toBe("image/avif");
+  });
+  it("rejects SVG — no binary signature matches XML text, refused by default per задача §2", () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    expect(sniffImageType(svg)).toBeNull();
+  });
   it("returns null for a renamed non-image file (e.g. a .txt pretending to be .jpg)", () => {
     expect(sniffImageType(Buffer.from("just some text pretending to be an image"))).toBeNull();
   });
-});
-
-describe("readImageDimensions", () => {
-  it("reads PNG width/height from the IHDR chunk", () => {
-    expect(readImageDimensions(pngBuffer(1200, 800), "image/png")).toEqual({ width: 1200, height: 800 });
-  });
-  it("reads GIF width/height (little-endian)", () => {
-    expect(readImageDimensions(gifBuffer(320, 240), "image/gif")).toEqual({ width: 320, height: 240 });
-  });
-  it("returns null on a truncated/malformed buffer instead of throwing", () => {
-    expect(readImageDimensions(Buffer.from([1, 2, 3]), "image/png")).toBeNull();
+  it("does not confuse an unrelated ISOBMFF brand (e.g. mp4) with AVIF", () => {
+    const buf = Buffer.alloc(16);
+    buf.writeUInt32BE(0x1c, 0);
+    buf.write("ftyp", 4, "ascii");
+    buf.write("isom", 8, "ascii");
+    expect(sniffImageType(buf)).toBeNull();
   });
 });

@@ -113,7 +113,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
       {event.media.length > 0 ? (
         <PublicEventGallery
           title={event.title}
-          images={event.media.map((m) => ({ id: m.id, url: m.url, objectPosition: m.objectPosition }))}
+          images={event.media.map((m) => ({ id: m.id, url: m.url, objectPosition: m.objectPosition, width: m.width, height: m.height }))}
         />
       ) : (
         event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-app" />
