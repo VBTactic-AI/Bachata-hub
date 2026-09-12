@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
-import { can, isJudgeOnlyActor } from "@/server/rbac/authorize";
+import { isJudgeOnlyActor } from "@/server/rbac/authorize";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
 import { getModerationQueueCounts } from "@/lib/moderation";
 import {
@@ -16,9 +15,7 @@ import { getDatabaseUsage, SUPABASE_FREE_PLAN_LIMITS } from "@/lib/database-usag
 import { DatabaseIcon } from "@/components/admin/icons";
 import { t } from "@/lib/i18n/dictionary";
 import { formatBytes } from "@/lib/format";
-import { buttonVariants } from "@/components/ui/button";
 import { StatCard } from "@/components/admin/StatCard";
-import { StatusBadge } from "@/components/admin/StatusBadge";
 import { Card, cardVariants } from "@/components/ui/card";
 import type { GlobalOverview, CityActivity, SchoolActivity, FeedEvent, SystemHealth } from "@/lib/admin-dashboard";
 import { ActivityNetworkGraph } from "@/components/admin/dashboard/ActivityNetworkGraph";
@@ -26,7 +23,6 @@ import { TopSchoolsPanel } from "@/components/admin/dashboard/TopSchoolsPanel";
 import { LiveEventsFeed } from "@/components/admin/dashboard/LiveEventsFeed";
 import { SystemHealthCard } from "@/components/admin/dashboard/SystemHealthCard";
 import { BuildingIcon, PeopleIcon, TrophyIcon, GridIcon, ShieldIcon } from "@/components/admin/icons";
-import { COMPETITION_STATUS_LABELS as STATUS_LABELS } from "@/lib/competition-labels";
 import { cn } from "@/lib/cn";
 
 // Панель управления /admin — раньше в разделе не было общего "входа": сразу
@@ -43,22 +39,6 @@ export default async function AdminDashboardPage() {
   // прямая ссылка на /judging/[competitionId], которую даёт организатор.
   if (isJudgeOnlyActor(actor)) redirect("/");
   const user = await getCurrentUser();
-
-  const isSuperAdmin = can(actor, "competition:create");
-
-  const competitions = await prisma.competition.findMany({
-    where: isSuperAdmin
-      ? undefined
-      : { OR: [{ members: { some: { userId: actor.userId } } }, { status: "REGISTRATION_OPEN" }] },
-    select: { status: true },
-  });
-
-  const byStatus = new Map<string, number>();
-  for (const c of competitions) {
-    byStatus.set(c.status, (byStatus.get(c.status) ?? 0) + 1);
-  }
-  const live = (byStatus.get("LIVE") ?? 0) + (byStatus.get("SCORING") ?? 0);
-  const open = byStatus.get("REGISTRATION_OPEN") ?? 0;
 
   // Общесистемная сводка — только для ADMIN (та же граница видимости, что и у
   // "Справочники"/"Модерация" в AdminSidebar, и у /admin/moderation целиком):
@@ -94,45 +74,6 @@ export default async function AdminDashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Панель управления</h1>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Всего соревнований" value={competitions.length} />
-        <StatCard label="Регистрация открыта" value={open} accent />
-        <StatCard label="Идут сейчас" value={live} accent />
-      </div>
-
-      {competitions.length > 0 && (
-        <div>
-          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">По статусам</h2>
-          <div className="flex flex-wrap gap-2">
-            {[...byStatus.entries()].map(([status, count]) => (
-              <StatusBadge key={status} label={`${STATUS_LABELS[status] ?? status}: ${count}`} variant="neutral" />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Разделы</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Link href="/admin/competitions" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
-            Соревнования →
-          </Link>
-          {isAdmin(user) && (
-            <>
-              <Link href="/admin/division-categories" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
-                Категории →
-              </Link>
-              <Link href="/admin/round-stages" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
-                Этапы отбора →
-              </Link>
-              <Link href="/admin/judging-criteria" className={cn(buttonVariants({ variant: "adminOutline" }), "no-underline")}>
-                Оценочные показатели →
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
 
       {showGlobalDashboard && globalOverview && systemHealth && moderationQueue && (
         <>
