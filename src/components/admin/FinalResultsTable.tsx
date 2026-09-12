@@ -112,7 +112,11 @@ export function FinalResultsTable({
                 <th className="whitespace-nowrap px-3 text-left font-semibold">Участник</th>
                 {isRelativePlacement
                   ? roleJudges.map((j) => (
-                      <th key={j.id} className="whitespace-nowrap px-3 text-right font-semibold" title={j.displayName}>
+                      <th
+                        key={j.id}
+                        className="whitespace-nowrap border-l border-admin-border/60 px-3 text-right font-semibold"
+                        title={j.displayName}
+                      >
                         {j.displayName}
                       </th>
                     ))
@@ -145,7 +149,7 @@ export function FinalResultsTable({
                     </td>
                     {isRelativePlacement
                       ? roleJudges.map((j) => (
-                          <td key={j.id} className="px-3 text-right tabular-nums text-admin-muted">
+                          <td key={j.id} className="border-l border-admin-border/60 px-3 text-right tabular-nums text-admin-muted">
                             {r.criteriaTotals[j.id] ?? "—"}
                           </td>
                         ))

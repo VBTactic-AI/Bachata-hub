@@ -325,6 +325,15 @@ export const setDivisionJudgesSchema = z.object({
 });
 export type SetDivisionJudgesInput = z.infer<typeof setDivisionJudgesSchema>;
 
+// Быстрое назначение одного судьи сразу на несколько категорий соревнования
+// (попап с галочками по клику на столбец "Категории" в общей таблице судей,
+// 2026-09-12) — диф по КАТЕГОРИЯМ одного судьи, а не по судьям одной
+// категории, как setDivisionJudgesSchema выше.
+export const setJudgeCategoriesSchema = z.object({
+  divisionIds: z.array(z.string().min(1)),
+});
+export type SetJudgeCategoriesInput = z.infer<typeof setJudgeCategoriesSchema>;
+
 export const submitJudgeScoreSchema = z.object({
   value: z.coerce.number().int().min(0),
   // Ключ идемпотентности офлайн-очереди клиента (CLAUDE.md §17) — судья

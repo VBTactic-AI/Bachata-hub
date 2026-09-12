@@ -81,6 +81,51 @@ export async function checkInRegistration(registrationId: string, opts?: { late?
   });
 }
 
+// Изменить номер участника вручную (2026-09-12, по прямому запросу
+// пользователя) — организатор иногда должен поправить bib-номер (опечатка
+// при выдаче, нужно освободить/поменять номер местами и т.д.). В отличие от
+// автовыдачи при check-in (следующий свободный по порядку), здесь номер
+// вводит человек — обязательна проверка, что такой номер уже не занят другим
+// участником ЭТОГО ЖЕ соревнования (та же область уникальности, что и
+// @@unique([competitionId, bibNumber]) в схеме), с понятной ошибкой вместо
+// голого P2002 (CLAUDE.md §46).
+export async function changeBibNumber(registrationId: string, newBibNumber: string): Promise<void> {
+  const trimmed = newBibNumber.trim();
+  if (!trimmed) {
+    throw new ValidationFailedError("Номер участника не может быть пустым.");
+  }
+
+  const registration = await prisma.registration.findUniqueOrThrow({
+    where: { id: registrationId },
+    select: { id: true, competitionId: true, checkIn: { select: { id: true, bibNumber: true } } },
+  });
+  const actor = await requirePermission("checkin:manage", registration.competitionId);
+
+  if (!registration.checkIn) {
+    throw new ValidationFailedError("У участника ещё нет check-in — номеру неоткуда взяться.");
+  }
+  if (registration.checkIn.bibNumber === trimmed) return; // тот же номер — ничего менять не нужно
+
+  const clash = await prisma.checkIn.findUnique({
+    where: { competitionId_bibNumber: { competitionId: registration.competitionId, bibNumber: trimmed } },
+  });
+  if (clash) {
+    throw new ValidationFailedError(`Номер ${trimmed} уже присвоен другому участнику этого соревнования.`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.checkIn.update({ where: { id: registration.checkIn!.id }, data: { bibNumber: trimmed } });
+    await writeAudit(tx, {
+      actor,
+      action: "checkin.change_bib_number",
+      entityType: "CheckIn",
+      entityId: registration.checkIn!.id,
+      before: { bibNumber: registration.checkIn!.bibNumber },
+      after: { bibNumber: trimmed },
+    });
+  });
+}
+
 // Отмена check-in (redesign вкладки "Участники", 2026-09-09 — тумблер
 // должен реально работать в обе стороны). Физически удаляет запись CheckIn
 // (bib-номер освобождается — следующий check-in получит новый, по тому же

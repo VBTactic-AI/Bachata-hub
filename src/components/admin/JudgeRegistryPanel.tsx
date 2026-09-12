@@ -4,17 +4,23 @@ import { Fragment, useState, type ReactNode } from "react";
 import type { RegistrationRole } from "@prisma/client";
 import { DeleteIconButton } from "@/components/admin/DeleteIconButton";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { AssignJudgeCategoriesModal, type AssignableCategory } from "@/components/admin/AssignJudgeCategoriesModal";
 import { REGISTRATION_ROLE_LABELS_GENITIVE_PLURAL } from "@/lib/competition-labels";
 
 export type RegistryJudge = {
   judgeUserId: string;
   displayName: string | null;
   judgeEmail: string;
-  categories: { name: string; color: string }[];
+  categories: { id: string; name: string; color: string }[];
   // Объединение ролей судьи по всем его назначениям (не отдельное хранимое
   // поле) — судья, назначенный LEADER в одной категории и FOLLOWER в другой,
   // попадёт в группу "Судят обе роли" ниже, а не потеряется молча.
   roles: RegistrationRole[];
+  // Реально ли судья хоть раз входил в свой аккаунт (User.lastLoginAt !=
+  // null) — раньше колонка "Статус" всегда показывала "Активен" (найдено
+  // пользователем, 2026-09-12), независимо от того, логинился ли человек
+  // вообще.
+  hasLoggedIn: boolean;
 };
 
 type RoleGroupKey = "LEADER" | "FOLLOWER" | "BOTH" | "NONE";
@@ -45,10 +51,12 @@ function roleGroupOf(j: RegistryJudge): RoleGroupKey {
 export function JudgeRegistryPanel({
   competitionId,
   judges,
+  allCategories,
   addAction,
 }: {
   competitionId: string;
   judges: RegistryJudge[];
+  allCategories: AssignableCategory[];
   addAction: ReactNode;
 }) {
   const [query, setQuery] = useState("");
@@ -129,24 +137,19 @@ export function JudgeRegistryPanel({
                           <td className="px-3 py-2.5 align-middle text-admin-muted">{n}</td>
                           <td className="px-3 py-2.5 align-middle font-medium text-night-text">{name}</td>
                           <td className="px-3 py-2.5 align-middle">
-                            {j.categories.length === 0 ? (
-                              <StatusBadge label="Не назначен" variant="warning" />
-                            ) : (
-                              <div className="flex flex-wrap gap-1.5">
-                                {j.categories.map((c) => (
-                                  <span
-                                    key={c.name}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-admin-border bg-admin-card2 px-2 py-0.5 text-xs font-medium text-night-text"
-                                  >
-                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c.color }} aria-hidden="true" />
-                                    {c.name}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
+                            <AssignJudgeCategoriesModal
+                              competitionId={competitionId}
+                              judgeUserId={j.judgeUserId}
+                              judgeName={name}
+                              allCategories={allCategories}
+                              assignedCategoryIds={j.categories.map((c) => c.id)}
+                            />
                           </td>
                           <td className="px-3 py-2.5 align-middle">
-                            <StatusBadge label="Активен" variant="success" />
+                            <StatusBadge
+                              label={j.hasLoggedIn ? "Активен" : "Ещё не входил"}
+                              variant={j.hasLoggedIn ? "success" : "neutral"}
+                            />
                           </td>
                           <td className="px-3 py-2.5 align-middle">
                             <div className="flex justify-end">

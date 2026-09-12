@@ -349,3 +349,117 @@ export async function setDivisionJudges(
   });
 }
 
+// Быстрое назначение судьи сразу на несколько категорий соревнования одним
+// действием (клик по столбцу "Категории" в общей таблице судей, попап с
+// галочками, 2026-09-12) — диф по КАТЕГОРИЯМ одного судьи (setDivisionJudges
+// выше — диф по судьям одной категории). Роль в НОВОЙ категории определяется
+// по прямому уточнению пользователя:
+// 1) если у судьи уже есть роль(и) в других категориях этого соревнования —
+//    наследуем тот же набор ролей (не пересчитываем из пола заново — это
+//    могла быть роль, когда-то выбранная вручную, если пол не указан);
+// 2) иначе — suggestedRoleForGender (та же логика, что и assignJudge/
+//    setDivisionJudges, не дублируем её);
+// 3) иначе (пол не указан и роли ещё нет никакой) — автоматически определить
+//    невозможно, действие отклоняется понятной ошибкой: организатор должен
+//    назначить роль явно на карточке нужной категории (DivisionJudgesPanel),
+//    не наугад в этом batch-действии.
+export async function setJudgeCategories(competitionId: string, judgeUserId: string, divisionIds: string[]): Promise<void> {
+  const actor = await requirePermission("judge:assign", competitionId);
+
+  const [judge, divisions, currentAssignments] = await Promise.all([
+    prisma.user.findUnique({ where: { id: judgeUserId }, select: { email: true, dancer: { select: { gender: true } } } }),
+    prisma.division.findMany({ where: { competitionId }, select: { id: true } }),
+    prisma.judgeAssignment.findMany({ where: { judgeUserId, division: { competitionId } } }),
+  ]);
+  if (!judge) {
+    throw new ValidationFailedError("Судья не найден.");
+  }
+
+  const validDivisionIds = new Set(divisions.map((d) => d.id));
+  const uniqueDivisionIds = [...new Set(divisionIds)];
+  for (const id of uniqueDivisionIds) {
+    if (!validDivisionIds.has(id)) {
+      throw new ValidationFailedError("В списке есть категория, которой нет в этом соревновании.");
+    }
+  }
+
+  const currentDivisionIds = new Set(currentAssignments.map((a) => a.divisionId));
+  const targetDivisionIds = new Set(uniqueDivisionIds);
+  const toAddDivisionIds = uniqueDivisionIds.filter((id) => !currentDivisionIds.has(id));
+  const toRemoveDivisionIds = [...currentDivisionIds].filter((id) => !targetDivisionIds.has(id));
+  if (toAddDivisionIds.length === 0 && toRemoveDivisionIds.length === 0) return;
+
+  let rolesToAssign: RegistrationRole[] = [];
+  if (toAddDivisionIds.length > 0) {
+    const existingRoles = new Set(currentAssignments.map((a) => a.role));
+    if (existingRoles.size > 0) {
+      rolesToAssign = [...existingRoles];
+    } else {
+      const genderRole = suggestedRoleForGender(judge.dancer?.gender ?? null);
+      if (!genderRole) {
+        throw new ValidationFailedError(
+          `Не удалось определить роль автоматически для ${judge.email} — нет ни одной роли в других категориях, и в профиле не указан пол. Назначьте роль вручную на карточке нужной категории.`
+        );
+      }
+      rolesToAssign = [genderRole];
+    }
+  }
+
+  // JUDGE-001 (тот же guard, что и в setDivisionJudges/removeCompetitionJudge):
+  // снятие категории, где судья уже оценивал, отклоняется целиком, не молча.
+  const removeAssignments = currentAssignments.filter((a) => toRemoveDivisionIds.includes(a.divisionId));
+  if (removeAssignments.length > 0) {
+    const removeIds = removeAssignments.map((a) => a.id);
+    const [scored, finalScored, confirmed] = await Promise.all([
+      prisma.judgeScore.findFirst({ where: { judgeAssignmentId: { in: removeIds } } }),
+      prisma.finalJudgeScore.findFirst({ where: { judgeAssignmentId: { in: removeIds } } }),
+      prisma.judgeRoundConfirmation.findFirst({ where: { judgeAssignmentId: { in: removeIds } } }),
+    ]);
+    if (scored || finalScored || confirmed) {
+      throw new ValidationFailedError(
+        "Нельзя снять категорию — судья уже выставлял в ней оценки. Снимите галочку только с тех категорий, где оценок ещё нет."
+      );
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const a of removeAssignments) {
+      await tx.judgeAssignment.delete({ where: { id: a.id } });
+      await writeAudit(tx, {
+        actor,
+        action: "judge.unassign",
+        entityType: "JudgeAssignment",
+        entityId: a.id,
+        before: { divisionId: a.divisionId, judgeUserId, judgeEmail: judge.email, role: a.role },
+      });
+    }
+    for (const divisionId of toAddDivisionIds) {
+      for (const role of rolesToAssign) {
+        const created = await tx.judgeAssignment.create({ data: { divisionId, judgeUserId, role, assignedById: actor.userId } });
+        await writeAudit(tx, {
+          actor,
+          action: "judge.assign",
+          entityType: "JudgeAssignment",
+          entityId: created.id,
+          after: { divisionId, judgeUserId, judgeEmail: judge.email, role },
+        });
+      }
+    }
+    if (toAddDivisionIds.length > 0) {
+      await grantJudgeCompetitionMembership(tx, competitionId, judgeUserId, actor.userId);
+    }
+
+    // Убранные категории могут завершить готовность уже идущего раунда — тот
+    // же повторный пересчёт, что и в setDivisionJudges/removeCompetitionJudge.
+    for (const divisionId of toRemoveDivisionIds) {
+      const roundsInProgress = await tx.round.findMany({
+        where: { divisionId, type: null, status: { in: ["RUNNING", "FINISHED", "SCORING"] } },
+        select: { id: true },
+      });
+      for (const r of roundsInProgress) {
+        await maybeFinalizeAfterScoreInTx(tx, r.id, actor);
+      }
+    }
+  });
+}
+

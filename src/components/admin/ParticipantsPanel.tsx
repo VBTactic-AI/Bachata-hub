@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ChangeDivisionControl } from "@/components/admin/ChangeDivisionControl";
 import { RoleOverrideReview } from "@/components/admin/RoleOverrideReview";
 import { CheckInToggle } from "@/components/admin/CheckInToggle";
+import { BibNumberEditor } from "@/components/admin/BibNumberEditor";
 import { PaymentToggle } from "@/components/admin/PaymentToggle";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { StatCard } from "@/components/admin/StatCard";
@@ -176,7 +177,13 @@ export function ParticipantsPanel({
               <tbody>
                 {filtered.map((r, i) => (
                   <tr key={r.id} className="border-t border-admin-border hover:bg-admin-card2/50">
-                    <td className="px-3 py-2 align-top text-admin-muted">{r.bibNumber ?? i + 1}</td>
+                    <td className="px-3 py-2 align-top text-admin-muted">
+                      {canCheckIn && r.bibNumber ? (
+                        <BibNumberEditor registrationId={r.id} bibNumber={r.bibNumber} />
+                      ) : (
+                        (r.bibNumber ?? i + 1)
+                      )}
+                    </td>
                     <td className="px-3 py-2 align-top font-medium text-night-text">
                       {r.displayName}
                       {r.roleOverrideStatus === "PENDING" && (
@@ -243,7 +250,9 @@ export function ParticipantsPanel({
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="m-0 font-medium text-night-text">
-                      №{r.bibNumber ?? i + 1} · {r.displayName}
+                      {canCheckIn && r.bibNumber ? <BibNumberEditor registrationId={r.id} bibNumber={r.bibNumber} /> : `№${r.bibNumber ?? i + 1}`}
+                      {" · "}
+                      {r.displayName}
                     </p>
                     <p className="m-0 mt-0.5 text-xs text-admin-muted">
                       {r.categoryName} · {r.roleLabel}

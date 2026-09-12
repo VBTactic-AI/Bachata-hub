@@ -159,7 +159,9 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         // DivisionJudgesPanel (выбор "из уже добавленных").
         members: {
           where: { role: { code: "JUDGE" } },
-          include: { user: { select: { email: true, dancer: { select: { displayName: true, gender: true } } } } },
+          include: {
+            user: { select: { email: true, lastLoginAt: true, dancer: { select: { displayName: true, gender: true } } } },
+          },
           orderBy: { addedAt: "asc" },
         },
       },
@@ -253,13 +255,13 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // объединение ролей всех его JudgeAssignment по всем категориям. Тот же
   // judgeRoles используется и ниже, в пуле для DivisionJudgesPanel (фильтр
   // "Добавить судью" по колонке — 2026-09-09).
-  const judgeDivisionChips = new Map<string, { name: string; color: string }[]>();
+  const judgeDivisionChips = new Map<string, { id: string; name: string; color: string }[]>();
   const judgeRoles = new Map<string, Set<RegistrationRole>>();
   competition.divisions.forEach((d, i) => {
     const color = categoryDotColor(i);
     for (const ja of d.judgeAssignments) {
       const chips = judgeDivisionChips.get(ja.judgeUserId) ?? [];
-      if (!chips.some((c) => c.name === d.category.name)) chips.push({ name: d.category.name, color });
+      if (!chips.some((c) => c.id === d.id)) chips.push({ id: d.id, name: d.category.name, color });
       judgeDivisionChips.set(ja.judgeUserId, chips);
 
       const roles = judgeRoles.get(ja.judgeUserId) ?? new Set<RegistrationRole>();
@@ -497,16 +499,42 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     <div className="flex flex-col gap-4">
       {canManage && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Участники" value={kpis[0].value} icon={<PeopleIcon />} tone="primary" />
+          {/* "Проваливание" по клику (2026-09-12, по прямому запросу
+              пользователя) — реальные ссылки на ?tab=, которые
+              CompetitionWorkspaceTabs уже умеет подхватывать как настоящую
+              Next.js-навигацию (см. её комментарий про useEffect на
+              searchParams). Check-in — своей вкладки нет, сам check-in живёт
+              на "Участники" (ParticipantsPanel), поэтому обе карточки ведут
+              туда же. */}
+          <StatCard
+            label="Участники"
+            value={kpis[0].value}
+            icon={<PeopleIcon />}
+            tone="primary"
+            href={`/admin/competitions/${competition.id}?tab=participants`}
+          />
           <StatCard
             label="Check-in"
             value={kpis[1].value}
             icon={<CheckCircleIcon />}
             tone="success"
             percent={kpis[0].value > 0 ? Math.round((kpis[1].value / kpis[0].value) * 100) : undefined}
+            href={`/admin/competitions/${competition.id}?tab=participants`}
           />
-          <StatCard label="Категории" value={kpis[2].value} icon={<GridIcon />} tone="primary" />
-          <StatCard label="Судьи" value={kpis[3].value} icon={<JudgesIcon />} tone="primary" />
+          <StatCard
+            label="Категории"
+            value={kpis[2].value}
+            icon={<GridIcon />}
+            tone="primary"
+            href={`/admin/competitions/${competition.id}?tab=categories`}
+          />
+          <StatCard
+            label="Судьи"
+            value={kpis[3].value}
+            icon={<JudgesIcon />}
+            tone="primary"
+            href={`/admin/competitions/${competition.id}?tab=judges`}
+          />
         </div>
       )}
       {canManage && (
@@ -684,12 +712,24 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // 2026-09-09, см. также JudgesWorkspace/DivisionJudgesPanel). Роль здесь —
   // объединение ролей судьи по всем его назначениям (judgeRoles выше), не
   // отдельное хранимое поле.
+  // Реально ли судья хоть раз входил в свой аккаунт (User.lastLoginAt) — не
+  // выдуманный/всегда-"Активен" статус (найдено пользователем, 2026-09-12):
+  // из уже загруженного competition.members, без нового запроса.
+  const judgeLastLoginById = new Map(competition.members.map((m) => [m.userId, m.user.lastLoginAt]));
+
+  const allCategoriesForAssignment = competition.divisions.map((d, i) => ({
+    id: d.id,
+    name: d.category.name,
+    color: categoryDotColor(i),
+  }));
+
   const registryJudges: RegistryJudge[] = competitionJudgePool.map((j) => ({
     judgeUserId: j.judgeUserId,
     displayName: j.displayName,
     judgeEmail: j.judgeEmail,
     categories: judgeDivisionChips.get(j.judgeUserId) ?? [],
     roles: [...(judgeRoles.get(j.judgeUserId) ?? [])],
+    hasLoggedIn: !!judgeLastLoginById.get(j.judgeUserId),
   }));
 
   const judgesContent = (
@@ -706,6 +746,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
             <JudgeRegistryPanel
               competitionId={competition.id}
               judges={registryJudges}
+              allCategories={allCategoriesForAssignment}
               addAction={
                 <AddButton label="Добавить судью" gradientClassName="bg-gradient-admin-cta" wide>
                   <AddCompetitionJudgeForm competitionId={competition.id} />
@@ -1275,7 +1316,12 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       {!canManageRounds && (
         <p className="m-0 text-sm text-admin-muted">Нет прав на управление раундами — показаны только настройки категорий.</p>
       )}
-      <CompetitionMonitor categories={monitorCategories} canViewScoreMonitor={canViewScoreMonitor} />
+      <CompetitionMonitor
+        categories={monitorCategories}
+        canViewScoreMonitor={canViewScoreMonitor}
+        competitionId={competition.id}
+        canManageAudienceVote={canManageAudienceVote}
+      />
     </div>
   );
 

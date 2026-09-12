@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, cardVariants } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
 
@@ -27,6 +28,7 @@ export function StatCard({
   percent,
   onClick,
   active,
+  href,
 }: {
   label: string;
   value: string | number;
@@ -39,6 +41,13 @@ export function StatCard({
   // заметный вход в тот же фильтр, что и выпадающий список над таблицей).
   onClick?: () => void;
   active?: boolean;
+  // "Проваливание" по клику на вкладку соревнования (2026-09-12, по прямому
+  // запросу пользователя) — настоящая ссылка, не onClick: карточки KPI на
+  // вкладке "Главная" рендерятся в серверном компоненте (page.tsx), где
+  // обработчик клика недоступен, а переход по ?tab= CompetitionWorkspaceTabs
+  // уже и так подхватывает как обычную Next.js-навигацию (см. её комментарий
+  // про "настоящий переход по ссылке").
+  href?: string;
 }) {
   if (icon) {
     const body = (
@@ -66,6 +75,20 @@ export function StatCard({
         >
           {body}
         </button>
+      );
+    }
+
+    if (href) {
+      return (
+        <Link
+          href={href}
+          className={cn(
+            cardVariants(),
+            "block w-full border-admin-border bg-admin-card no-underline transition-colors hover:border-admin-primary/60 hover:no-underline"
+          )}
+        >
+          {body}
+        </Link>
       );
     }
 

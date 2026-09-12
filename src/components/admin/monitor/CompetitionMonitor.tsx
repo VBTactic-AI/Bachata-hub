@@ -26,6 +26,7 @@ import { RerollDrawButton } from "../RerollDrawButton";
 import { RotationPanel } from "../RotationPanel";
 import { RoundStatusControls } from "../RoundStatusControls";
 import { StartDrawingForm } from "../StartDrawingForm";
+import { AudienceVoteQuickControl } from "../audience-vote/AudienceVoteQuickControl";
 import { JudgesLivePanel } from "./JudgesLivePanel";
 import { defaultCategoryId, defaultHeatId, defaultRoundId, hasActiveRound, resolveSelected } from "./selection";
 import type { MonitorCategory, MonitorHeat, MonitorParticipant, MonitorRound } from "./types";
@@ -414,9 +415,13 @@ function AdvancementCard({ round }: { round: MonitorRound }) {
 export function CompetitionMonitor({
   categories,
   canViewScoreMonitor,
+  competitionId,
+  canManageAudienceVote,
 }: {
   categories: MonitorCategory[];
   canViewScoreMonitor: boolean;
+  competitionId: string;
+  canManageAudienceVote: boolean;
 }) {
   // Выбор категории/этапа/захода читается из URL один раз при монтировании
   // (та же query-строка, что и в ссылке "← Назад к соревнованию" со страницы
@@ -543,6 +548,21 @@ export function CompetitionMonitor({
           Партнёрш <span className="font-bold tabular-nums">{category.checkedInFollowers}</span>
         </span>
       </div>
+
+      {/* ── Приз зрительских симпатий этой категории ──────────── */}
+      {/* Быстрая кнопка старта/остановки прямо в Мониторе (2026-09-12, по
+          прямому запросу пользователя) — полная настройка (режим/текст/
+          подтверждение победителя/публикация) остаётся на вкладке
+          "Голосование", здесь только самое частое во время живого этапа
+          действие. key={category.id} — тот же приём, что и key={round.id}
+          ниже: переключение категории должно полностью сбросить состояние
+          компонента (свежий поллинг), а не тащить состояние предыдущей. */}
+      <AudienceVoteQuickControl
+        key={category.id}
+        divisionId={category.id}
+        competitionId={competitionId}
+        canManage={canManageAudienceVote}
+      />
 
       {/* ── Этапы категории ───────────────────────────────────── */}
       {category.rounds.length === 0 ? (

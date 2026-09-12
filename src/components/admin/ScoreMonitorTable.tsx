@@ -246,7 +246,12 @@ export function PrelimRoleTable({
                 {table.judges.map((j) => {
                   const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
                   return (
-                    <th key={j.judgeAssignmentId} className="border-b border-admin-border px-3 py-2.5 align-top">
+                    // border-l — разделитель колонок между судьями (найдено
+                    // пользователем, 2026-09-12: без него на широком экране
+                    // не сразу понятно, какая оценка чья). border-admin-border
+                    // на КАЖДОЙ колонке судьи, включая первую — граница со
+                    // столбцом "№" тоже нужна, не только между самими судьями.
+                    <th key={j.judgeAssignmentId} className="border-b border-l border-admin-border px-3 py-2.5 align-top">
                       <JudgeChip judge={j} role={role} total={total} />
                     </th>
                   );
@@ -271,7 +276,7 @@ export function PrelimRoleTable({
                     return (
                       <td
                         key={j.judgeAssignmentId}
-                        className={`border-b border-admin-border px-3 py-2 text-center ${
+                        className={`border-b border-l border-admin-border px-3 py-2 text-center ${
                           value === null ? "text-admin-disabled" : "font-semibold text-night-text"
                         }`}
                       >
@@ -388,7 +393,14 @@ export function FinalRoleTable({ title, role, table }: { title: string; role: Da
                 {table.judges.map((j) => {
                   const total = table.totals.find((t) => t.judgeAssignmentId === j.judgeAssignmentId);
                   return (
-                    <th key={j.judgeAssignmentId} colSpan={j.criteriaIds.length || 1} className="border-b border-admin-border px-3 py-2.5 align-top">
+                    // border-l на группе судьи целиком (colSpan) — разделитель
+                    // между судьями, а не между отдельными критериями одного
+                    // судьи (найдено пользователем, 2026-09-12).
+                    <th
+                      key={j.judgeAssignmentId}
+                      colSpan={j.criteriaIds.length || 1}
+                      className="border-b border-l border-admin-border px-3 py-2.5 align-top"
+                    >
                       <JudgeChip judge={j} role={role} total={total} />
                     </th>
                   );
@@ -396,10 +408,12 @@ export function FinalRoleTable({ title, role, table }: { title: string; role: Da
               </tr>
               <tr>
                 {table.judges.flatMap((j) =>
-                  j.criteriaIds.map((cid) => (
+                  j.criteriaIds.map((cid, ci) => (
                     <th
                       key={`${j.judgeAssignmentId}:${cid}`}
-                      className="border-b border-admin-border bg-admin-bg/40 px-1 py-1 text-center text-[10px] font-semibold text-admin-muted"
+                      className={`border-b border-admin-border bg-admin-bg/40 px-1 py-1 text-center text-[10px] font-semibold text-admin-muted ${
+                        ci === 0 ? "border-l" : ""
+                      }`}
                     >
                       {criteriaById.get(cid)?.name ?? "—"}
                     </th>
@@ -421,12 +435,12 @@ export function FinalRoleTable({ title, role, table }: { title: string; role: Da
                     №{r.bibNumber ?? "—"}
                   </td>
                   {table.judges.flatMap((j) =>
-                    j.criteriaIds.map((cid) => {
+                    j.criteriaIds.map((cid, ci) => {
                       const value = r.scores[j.judgeAssignmentId]?.[cid] ?? null;
                       return (
                         <td
                           key={`${j.judgeAssignmentId}:${cid}`}
-                          className={`border-b border-admin-border px-1 py-2 text-center ${
+                          className={`border-b border-admin-border px-1 py-2 text-center ${ci === 0 ? "border-l" : ""} ${
                             value === null ? "text-admin-disabled" : "font-semibold text-night-text"
                           }`}
                         >
