@@ -16,11 +16,12 @@ export type RegistryJudge = {
   // поле) — судья, назначенный LEADER в одной категории и FOLLOWER в другой,
   // попадёт в группу "Судят обе роли" ниже, а не потеряется молча.
   roles: RegistrationRole[];
-  // Реально ли судья хоть раз входил в свой аккаунт (User.lastLoginAt !=
-  // null) — раньше колонка "Статус" всегда показывала "Активен" (найдено
-  // пользователем, 2026-09-12), независимо от того, логинился ли человек
-  // вообще.
-  hasLoggedIn: boolean;
+  // Залогинен ли судья ПРЯМО СЕЙЧАС (живая, не отозванная сессия Supabase
+  // Auth) — не "когда-либо входил" (раньше колонка "Статус" всегда
+  // показывала "Активен" жёстко закодированным текстом; затем — по
+  // User.lastLoginAt; по прямому уточнению пользователя, 2026-09-12,
+  // заменено на текущее состояние сессии, см. getCurrentlyLoggedInSupabaseUserIds).
+  isLoggedInNow: boolean;
 };
 
 type RoleGroupKey = "LEADER" | "FOLLOWER" | "BOTH" | "NONE";
@@ -147,8 +148,8 @@ export function JudgeRegistryPanel({
                           </td>
                           <td className="px-3 py-2.5 align-middle">
                             <StatusBadge
-                              label={j.hasLoggedIn ? "Активен" : "Ещё не входил"}
-                              variant={j.hasLoggedIn ? "success" : "neutral"}
+                              label={j.isLoggedInNow ? "Активен" : "Не в сети"}
+                              variant={j.isLoggedInNow ? "success" : "neutral"}
                             />
                           </td>
                           <td className="px-3 py-2.5 align-middle">

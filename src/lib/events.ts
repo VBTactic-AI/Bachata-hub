@@ -21,7 +21,13 @@ export function thisWeekRange() {
   return { start, end };
 }
 
+// status: "PUBLISHED" исключает черновики Event Wizard'а (Event Engine) —
+// они всегда moderationStatus по умолчанию PENDING (колонка НЕ NULL), но не
+// являются "отправленными", это просто незавершённая работа автора, не то
+// же самое, что "на модерации". Существующие (до этой задачи) события имеют
+// status: PUBLISHED по умолчанию миграции — фильтр им ничего не меняет.
 export const activeEventFilter = (): Prisma.EventWhereInput => ({
+  status: "PUBLISHED",
   moderationStatus: "APPROVED",
   isArchived: false,
 });

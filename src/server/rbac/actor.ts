@@ -1,6 +1,7 @@
 import { cache } from "react";
-import { getSessionUserId } from "@/lib/auth";
+import { getAuthClaims } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { engineRoleCodeRequiresMfa, siteRoleRequiresMfa } from "@/server/mfa/policy";
 import type { Permission } from "./permissions";
 
 export type Actor = {
@@ -11,6 +12,23 @@ export type Actor = {
   globalPermissions: Set<Permission>;
   // Права по конкретным соревнованиям — набирается из CompetitionMember.
   permissionsByCompetition: Map<string, Set<Permission>>;
+  // true, если хотя бы одна из ролей актёра (глобальная, по любому
+  // соревнованию, или сайтовый ADMIN-мост) требует MFA — см.
+  // src/server/mfa/policy.ts. Не зависит от того, какое конкретно право
+  // сейчас проверяется: раз роль требует MFA, ей закрыты ВСЕ привилегированные
+  // операции до подтверждения, а не только специфичные для этой роли.
+  //
+  // Оба MFA-поля НЕОБЯЗАТЕЛЬНЫЕ в типе намеренно: getActor() всегда
+  // проставляет их явно, но ~44 существующих тестовых файла строят Actor
+  // литералом без них (предшествуют самой MFA) — requirePermission()
+  // трактует отсутствие как "не требуется/выполнено" (см. её код), поэтому
+  // старые фикстуры остаются рабочими без единой правки (CLAUDE.md §54).
+  mfaRequired?: boolean;
+  // true, если mfaRequired не выставлен/false, либо текущая сессия Supabase
+  // Auth уже на уровне aal2 (см. src/lib/auth.ts, getAuthClaims()).
+  // requirePermission() проверяет именно это поле, а не aal напрямую — так
+  // проверка не дублируется по вызывающим местам.
+  mfaSatisfied?: boolean;
 };
 
 // null для гостя — вызывающий код сам решает, кидать AuthenticationRequiredError
@@ -21,29 +39,19 @@ export type Actor = {
 // редиректа, а requirePermission() внутри getJudgeQueue() зовёт его снова —
 // без cache() это дублирующийся набор запросов к RBAC-таблицам за один и тот
 // же HTTP-запрос.
-//
-// Раньше здесь был `await getCurrentUser()` первым шагом — но getActor()'у
-// из результата getCurrentUser() нужен только userId, а он известен сразу
-// после проверки подписи JWT (без похода в БД). Ожидание полной строки User
-// только ради userId искусственно делало RBAC-запрос ниже последовательным
-// ПОСЛЕ отдельного round-trip'а getCurrentUser() (~150мс + ~150мс = ~300мс
-// на удалённой БД, Supabase pooler) — хотя оба запроса не зависят друг от
-// друга по данным. getSessionUserId() — тот же декодинг без запроса к БД,
-// поэтому RBAC-запрос теперь стартует сразу, не дожидаясь getCurrentUser()
-// (который, если вызван где-то ещё в этом же HTTP-запросе — напр. в layout —
-// теперь ничем не блокируется и может выполняться параллельно).
 export const getActor = cache(async (): Promise<Actor | null> => {
-  const userId = await getSessionUserId();
-  if (!userId) return null;
+  const claims = await getAuthClaims();
+  if (!claims) return null;
 
   // role/isBlocked/email добавлены в ТОТ ЖЕ select, что и раньше отдельно
   // запрашивал getCurrentUser() — экономит ещё один round-trip: Role сама
   // становится известна из ЭТОГО же запроса, не нужно ждать её из
   // getCurrentUser(), чтобы решить, нужен ли SUPER_ADMIN-мост ниже.
   const userWithRbac = await prisma.user.findFirst({
-    where: { id: userId },
+    where: { supabaseUserId: claims.supabaseUserId },
     relationLoadStrategy: "join",
     select: {
+      id: true,
       role: true,
       isBlocked: true,
       email: true,
@@ -71,8 +79,11 @@ export const getActor = cache(async (): Promise<Actor | null> => {
       })
     : null;
 
+  let mfaRequired = siteRoleRequiresMfa(userWithRbac.role);
+
   const globalPermissions = new Set<Permission>();
   for (const assignment of userWithRbac.competitionRoleAssignments) {
+    if (engineRoleCodeRequiresMfa(assignment.role.code)) mfaRequired = true;
     for (const rp of assignment.role.permissions) {
       globalPermissions.add(rp.permission.code as Permission);
     }
@@ -83,6 +94,7 @@ export const getActor = cache(async (): Promise<Actor | null> => {
 
   const permissionsByCompetition = new Map<string, Set<Permission>>();
   for (const member of userWithRbac.competitionMemberships) {
+    if (engineRoleCodeRequiresMfa(member.role.code)) mfaRequired = true;
     let set = permissionsByCompetition.get(member.competitionId);
     if (!set) {
       set = new Set<Permission>();
@@ -93,5 +105,14 @@ export const getActor = cache(async (): Promise<Actor | null> => {
     }
   }
 
-  return { userId, email: userWithRbac.email, globalPermissions, permissionsByCompetition };
+  const mfaSatisfied = !mfaRequired || claims.aal === "aal2";
+
+  return {
+    userId: userWithRbac.id,
+    email: userWithRbac.email,
+    globalPermissions,
+    permissionsByCompetition,
+    mfaRequired,
+    mfaSatisfied,
+  };
 });

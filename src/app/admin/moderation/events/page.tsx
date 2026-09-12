@@ -13,7 +13,11 @@ export default async function ModerationEventsPage() {
   if (!isAdmin(user)) redirect("/admin");
 
   const events = await prisma.event.findMany({
-    where: { moderationStatus: "PENDING" },
+    // status: "PUBLISHED" — черновики Event Wizard'а (Event Engine) никогда
+    // не отправлены на модерацию, хотя moderationStatus у них по умолчанию
+    // тоже PENDING (колонка NOT NULL) — без этого фильтра сюда попадали бы
+    // чужие незавершённые черновики.
+    where: { moderationStatus: "PENDING", status: "PUBLISHED" },
     include: { city: true, school: true, createdBy: true },
     orderBy: { createdAt: "asc" },
   });

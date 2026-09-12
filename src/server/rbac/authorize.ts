@@ -1,6 +1,6 @@
 import { getActor, type Actor } from "./actor";
 import type { Permission } from "./permissions";
-import { AuthenticationRequiredError, NotCompetitionMemberError, PermissionDeniedError } from "../errors";
+import { AuthenticationRequiredError, MfaRequiredError, NotCompetitionMemberError, PermissionDeniedError } from "../errors";
 
 // Права, которые выдаёт роль JUDGE и ТОЛЬКО она (prisma/seed-layer3.ts) —
 // судья не должен видеть "Панель управления" /admin вообще (CLAUDE.md
@@ -59,6 +59,17 @@ export async function requirePermission(
 ): Promise<Actor> {
   const actor = await getActor();
   if (!actor) throw new AuthenticationRequiredError();
+  // Проверяется ДО конкретного права: роль, требующая MFA (SUPER_ADMIN/
+  // EVENT_ADMIN/сайтовый ADMIN-мост — src/server/mfa/policy.ts), не должна
+  // получить доступ ни к одной привилегированной операции, пока сессия не
+  // поднята до aal2 — независимо от того, какое именно право сейчас
+  // запрошено (задача §6: AAL1 никогда не считается достаточным для
+  // операции, требующей AAL2). Оба поля необязательные в типе Actor — для
+  // существующих тестовых фикстур без них это условие всегда false, ничего
+  // не ломает (см. комментарий у Actor).
+  if (actor.mfaRequired && !actor.mfaSatisfied) {
+    throw new MfaRequiredError();
+  }
   if (can(actor, permission, competitionId)) return actor;
 
   // Различаем "прав вообще нет" и "прав нет именно в этом соревновании" —

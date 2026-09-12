@@ -6,7 +6,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const [events, schools] = await Promise.all([
     prisma.event.findMany({
-      where: { moderationStatus: "APPROVED", isArchived: false },
+      // status: "PUBLISHED" — не индексировать черновики Event Wizard'а.
+      where: { status: "PUBLISHED", moderationStatus: "APPROVED", isArchived: false },
       select: { slug: true, updatedAt: true },
     }),
     prisma.school.findMany({

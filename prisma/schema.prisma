@@ -70,12 +70,24 @@ enum UserRole {
 model User {
   id           String    @id @default(cuid())
   email        String    @unique
-  passwordHash String
-  role         UserRole  @default(DANCER)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  lastLoginAt  DateTime?
-  isBlocked    Boolean   @default(false)
+  // Nullable — источник истины для аутентификации теперь Supabase Auth
+  // (см. supabaseUserId ниже); свой bcrypt-хэш остаётся только у записей,
+  // созданных ДО перехода, и у служебных аккаунтов, которых организатор
+  // добавляет вручную без приглашения (registerByAdmin — заводит случайный
+  // непроходимый хэш, т.к. этот человек никогда не логинится сам).
+  passwordHash String?
+  // Мост на auth.users.id (Supabase Auth) — null, пока пользователь ни разу
+  // не входил через Supabase Auth (Google/Apple/email). Заполняется один раз
+  // в src/app/auth/callback/route.ts: либо у уже существующей записи (по
+  // совпадению email — no-duplicate-account линковка), либо у только что
+  // созданной. UNIQUE — одна запись Supabase Auth не может быть связана с
+  // двумя разными public.User.
+  supabaseUserId String?   @unique
+  role           UserRole  @default(DANCER)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastLoginAt    DateTime?
+  isBlocked      Boolean   @default(false)
 
   dancer           Dancer?
   schoolClaims     SchoolClaim[]   @relation("Claimant")
@@ -213,7 +225,8 @@ model Teacher {
   school   School? @relation(fields: [schoolId], references: [id])
   isActive Boolean @default(true)
 
-  schedules ClassSchedule[]
+  schedules            ClassSchedule[]
+  masterclassSessions  MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
 
   @@index([schoolId])
 }
@@ -308,6 +321,20 @@ enum ModerationStatus {
   REJECTED
 }
 
+// Черновик Event Wizard'а vs модерация контента — два НЕЗАВИСИМЫХ понятия
+// (см. обсуждение в чате про Event Engine): status — стадия жизненного цикла
+// самого организатора (черновик/опубликовано/архив), moderationStatus —
+// решение модератора сайта о публичной видимости. DRAFT никогда не попадает
+// в очередь модерации и не виден никому, кроме автора. По умолчанию —
+// PUBLISHED: все существующие на момент миграции события не являются
+// черновиками, их видимость по-прежнему определяет только moderationStatus,
+// как и раньше.
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 model Event {
   id               String           @id @default(cuid())
   slug             String           @unique
@@ -324,11 +351,26 @@ model Event {
   endsAt           DateTime?
   venueName        String
   venueAddress     String?
+  latitude         Float? // Event Engine: необязательная геометка места проведения
+  longitude        Float?
+  capacity         Int? // Event Engine: вместимость площадки/события, необязательно
+  registrationEnabled Boolean       @default(false) // Event Engine: показывать ли блок регистрации на публичной странице (сама регистрация по-прежнему может быть внешней ссылкой — externalLinkUrl, слой 2 ещё не подключен)
   description      String?
+  // Обложка/афиша — с этой задачи ("загрузка афиши") ЭТО ПОЛЕ БОЛЬШЕ НЕ
+  // ЗАПОЛНЯЕТСЯ ВРУЧНУЮ через Event Wizard: оно денормализованный кэш URL
+  // текущей главной афиши (EventMedia.isMain = true у этого Event),
+  // синхронизируется сервисом src/server/events/event-media-service.ts при
+  // загрузке/удалении/смене главной. Читающий код (EventCard,
+  // EventCardPreview, /events/[slug], sitemap, JSON-LD) не меняется вообще —
+  // продолжает читать photoUrl как раньше, поэтому события, созданные ДО
+  // этой задачи (прямая внешняя
+  // ссылка, без единой строки EventImage), остаются рабочими без миграции
+  // данных.
   photoUrl         String?
   priceText        String? // цена текстом ("15 BYN", "бесплатно", "по договорённости")
   externalLinkUrl  String? // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
   tags             String[]
+  status           EventStatus      @default(PUBLISHED) // Event Engine: черновик мастера создания, см. комментарий у enum
   moderationStatus ModerationStatus @default(PENDING)
   createdById      String
   createdBy        User             @relation("EventCreator", fields: [createdById], references: [id])
@@ -343,12 +385,126 @@ model Event {
   achievements Achievement[]
   competition  Competition? // СЛОЙ 3: когда eventType = CONTEST, здесь — привязанное соревнование движка Jack & Jill (см. docs/00_DECISIONS.md, D3)
 
+  // Event Engine — type-specific конфигурация (расширяемый реестр типов,
+  // см. src/lib/events/event-type-registry.ts). PARTY/MASTERCLASS хранят
+  // свои детали здесь; COMPETITION использует уже существующий `competition`
+  // выше — новых таблиц для него не заводим.
+  partyDetails       PartyDetails?
+  masterclassDetails MasterclassDetails?
+  priceOptions       EventPriceOption[]
+  media              EventMedia[]
+
   @@index([cityId, startsAt])
   @@index([schoolId])
   @@index([moderationStatus])
   @@index([eventType])
   @@index([createdById])
   @@index([moderatedById])
+  @@index([status])
+}
+
+// Единая Media-сущность события (Event Media Gallery, задача от 2026-09-12) —
+// сознательно ЗАМЕНИЛА собой более раннюю EventImage (та же миграционная
+// сессия, в БД не было ни одной строки — переименование, не откат): у
+// задачи есть явное требование "не хранить Event.coverImage и Event.images[]
+// как две независимые системы одного файла" — единственный источник истины
+// здесь, Event.photoUrl остаётся ДЕНОРМАЛИЗОВАННЫМ КЭШЕМ url текущей главной
+// (isMain = true), синхронизируется сервисом (см. комментарий у поля).
+// Ровно одна строка на Event может иметь isMain = true. type зарезервирован
+// под будущие типы медиа (задача явно упоминает "future media types") —
+// сегодня используется только IMAGE.
+enum EventMediaType {
+  IMAGE
+}
+
+model EventMedia {
+  id           String         @id @default(cuid())
+  eventId      String
+  event        Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type         EventMediaType @default(IMAGE)
+  url          String
+  storageKey   String // путь объекта в Supabase Storage (бакет "event-images", публичный на чтение) — отдельно от url, чтобы удалять/заменять без парсинга URL
+  isMain       Boolean        @default(false)
+  sortOrder    Int            @default(0)
+  mimeType     String
+  fileSize     Int
+  width        Int?
+  height       Int?
+  originalName String?
+  // "Position" из задачи (§11) — простой выбор стороны для CSS
+  // object-position там, где карточка обрезает изображение под
+  // object-fit: cover; полноценный визуальный crop-редактор сознательно не
+  // реализован в этом проходе (задача сама называет его опциональным
+  // "если не слишком сложно") — оригинальный файл в любом случае никогда не
+  // изменяется необратимо.
+  objectPosition String       @default("center")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([eventId])
+  @@index([eventId, isMain])
+}
+
+// Варианты цены/билета — общие для PARTY (Early Bird/Regular/At Door) и
+// MASTERCLASS (Solo/Couple/Masterclass+Party), поэтому одна таблица на
+// Event, а не отдельная под каждый тип (не дублируем структуру ради имени).
+model EventPriceOption {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  label     String
+  price     Decimal? @db.Decimal(10, 2)
+  currency  String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([eventId])
+}
+
+// 1:1 к Event — заполняется только когда Event.format = PARTY.
+model PartyDetails {
+  id            String  @id @default(cuid())
+  eventId       String  @unique
+  event         Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  musicStyles   String[]
+  djs           String[]
+  danceFloors   String[]
+  artists       String[]
+  dressCode     String?
+  photographer  String?
+  foodAndDrinks String?
+  parking       Boolean?
+  cloakroom     Boolean?
+}
+
+// 1:1 к Event — заполняется только когда Event.format = MASTERCLASS.
+model MasterclassDetails {
+  id              String  @id @default(cuid())
+  eventId         String  @unique
+  event           Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  style           String?
+  format          String? // свободный текст (интенсив/цикл занятий и т.п.) — не путать с Event.format
+  partnerRequired Boolean @default(false)
+
+  sessions MasterclassSession[]
+}
+
+model MasterclassSession {
+  id                   String              @id @default(cuid())
+  masterclassDetailsId String
+  masterclassDetails   MasterclassDetails  @relation(fields: [masterclassDetailsId], references: [id], onDelete: Cascade)
+  title                String
+  teacherId            String? // ссылается на уже существующую модель Teacher — не дублируем "инструктора" новой сущностью
+  teacher              Teacher?            @relation(fields: [teacherId], references: [id])
+  startTime            DateTime
+  endTime              DateTime
+  room                 String?
+  level                DanceLevel?
+  capacity             Int?
+  order                Int                 @default(0)
+
+  @@index([masterclassDetailsId])
+  @@index([teacherId])
 }
 
 // ---------------------------------------------------------------------------

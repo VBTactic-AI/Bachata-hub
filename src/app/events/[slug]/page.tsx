@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n/dictionary";
 import { formatDateTime } from "@/lib/format";
 import { AttendanceButtons } from "@/components/AttendanceButtons";
 import { ShareButtons } from "@/components/ShareButtons";
+import { PublicEventGallery } from "@/components/PublicEventGallery";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tag } from "@/components/ui/tag";
@@ -13,7 +14,9 @@ import { Tag } from "@/components/ui/tag";
 async function getEvent(slug: string) {
   return prisma.event.findUnique({
     where: { slug },
-    include: { city: true, school: true },
+    // isMain: "desc" первой — главная афиша всегда идёт первой в галерее,
+    // даже если её sortOrder не 0 (задача §13 — главная и порядок независимы).
+    include: { city: true, school: true, media: { orderBy: [{ isMain: "desc" }, { sortOrder: "asc" }] } },
   });
 }
 
@@ -31,7 +34,7 @@ export async function generateMetadata({
     openGraph: {
       title: event.title,
       description: event.description ?? undefined,
-      images: event.photoUrl ? [event.photoUrl] : undefined,
+      images: event.media.length > 0 ? event.media.map((m) => m.url) : event.photoUrl ? [event.photoUrl] : undefined,
     },
   };
 }
@@ -39,9 +42,16 @@ export async function generateMetadata({
 export default async function EventPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const event = await getEvent(slug);
-  if (!event || (event.moderationStatus !== "APPROVED")) notFound();
-
   const user = await getCurrentUser();
+  // Event Engine — превью черновика мастера: автор/ADMIN видит свою карточку
+  // ровно тем же рендерером, что и публичные посетители (задача "Preview" —
+  // "Admin Event Editor -> Event data -> Public Event Renderer", не отдельный
+  // примитивный предпросмотр), до публикации/прохождения модерации. Все
+  // остальные — только опубликованное и одобренное, как и раньше.
+  const isOwnerOrAdmin = !!user && (user.id === event?.createdById || user.role === "ADMIN");
+  if (!event || (!(event.status === "PUBLISHED" && event.moderationStatus === "APPROVED") && !isOwnerOrAdmin)) {
+    notFound();
+  }
   const attendance = user
     ? await prisma.dancer
         .findUnique({ where: { userId: user.id } })
@@ -71,7 +81,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
       name: event.venueName,
       address: event.venueAddress || event.city.nameRu,
     },
-    image: event.photoUrl ? [event.photoUrl] : undefined,
+    image: event.media.length > 0 ? event.media.map((m) => m.url) : event.photoUrl ? [event.photoUrl] : undefined,
     description: event.description ?? undefined,
     organizer: event.school
       ? { "@type": "Organization", name: event.school.name }
@@ -92,7 +102,22 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-app" />}
+      {isOwnerOrAdmin && !(event.status === "PUBLISHED" && event.moderationStatus === "APPROVED") && (
+        <div className="rounded-app border border-night-primary/40 bg-night-primary/10 px-4 py-2.5 text-sm text-night-text">
+          {event.status === "DRAFT"
+            ? "Черновик — видно только вам. Ещё не опубликовано."
+            : t.event.pendingModeration}
+        </div>
+      )}
+
+      {event.media.length > 0 ? (
+        <PublicEventGallery
+          title={event.title}
+          images={event.media.map((m) => ({ id: m.id, url: m.url, objectPosition: m.objectPosition }))}
+        />
+      ) : (
+        event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-app" />
+      )}
 
       <div>
         <p className="m-0 text-sm text-night-muted">
