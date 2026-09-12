@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n/dictionary";
 import { Button } from "@/components/ui/button";
 import { FormRoot, Input, Label, Select, Textarea } from "@/components/ui/field";
 import { DateTimeField } from "@/components/ui/DateTimeField";
+import { EventCardPreview } from "@/components/EventCardPreview";
 
 type City = { id: string; nameRu: string };
 type School = { id: string; name: string };
@@ -73,19 +74,23 @@ export function AddEventForm({
   }
 
   if (done) {
-    return <p className="text-sm text-night-muted">{t.event.addEventForm.submitted}</p>;
+    return <p className="text-sm text-admin-muted">{t.event.addEventForm.submitted}</p>;
   }
 
-  const fieldClass = "border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20";
+  const fieldClass = "border-admin-border bg-admin-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+
+  const selectedCityName = cities.find((c) => c.id === cityId)?.nameRu ?? "";
+  const organizerLabel = ownedSchools.length ? (ownedSchools.find((s) => s.id === schoolId)?.name ?? "") : organizerName;
 
   return (
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
     <FormRoot onSubmit={onSubmit} className="max-w-[560px]">
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.addEventForm.titleField}
         <Input required value={title} onChange={(e) => setTitle(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.city}
         <Select required value={cityId} onChange={(e) => setCityId(e.target.value)} className={fieldClass}>
           {cities.map((c) => (
@@ -97,7 +102,7 @@ export function AddEventForm({
       </Label>
 
       {ownedSchools.length > 0 ? (
-        <Label className="text-night-muted">
+        <Label className="text-admin-muted">
           {t.event.organizer}
           <Select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} className={fieldClass}>
             {ownedSchools.map((s) => (
@@ -108,7 +113,7 @@ export function AddEventForm({
           </Select>
         </Label>
       ) : (
-        <Label className="text-night-muted">
+        <Label className="text-admin-muted">
           {t.event.organizer}
           <Input
             placeholder={t.event.addEventForm.organizerPlaceholder}
@@ -119,7 +124,7 @@ export function AddEventForm({
         </Label>
       )}
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.format}
         <Select value={format} onChange={(e) => setFormat(e.target.value as typeof format)} className={fieldClass}>
           {Object.entries(t.event.formats).map(([key, label]) => (
@@ -130,7 +135,7 @@ export function AddEventForm({
         </Select>
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.level}
         <Select value={level} onChange={(e) => setLevel(e.target.value as typeof level)} className={fieldClass}>
           {Object.entries(t.event.levels).map(([key, label]) => (
@@ -141,27 +146,27 @@ export function AddEventForm({
         </Select>
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.date} / {t.event.time}
-        <DateTimeField required value={startsAt} onChange={setStartsAt} theme="night" className={fieldClass} />
+        <DateTimeField required value={startsAt} onChange={setStartsAt} theme="admin" className={fieldClass} />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.place}
         <Input required value={venueName} onChange={(e) => setVenueName(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.addEventForm.addressLabel}
         <Input value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.description}
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} className={fieldClass} />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.price}
         <Input
           placeholder={t.event.addEventForm.pricePlaceholder}
@@ -171,7 +176,7 @@ export function AddEventForm({
         />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.registerExternal}
         <Input
           type="url"
@@ -182,7 +187,7 @@ export function AddEventForm({
         />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.addEventForm.photoUrlLabel}
         <Input
           type="url"
@@ -193,17 +198,32 @@ export function AddEventForm({
         />
       </Label>
 
-      <Label className="text-night-muted">
+      <Label className="text-admin-muted">
         {t.event.tags} ({t.event.tagsHint})
         <Input value={tags} onChange={(e) => setTags(e.target.value)} className={fieldClass} />
       </Label>
 
-      <p className="text-sm text-night-muted">{t.event.addEventForm.submitNote}</p>
+      <p className="text-sm text-admin-muted">{t.event.addEventForm.submitNote}</p>
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <Button type="submit" disabled={loading} className="border-none bg-gradient-night-cta">
+      <Button type="submit" disabled={loading} className="border-none bg-gradient-admin-cta">
         {t.common.submit}
       </Button>
     </FormRoot>
+
+      <div className="lg:sticky lg:top-6 lg:w-[340px] lg:shrink-0">
+        <EventCardPreview
+          data={{
+            title,
+            format,
+            level,
+            startsAt,
+            cityName: selectedCityName,
+            organizerLabel,
+            photoUrl,
+          }}
+        />
+      </div>
+    </div>
   );
 }

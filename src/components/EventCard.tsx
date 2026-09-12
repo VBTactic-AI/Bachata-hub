@@ -10,7 +10,7 @@ import { cn } from "@/lib/cn";
 
 type EventWithRelations = Event & { city: City; school: School | null };
 
-const FORMAT_EMOJI: Record<Event["format"], string> = {
+export const FORMAT_EMOJI: Record<Event["format"], string> = {
   PARTY: "🎉",
   MASTERCLASS: "🎓",
   FESTIVAL: "🎪",
