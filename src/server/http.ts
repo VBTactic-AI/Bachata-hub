@@ -5,7 +5,6 @@ import {
   ConcurrentModificationError,
   DomainError,
   InvalidStateTransitionError,
-  MfaRequiredError,
   NoDancerProfileError,
   NotCompetitionMemberError,
   PermissionDeniedError,
@@ -18,12 +17,6 @@ import {
 export function respondToDomainError(e: unknown): NextResponse {
   if (e instanceof AuthenticationRequiredError) {
     return NextResponse.json({ error: e.userMessage }, { status: 401 });
-  }
-  // code: "mfa_required" — машиночитаемый маркер для фронта (редирект на
-  // /mfa/verify или /mfa/setup, см. компонент MfaGate), отдельно от
-  // обычного PermissionDeniedError (403 без такого кода).
-  if (e instanceof MfaRequiredError) {
-    return NextResponse.json({ error: e.userMessage, code: "mfa_required" }, { status: 403 });
   }
   if (e instanceof PermissionDeniedError || e instanceof NotCompetitionMemberError) {
     return NextResponse.json({ error: e.userMessage }, { status: 403 });

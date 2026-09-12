@@ -5,7 +5,7 @@ const getActorMock = vi.fn<() => Promise<Actor | null>>();
 vi.mock("@/server/rbac/actor", () => ({ getActor: () => getActorMock() }));
 
 const { requirePermission } = await import("@/server/rbac/authorize");
-const { AuthenticationRequiredError, MfaRequiredError, PermissionDeniedError, NotCompetitionMemberError } = await import(
+const { AuthenticationRequiredError, PermissionDeniedError, NotCompetitionMemberError } = await import(
   "@/server/errors"
 );
 
@@ -50,44 +50,5 @@ describe("requirePermission()", () => {
     };
     getActorMock.mockResolvedValue(actor);
     await expect(requirePermission("draw:lock", "comp1")).rejects.toBeInstanceOf(NotCompetitionMemberError);
-  });
-
-  describe("MFA (задача: SUPER_ADMIN/EVENT_ADMIN обязаны иметь aal2)", () => {
-    it("бросает MfaRequiredError, если mfaRequired=true и mfaSatisfied=false — ДАЖЕ если право formально есть", async () => {
-      const actor: Actor = {
-        userId: "u1",
-        email: "admin@b.by",
-        globalPermissions: new Set(["competition:create"]),
-        permissionsByCompetition: new Map(),
-        mfaRequired: true,
-        mfaSatisfied: false,
-      };
-      getActorMock.mockResolvedValue(actor);
-      await expect(requirePermission("competition:create")).rejects.toBeInstanceOf(MfaRequiredError);
-    });
-
-    it("пропускает, если mfaRequired=true и mfaSatisfied=true (aal2 подтверждён)", async () => {
-      const actor: Actor = {
-        userId: "u1",
-        email: "admin@b.by",
-        globalPermissions: new Set(["competition:create"]),
-        permissionsByCompetition: new Map(),
-        mfaRequired: true,
-        mfaSatisfied: true,
-      };
-      getActorMock.mockResolvedValue(actor);
-      await expect(requirePermission("competition:create")).resolves.toBe(actor);
-    });
-
-    it("старые фикстуры без mfaRequired/mfaSatisfied (44 существующих теста) продолжают работать без изменений", async () => {
-      const actor: Actor = {
-        userId: "u1",
-        email: "a@b.by",
-        globalPermissions: new Set(["competition:create"]),
-        permissionsByCompetition: new Map(),
-      };
-      getActorMock.mockResolvedValue(actor);
-      await expect(requirePermission("competition:create")).resolves.toBe(actor);
-    });
   });
 });

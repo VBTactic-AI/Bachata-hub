@@ -28,18 +28,6 @@ export class NotCompetitionMemberError extends DomainError {
   }
 }
 
-// Роль актёра требует двухфакторной аутентификации (src/server/mfa/policy.ts),
-// а текущая сессия ещё не поднята до aal2 — см. src/server/rbac/actor.ts,
-// requirePermission(). Бросается ДО проверки конкретного права: если роль
-// требует MFA, ей закрыты все привилегированные операции целиком, а не
-// только та, которую вызвали (CLAUDE.md/задача §6 — AAL1 никогда не
-// считается достаточным для операции, требующей AAL2).
-export class MfaRequiredError extends DomainError {
-  constructor() {
-    super("Для этого действия требуется подтверждение двухфакторной аутентификации (MFA).");
-  }
-}
-
 export class InvalidStateTransitionError extends DomainError {
   constructor(entity: string, from: string, to: string) {
     super(`Недопустимый переход состояния: ${entity} нельзя перевести из "${from}" в "${to}".`, {

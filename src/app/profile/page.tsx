@@ -115,13 +115,6 @@ export default async function ProfilePage() {
         {t.auth.email}: {user.email}
       </p>
 
-      <Link
-        href="/profile/security"
-        className="block rounded-app border border-night-border bg-night-card px-4 py-3 text-sm font-semibold text-night-text no-underline hover:border-night-primary/60"
-      >
-        Безопасность →
-      </Link>
-
       {/* Раньше выйти из аккаунта можно было только через DarkTopNav —
           десктопную навигацию (hidden sm:flex), на мобильном её место
           занимает BottomNav без кнопки выхода вовсе (найдено пользователем,

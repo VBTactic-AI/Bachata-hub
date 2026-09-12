@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { logModeration } from "@/lib/moderation";
-import { mfaGateForSiteRole } from "@/server/mfa/guard";
 
 const schema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -15,8 +14,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!user || !isAdmin(user)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const mfaBlock = await mfaGateForSiteRole(user);
-  if (mfaBlock) return mfaBlock;
 
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);

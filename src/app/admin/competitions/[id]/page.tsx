@@ -3,7 +3,6 @@ import { notFound, redirect } from "next/navigation";
 import type { RegistrationRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getMyDancerRef } from "@/lib/dancer";
-import { getCurrentlyLoggedInSupabaseUserIds } from "@/lib/auth";
 import { measureServerOperation } from "@/lib/performance-debug/server";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
@@ -161,9 +160,7 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
         members: {
           where: { role: { code: "JUDGE" } },
           include: {
-            user: {
-              select: { email: true, supabaseUserId: true, dancer: { select: { displayName: true, gender: true } } },
-            },
+            user: { select: { email: true, lastLoginAt: true, dancer: { select: { displayName: true, gender: true } } } },
           },
           orderBy: { addedAt: "asc" },
         },
@@ -362,11 +359,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
           include: { checkIn: true, division: { include: { category: true } } },
         })
       : Promise.resolve(null);
-  // Кто из судей реально залогинен ПРЯМО СЕЙЧАС (не "когда-либо входил") —
-  // вкладка "Судьи", 2026-09-12. Нужно только когда вкладка вообще видна.
-  const loggedInJudgesPromise = canAssignJudges
-    ? getCurrentlyLoggedInSupabaseUserIds(competition.members.map((m) => m.user.supabaseUserId ?? ""))
-    : Promise.resolve(new Set<string>());
   const [
     registeredCounts,
     checkedInCounts,
@@ -375,7 +367,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     registrations,
     registrationsTotalCount,
     myRegistration,
-    loggedInJudgeSupabaseUserIds,
   ] = await measureServerOperation("admin.open_competition.rest", () =>
     Promise.all([
       registeredCountsPromise,
@@ -385,7 +376,6 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
       registrationsPromise,
       registrationsTotalCountPromise,
       myRegistrationPromise,
-      loggedInJudgesPromise,
     ])
   );
 
@@ -722,12 +712,10 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   // 2026-09-09, см. также JudgesWorkspace/DivisionJudgesPanel). Роль здесь —
   // объединение ролей судьи по всем его назначениям (judgeRoles выше), не
   // отдельное хранимое поле.
-  // Реально ли судья залогинен ПРЯМО СЕЙЧАС — по live-сессиям Supabase Auth
-  // (getCurrentlyLoggedInSupabaseUserIds, src/lib/auth.ts), не по
-  // User.lastLoginAt ("когда-либо входил") — по прямому уточнению
-  // пользователя, 2026-09-12: "Активен только тогда, когда именно сейчас
-  // залогинен, если не залогинен — не активен".
-  const judgeSupabaseUserIdByUserId = new Map(competition.members.map((m) => [m.userId, m.user.supabaseUserId]));
+  // Реально ли судья хоть раз входил в свой аккаунт (User.lastLoginAt) — не
+  // выдуманный/всегда-"Активен" статус (найдено пользователем, 2026-09-12):
+  // из уже загруженного competition.members, без нового запроса.
+  const judgeLastLoginById = new Map(competition.members.map((m) => [m.userId, m.user.lastLoginAt]));
 
   const allCategoriesForAssignment = competition.divisions.map((d, i) => ({
     id: d.id,
@@ -735,17 +723,14 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
     color: categoryDotColor(i),
   }));
 
-  const registryJudges: RegistryJudge[] = competitionJudgePool.map((j) => {
-    const supabaseUserId = judgeSupabaseUserIdByUserId.get(j.judgeUserId);
-    return {
-      judgeUserId: j.judgeUserId,
-      displayName: j.displayName,
-      judgeEmail: j.judgeEmail,
-      categories: judgeDivisionChips.get(j.judgeUserId) ?? [],
-      roles: [...(judgeRoles.get(j.judgeUserId) ?? [])],
-      isLoggedInNow: !!supabaseUserId && loggedInJudgeSupabaseUserIds.has(supabaseUserId),
-    };
-  });
+  const registryJudges: RegistryJudge[] = competitionJudgePool.map((j) => ({
+    judgeUserId: j.judgeUserId,
+    displayName: j.displayName,
+    judgeEmail: j.judgeEmail,
+    categories: judgeDivisionChips.get(j.judgeUserId) ?? [],
+    roles: [...(judgeRoles.get(j.judgeUserId) ?? [])],
+    hasLoggedIn: !!judgeLastLoginById.get(j.judgeUserId),
+  }));
 
   const judgesContent = (
     <div className="flex flex-col gap-4">
