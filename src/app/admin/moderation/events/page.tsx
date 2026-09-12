@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { t } from "@/lib/i18n/dictionary";
 import { formatDateTime } from "@/lib/format";
 import { ModerationRowActions } from "@/components/admin/moderation/ModerationRowActions";
+import { EventDetailModal } from "@/components/admin/moderation/EventDetailModal";
 
 // Перенесено из /moderation/events (2026-09-11), редизайн под admin-*.
 export default async function ModerationEventsPage() {
@@ -45,15 +46,47 @@ export default async function ModerationEventsPage() {
               events.map((e) => (
                 <tr key={e.id} className="border-t border-admin-border align-top">
                   <td className="px-3 py-2.5">
-                    <p className="m-0 font-medium text-night-text">{e.title}</p>
-                    <p className="m-0 mt-0.5 text-xs text-admin-muted">
-                      {formatDateTime(e.startsAt)} · {e.city.nameRu} · {e.venueName}
-                    </p>
-                    {e.description && (
-                      <p className="m-0 mt-1 max-w-[360px] truncate text-xs text-admin-disabled" title={e.description}>
-                        {e.description}
-                      </p>
-                    )}
+                    {/* Клик по событию — полная карточка (2026-09-12, по
+                        прямому запросу пользователя): описание в строке
+                        таблицы обрезано, а фото/цену/ссылку/теги в неё вообще
+                        не поместить. Действия внутри карточки — тот же
+                        компонент, что и в самой строке, не дублируем логику. */}
+                    <EventDetailModal
+                      event={{
+                        id: e.id,
+                        title: e.title,
+                        format: e.format,
+                        level: e.level,
+                        startsAt: e.startsAt.toISOString(),
+                        endsAt: e.endsAt ? e.endsAt.toISOString() : null,
+                        cityName: e.city.nameRu,
+                        venueName: e.venueName,
+                        venueAddress: e.venueAddress,
+                        description: e.description,
+                        photoUrl: e.photoUrl,
+                        priceText: e.priceText,
+                        externalLinkUrl: e.externalLinkUrl,
+                        tags: e.tags,
+                        schoolName: e.school?.name ?? null,
+                        organizerName: e.organizerName,
+                        createdByEmail: e.createdBy.email,
+                        createdAt: e.createdAt.toISOString(),
+                      }}
+                      actions={<ModerationRowActions endpoint={`/api/moderation/events/${e.id}`} />}
+                      trigger={
+                        <div>
+                          <p className="m-0 font-medium text-night-text underline decoration-admin-border decoration-dotted underline-offset-4">
+                            {e.title}
+                          </p>
+                          <p className="m-0 mt-0.5 text-xs text-admin-muted">
+                            {formatDateTime(e.startsAt)} · {e.city.nameRu} · {e.venueName}
+                          </p>
+                          {e.description && (
+                            <p className="m-0 mt-1 max-w-[360px] truncate text-xs text-admin-disabled">{e.description}</p>
+                          )}
+                        </div>
+                      }
+                    />
                   </td>
                   <td className="px-3 py-2.5 text-admin-muted">
                     {t.event.formats[e.format]} · {t.event.levels[e.level]}

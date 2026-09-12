@@ -3,6 +3,7 @@ import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { t } from "@/lib/i18n/dictionary";
 import { ModerationRowActions } from "@/components/admin/moderation/ModerationRowActions";
+import { SchoolClaimDetailModal } from "@/components/admin/moderation/SchoolClaimDetailModal";
 
 // Перенесено из /moderation/schools (2026-09-11), редизайн под admin-*.
 export default async function ModerationSchoolClaimsPage() {
@@ -45,8 +46,35 @@ export default async function ModerationSchoolClaimsPage() {
               claims.map((c) => (
                 <tr key={c.id} className="border-t border-admin-border align-top">
                   <td className="px-3 py-2.5">
-                    <p className="m-0 font-medium text-night-text">{c.school.name}</p>
-                    <p className="m-0 text-xs text-admin-disabled">{c.school.city.nameRu}</p>
+                    {/* Клик по заявке — полная карточка школы (2026-09-12, по
+                        прямому запросу пользователя): описание/направления/
+                        контакты школы в строку таблицы не помещались вовсе. */}
+                    <SchoolClaimDetailModal
+                      claim={{
+                        id: c.id,
+                        schoolName: c.school.name,
+                        schoolCityName: c.school.city.nameRu,
+                        schoolDescription: c.school.description,
+                        schoolDirections: c.school.directions,
+                        schoolLevels: c.school.levels,
+                        schoolContactPhone: c.school.contactPhone,
+                        schoolContactEmail: c.school.contactEmail,
+                        schoolVerificationStatus: c.school.verificationStatus,
+                        schoolIsActive: c.school.isActive,
+                        claimantEmail: c.claimant.email,
+                        proofNote: c.proofNote,
+                        createdAt: c.createdAt.toISOString(),
+                      }}
+                      actions={<ModerationRowActions endpoint={`/api/moderation/claims/${c.id}`} />}
+                      trigger={
+                        <div>
+                          <p className="m-0 font-medium text-night-text underline decoration-admin-border decoration-dotted underline-offset-4">
+                            {c.school.name}
+                          </p>
+                          <p className="m-0 text-xs text-admin-disabled">{c.school.city.nameRu}</p>
+                        </div>
+                      }
+                    />
                   </td>
                   <td className="px-3 py-2.5 text-admin-muted">{c.claimant.email}</td>
                   <td className="px-3 py-2.5 max-w-[280px] text-admin-muted">{c.proofNote ?? "—"}</td>

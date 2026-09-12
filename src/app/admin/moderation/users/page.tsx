@@ -29,9 +29,17 @@ export default async function AdminModerationUsersPage({
 
   const users = await prisma.user.findMany({
     where: {
-      ...(q ? { email: { contains: q, mode: "insensitive" } } : {}),
+      // Поиск по имени (2026-09-12, по прямому запросу пользователя) — имени
+      // как отдельного поля у User нет, оно живёт в связанном профиле танцора
+      // (Dancer.displayName, есть не у всех: школы/организаторы/модераторы
+      // могут не иметь такого профиля). Ищем по email ИЛИ по имени —
+      // совпадение любого из двух показывает пользователя.
+      ...(q
+        ? { OR: [{ email: { contains: q, mode: "insensitive" } }, { dancer: { displayName: { contains: q, mode: "insensitive" } } }] }
+        : {}),
       ...(role ? { role } : {}),
     },
+    include: { dancer: { select: { displayName: true } } },
     orderBy: { createdAt: "desc" },
     take: 200,
   });
@@ -64,6 +72,7 @@ export default async function AdminModerationUsersPage({
         <table className="w-full text-left text-sm">
           <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
             <tr>
+              <th className="px-3 py-2.5 font-semibold">Имя</th>
               <th className="px-3 py-2.5 font-semibold">{t.auth.email}</th>
               <th className="px-3 py-2.5 font-semibold">{t.moderation.roleFilterLabel}</th>
               <th className="px-3 py-2.5 font-semibold">{t.moderation.registeredAt}</th>
@@ -75,13 +84,14 @@ export default async function AdminModerationUsersPage({
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-admin-muted">
+                <td colSpan={7} className="px-3 py-6 text-center text-admin-muted">
                   {t.moderation.noUsersFound}
                 </td>
               </tr>
             ) : (
               users.map((u) => (
                 <tr key={u.id} className="border-t border-admin-border">
+                  <td className="px-3 py-2.5 text-night-text">{u.dancer?.displayName ?? "—"}</td>
                   <td className="px-3 py-2.5 text-night-text">{u.email}</td>
                   <td className="px-3 py-2.5 text-admin-muted">{t.auth.roleNames[u.role]}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-admin-disabled">{u.createdAt.toLocaleDateString("ru-RU")}</td>
