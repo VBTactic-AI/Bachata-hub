@@ -11,6 +11,7 @@ export const DARK_ROUTE_PREFIXES = [
   "/dancers",
   "/events",
   "/admin",
+  "/rating",
   // Notification Center (Notification & Subscription Engine, Phase 8) —
   // тот же тёмный раздел, что и /profile, откуда на неё ведёт колокольчик.
   "/notifications",

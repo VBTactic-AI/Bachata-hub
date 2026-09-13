@@ -80,39 +80,3 @@ export async function getUpcomingCompetitionTeaser(): Promise<CompetitionCardDat
     registrationsCount: c._count.registrations,
   };
 }
-
-export type RecentChampion = {
-  resultId: string;
-  dancerName: string;
-  role: "LEADER" | "FOLLOWER";
-  categoryName: string;
-  competitionId: string;
-  competitionName: string;
-};
-
-// "Последние чемпионы" — реальные опубликованные места (Result.placement=1),
-// не выдуманный рейтинг/очки (CLAUDE.md §38 — points не хардкодятся и вообще
-// пока не реализованы, docs/00_DECISIONS.md). Только соревнования с
-// publicResults=true — то же условие, что уже защищает публичный протокол на
-// /compete/[id] (getPublicCompetitionView).
-export async function getRecentChampions(limit = 5): Promise<RecentChampion[]> {
-  const rows = await prisma.result.findMany({
-    where: { placement: 1, publishedAt: { not: null }, division: { competition: { publicResults: true } } },
-    orderBy: { publishedAt: "desc" },
-    take: limit,
-    select: {
-      id: true,
-      registration: { select: { role: true, dancer: { select: { displayName: true } } } },
-      division: { select: { category: { select: { name: true } }, competition: { select: { id: true, name: true } } } },
-    },
-  });
-
-  return rows.map((r) => ({
-    resultId: r.id,
-    dancerName: r.registration.dancer.displayName,
-    role: r.registration.role,
-    categoryName: r.division.category.name,
-    competitionId: r.division.competition.id,
-    competitionName: r.division.competition.name,
-  }));
-}

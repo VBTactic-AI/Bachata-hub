@@ -4,12 +4,11 @@ import { Suspense } from "react";
 import { t } from "@/lib/i18n/dictionary";
 import { getPreferredCity } from "@/lib/city-preference";
 import { eventsForHome, eventsForCalendarMonth } from "@/lib/events";
-import { getLiveCompetitionSummary, getUpcomingCompetitionTeaser, getRecentChampions } from "@/lib/home-live";
+import { getLiveCompetitionSummary, getUpcomingCompetitionTeaser } from "@/lib/home-live";
 import { formatEventCardPrice } from "@/lib/event-price";
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { EventCalendar } from "@/components/EventCalendar";
 import { formatEventTime, formatRelativeDayLabel, pluralizeRu } from "@/lib/format";
-import { CityPicker } from "@/components/CityPicker";
 import { CardLightSweep } from "@/components/CardLightSweep";
 import { AmbientParticles } from "@/components/AmbientParticles";
 import { ScrollReveal } from "@/components/ScrollReveal";
@@ -125,17 +124,14 @@ function HomeSchoolCard({ school, sweepDelay = 0 }: { school: SchoolWithExtras; 
   );
 }
 
-const ROLE_LABEL: Record<"LEADER" | "FOLLOWER", string> = { LEADER: "Ведущий", FOLLOWER: "Ведомая" };
-
 export default async function HomePage() {
   const preferredCity = await getPreferredCity();
   const now = new Date();
   const calendarYear = now.getFullYear();
   const calendarMonth = now.getMonth() + 1;
 
-  const [[today, thisWeek], cities, popularSchools, calendarEvents, liveCompetition, upcomingCompetition, recentChampions] = await Promise.all([
+  const [[today, thisWeek], popularSchools, calendarEvents, liveCompetition, upcomingCompetition] = await Promise.all([
     eventsForHome(preferredCity?.id ?? null),
-    prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     // Витрина, не рейтинг: без отдельной метрики популярности показываем
     // первые активные школы (подтверждённые — раньше), тот же порядок, что и
     // на /schools — не выдумываем алгоритм ранжирования для тизера.
@@ -148,10 +144,8 @@ export default async function HomePage() {
     eventsForCalendarMonth(preferredCity?.id ?? null, calendarYear, calendarMonth),
     getLiveCompetitionSummary(),
     getUpcomingCompetitionTeaser(),
-    getRecentChampions(5),
   ]);
 
-  const happeningNow = [...today, ...thisWeek].slice(0, 8);
   const heroFeaturedEvent = today[0] ?? thisWeek[0] ?? null;
 
   return (
@@ -196,54 +190,31 @@ export default async function HomePage() {
               )}
 
               <div className="relative flex max-w-[420px] flex-col gap-3">
+                <span className="text-xs font-bold uppercase tracking-[0.15em] text-night-muted">{t.home.heroKicker}</span>
                 <h1 className="m-0 font-night text-[1.75rem] font-extrabold leading-[1.05] tracking-tight text-night-text sm:text-4xl">
-                  {t.home.heroTitle}
+                  {t.home.heroTitleBefore}
+                  <span className="text-night-primary">{t.home.heroTitleHighlight}</span>
+                  {t.home.heroTitleAfter}
                 </h1>
                 <p className="m-0 max-w-[280px] text-sm leading-relaxed text-night-muted sm:max-w-none">{t.home.heroSubtitle}</p>
-                <div className="mt-1 flex flex-wrap gap-3">
-                  <Link
-                    href="/events"
-                    className="self-start rounded-full bg-gradient-night-cta px-6 py-3 text-xs font-bold uppercase tracking-wide text-white no-underline hover:no-underline"
-                  >
-                    {t.home.heroCta}
-                  </Link>
-                  <Link
-                    href="/compete"
-                    className="self-start rounded-full border border-white/20 bg-white/5 px-6 py-3 text-xs font-bold uppercase tracking-wide text-night-text no-underline backdrop-blur-md hover:border-white/40 hover:no-underline"
-                  >
-                    {t.home.heroCtaSecondary}
-                  </Link>
-                </div>
+                <Link
+                  href="/events"
+                  className="mt-1 self-start rounded-full bg-gradient-night-cta px-6 py-3 text-xs font-bold uppercase tracking-wide text-white no-underline hover:no-underline"
+                >
+                  {t.home.heroCta}
+                </Link>
               </div>
             </section>
           </ScrollReveal>
 
-          {!preferredCity && (
-            <ScrollReveal delay={0.1}>
-              <section className="rounded-app bg-night-card p-4">
-                <p className="m-0 mb-3 text-sm text-night-muted">{t.city.choose}:</p>
-                <CityPicker cities={cities} />
-                <p className="m-0 mt-3 text-xs text-night-muted">{t.city.switchHint}</p>
-              </section>
-            </ScrollReveal>
-          )}
-
           <ScrollReveal delay={0.2}>
             <section className="flex flex-col gap-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <div>
-                  <h2 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{t.home.happeningNow}</h2>
-                  <p className="m-0 mt-0.5 text-sm text-night-muted">{t.home.happeningNowSubtitle}</p>
-                </div>
-                <Link href="/events" className="shrink-0 text-sm font-semibold text-night-primary no-underline hover:no-underline">
-                  {t.home.seeAllEvents} →
-                </Link>
-              </div>
-              {happeningNow.length === 0 ? (
+              <h2 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{t.home.today}</h2>
+              {today.length === 0 ? (
                 <p className="m-0 text-sm text-night-muted">{t.home.noEventsToday}</p>
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {happeningNow.map((e, i) => (
+                  {today.map((e, i) => (
                     <HomeEventCard key={e.id} event={e} sweepDelay={(i % 5) * 0.5} />
                   ))}
                 </div>
@@ -251,11 +222,25 @@ export default async function HomePage() {
             </section>
           </ScrollReveal>
 
-          {(liveCompetition || upcomingCompetition || recentChampions.length > 0) && (
+          <ScrollReveal delay={0.25}>
+            <section className="flex flex-col gap-3">
+              <h2 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{t.home.thisWeek}</h2>
+              {thisWeek.length === 0 ? (
+                <p className="m-0 text-sm text-night-muted">{t.home.noEventsWeek}</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                  {thisWeek.map((e, i) => (
+                    <HomeEventCard key={e.id} event={e} sweepDelay={(i % 5) * 0.5} />
+                  ))}
+                </div>
+              )}
+            </section>
+          </ScrollReveal>
+
+          {(liveCompetition || upcomingCompetition) && (
             <ScrollReveal delay={0.3}>
-              <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="flex flex-col gap-3 rounded-app border border-white/10 bg-night-card/75 p-5 backdrop-blur-md sm:p-6 lg:col-span-2">
-                  {liveCompetition ? (
+              <section className="flex flex-col gap-3 rounded-app border border-white/10 bg-night-card/75 p-5 backdrop-blur-md sm:p-6">
+                {liveCompetition ? (
                     <>
                       <div className="flex items-center gap-2">
                         <LiveDot />
@@ -292,36 +277,7 @@ export default async function HomePage() {
                       <span className="text-xs font-bold uppercase tracking-wide text-night-muted">{t.home.liveUpcomingLabel}</span>
                       <CompetitionCard competition={upcomingCompetition} />
                     </>
-                  ) : null}
-                </div>
-
-                <div className="flex flex-col gap-3 rounded-app border border-white/10 bg-night-card/75 p-5 backdrop-blur-md sm:p-6">
-                  <h3 className="m-0 font-night text-base font-bold text-night-text">{t.home.recentChampions}</h3>
-                  {recentChampions.length === 0 ? (
-                    <p className="m-0 text-sm text-night-muted">{t.home.recentChampionsEmpty}</p>
-                  ) : (
-                    <ul className="m-0 flex list-none flex-col gap-3 p-0">
-                      {recentChampions.map((c) => (
-                        <li key={c.resultId}>
-                          <Link
-                            href={`/compete/${c.competitionId}`}
-                            className="flex items-center gap-2.5 no-underline hover:no-underline"
-                          >
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-night-cta text-sm font-extrabold text-white">
-                              1
-                            </span>
-                            <span className="flex min-w-0 flex-col">
-                              <span className="truncate text-sm font-semibold text-night-text">{c.dancerName}</span>
-                              <span className="truncate text-xs text-night-muted">
-                                {ROLE_LABEL[c.role]} · {c.categoryName} · {c.competitionName}
-                              </span>
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                ) : null}
               </section>
             </ScrollReveal>
           )}
@@ -370,21 +326,6 @@ export default async function HomePage() {
               </section>
             </ScrollReveal>
           )}
-
-          <ScrollReveal delay={0.6}>
-            <section className="relative flex flex-col gap-4 overflow-hidden rounded-app bg-gradient-night-hero p-6 sm:flex-row sm:items-center sm:justify-between sm:p-10">
-              <div className="relative flex max-w-[480px] flex-col gap-2">
-                <h2 className="m-0 font-night text-xl font-extrabold leading-tight text-night-text sm:text-2xl">{t.home.organizerTitle}</h2>
-                <p className="m-0 text-sm leading-relaxed text-night-muted">{t.home.organizerSubtitle}</p>
-              </div>
-              <Link
-                href="/admin/competitions/new"
-                className="relative self-start rounded-full bg-gradient-night-cta px-6 py-3 text-xs font-bold uppercase tracking-wide text-white no-underline hover:no-underline sm:self-center"
-              >
-                {t.home.organizerCta} →
-              </Link>
-            </section>
-          </ScrollReveal>
 
           <footer className="mt-6 flex flex-col gap-6 border-t border-night-border pt-6 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-1.5">

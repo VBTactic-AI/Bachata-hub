@@ -2,43 +2,51 @@ import Link from "next/link";
 import { t } from "@/lib/i18n/dictionary";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
-import { getActor } from "@/server/rbac/actor";
-import { hasNoAdminAccess } from "@/server/rbac/authorize";
+import { getPreferredCity } from "@/lib/city-preference";
+import { getActiveCities } from "@/lib/cities";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { CityHeaderPicker } from "@/components/dark/CityHeaderPicker";
 
 const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-underline";
 
 // Десктопная навигация тёмного "night"-раздела (/compete, /schools) — по
-// макету JBJ Platform (design/project/JBJ Platform.dc.html, экран "isWeb").
+// макету JBJ Platform (design/project/JBJ Platform.dc.html, экран "isWeb"),
+// перекомпонована по референсу пользователя (2026-09-13): лого слева, пункты
+// меню по центру шапки, справа — город/уведомления/аккаунт, во всю ширину.
 // Заменяет светлый сайтовый Header в этих разделах (см. HeaderVisibility) —
 // видна только от sm: и выше, на мобильном её место занимает BottomNav.
 //
-// "Модерация" и "Добавить событие" убраны отсюда (2026-09-11, по прямому
-// запросу пользователя) — обе живут внутри /admin (сайдбар, разделы
-// "Модерация" и "Контент"), дублировать их в общесайтовой навигации больше
-// не нужно.
+// "Панель управления" (была видна только организаторам/админам) заменена
+// постоянным пунктом "Для организаторов" → /admin — сама страница уже
+// делает redirect на /login неавторизованным (src/app/admin/page.tsx), так
+// что показывать ссылку всем безопасно и не требует повторной RBAC-проверки
+// здесь. "Модерация" и "Добавить событие" по-прежнему не дублируются в общей
+// навигации (2026-09-11) — обе живут внутри /admin.
 export async function DarkTopNav() {
-  const user = await getCurrentUser();
-  const dancer = await getMyDancerRef();
-  const actor = await getActor();
-  // Ни судья, ни рядовой участник (и уж тем более незалогиненный/без единой
-  // роли пользователь) не должны видеть ссылку на "Панель управления" —
-  // раньше кнопка показывалась любому залогиненному и вела на страницу,
-  // которая либо тут же редиректила судью обратно, либо (для рядового
-  // участника) открывала почти пустую страницу без единой секции (жалоба
-  // пользователя, 2026-09-10 и 2026-09-13). См. hasNoAdminAccess —
-  // единственная причина показать ссылку: у актёра есть хоть какое-то
-  // реальное административное/организаторское право.
-  const hasCompetitionAccess = !!actor && !hasNoAdminAccess(actor);
+  const [user, dancer, preferredCity, cities] = await Promise.all([
+    getCurrentUser(),
+    getMyDancerRef(),
+    getPreferredCity(),
+    getActiveCities(),
+  ]);
 
   return (
-    <header className="sticky top-0 z-20 hidden items-center gap-6 border-b border-night-border bg-night-bg/95 px-8 py-4 backdrop-blur-md sm:flex">
-      <Link href="/" className="font-night text-lg font-bold tracking-tight text-night-primary no-underline hover:no-underline">
+    <header
+      className="sticky top-0 z-20 hidden items-center gap-3 border-b border-night-border bg-night-bg/95 px-4 py-3.5 backdrop-blur-md sm:grid lg:gap-6 lg:px-8 lg:py-4"
+      style={{ gridTemplateColumns: "auto 1fr auto" }}
+    >
+      <Link
+        href="/"
+        className="justify-self-start whitespace-nowrap font-night text-base font-bold tracking-tight text-night-primary no-underline hover:no-underline lg:text-lg"
+      >
         {t.common.siteName}
       </Link>
-      <nav className="flex flex-1 flex-wrap items-center gap-6 font-night text-sm font-medium">
+      <nav className="flex flex-wrap items-center justify-center gap-3 font-night text-[0.8rem] font-medium lg:gap-6 lg:text-sm">
+        <Link href="/" className={NAV_LINK}>
+          {t.nav.home}
+        </Link>
         <Link href="/events" className={NAV_LINK}>
-          {t.nav.calendar}
+          {t.nav.events}
         </Link>
         <Link href="/compete" className={NAV_LINK}>
           {t.nav.competitions}
@@ -46,45 +54,52 @@ export async function DarkTopNav() {
         <Link href="/schools" className={NAV_LINK}>
           {t.nav.schools}
         </Link>
-        {hasCompetitionAccess && (
-          <Link href="/admin" className={NAV_LINK}>
-            {t.nav.dashboard}
-          </Link>
-        )}
+        <Link href="/rating" className={NAV_LINK}>
+          {t.nav.rating}
+        </Link>
+        <Link href="/admin" className={`${NAV_LINK} whitespace-nowrap`}>
+          {t.nav.forOrganizers}
+        </Link>
       </nav>
-      {user ? (
-        <div className="flex items-center gap-3 font-night text-sm">
-          <NotificationBell />
-          {dancer && (
+      <div className="flex items-center justify-self-end gap-2 font-night text-sm lg:gap-3">
+        <CityHeaderPicker cities={cities} currentName={preferredCity?.nameRu ?? null} />
+        {user ? (
+          <>
+            <NotificationBell />
+            {dancer && (
+              <Link
+                href="/profile"
+                className="whitespace-nowrap rounded-full border border-night-border px-4 py-2 font-medium text-night-text no-underline hover:border-night-primary hover:text-night-text hover:no-underline lg:px-5 lg:py-2.5"
+              >
+                {t.nav.profile}
+              </Link>
+            )}
+            <form action="/api/auth/logout" method="post">
+              <button
+                type="submit"
+                className="cursor-pointer whitespace-nowrap rounded-full border-none bg-gradient-night-cta px-4 py-2 font-night font-bold text-white lg:px-5 lg:py-2.5"
+              >
+                {t.nav.logout}
+              </button>
+            </form>
+          </>
+        ) : (
+          <>
             <Link
-              href="/profile"
-              className="rounded-full border border-night-border px-5 py-2.5 font-medium text-night-text no-underline hover:border-night-primary hover:text-night-text hover:no-underline"
+              href="/login"
+              className="whitespace-nowrap rounded-full border border-night-border px-4 py-2 font-medium text-night-text no-underline hover:border-night-primary hover:text-night-text hover:no-underline lg:px-5 lg:py-2.5"
             >
-              {t.nav.profile}
+              {t.nav.login}
             </Link>
-          )}
-          <form action="/api/auth/logout" method="post">
-            <button
-              type="submit"
-              className="cursor-pointer rounded-full border-none bg-gradient-night-cta px-5 py-2.5 font-night font-bold text-white"
+            <Link
+              href="/register"
+              className="whitespace-nowrap rounded-full bg-gradient-night-cta px-4 py-2 font-bold text-white no-underline hover:no-underline lg:px-5 lg:py-2.5"
             >
-              {t.nav.logout}
-            </button>
-          </form>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 font-night text-sm">
-          <Link
-            href="/login"
-            className="rounded-full border border-night-border px-5 py-2.5 font-medium text-night-text no-underline hover:border-night-primary hover:text-night-text hover:no-underline"
-          >
-            {t.nav.login}
-          </Link>
-          <Link href="/register" className="rounded-full bg-gradient-night-cta px-5 py-2.5 font-bold text-white no-underline hover:no-underline">
-            {t.nav.register}
-          </Link>
-        </div>
-      )}
+              {t.nav.register}
+            </Link>
+          </>
+        )}
+      </div>
     </header>
   );
 }
