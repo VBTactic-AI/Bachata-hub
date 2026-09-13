@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getActor } from "@/server/rbac/actor";
-import { isJudgeOnlyActor } from "@/server/rbac/authorize";
+import { hasNoAdminAccess } from "@/server/rbac/authorize";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
 import { getModerationQueueCounts } from "@/lib/moderation";
 import {
@@ -33,11 +33,13 @@ import { cn } from "@/lib/cn";
 export default async function AdminDashboardPage() {
   const actor = await getActor();
   if (!actor) redirect("/login");
-  // Судья — только судья, без каких-либо других ролей — не должен видеть
-  // "Панель управления" вообще (CLAUDE.md §40/§52, жалоба пользователя,
-  // 2026-09-10): у него нет ни одной причины сюда заходить, его место —
-  // прямая ссылка на /judging/[competitionId], которую даёт организатор.
-  if (isJudgeOnlyActor(actor)) redirect("/");
+  // Ни судья, ни рядовой зарегистрированный участник, ни пользователь вовсе
+  // без единой роли в движке — не должны видеть "Панель управления" вообще
+  // (CLAUDE.md §40/§52, жалоба пользователя, 2026-09-10 и 2026-09-13): у
+  // них нет ни одной причины сюда заходить (у судьи — прямая ссылка на
+  // /judging/[competitionId], которую даёт организатор; у участника —
+  // /profile и /compete).
+  if (hasNoAdminAccess(actor)) redirect("/");
   const user = await getCurrentUser();
 
   // Общесистемная сводка — только для ADMIN (та же граница видимости, что и у

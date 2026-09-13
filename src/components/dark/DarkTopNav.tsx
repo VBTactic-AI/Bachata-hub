@@ -3,7 +3,7 @@ import { t } from "@/lib/i18n/dictionary";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
 import { getActor } from "@/server/rbac/actor";
-import { isJudgeOnlyActor } from "@/server/rbac/authorize";
+import { hasNoAdminAccess } from "@/server/rbac/authorize";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-underline";
@@ -21,14 +21,15 @@ export async function DarkTopNav() {
   const user = await getCurrentUser();
   const dancer = await getMyDancerRef();
   const actor = await getActor();
-  // Судья (роль без единого права на /admin, см. isJudgeOnlyActor) не
-  // должен видеть ссылку на "Панель управления" вообще — раньше кнопка
-  // показывалась любому залогиненному и вела на страницу, которая тут же
-  // редиректила судью обратно (жалоба пользователя, 2026-09-10, продолжение
-  // фикса admin/page.tsx). Для всех остальных условие прежнее — доступ не
-  // завязан на уже назначенную роль в движке (тот же комментарий, что и в
-  // Header.tsx).
-  const hasCompetitionAccess = !!actor && !isJudgeOnlyActor(actor);
+  // Ни судья, ни рядовой участник (и уж тем более незалогиненный/без единой
+  // роли пользователь) не должны видеть ссылку на "Панель управления" —
+  // раньше кнопка показывалась любому залогиненному и вела на страницу,
+  // которая либо тут же редиректила судью обратно, либо (для рядового
+  // участника) открывала почти пустую страницу без единой секции (жалоба
+  // пользователя, 2026-09-10 и 2026-09-13). См. hasNoAdminAccess —
+  // единственная причина показать ссылку: у актёра есть хоть какое-то
+  // реальное административное/организаторское право.
+  const hasCompetitionAccess = !!actor && !hasNoAdminAccess(actor);
 
   return (
     <header className="sticky top-0 z-20 hidden items-center gap-6 border-b border-night-border bg-night-bg/95 px-8 py-4 backdrop-blur-md sm:flex">

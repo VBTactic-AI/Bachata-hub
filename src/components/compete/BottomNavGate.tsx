@@ -1,19 +1,20 @@
 import { getActor } from "@/server/rbac/actor";
-import { isJudgeOnlyActor } from "@/server/rbac/authorize";
+import { hasNoAdminAccess } from "@/server/rbac/authorize";
 import { BottomNav } from "./BottomNav";
 
 // Обёртка-сервер-компонент над BottomNav (клиентский, из-за usePathname) —
 // только она решает, показывать ли пункт "Управление" (см. BottomNav.tsx),
 // той же проверкой hasCompetitionAccess, что и DarkTopNav.
 //
-// Раньше hasCompetitionAccess значило просто "залогинен" (!!user) — судья
-// (роль, у которой в принципе нет ни одного права на /admin, см.
-// isJudgeOnlyActor) видел кнопку "Управление", жал на неё и тут же
-// отлетал редиректом на главную (/admin/page.tsx) — кнопка обещала то, чего
-// не было (жалоба пользователя, 2026-09-10, продолжение фикса "судья не
-// должен видеть Панель управления"). Показываем кнопку только тем, кого
-// туда реально пускают.
+// Раньше hasCompetitionAccess значило просто "залогинен" (!!user), потом —
+// "не только судья" (isJudgeOnlyActor) — но рядовой зарегистрированный
+// участник (и вообще пользователь без единой роли в движке) всё ещё видел
+// кнопку "Управление" и попадал на почти пустую страницу /admin (жалоба
+// пользователя, 2026-09-10 и 2026-09-13, продолжение фикса "судья не должен
+// видеть Панель управления"). Показываем кнопку только тем, у кого есть
+// хоть какое-то реальное административное/организаторское право —
+// hasNoAdminAccess.
 export async function BottomNavGate() {
   const actor = await getActor();
-  return <BottomNav hasCompetitionAccess={!!actor && !isJudgeOnlyActor(actor)} />;
+  return <BottomNav hasCompetitionAccess={!!actor && !hasNoAdminAccess(actor)} />;
 }
