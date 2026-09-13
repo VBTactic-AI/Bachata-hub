@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { EventFormat } from "@prisma/client";
+import type { EventFormat, EventStatus, ModerationStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import {
   EVENT_TYPE_REGISTRY,
@@ -23,6 +23,23 @@ import { StepPreview } from "./steps/StepPreview";
 import { StepPublish } from "./steps/StepPublish";
 import { toApiPayload, type WizardDraft } from "./wizard-types";
 
+export type MyEventListItem = {
+  id: string;
+  slug: string;
+  title: string;
+  format: EventFormat;
+  status: EventStatus;
+  moderationStatus: ModerationStatus;
+};
+
+function myEventStatusLabel(status: EventStatus, moderationStatus: ModerationStatus): string {
+  if (status === "DRAFT") return "Черновик";
+  if (status === "ARCHIVED") return "В архиве";
+  if (moderationStatus === "APPROVED") return "Опубликовано";
+  if (moderationStatus === "REJECTED") return "Отклонено модератором";
+  return "На модерации";
+}
+
 // Event Engine — единый Create Event Wizard (задача "ОБЩИЙ CREATE EVENT
 // ENGINE"): один компонент управляет состоянием черновика и навигацией,
 // набор шагов приходит из EVENT_TYPE_REGISTRY (src/lib/events/
@@ -34,20 +51,21 @@ export function EventWizard({
   teachers,
   canCreateCompetition,
   initialDraft,
-  existingDrafts,
+  myEvents,
 }: {
   cities: { id: string; nameRu: string }[];
   ownedSchools: { id: string; name: string; verificationStatus: "COMMUNITY" | "VERIFIED" }[];
   teachers: { id: string; name: string }[];
   canCreateCompetition: boolean;
   initialDraft: WizardDraft;
-  existingDrafts: { id: string; title: string; format: EventFormat }[];
+  myEvents: MyEventListItem[];
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState<WizardDraft>(initialDraft);
   const [stepIndex, setStepIndex] = useState(0);
   const [saving, setSaving] = useState<"draft" | "publish" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const config = EVENT_TYPE_REGISTRY[draft.format];
   const steps = config.steps;
@@ -88,6 +106,7 @@ export function EventWizard({
   async function save(status: "DRAFT" | "PUBLISHED") {
     setSaving(status === "DRAFT" ? "draft" : "publish");
     setError(null);
+    setSuccessMessage(null);
     try {
       const payload = toApiPayload(draft, status);
       const res = await fetch(draft.id ? `/api/event-drafts/${draft.id}` : "/api/events", {
@@ -108,7 +127,12 @@ export function EventWizard({
         competitionId: body.competitionId ?? d.competitionId,
       }));
       if (status === "PUBLISHED") {
-        router.refresh();
+        // Задача: после публикации показать понятное сообщение
+        // (опубликовано / на модерации) и перекинуть на карточку события,
+        // чтобы организатор сразу проверил, всё ли заполнено верно.
+        const approved = body.event.moderationStatus === "APPROVED";
+        setSuccessMessage(approved ? "Событие опубликовано! Открываем карточку…" : "Событие отправлено на модерацию. Открываем карточку…");
+        setTimeout(() => router.push(`/events/${body.event.slug}`), 1400);
       }
     } catch {
       setError("Не удалось сохранить событие — проверьте соединение.");
@@ -178,25 +202,34 @@ export function EventWizard({
 
   return (
     <div className="flex flex-col gap-4">
-      {existingDrafts.length > 0 && !draft.id && (
-        <div className="rounded-app border border-admin-border bg-admin-card px-4 py-2.5 text-sm text-admin-muted">
-          Ваши черновики:{" "}
-          {existingDrafts.map((d, i) => (
-            <span key={d.id}>
-              {i > 0 && ", "}
-              <a href={`/admin/content?draft=${d.id}`} className="text-admin-primary hover:underline">
-                {d.title || "Без названия"}
-              </a>
-            </span>
-          ))}
+      {myEvents.length > 0 && !draft.id && (
+        <div className="rounded-app border border-admin-border bg-admin-card px-4 py-3 text-sm">
+          <p className="m-0 mb-2 font-semibold text-night-text">Мои события</p>
+          <div className="flex flex-col gap-1.5">
+            {myEvents.map((e) => (
+              <div key={e.id} className="flex flex-wrap items-center gap-2">
+                <a href={`/admin/content?draft=${e.id}`} className="text-admin-primary hover:underline">
+                  {e.title || "Без названия"}
+                </a>
+                <span className="text-xs text-admin-muted">
+                  {EVENT_TYPE_REGISTRY[e.format].label} · {myEventStatusLabel(e.status, e.moderationStatus)}
+                </span>
+                {e.status === "PUBLISHED" && e.moderationStatus === "APPROVED" && (
+                  <a href={`/events/${e.slug}`} target="_blank" className="text-xs text-admin-muted hover:text-night-text hover:underline">
+                    Открыть карточку →
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       <div className="overflow-hidden rounded-app border border-admin-border bg-admin-card">
         <div className="flex items-center justify-between border-b border-admin-border px-5 py-3.5">
-          <h1 className="m-0 font-night text-base font-extrabold uppercase tracking-wide text-night-text">Create event</h1>
+          <h1 className="m-0 font-night text-base font-extrabold uppercase tracking-wide text-night-text">Создание события</h1>
           <Button type="button" variant="adminOutline" size="sm" disabled={!canSaveDraft || saving !== null} onClick={() => save("DRAFT")}>
-            {saving === "draft" ? "…" : "Save draft"}
+            {saving === "draft" ? "…" : "Сохранить черновик"}
           </Button>
         </div>
 
@@ -205,6 +238,9 @@ export function EventWizard({
           <div className="min-w-0 flex-1">{renderStep(currentStep)}</div>
         </div>
 
+        {successMessage && (
+          <p className="m-0 border-t border-admin-border bg-admin-primary/10 px-5 py-2.5 text-sm text-night-text">✓ {successMessage}</p>
+        )}
         {error && <p className="m-0 border-t border-admin-border px-5 py-2.5 text-sm text-red-400">{error}</p>}
 
         <div className="flex items-center justify-between border-t border-admin-border px-5 py-3.5">
@@ -215,7 +251,7 @@ export function EventWizard({
             disabled={stepIndex === 0}
             onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
           >
-            ← Back
+            ← Назад
           </Button>
           {currentStep !== "publish" && (
             <Button
@@ -224,7 +260,7 @@ export function EventWizard({
               size="sm"
               onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}
             >
-              Continue →
+              Далее →
             </Button>
           )}
         </div>

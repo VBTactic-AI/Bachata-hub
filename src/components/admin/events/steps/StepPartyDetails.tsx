@@ -13,40 +13,40 @@ export function StepPartyDetails({ draft, onChange }: { draft: WizardDraft; onCh
   const p = draft.party;
   return (
     <div className="flex max-w-[560px] flex-col gap-3.5">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Party details</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">О вечеринке</h2>
 
       <Label className="text-admin-muted">
-        Music styles (через запятую)
+        Музыкальные стили (через запятую)
         <Input value={p.musicStyles} onChange={(e) => onChange({ musicStyles: e.target.value })} className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
-        DJs (через запятую)
+        Диджеи (через запятую)
         <Input value={p.djs} onChange={(e) => onChange({ djs: e.target.value })} className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
-        Dance floors (через запятую)
+        Танцполы (через запятую)
         <Input value={p.danceFloors} onChange={(e) => onChange({ danceFloors: e.target.value })} className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
-        Artists (через запятую)
+        Артисты (через запятую)
         <Input value={p.artists} onChange={(e) => onChange({ artists: e.target.value })} className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
-        Dress code
+        Дресс-код
         <Input value={p.dressCode} onChange={(e) => onChange({ dressCode: e.target.value })} className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
-        Photographer
+        Фотограф
         <Input value={p.photographer} onChange={(e) => onChange({ photographer: e.target.value })} className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
-        Food &amp; drinks
+        Еда и напитки
         <Input value={p.foodAndDrinks} onChange={(e) => onChange({ foodAndDrinks: e.target.value })} className={fieldClass} />
       </Label>
 
       <label className="flex items-center gap-2 text-sm text-admin-muted">
         <input type="checkbox" checked={p.parking} onChange={(e) => onChange({ parking: e.target.checked })} className={checkboxClass} />
-        Parking
+        Парковка
       </label>
       <label className="flex items-center gap-2 text-sm text-admin-muted">
         <input
@@ -55,7 +55,7 @@ export function StepPartyDetails({ draft, onChange }: { draft: WizardDraft; onCh
           onChange={(e) => onChange({ cloakroom: e.target.checked })}
           className={checkboxClass}
         />
-        Cloakroom
+        Гардероб
       </label>
     </div>
   );

@@ -27,7 +27,7 @@ export function StepTickets({ draft, onChange }: { draft: WizardDraft; onChange:
 
   return (
     <div className="flex max-w-[640px] flex-col gap-3.5">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Tickets / registration</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Билеты и регистрация</h2>
 
       <Label className="text-admin-muted">
         {t.event.price} текстом
@@ -103,7 +103,7 @@ export function StepTickets({ draft, onChange }: { draft: WizardDraft; onChange:
           onClick={() => onChange({ priceOptions: [...draft.priceOptions, emptyOption()] })}
           className="self-start"
         >
-          <PlusIcon /> Add ticket type
+          <PlusIcon /> Добавить вариант билета
         </Button>
       </div>
     </div>

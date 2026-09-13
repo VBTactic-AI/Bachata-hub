@@ -73,7 +73,7 @@ type PreparedUpload = {
 // VALIDATION -> COMPRESSION -> RESIZE -> WEBP — вся обработка до Storage.
 async function prepareUpload(file: File): Promise<PreparedUpload> {
   if (file.size > MAX_SOURCE_SIZE) {
-    throw new EventMediaValidationError("FILE_TOO_LARGE", "Файл слишком большой. Максимальный размер — 10 MB.");
+    throw new EventMediaValidationError("FILE_TOO_LARGE", "Файл слишком большой. Максимальный размер — 10 МБ.");
   }
   const originalBuffer = Buffer.from(await file.arrayBuffer());
 

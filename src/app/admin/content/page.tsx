@@ -30,9 +30,12 @@ export default async function AdminContentPage({
     prisma.teacher.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     getActor(),
     prisma.event.findMany({
-      where: { createdById: user.id, status: "DRAFT" },
+      // Все свои события (не только черновики) — organizer должен видеть и
+      // уже опубликованные/на модерации, чтобы вернуться и отредактировать
+      // (по прямому запросу пользователя, 2026-09-13).
+      where: { createdById: user.id, status: { not: "ARCHIVED" } },
       orderBy: { updatedAt: "desc" },
-      select: { id: true, title: true, format: true },
+      select: { id: true, slug: true, title: true, format: true, status: true, moderationStatus: true },
     }),
   ]);
 
@@ -120,7 +123,7 @@ export default async function AdminContentPage({
         teachers={teachers}
         canCreateCompetition={canCreateCompetition}
         initialDraft={initialDraft}
-        existingDrafts={drafts.filter((d) => d.id !== draftId)}
+        myEvents={drafts.filter((d) => d.id !== draftId)}
       />
     </div>
   );

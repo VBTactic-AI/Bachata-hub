@@ -36,15 +36,15 @@ export type EventTypeConfig = {
 export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
   PARTY: {
     format: "PARTY",
-    label: "Party",
-    description: "Social & nightlife",
+    label: "Вечеринка",
+    description: "Тусовки и вечеринки",
     icon: "🪩",
     steps: ["type", "basic", "location", "datetime", "partyDetails", "tickets", "preview", "publish"],
   },
   MASTERCLASS: {
     format: "MASTERCLASS",
-    label: "Masterclass",
-    description: "Classes & teachers",
+    label: "Мастер-класс",
+    description: "Занятия и преподаватели",
     icon: "🎓",
     // "Teacher" из ТЗ не выделен отдельным пустым шагом — преподаватель
     // выбирается прямо у каждой сессии (у мастер-класса может быть несколько
@@ -53,8 +53,8 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
   },
   CONTEST: {
     format: "CONTEST",
-    label: "JNJ Competition",
-    description: "Dance competition",
+    label: "Конкурс (JNJ)",
+    description: "Танцевальное соревнование",
     icon: "🏆",
     // Сознательно короче остальных — по решению пользователя (2026-09-12):
     // мастер собирает только общую карточку события; Categories/Rounds/
@@ -67,15 +67,15 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
   // создать эти форматы, без специфичных для них полей/шагов.
   FESTIVAL: {
     format: "FESTIVAL",
-    label: "Festival",
-    description: "Multi-day dance festival",
+    label: "Фестиваль",
+    description: "Многодневный танцевальный фестиваль",
     icon: "🎪",
     steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
   },
   INTENSIVE: {
     format: "INTENSIVE",
-    label: "Workshop intensive",
-    description: "Multi-session workshop block",
+    label: "Воркшоп-интенсив",
+    description: "Блок из нескольких занятий",
     icon: "🔥",
     steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
   },

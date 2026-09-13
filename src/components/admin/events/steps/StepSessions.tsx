@@ -38,7 +38,7 @@ export function StepSessions({
 
   return (
     <div className="flex max-w-[640px] flex-col gap-4">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Sessions</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Занятия</h2>
 
       {sessions.length === 0 && <p className="m-0 text-sm text-admin-muted">Занятий пока нет — добавьте хотя бы одно.</p>}
 
@@ -120,7 +120,7 @@ export function StepSessions({
       ))}
 
       <Button type="button" variant="adminOutline" onClick={() => onChange([...sessions, emptySession()])} className="self-start">
-        <PlusIcon /> Add Session
+        <PlusIcon /> Добавить занятие
       </Button>
     </div>
   );

@@ -17,15 +17,15 @@ export function StepMasterclassDetails({
   const m = draft.masterclass;
   return (
     <div className="flex max-w-[560px] flex-col gap-3.5">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Details</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Детали</h2>
 
       <Label className="text-admin-muted">
-        Style
+        Стиль
         <Input value={m.style} onChange={(e) => onChange({ style: e.target.value })} className={fieldClass} />
       </Label>
 
       <Label className="text-admin-muted">
-        Format
+        Формат
         <Input
           placeholder="Интенсив / цикл занятий / …"
           value={m.format}
@@ -41,7 +41,7 @@ export function StepMasterclassDetails({
           onChange={(e) => onChange({ partnerRequired: e.target.checked })}
           className={checkboxClass}
         />
-        Partner required
+        Нужен партнёр
       </label>
     </div>
   );

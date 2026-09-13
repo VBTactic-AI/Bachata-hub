@@ -20,7 +20,7 @@ export function StepLocation({
 }) {
   return (
     <div className="flex max-w-[560px] flex-col gap-3.5">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Location</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Место проведения</h2>
 
       <Label className="text-admin-muted">
         {t.event.city}

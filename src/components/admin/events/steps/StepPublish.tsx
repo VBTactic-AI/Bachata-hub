@@ -29,7 +29,7 @@ export function StepPublish({
 }) {
   return (
     <div className="flex max-w-[560px] flex-col gap-4">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Publish</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Публикация</h2>
 
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
         {checklist.map((item) => (
@@ -61,7 +61,7 @@ export function StepPublish({
       )}
 
       <Button type="button" variant="admin" disabled={!complete || saving} onClick={onPublish}>
-        {saving ? "…" : "PUBLISH EVENT"}
+        {saving ? "…" : "ОПУБЛИКОВАТЬ"}
       </Button>
 
       {isCompetition && competitionId && (

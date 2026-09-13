@@ -11,11 +11,11 @@ const fieldClass =
 export function StepBasic({ draft, onChange }: { draft: WizardDraft; onChange: (patch: Partial<WizardDraft>) => void }) {
   return (
     <div className="flex max-w-[720px] flex-col gap-3.5">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Basic information</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Основная информация</h2>
 
       <div className="max-w-[560px]">
         <Label className="text-admin-muted">
-          Event title
+          {t.event.addEventForm.titleField}
           <Input required value={draft.title} onChange={(e) => onChange({ title: e.target.value })} className={fieldClass} />
         </Label>
       </div>

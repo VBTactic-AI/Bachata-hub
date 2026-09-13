@@ -11,7 +11,7 @@ const fieldClass =
 export function StepDateTime({ draft, onChange }: { draft: WizardDraft; onChange: (patch: Partial<WizardDraft>) => void }) {
   return (
     <div className="flex max-w-[560px] flex-col gap-3.5">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Date &amp; time</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Дата и время</h2>
 
       <Label className="text-admin-muted">
         {t.event.date} / {t.event.time} — начало

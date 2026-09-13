@@ -43,9 +43,9 @@ function uploadWithProgress(url: string, method: string, file: File, onProgress:
       try {
         const body = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300) resolve(body.media as WizardMediaItem);
-        else reject(new Error(body.error || "Upload failed"));
+        else reject(new Error(body.error || "Не удалось загрузить файл"));
       } catch {
-        reject(new Error("Upload failed"));
+        reject(new Error("Не удалось загрузить файл"));
       }
     };
     xhr.onerror = () => reject(new Error("Не удалось загрузить — проверьте соединение."));
@@ -83,7 +83,7 @@ export function EventMediaManager({
       // Клиентская предварительная проверка (задача §2/§15) — только UX,
       // не заменяет серверную (magic bytes + повторный лимит на сервере).
       if (file.size > MAX_SOURCE_SIZE) {
-        setPending((p) => [...p, { key, name: file.name, progress: 100, error: "Файл слишком большой. Максимальный размер — 10 MB." }]);
+        setPending((p) => [...p, { key, name: file.name, progress: 100, error: "Файл слишком большой. Максимальный размер — 10 МБ." }]);
         continue;
       }
       setPending((p) => [...p, { key, name: file.name, progress: 0, error: null }]);
@@ -203,7 +203,7 @@ export function EventMediaManager({
   if (!eventId) {
     return (
       <div className="rounded-app border border-dashed border-admin-border bg-admin-card2/40 p-6 text-center text-sm text-admin-muted">
-        Сохраните черновик (заполните Location и Date&nbsp;&amp;&nbsp;Time и нажмите «Save draft»), чтобы загружать афиши.
+        Сохраните черновик (заполните «Место» и «Дату и время» и нажмите «Сохранить черновик»), чтобы загружать фотографии.
       </div>
     );
   }
@@ -213,7 +213,7 @@ export function EventMediaManager({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="m-0 text-sm font-semibold text-night-text">Event images</p>
+      <p className="m-0 text-sm font-semibold text-night-text">Фотографии события</p>
 
       <div
         onDragOver={(e) => {
@@ -235,8 +235,8 @@ export function EventMediaManager({
         <span className="text-2xl text-admin-primary" aria-hidden="true">
           <PlusIcon />
         </span>
-        <p className="m-0 font-medium text-night-text">Upload event images</p>
-        <p className="m-0 text-xs text-admin-muted">Drag &amp; drop or click to upload</p>
+        <p className="m-0 font-medium text-night-text">Загрузить фотографии</p>
+        <p className="m-0 text-xs text-admin-muted">Перетащите файлы сюда или нажмите для выбора</p>
         <p className="m-0 text-xs text-admin-disabled">JPG • PNG • WEBP • AVIF — до 10 МБ, автоматически сжимается</p>
         <input
           ref={inputRef}
@@ -258,7 +258,7 @@ export function EventMediaManager({
               <span className="min-w-0 flex-1 truncate text-night-text">{u.name}</span>
               {u.error ? (
                 <span className="flex items-center gap-2 text-xs text-red-400">
-                  Upload failed
+                  Ошибка загрузки
                   <button
                     type="button"
                     className="text-admin-primary hover:underline"
@@ -301,19 +301,19 @@ export function EventMediaManager({
               />
               {m.isMain && (
                 <span className="absolute left-1.5 top-1.5 rounded-full bg-admin-primary px-2 py-0.5 text-[0.65rem] font-bold text-white">
-                  ★ MAIN
+                  ★ ГЛАВНАЯ
                 </span>
               )}
 
               <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/70 px-1.5 py-1 opacity-0 transition group-hover:opacity-100">
                 {!m.isMain && (
-                  <button type="button" title="Set as main" onClick={() => setMain(m.id)} className="text-xs text-white hover:text-admin-primary">
+                  <button type="button" title="Сделать главной" onClick={() => setMain(m.id)} className="text-xs text-white hover:text-admin-primary">
                     ★
                   </button>
                 )}
                 <button
                   type="button"
-                  title="Replace"
+                  title="Заменить"
                   onClick={() => {
                     replaceInputRef.current = { mediaId: m.id };
                     document.getElementById(`replace-input-${m.id}`)?.click();
@@ -324,7 +324,7 @@ export function EventMediaManager({
                 </button>
                 <button
                   type="button"
-                  title="Delete"
+                  title="Удалить"
                   onClick={() => requestDelete(m.id)}
                   className="text-white hover:text-red-400"
                 >
@@ -332,7 +332,7 @@ export function EventMediaManager({
                 </button>
                 <button
                   type="button"
-                  title="Drag to reorder"
+                  title="Перетащить для изменения порядка"
                   onPointerDown={(e) => {
                     e.preventDefault();
                     (e.target as Element).releasePointerCapture?.(e.pointerId);
@@ -372,9 +372,9 @@ export function EventMediaManager({
           >
             {confirm.mode === "ask" ? (
               <>
-                <h3 className="m-0 text-base font-bold text-night-text">Delete main image?</h3>
+                <h3 className="m-0 text-base font-bold text-night-text">Удалить главное фото?</h3>
                 <p className="m-0 mt-2 text-sm text-admin-muted">
-                  This image is currently used as the event cover. Choose another main image before deleting it.
+                  Это фото сейчас используется как обложка события. Выберите другое фото на обложку перед удалением.
                 </p>
                 <div className="mt-4 flex flex-col gap-2">
                   <button
@@ -382,23 +382,23 @@ export function EventMediaManager({
                     onClick={() => setConfirm({ mediaId: confirm.mediaId, mode: "choose" })}
                     className="rounded-app-sm bg-admin-primary px-3 py-2 text-sm font-semibold text-white hover:brightness-110"
                   >
-                    Choose another cover
+                    Выбрать другое фото на обложку
                   </button>
                   <button
                     type="button"
                     onClick={() => void doDelete(confirm.mediaId)}
                     className="rounded-app-sm border border-red-400/50 px-3 py-2 text-sm font-semibold text-red-400 hover:bg-red-400/10"
                   >
-                    Delete anyway
+                    Всё равно удалить
                   </button>
                   <button type="button" onClick={() => setConfirm(null)} className="rounded-app-sm px-3 py-2 text-sm text-admin-muted hover:text-night-text">
-                    Cancel
+                    Отмена
                   </button>
                 </div>
               </>
             ) : (
               <>
-                <h3 className="m-0 text-base font-bold text-night-text">Choose a new main image</h3>
+                <h3 className="m-0 text-base font-bold text-night-text">Выберите новую главную фотографию</h3>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   {media
                     .filter((m) => m.id !== confirm.mediaId)
@@ -414,7 +414,7 @@ export function EventMediaManager({
                     ))}
                 </div>
                 <button type="button" onClick={() => setConfirm(null)} className="mt-4 text-sm text-admin-muted hover:text-night-text">
-                  Cancel
+                  Отмена
                 </button>
               </>
             )}
@@ -437,10 +437,10 @@ export function EventMediaManager({
                 setLightboxId(sorted[(idx - 1 + sorted.length) % sorted.length].id);
               }}
             >
-              ← Prev
+              ← Назад
             </button>
             <button type="button" onClick={() => setLightboxId(null)}>
-              Close
+              Закрыть
             </button>
             <button
               type="button"
@@ -449,7 +449,7 @@ export function EventMediaManager({
                 setLightboxId(sorted[(idx + 1) % sorted.length].id);
               }}
             >
-              Next →
+              Далее →
             </button>
           </div>
         </div>

@@ -5,16 +5,16 @@ import { cn } from "@/lib/cn";
 import type { EventStepId } from "@/lib/events/event-type-registry";
 
 const STEP_LABELS: Record<EventStepId, string> = {
-  type: "Type",
-  basic: "Basic",
-  location: "Location",
-  datetime: "Date & Time",
-  partyDetails: "Party Details",
-  sessions: "Sessions",
-  details: "Details",
-  tickets: "Tickets",
-  preview: "Preview",
-  publish: "Publish",
+  type: "Тип",
+  basic: "Основное",
+  location: "Место",
+  datetime: "Дата и время",
+  partyDetails: "О вечеринке",
+  sessions: "Занятия",
+  details: "Детали",
+  tickets: "Билеты",
+  preview: "Предпросмотр",
+  publish: "Публикация",
 };
 
 // Левая колонка макета "CREATE EVENT" из задачи — progress/navigation.

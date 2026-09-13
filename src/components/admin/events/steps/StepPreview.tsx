@@ -25,7 +25,7 @@ export function StepPreview({
   const mainImage = draft.media.find((m) => m.isMain);
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="m-0 font-night text-lg font-bold text-night-text">Preview</h2>
+      <h2 className="m-0 font-night text-lg font-bold text-night-text">Предпросмотр</h2>
 
       <div className="max-w-[360px]">
         <EventCardPreview

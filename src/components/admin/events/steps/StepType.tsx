@@ -20,7 +20,7 @@ export function StepType({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="m-0 font-night text-lg font-bold text-night-text">Select event type</h2>
+        <h2 className="m-0 font-night text-lg font-bold text-night-text">Выберите тип события</h2>
         <p className="m-0 mt-1 text-sm text-admin-muted">Выберите тип события — дальше мастер покажет только нужные шаги.</p>
       </div>
 
