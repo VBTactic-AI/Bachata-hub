@@ -151,7 +151,8 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
 
       <div>
         <p className="m-0 text-sm text-night-muted">
-          {formatDateTime(event.startsAt)} · {event.city.nameRu}
+          {formatDateTime(event.startsAt)}
+          {event.endsAt ? ` — ${formatDateTime(event.endsAt)}` : ""} · {event.city.nameRu}
         </p>
         <h1 className="m-0 mt-1 font-night text-2xl font-extrabold text-night-text">{event.title}</h1>
         <div className="mt-2">
@@ -169,6 +170,19 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         <p className="m-0 text-sm text-night-text">
           <strong>{t.event.place}:</strong> <span className="text-night-muted">{event.venueName}</span>
           {event.venueAddress ? <span className="text-night-muted">{`, ${event.venueAddress}`}</span> : ""}
+          {event.latitude != null && event.longitude != null && (
+            <>
+              {" "}
+              <a
+                href={`https://www.google.com/maps?q=${event.latitude},${event.longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-night-primary"
+              >
+                (на карте)
+              </a>
+            </>
+          )}
         </p>
         <p className="m-0 text-sm text-night-text">
           <strong>{t.event.organizer}:</strong>{" "}
@@ -195,6 +209,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
             <a href={event.externalLinkUrl} target="_blank" rel="noopener noreferrer" className="text-night-primary">
               {t.event.registerExternal} →
             </a>
+            {event.registrationEnabled && <span className="ml-2 text-night-success">· регистрация открыта</span>}
           </p>
         )}
       </Card>
@@ -283,8 +298,12 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
                   <p className="m-0 font-semibold text-night-text">{s.title}</p>
                   <p className="m-0 text-night-muted">
                     {formatDateTime(s.startTime)}
+                    {" – "}
+                    {formatDateTime(s.endTime)}
                     {s.room ? ` · ${s.room}` : ""}
                     {s.teacher ? ` · ${s.teacher.name}` : ""}
+                    {s.level ? ` · ${t.event.levels[s.level]}` : ""}
+                    {s.capacity != null ? ` · до ${s.capacity} чел.` : ""}
                   </p>
                 </div>
               ))}

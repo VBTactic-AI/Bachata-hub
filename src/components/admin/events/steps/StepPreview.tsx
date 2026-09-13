@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { EventCardPreview } from "@/components/EventCardPreview";
+import { formatEventCardPrice } from "@/lib/event-price";
 import type { WizardDraft } from "../wizard-types";
 
 // STEP "Preview" — задача явно требует НЕ отдельный примитивный предпросмотр,
@@ -23,6 +24,10 @@ export function StepPreview({
   slug: string | null;
 }) {
   const mainImage = draft.media.find((m) => m.isMain);
+  const price = formatEventCardPrice(
+    draft.priceText || null,
+    draft.priceOptions.filter((o) => o.price).map((o) => ({ price: Number(o.price), currency: o.currency || null }))
+  );
   return (
     <div className="flex flex-col gap-4">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">Предпросмотр</h2>
@@ -37,6 +42,7 @@ export function StepPreview({
             cityName,
             organizerLabel,
             photoUrl: mainImage?.url ?? "",
+            price,
           }}
         />
       </div>

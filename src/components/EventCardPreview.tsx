@@ -2,7 +2,7 @@ import Image from "next/image";
 import type { EventFormat, DanceLevel } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
 import { formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
-import { CalendarIcon, PinIcon } from "./Icon";
+import { CalendarIcon, PinIcon, TicketIcon } from "./Icon";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
 import { buttonVariants } from "@/components/ui/button";
@@ -19,6 +19,7 @@ export type EventCardPreviewData = {
   cityName: string;
   organizerLabel: string;
   photoUrl: string;
+  price: string | null;
 };
 
 // Живой предпросмотр карточки события прямо в форме создания (2026-09-12, по
@@ -71,6 +72,12 @@ export function EventCardPreview({ data }: { data: EventCardPreviewData }) {
               {data.organizerLabel ? ` · ${data.organizerLabel}` : ""}
             </span>
           </div>
+          {data.price && (
+            <div className="mb-3 mt-1 flex items-center gap-1.5 text-[0.87rem] text-night-pink [&_svg]:shrink-0">
+              <TicketIcon />
+              <span>{data.price}</span>
+            </div>
+          )}
 
           <span
             className={cn(

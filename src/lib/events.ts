@@ -1,6 +1,11 @@
 import { prisma } from "./prisma";
 import type { Prisma, EventFormat, DanceLevel } from "@prisma/client";
 
+// formatEventCardPrice — в src/lib/event-price.ts, НЕ здесь: этот файл
+// импортирует Prisma (server-only), а цену форматирует и клиентский
+// предпросмотр в мастере (StepPreview.tsx) — импорт оттуда тянул бы весь
+// Prisma-клиент в браузерный бандл (найдено на next build).
+
 // Простая работа с датами без внешних библиотек: сервер трактует "сегодня" и
 // "эта неделя" в своей локальной таймзоне. Для MVP это приемлемое упрощение —
 // вся аудитория в одном поясе (Europe/Minsk); при желании можно зафиксировать
@@ -46,7 +51,7 @@ export function eventsForHome(cityId: string | null) {
         startsAt: { gte: todayStart, lt: todayEnd },
       },
       orderBy: { startsAt: "asc" },
-      include: { city: true, school: true },
+      include: { city: true, school: true, priceOptions: { orderBy: { order: "asc" } } },
     }),
     prisma.event.findMany({
       where: {
@@ -57,7 +62,7 @@ export function eventsForHome(cityId: string | null) {
         startsAt: { gte: todayEnd, lt: weekEnd },
       },
       orderBy: { startsAt: "asc" },
-      include: { city: true, school: true },
+      include: { city: true, school: true, priceOptions: { orderBy: { order: "asc" } } },
       take: 12,
     }),
   ]);
@@ -151,7 +156,7 @@ export async function searchEvents(filters: EventFilters) {
   return prisma.event.findMany({
     where,
     orderBy: { startsAt: "asc" },
-    include: { city: true, school: true },
+    include: { city: true, school: true, priceOptions: { orderBy: { order: "asc" } } },
     take: 100,
   });
 }

@@ -1,15 +1,16 @@
 import Link from "next/link";
 import Image from "next/image";
-import type { City, Event, School } from "@prisma/client";
+import type { City, Event, EventPriceOption, School } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
 import { formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
-import { CalendarIcon, PinIcon } from "./Icon";
+import { formatEventCardPrice } from "@/lib/event-price";
+import { CalendarIcon, PinIcon, TicketIcon } from "./Icon";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
-type EventWithRelations = Event & { city: City; school: School | null };
+type EventWithRelations = Event & { city: City; school: School | null; priceOptions: EventPriceOption[] };
 
 export const FORMAT_EMOJI: Record<Event["format"], string> = {
   PARTY: "🎉",
@@ -23,6 +24,7 @@ export const FORMAT_EMOJI: Record<Event["format"], string> = {
 // только на /events (список), не шарится со светлыми страницами.
 export function EventCard({ event }: { event: EventWithRelations }) {
   const relativeDay = formatRelativeDayLabel(event.startsAt);
+  const price = formatEventCardPrice(event.priceText, event.priceOptions);
 
   return (
     <Card interactive className="flex flex-col overflow-hidden border-night-border bg-night-card p-0 hover:-translate-y-0 hover:border-night-primary/60 hover:shadow-none">
@@ -72,6 +74,12 @@ export function EventCard({ event }: { event: EventWithRelations }) {
             {event.school ? ` · ${event.school.name}` : event.organizerName ? ` · ${event.organizerName}` : ""}
           </span>
         </div>
+        {price && (
+          <div className="mb-3 mt-1 flex items-center gap-1.5 text-[0.87rem] text-night-pink [&_svg]:shrink-0">
+            <TicketIcon />
+            <span>{price}</span>
+          </div>
+        )}
 
         <Link
           href={`/events/${event.slug}`}
