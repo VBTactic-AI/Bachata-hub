@@ -141,6 +141,7 @@ describe("getChannelUsageOverview() — какие каналы использу
   });
 
   it("считает включивших канал пользователей (raw unnest) и активные endpoint'ы по каналам, которым они нужны", async () => {
+    delete process.env.TELEGRAM_BOT_TOKEN;
     queryRaw.mockResolvedValueOnce([
       { channel: "IN_APP", count: 40n },
       { channel: "EMAIL", count: 12n },
@@ -160,27 +161,31 @@ describe("getChannelUsageOverview() — какие каналы использу
     const telegram = usage.find((u) => u.channel === "TELEGRAM")!;
     expect(telegram.usersEnabledCount).toBe(0); // канал не встретился в raw-результате
     expect(telegram.activeEndpointsCount).toBe(0); // endpoint-канал, но пока 0
-    expect(telegram.providerConfigured).toBe(false); // провайдера для Telegram ещё нет
+    expect(telegram.providerConfigured).toBe(false); // TELEGRAM_BOT_TOKEN не задан
   });
 
-  it("EMAIL/WEB_PUSH — 'настроен', только если реальный секрет провайдера есть в окружении", async () => {
+  it("EMAIL/WEB_PUSH/TELEGRAM — 'настроен', только если реальный секрет провайдера есть в окружении", async () => {
     queryRaw.mockResolvedValueOnce([]);
     delete process.env.RESEND_API_KEY;
     delete process.env.VAPID_PUBLIC_KEY;
     delete process.env.VAPID_PRIVATE_KEY;
+    delete process.env.TELEGRAM_BOT_TOKEN;
 
     let usage = await getChannelUsageOverview();
     expect(usage.find((u) => u.channel === "EMAIL")!.providerConfigured).toBe(false);
     expect(usage.find((u) => u.channel === "WEB_PUSH")!.providerConfigured).toBe(false);
+    expect(usage.find((u) => u.channel === "TELEGRAM")!.providerConfigured).toBe(false);
 
     process.env.RESEND_API_KEY = "re_test";
     process.env.VAPID_PUBLIC_KEY = "pub";
     process.env.VAPID_PRIVATE_KEY = "priv";
+    process.env.TELEGRAM_BOT_TOKEN = "123:abc";
     queryRaw.mockResolvedValueOnce([]);
 
     usage = await getChannelUsageOverview();
     expect(usage.find((u) => u.channel === "EMAIL")!.providerConfigured).toBe(true);
     expect(usage.find((u) => u.channel === "WEB_PUSH")!.providerConfigured).toBe(true);
+    expect(usage.find((u) => u.channel === "TELEGRAM")!.providerConfigured).toBe(true);
   });
 });
 

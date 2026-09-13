@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { subscribeToWebPush, unsubscribeFromWebPush, WebPushError } from "@/lib/notifications/web-push-client";
 
 type EventFormat = "PARTY" | "MASTERCLASS" | "FESTIVAL" | "CONTEST" | "INTENSIVE";
@@ -38,10 +39,23 @@ const WEB_PUSH_ERROR_MESSAGES: Record<WebPushError["code"], string> = {
   server_error: "Не удалось сохранить подписку на сервере.",
 };
 
-export function NotificationPreferencesForm({ initialPreference }: { initialPreference: Preference }) {
+export function NotificationPreferencesForm({
+  initialPreference,
+  initialTelegramLinked,
+}: {
+  initialPreference: Preference;
+  initialTelegramLinked: boolean;
+}) {
   const [pref, setPref] = useState(initialPreference);
   const [error, setError] = useState<string | null>(null);
   const [webPushBusy, setWebPushBusy] = useState(false);
+
+  const [telegramLinked, setTelegramLinked] = useState(initialTelegramLinked);
+  const [telegramLinking, setTelegramLinking] = useState(false);
+  const [telegramBusy, setTelegramBusy] = useState(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
+  const prefRef = useRef(pref);
+  prefRef.current = pref;
 
   async function save(patch: Partial<Preference>) {
     const prev = pref;
@@ -99,6 +113,64 @@ export function NotificationPreferencesForm({ initialPreference }: { initialPref
     } finally {
       setWebPushBusy(false);
     }
+  }
+
+  // Telegram — привязка происходит в ДРУГОМ приложении (пользователь жмёт
+  // Start в Telegram), эта вкладка о результате узнать сама не может — тот
+  // же приём поллинга, что уже используется в проекте для низкочастотных
+  // живых данных (ротация/админ-лента), не Supabase Realtime. Останавливается
+  // через 60с сама, если человек не успел/передумал — открыть ссылку можно
+  // ещё раз.
+  async function startTelegramLink() {
+    setTelegramError(null);
+    setTelegramBusy(true);
+    const res = await fetch("/api/notification-endpoints/telegram", { method: "POST" });
+    setTelegramBusy(false);
+    if (!res.ok) {
+      setTelegramError(
+        res.status === 503 ? "Telegram пока не настроен на сервере." : "Не удалось начать привязку, попробуйте ещё раз."
+      );
+      return;
+    }
+    const data = await res.json();
+    window.open(data.deepLink, "_blank", "noopener,noreferrer");
+    setTelegramLinking(true);
+  }
+
+  useEffect(() => {
+    if (!telegramLinking) return;
+
+    const interval = setInterval(async () => {
+      const res = await fetch("/api/notification-endpoints/telegram");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.linked) {
+        setTelegramLinked(true);
+        setTelegramLinking(false);
+        save({ channelsEnabled: [...prefRef.current.channelsEnabled, "TELEGRAM"] });
+      }
+    }, 2000);
+
+    const timeout = setTimeout(() => setTelegramLinking(false), 60_000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [telegramLinking]);
+
+  async function unlinkTelegram() {
+    setTelegramError(null);
+    setTelegramBusy(true);
+    const res = await fetch("/api/notification-endpoints/telegram", { method: "DELETE" });
+    setTelegramBusy(false);
+    if (!res.ok) {
+      setTelegramError("Не удалось отключить Telegram.");
+      return;
+    }
+    setTelegramLinked(false);
+    save({ channelsEnabled: pref.channelsEnabled.filter((c) => c !== "TELEGRAM") });
   }
 
   return (
@@ -201,15 +273,36 @@ export function NotificationPreferencesForm({ initialPreference }: { initialPref
             <input type="checkbox" checked={pref.channelsEnabled.includes("EMAIL")} onChange={() => toggleChannel("EMAIL")} />
             Email
           </label>
-          <label className="flex items-center gap-2 text-sm text-night-muted">
-            <input type="checkbox" disabled checked={false} />
-            Telegram <span className="text-xs">(скоро)</span>
-          </label>
+          {telegramLinked ? (
+            <label className="flex items-center gap-2 text-sm text-night-text">
+              <input type="checkbox" checked={pref.channelsEnabled.includes("TELEGRAM")} onChange={() => toggleChannel("TELEGRAM")} />
+              Telegram <span className="text-xs text-night-success">(подключён)</span>
+            </label>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 text-sm text-night-text">
+              <span>Telegram</span>
+              <Button type="button" size="sm" variant="secondary" disabled={telegramBusy || telegramLinking} onClick={startTelegramLink}>
+                {telegramLinking ? "Ждём подтверждения в Telegram…" : telegramBusy ? "Открываем…" : "Подключить"}
+              </Button>
+            </div>
+          )}
         </div>
+        {telegramError && <p className="m-0 mt-1 text-xs text-red-400">{telegramError}</p>}
+        {telegramLinked && (
+          <button
+            type="button"
+            disabled={telegramBusy}
+            onClick={unlinkTelegram}
+            className="mt-1 self-start bg-transparent p-0 text-xs text-night-muted underline hover:text-night-text"
+          >
+            Отключить Telegram
+          </button>
+        )}
         <p className="m-0 mt-2 text-xs text-night-muted">
           Browser Push при включении спросит разрешение браузера — уведомления пока приходят с общим текстом
           («у вас новое уведомление»), без деталей конкретного события. Email отправляется, только если организатор
-          проекта настроил почтовый сервис.
+          проекта настроил почтовый сервис. Telegram: после клика «Подключить» откроется чат с ботом — нажмите там
+          Start, страница сама заметит подтверждение в течение минуты.
         </p>
       </Card>
 

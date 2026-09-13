@@ -137,6 +137,7 @@ model User {
   notifications          Notification[]
   notificationChannelPricesUpdated NotificationChannelPrice[] @relation("NotificationChannelPriceUpdatedBy")
   broadcastsSent         Broadcast[]
+  telegramLinkTokens     TelegramLinkToken[]
 
   @@index([role])
 }
@@ -1975,6 +1976,28 @@ model NotificationEndpoint {
 
   @@unique([userId, channel, endpoint])
   @@index([userId, channel])
+}
+
+// Telegram — привязка аккаунта через одноразовую ссылку (Delivery Engine,
+// Telegram provider). Бот физически не может узнать chatId человека по email
+// — только когда человек сам нажмёт Start в Telegram с этим токеном в
+// payload (/start <token>), см. src/server/notifications/telegram-link.ts.
+// token генерируется явно приложением через crypto.randomBytes (НЕ через
+// Prisma @default(cuid()) — это одноразовая ссылка привязки аккаунта,
+// AUTH_SECURITY_SPEC.md требует не полагаться на предсказуемость чужих
+// генераторов id для чего-либо похожего на секрет). Короткий TTL (10 минут)
+// и одноразовость (consumedAt) — токен не должен быть годным долго, если
+// случайно попадёт не в те руки (кто-то другой привязал бы СВОЙ Telegram к
+// ЧУЖОМУ аккаунту сайта).
+model TelegramLinkToken {
+  token      String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 enum NotificationPriority {

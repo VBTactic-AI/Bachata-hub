@@ -1,13 +1,17 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateNotificationPreference } from "@/server/notifications/preferences";
+import { hasTelegramLinked } from "@/server/notifications/telegram-link";
 import { NotificationPreferencesForm } from "@/components/notifications/NotificationPreferencesForm";
 
 export default async function NotificationSettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const preference = await getOrCreateNotificationPreference(user.id);
+  const [preference, telegramLinked] = await Promise.all([
+    getOrCreateNotificationPreference(user.id),
+    hasTelegramLinked(user.id),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -22,6 +26,7 @@ export default async function NotificationSettingsPage() {
           channelsEnabled: preference.channelsEnabled,
           emailFrequency: preference.emailFrequency,
         }}
+        initialTelegramLinked={telegramLinked}
       />
     </div>
   );

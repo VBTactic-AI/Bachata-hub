@@ -146,7 +146,8 @@ function isProviderConfigured(channel: NotificationChannel): boolean | null {
   if (channel === "IN_APP") return null;
   if (channel === "EMAIL") return Boolean(process.env.RESEND_API_KEY);
   if (channel === "WEB_PUSH") return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
-  return false; // TELEGRAM/MOBILE_PUSH/WHATSAPP — провайдера в проекте ещё нет (см. providers/registry.ts)
+  if (channel === "TELEGRAM") return Boolean(process.env.TELEGRAM_BOT_TOKEN);
+  return false; // MOBILE_PUSH/WHATSAPP — провайдера в проекте ещё нет (см. providers/registry.ts)
 }
 
 export async function getChannelUsageOverview(): Promise<ChannelUsage[]> {
