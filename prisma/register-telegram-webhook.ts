@@ -5,6 +5,20 @@
 // см. .env.example и src/app/api/telegram/webhook/route.ts. Не требует БД,
 // поэтому не через prisma/seed*.ts-паттерн (свой PrismaClient), а просто
 // один вызов Bot API.
+//
+// ВАЖНО: `tsx` НЕ подхватывает .env сам по себе (в отличие от seed*.ts —
+// там .env грузит побочным эффектом сам PrismaClient при импорте, здесь
+// PrismaClient не участвует вообще). Значения нужно передать явно в
+// переменные окружения самой команды запуска, например (PowerShell,
+// с реальным прод-доменом, а не тем, что в локальном .env):
+//   $env:TELEGRAM_BOT_TOKEN="..."; $env:TELEGRAM_BOT_USERNAME="...";
+//   $env:TELEGRAM_WEBHOOK_SECRET="..."; $env:NEXT_PUBLIC_SITE_URL="https://ваш-домен";
+//   npx tsx prisma/register-telegram-webhook.ts
+// Найдено вживую 2026-09-13: обычный `openssl rand -base64 32`/
+// RandomNumberGenerator+ToBase64String для TELEGRAM_WEBHOOK_SECRET Telegram
+// ОТКЛОНЯЕТ ("secret token contains illegal characters") — Bot API требует
+// строго `^[A-Za-z0-9_-]{1,256}$`, base64 даёт недопустимые `+`/`/`/`=`.
+// Используйте hex или base64url без padding, не обычный base64.
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -13,6 +27,11 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 async function main() {
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN не задан в окружении.");
   if (!secret) throw new Error("TELEGRAM_WEBHOOK_SECRET не задан в окружении.");
+  if (!/^[A-Za-z0-9_-]{1,256}$/.test(secret)) {
+    throw new Error(
+      "TELEGRAM_WEBHOOK_SECRET содержит символы, которые Telegram отклонит (нужны только A-Za-z0-9_-) — сгенерируйте заново в hex/base64url, не обычным base64."
+    );
+  }
   if (!siteUrl || siteUrl.includes("localhost")) {
     throw new Error(
       "NEXT_PUBLIC_SITE_URL должен указывать на публичный HTTPS-домен (не localhost) — Telegram обязан достучаться до него сам."
