@@ -1,23 +1,23 @@
 // Notification & Subscription Engine — сервис-воркер для Web Push (Phase 5).
-//
-// Push приходит БЕЗ зашифрованного payload (см. комментарий в
-// src/server/notifications/providers/web-push-provider.ts — почему: нет
-// возможности установить npm-пакет web-push в среде разработки, а ручная
-// реализация RFC 8291 шифрования — то самое "не изобретай криптографию",
-// AUTH_SECURITY_SPEC.md). Поэтому event.data здесь всегда пусто — воркер
-// показывает общий текст со ссылкой на Notification Center, а не
-// персональные title/body конкретного уведомления. Как только появится
-// шифрование, здесь же можно будет читать event.data.json().
+// Payload теперь зашифрован по-настоящему (пакет web-push, RFC 8291) и
+// приходит сюда уже расшифрованным браузером — event.data.json() отдаёт
+// ровно то, что отправил webPushProvider.send(): { title, body, deepLink }.
 
 self.addEventListener("push", (event) => {
-  const title = "Bachata HUB";
+  let data = { title: "Bachata HUB", body: "У вас новое уведомление.", deepLink: "/notifications" };
+  try {
+    if (event.data) data = { ...data, ...event.data.json() };
+  } catch {
+    // Payload не распарсился (не JSON) — показываем дефолтный текст, не падаем.
+  }
+
   const options = {
-    body: "У вас новое уведомление — откройте, чтобы посмотреть.",
+    body: data.body,
     icon: "/branding/jnj-logo.png",
     badge: "/branding/jnj-logo.png",
-    data: { url: "/notifications" },
+    data: { url: data.deepLink || "/notifications" },
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
