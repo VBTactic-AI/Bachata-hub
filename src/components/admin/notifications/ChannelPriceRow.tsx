@@ -5,15 +5,7 @@ import { useRouter } from "next/navigation";
 import type { NotificationChannel } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
-
-export const CHANNEL_LABELS: Record<NotificationChannel, string> = {
-  IN_APP: "В приложении",
-  WEB_PUSH: "Web Push",
-  EMAIL: "Email",
-  TELEGRAM: "Telegram",
-  MOBILE_PUSH: "Мобильный push",
-  WHATSAPP: "WhatsApp",
-};
+import { CHANNEL_LABELS } from "@/lib/notifications/channel-labels";
 
 // Control Center — редактируемая строка "цена за 1000 доставок" одного
 // канала (см. NotificationChannelPrice в schema.prisma — это ОЦЕНКА, не

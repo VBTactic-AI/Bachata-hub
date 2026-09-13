@@ -14,8 +14,9 @@ import {
   listFailedDeliveries,
   listFailedJobs,
 } from "@/server/notifications/control-center";
-import { ChannelPriceRow, CHANNEL_LABELS } from "@/components/admin/notifications/ChannelPriceRow";
+import { ChannelPriceRow } from "@/components/admin/notifications/ChannelPriceRow";
 import { RetryButton } from "@/components/admin/notifications/RetryButton";
+import { CHANNEL_LABELS } from "@/lib/notifications/channel-labels";
 
 // Subscription & Notification Control Center (2026-09-13) — сводная админ-
 // страница поверх Notification & Subscription Engine (Phase 0-8) и Phase 9
