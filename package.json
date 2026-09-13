@@ -14,6 +14,7 @@
     "seed": "tsx prisma/seed.ts",
     "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "seed:layer3": "tsx prisma/seed-layer3.ts",
+    "seed:notification-templates": "tsx prisma/seed-notification-templates.ts",
     "seed:judges": "tsx prisma/seed-judges.ts",
     "seed:j260801-reference": "tsx prisma/seed-j260801-reference.ts",
     "register:j260801-reference": "tsx prisma/register-j260801-reference.ts",
@@ -38,6 +39,7 @@
     "sharp": "^0.35.4",
     "slugify": "1.6.6",
     "tailwind-merge": "2.5.5",
+    "web-push": "^3.6.7",
     "zod": "3.23.8"
   },
   "devDependencies": {

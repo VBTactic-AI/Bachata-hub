@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { logModeration } from "@/lib/moderation";
+import { emitDomainEvent } from "@/server/notifications/emit-domain-event";
 
 const schema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -40,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
 
     if (status === "APPROVED") {
-      await tx.school.update({
+      const school = await tx.school.update({
         where: { id: claim.schoolId },
         data: { verificationStatus: "VERIFIED", ownerUserId: claim.claimantId },
       });
@@ -48,6 +49,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await tx.schoolClaim.updateMany({
         where: { schoolId: claim.schoolId, status: "PENDING", id: { not: id } },
         data: { status: "REJECTED", reviewedById: user.id, reviewedAt: new Date() },
+      });
+
+      // DIRECT-уведомление заявителю (Notification & Subscription Engine
+      // Phase 6) — персональный факт его собственного действия, не рассылка
+      // по подписке, поэтому получатель passed напрямую в payload.
+      await emitDomainEvent(tx, {
+        type: "SCHOOL_VERIFIED",
+        payload: { entityId: school.id, schoolSlug: school.slug, schoolName: school.name, directUserId: claim.claimantId },
+        idempotencyKey: `SCHOOL_VERIFIED:${claim.id}`,
       });
     }
   });

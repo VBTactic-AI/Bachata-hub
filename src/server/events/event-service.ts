@@ -2,11 +2,13 @@ import type { User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { uniqueSlug } from "@/lib/slug";
 import { canCreateEvents } from "@/lib/auth";
+import { formatEventDate } from "@/lib/format";
 import { shouldAutoApproveEvent } from "@/lib/events/moderation";
 import { computePublishChecklist, isChecklistComplete, type ChecklistItem } from "@/lib/events/event-type-registry";
 import { createCompetition } from "@/server/competition/create-competition";
 import { can } from "@/server/rbac/authorize";
 import { getActor } from "@/server/rbac/actor";
+import { emitDomainEvent } from "@/server/notifications/emit-domain-event";
 import type { EventDraftInput } from "./schemas";
 
 // Event Engine — доменный сервис создания/обновления черновика события
@@ -104,7 +106,18 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       status: input.status,
     };
 
+    // Уведомления Event Engine (Notification & Subscription Engine, Phase 6):
+    // "опубликовано" — это именно момент, когда событие становится РЕАЛЬНО
+    // видимым (status=PUBLISHED И moderationStatus=APPROVED, см.
+    // activeEventFilter() в src/lib/events.ts и гейт на /events/[slug]) — не
+    // просто смена status у ещё не прошедшего модерацию события. Если
+    // autoApprove=false, PUBLISHED уходит в очередь модерации и уведомление
+    // отправится позже, из PATCH /api/moderation/events/[id] (там же, где
+    // moderationStatus реально становится APPROVED).
     let row;
+    let notifyPublished = false;
+    let notifyUpdatedFields: string[] | null = null;
+
     if (existing) {
       const movingDraftToPublished = existing.status === "DRAFT" && input.status === "PUBLISHED";
       row = await tx.event.update({
@@ -121,6 +134,19 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
             : {}),
         },
       });
+
+      notifyPublished = movingDraftToPublished && autoApprove;
+
+      // "Изменение" — только для события, которое УЖЕ было полностью живым
+      // (не в момент его первой публикации выше) и только по полям, реально
+      // значимым для подписчика (время/место), не по любому сохранению формы.
+      if (existing.status === "PUBLISHED" && existing.moderationStatus === "APPROVED" && !movingDraftToPublished) {
+        const changed: string[] = [];
+        if (existing.startsAt.getTime() !== startsAt.getTime()) changed.push("startsAt");
+        if (existing.venueName !== base.venueName) changed.push("venueName");
+        if ((existing.venueAddress ?? null) !== base.venueAddress) changed.push("venueAddress");
+        if (changed.length > 0) notifyUpdatedFields = changed;
+      }
     } else {
       const slug = await uniqueSlug("event", input.title!);
       row = await tx.event.create({
@@ -134,6 +160,41 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
               : { moderationStatus: "PENDING" as const }
             : {}),
         },
+      });
+
+      notifyPublished = input.status === "PUBLISHED" && autoApprove;
+    }
+
+    if (notifyPublished) {
+      await emitDomainEvent(tx, {
+        type: "EVENT_PUBLISHED",
+        payload: {
+          entityId: row.id,
+          eventSlug: row.slug,
+          title: row.title,
+          date: formatEventDate(row.startsAt),
+          cityId: row.cityId,
+          format: row.format,
+          schoolId: row.schoolId,
+        },
+        idempotencyKey: `EVENT_PUBLISHED:${row.id}`,
+      });
+    } else if (notifyUpdatedFields) {
+      await emitDomainEvent(tx, {
+        type: "EVENT_UPDATED",
+        payload: {
+          entityId: row.id,
+          eventSlug: row.slug,
+          title: row.title,
+          cityId: row.cityId,
+          format: row.format,
+          schoolId: row.schoolId,
+          changedFields: notifyUpdatedFields,
+        },
+        // updatedAt в ключе — КАЖДОЕ значимое изменение это отдельное
+        // событие (не то же самое, что EVENT_PUBLISHED, где повтор с тем же
+        // ключом — намеренный no-op).
+        idempotencyKey: `EVENT_UPDATED:${row.id}:${row.updatedAt.toISOString()}`,
       });
     }
 
@@ -226,6 +287,45 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
   }
 
   return { event, competitionId };
+}
+
+// Минимальная отмена события (Notification & Subscription Engine, Phase 6 —
+// EVENT_CANCELLED не имел ни одного writer'а до этой задачи, см. аудит).
+// Права — те же, что и у редактирования черновика (getEventDraftForEdit
+// ниже): автор события или ADMIN, школа-владелец сама по себе прав не даёт
+// (как и раньше в этом файле). НЕ трогает связанный JNJ Competition (если
+// format=CONTEST) — жизненный цикл соревнования отдельный, движок слоя 3 не
+// переписываем ради этой задачи.
+export async function cancelEvent(eventId: string, user: User) {
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event) throw new EventNotFoundError();
+  if (event.createdById !== user.id && user.role !== "ADMIN") throw new EventForbiddenError("forbidden");
+  if (event.status === "ARCHIVED") return event; // идемпотентно — повторная отмена не ошибка
+
+  const wasPublished = event.status === "PUBLISHED";
+
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.event.update({ where: { id: eventId }, data: { status: "ARCHIVED" } });
+
+    // Уведомляем, только если событие реально было видимым — отмена ещё не
+    // прошедшего модерацию черновика никому не была видна, сообщать не о чем.
+    if (wasPublished) {
+      await emitDomainEvent(tx, {
+        type: "EVENT_CANCELLED",
+        payload: {
+          entityId: row.id,
+          eventSlug: row.slug,
+          title: row.title,
+          cityId: row.cityId,
+          format: row.format,
+          schoolId: row.schoolId,
+        },
+        idempotencyKey: `EVENT_CANCELLED:${row.id}`,
+      });
+    }
+
+    return row;
+  });
 }
 
 export async function getEventDraftForEdit(eventId: string, user: User) {

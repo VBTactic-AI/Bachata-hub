@@ -5,6 +5,7 @@ import { hashPassword } from "@/lib/auth";
 import { getActor, type Actor } from "../rbac/actor";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit } from "../audit/audit";
+import { emitDomainEvent } from "../notifications/emit-domain-event";
 import {
   AlreadyRegisteredError,
   AlreadyRegisteredInCompetitionError,
@@ -47,7 +48,7 @@ async function insertRegistration(
 ) {
   const division = await tx.division.findFirst({
     where: { id: params.divisionId, competitionId: params.competitionId },
-    include: { competition: { select: { status: true } } },
+    include: { competition: { select: { status: true, name: true } } },
   });
   if (!division) throw new ValidationFailedError("Категория не найдена в этом соревновании.");
   if (division.competition.status !== "REGISTRATION_OPEN") throw new RegistrationNotOpenError();
@@ -138,6 +139,16 @@ async function insertRegistration(
       requestedRole,
       roleOverrideStatus,
     },
+  });
+
+  // Notification & Subscription Engine (Phase 7) — DIRECT-уведомление самому
+  // зарегистрированному (params.userId), не тому, кто выполнил действие:
+  // одинаково для registerSelf и registerByAdmin (регистрирует EVENT_ADMIN,
+  // получает уведомление — сам участник).
+  await emitDomainEvent(tx, {
+    type: "JNJ_REGISTERED",
+    payload: { entityId: params.competitionId, competitionName: division.competition.name, directUserId: params.userId },
+    idempotencyKey: `JNJ_REGISTERED:${created.id}`,
   });
 
   return created;

@@ -21,6 +21,7 @@ const auditCreate = vi.fn();
 const userFindUnique = vi.fn();
 const userCreate = vi.fn();
 const executeRaw = vi.fn();
+const notificationJobUpsert = vi.fn().mockResolvedValue({});
 
 const fakeTx = {
   dancer: { findUnique: dancerFindUnique, findFirst: dancerFindUnique, create: dancerCreate },
@@ -30,6 +31,9 @@ const fakeTx = {
   competitionMember: { upsert: competitionMemberUpsert },
   auditLog: { create: auditCreate },
   user: { findUnique: userFindUnique, findFirst: userFindUnique, create: userCreate },
+  // Notification & Subscription Engine (Phase 7) — insertRegistration()
+  // эмитит JNJ_REGISTERED в этой же транзакции, см. emit-domain-event.ts.
+  notificationJob: { upsert: (...a: unknown[]) => notificationJobUpsert(...a) },
   // Тегированный шаблон ($executeRaw`...`) — вызывается как функция, но с
   // массивом строк первым аргументом; для теста форма вызова не важна,
   // важно только что он резолвится и не падает (advisory lock — деталь
@@ -60,7 +64,9 @@ beforeEach(() => {
   requirePermissionMock.mockReset().mockResolvedValue(actor);
   dancerFindUnique.mockReset();
   dancerCreate.mockReset();
-  divisionFindFirst.mockReset().mockResolvedValue({ id: "div1", competition: { status: "REGISTRATION_OPEN" } });
+  divisionFindFirst
+    .mockReset()
+    .mockResolvedValue({ id: "div1", competition: { status: "REGISTRATION_OPEN", name: "Test Competition" } });
   roleFindUniqueOrThrow.mockReset().mockResolvedValue({ id: "role-competitor" });
   // По умолчанию — ни в одной категории этого соревнования ещё нет
   // регистрации (проверка "только одна категория на соревнование").
@@ -71,6 +77,7 @@ beforeEach(() => {
   userFindUnique.mockReset();
   userCreate.mockReset();
   executeRaw.mockReset().mockResolvedValue(0);
+  notificationJobUpsert.mockReset().mockResolvedValue({});
 });
 
 describe("suggestedRoleForGender()", () => {
@@ -237,6 +244,39 @@ describe("registerByAdmin()", () => {
     expect(registrationCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ role: "FOLLOWER", requestedRole: "LEADER", roleOverrideStatus: "PENDING" }),
+      })
+    );
+  });
+});
+
+describe("Notification & Subscription Engine — JNJ_REGISTERED (Phase 7)", () => {
+  it("registerSelf(): DIRECT-уведомление самому зарегистрированному, в той же транзакции", async () => {
+    getActorMock.mockResolvedValue(actor);
+    dancerFindUnique.mockResolvedValue({ id: "dancer1", gender: null });
+    registrationCreate.mockResolvedValue({ id: "reg1" });
+
+    await registerSelf("comp1", { divisionId: "div1", role: "LEADER" });
+
+    expect(notificationJobUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: "JNJ_REGISTERED:reg1" },
+        create: expect.objectContaining({
+          eventType: "JNJ_REGISTERED",
+          payload: { entityId: "comp1", competitionName: "Test Competition", directUserId: "u1" },
+        }),
+      })
+    );
+  });
+
+  it("registerByAdmin(): получатель — зарегистрированный участник, а НЕ админ, выполнивший регистрацию", async () => {
+    userFindUnique.mockResolvedValue({ id: "u2", dancer: { id: "dancer2", gender: null } });
+    registrationCreate.mockResolvedValue({ id: "reg2" });
+
+    await registerByAdmin("comp1", { divisionId: "div1", role: "FOLLOWER", email: "existing@b.by" });
+
+    expect(notificationJobUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ payload: expect.objectContaining({ directUserId: "u2" }) }),
       })
     );
   });

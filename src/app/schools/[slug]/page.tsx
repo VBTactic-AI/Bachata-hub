@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n/dictionary";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ReviewForm } from "@/components/ReviewForm";
 import { ClaimSchoolButton } from "@/components/ClaimSchoolButton";
+import { FollowButton } from "@/components/notifications/FollowButton";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
 
@@ -81,6 +82,12 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
 
   const canClaim = user && user.role === "SCHOOL_REP" && school.ownerUserId !== user.id;
 
+  const existingSubscription = user
+    ? await prisma.subscription.findUnique({
+        where: { userId_type_targetId: { userId: user.id, type: "SCHOOL", targetId: school.id } },
+      })
+    : null;
+
   return (
     <div className="flex flex-col gap-5 pb-4">
       <script
@@ -92,7 +99,15 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
         <VerificationBadge status={school.verificationStatus} />
         <h1 className="m-0 font-night text-2xl font-extrabold tracking-tight text-night-text">{school.name}</h1>
         <p className="m-0 text-sm text-night-muted">{school.city.nameRu}</p>
-        {canClaim && <ClaimSchoolButton schoolSlug={school.slug} />}
+        <div className="flex flex-wrap items-center gap-2">
+          <FollowButton
+            type="SCHOOL"
+            targetId={school.id}
+            loggedIn={!!user}
+            initialSubscriptionId={existingSubscription?.id ?? null}
+          />
+          {canClaim && <ClaimSchoolButton schoolSlug={school.slug} />}
+        </div>
       </div>
 
       {school.description && <p className="m-0 text-sm leading-relaxed text-night-muted">{school.description}</p>}

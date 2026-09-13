@@ -41,10 +41,10 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   // DATABASE_URL — transaction-pooler Supabase (:6543, pgbouncer=true),
   // для обычных запросов приложения в рантайме — им и остаётся.
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
   // directUrl — используется ТОЛЬКО Prisma CLI (migrate dev/deploy, db execute,
   // introspect), не рантаймом. Через transaction-pooler `prisma migrate deploy`
   // виснет/падает — миграциям нужны сессионные фичи (advisory locks),
@@ -68,14 +68,14 @@ enum UserRole {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id             String    @id @default(cuid())
+  email          String    @unique
   // Nullable — источник истины для аутентификации теперь Supabase Auth
   // (см. supabaseUserId ниже); свой bcrypt-хэш остаётся только у записей,
   // созданных ДО перехода, и у служебных аккаунтов, которых организатор
   // добавляет вручную без приглашения (registerByAdmin — заводит случайный
   // непроходимый хэш, т.к. этот человек никогда не логинится сам).
-  passwordHash String?
+  passwordHash   String?
   // Мост на auth.users.id (Supabase Auth) — null, пока пользователь ни разу
   // не входил через Supabase Auth (Google/Apple/email). Заполняется один раз
   // в src/app/auth/callback/route.ts: либо у уже существующей записи (по
@@ -122,11 +122,19 @@ model User {
   publishedRoundAdvancements Round[]              @relation("RoundAdvancementPublishedBy")
   publishedResults           Result[]             @relation("ResultPublishedBy")
   createdResults             Result[]             @relation("ResultCreatedBy")
-  audienceVoteBallotsCast    AudienceVoteBallot[]  @relation("AudienceVoteBallotVoter")
-  startedAudienceVotes       AudienceVote[]        @relation("AudienceVoteStartedBy")
-  closedAudienceVotes        AudienceVote[]        @relation("AudienceVoteClosedBy")
-  publishedAudienceVotes     AudienceVote[]        @relation("AudienceVotePublishedBy")
-  confirmedAudienceWinners   AudienceVoteWinner[]  @relation("AudienceVoteWinnerConfirmedBy")
+  audienceVoteBallotsCast    AudienceVoteBallot[] @relation("AudienceVoteBallotVoter")
+  startedAudienceVotes       AudienceVote[]       @relation("AudienceVoteStartedBy")
+  closedAudienceVotes        AudienceVote[]       @relation("AudienceVoteClosedBy")
+  publishedAudienceVotes     AudienceVote[]       @relation("AudienceVotePublishedBy")
+  confirmedAudienceWinners   AudienceVoteWinner[] @relation("AudienceVoteWinnerConfirmedBy")
+
+  // --- Notification & Subscription Engine ---
+  // Независимый модуль, реагирует на доменные события Event Engine и слоя 3,
+  // не переиспользует и не дублирует их модели.
+  subscriptions          Subscription[]
+  notificationPreference NotificationPreference?
+  notificationEndpoints  NotificationEndpoint[]
+  notifications          Notification[]
 
   @@index([role])
 }
@@ -225,8 +233,8 @@ model Teacher {
   school   School? @relation(fields: [schoolId], references: [id])
   isActive Boolean @default(true)
 
-  schedules            ClassSchedule[]
-  masterclassSessions  MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
+  schedules           ClassSchedule[]
+  masterclassSessions MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
 
   @@index([schoolId])
 }
@@ -336,26 +344,26 @@ enum EventStatus {
 }
 
 model Event {
-  id               String           @id @default(cuid())
-  slug             String           @unique
-  title            String
-  cityId           String
-  city             City             @relation(fields: [cityId], references: [id])
-  schoolId         String? // организатор — школа...
-  school           School?          @relation(fields: [schoolId], references: [id])
-  organizerName    String? // ...или свободный текст, если организатор без школы
-  format           EventFormat
-  eventType        EventType        @default(REGULAR) // СЛОЙ 3: точка расширения, см. комментарий выше
-  level            DanceLevel
-  startsAt         DateTime
-  endsAt           DateTime?
-  venueName        String
-  venueAddress     String?
-  latitude         Float? // Event Engine: необязательная геометка места проведения
-  longitude        Float?
-  capacity         Int? // Event Engine: вместимость площадки/события, необязательно
-  registrationEnabled Boolean       @default(false) // Event Engine: показывать ли блок регистрации на публичной странице (сама регистрация по-прежнему может быть внешней ссылкой — externalLinkUrl, слой 2 ещё не подключен)
-  description      String?
+  id                  String           @id @default(cuid())
+  slug                String           @unique
+  title               String
+  cityId              String
+  city                City             @relation(fields: [cityId], references: [id])
+  schoolId            String? // организатор — школа...
+  school              School?          @relation(fields: [schoolId], references: [id])
+  organizerName       String? // ...или свободный текст, если организатор без школы
+  format              EventFormat
+  eventType           EventType        @default(REGULAR) // СЛОЙ 3: точка расширения, см. комментарий выше
+  level               DanceLevel
+  startsAt            DateTime
+  endsAt              DateTime?
+  venueName           String
+  venueAddress        String?
+  latitude            Float? // Event Engine: необязательная геометка места проведения
+  longitude           Float?
+  capacity            Int? // Event Engine: вместимость площадки/события, необязательно
+  registrationEnabled Boolean          @default(false) // Event Engine: показывать ли блок регистрации на публичной странице (сама регистрация по-прежнему может быть внешней ссылкой — externalLinkUrl, слой 2 ещё не подключен)
+  description         String?
   // Обложка/афиша — с этой задачи ("загрузка афиши") ЭТО ПОЛЕ БОЛЬШЕ НЕ
   // ЗАПОЛНЯЕТСЯ ВРУЧНУЮ через Event Wizard: оно денормализованный кэш URL
   // текущей главной афиши (EventMedia.isMain = true у этого Event),
@@ -366,20 +374,20 @@ model Event {
   // этой задачи (прямая внешняя
   // ссылка, без единой строки EventImage), остаются рабочими без миграции
   // данных.
-  photoUrl         String?
-  priceText        String? // цена текстом ("15 BYN", "бесплатно", "по договорённости")
-  externalLinkUrl  String? // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
-  tags             String[]
-  status           EventStatus      @default(PUBLISHED) // Event Engine: черновик мастера создания, см. комментарий у enum
-  moderationStatus ModerationStatus @default(PENDING)
-  createdById      String
-  createdBy        User             @relation("EventCreator", fields: [createdById], references: [id])
-  moderatedById    String?
-  moderatedBy      User?            @relation("EventModerator", fields: [moderatedById], references: [id])
-  moderatedAt      DateTime?
-  isArchived       Boolean          @default(false) // просроченные события уходят из ленты, но не удаляются
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  photoUrl            String?
+  priceText           String? // цена текстом ("15 BYN", "бесплатно", "по договорённости")
+  externalLinkUrl     String? // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
+  tags                String[]
+  status              EventStatus      @default(PUBLISHED) // Event Engine: черновик мастера создания, см. комментарий у enum
+  moderationStatus    ModerationStatus @default(PENDING)
+  createdById         String
+  createdBy           User             @relation("EventCreator", fields: [createdById], references: [id])
+  moderatedById       String?
+  moderatedBy         User?            @relation("EventModerator", fields: [moderatedById], references: [id])
+  moderatedAt         DateTime?
+  isArchived          Boolean          @default(false) // просроченные события уходят из ленты, но не удаляются
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   attendances  Attendance[]
   achievements Achievement[]
@@ -418,40 +426,40 @@ enum EventMediaType {
 }
 
 model EventMedia {
-  id           String         @id @default(cuid())
-  eventId      String
-  event        Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  type         EventMediaType @default(IMAGE)
-  url          String
-  storageKey   String // путь объекта в Supabase Storage (бакет "event-images", публичный на чтение) — отдельно от url, чтобы удалять/заменять без парсинга URL
-  isMain       Boolean        @default(false)
-  sortOrder    Int            @default(0)
+  id             String         @id @default(cuid())
+  eventId        String
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type           EventMediaType @default(IMAGE)
+  url            String
+  storageKey     String // путь объекта в Supabase Storage (бакет "event-images", публичный на чтение) — отдельно от url, чтобы удалять/заменять без парсинга URL
+  isMain         Boolean        @default(false)
+  sortOrder      Int            @default(0)
   // mimeType/fileSize — параметры ФИНАЛЬНОГО (обработанного, сохранённого в
   // Storage) файла, сегодня всегда "image/webp" — сервер больше не хранит
   // оригинал (задача "Upload/Compression/Cache", 2026-09-12, §6). originalSize
   // — размер исходника ДО обработки, нужен только для оценки эффективности
   // сжатия (originalSize/fileSize) — сам коэффициент не хранится отдельным
   // полем, это производная величина, лишний источник рассинхронизации.
-  mimeType     String
-  fileSize     Int
-  originalSize Int            @default(0)
-  width        Int?
-  height       Int?
-  originalName String?
+  mimeType       String
+  fileSize       Int
+  originalSize   Int            @default(0)
+  width          Int?
+  height         Int?
+  originalName   String?
   // SHA-256 обработанного файла — дешёвая защита от случайной повторной
   // загрузки того же изображения в одно и то же событие (задача §20:
   // "не усложняй без необходимости" — один хэш-столбец, без отдельного
   // сервиса/очереди).
-  contentHash  String?
+  contentHash    String?
   // "Position" из задачи (§11) — простой выбор стороны для CSS
   // object-position там, где карточка обрезает изображение под
   // object-fit: cover; полноценный визуальный crop-редактор сознательно не
   // реализован в этом проходе (задача сама называет его опциональным
   // "если не слишком сложно") — оригинальный файл в любом случае никогда не
   // изменяется необратимо.
-  objectPosition String       @default("center")
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  objectPosition String         @default("center")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([eventId])
   @@index([eventId, isMain])
@@ -476,9 +484,9 @@ model EventPriceOption {
 
 // 1:1 к Event — заполняется только когда Event.format = PARTY.
 model PartyDetails {
-  id            String  @id @default(cuid())
-  eventId       String  @unique
-  event         Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  eventId       String   @unique
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   musicStyles   String[]
   djs           String[]
   danceFloors   String[]
@@ -503,18 +511,18 @@ model MasterclassDetails {
 }
 
 model MasterclassSession {
-  id                   String              @id @default(cuid())
+  id                   String             @id @default(cuid())
   masterclassDetailsId String
-  masterclassDetails   MasterclassDetails  @relation(fields: [masterclassDetailsId], references: [id], onDelete: Cascade)
+  masterclassDetails   MasterclassDetails @relation(fields: [masterclassDetailsId], references: [id], onDelete: Cascade)
   title                String
   teacherId            String? // ссылается на уже существующую модель Teacher — не дублируем "инструктора" новой сущностью
-  teacher              Teacher?            @relation(fields: [teacherId], references: [id])
+  teacher              Teacher?           @relation(fields: [teacherId], references: [id])
   startTime            DateTime
   endTime              DateTime
   room                 String?
   level                DanceLevel?
   capacity             Int?
-  order                Int                 @default(0)
+  order                Int                @default(0)
 
   @@index([masterclassDetailsId])
   @@index([teacherId])
@@ -564,22 +572,22 @@ enum Gender {
 }
 
 model Dancer {
-  id          String      @id @default(cuid())
-  userId      String      @unique
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName String
-  cityId      String?
-  city        City?       @relation(fields: [cityId], references: [id])
-  gender      Gender?
-  danceRole   DanceRole?
-  selfLevel   DanceLevel?
-  avatarUrl   String?
-  createdAt   DateTime    @default(now())
+  id                         String      @id @default(cuid())
+  userId                     String      @unique
+  user                       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName                String
+  cityId                     String?
+  city                       City?       @relation(fields: [cityId], references: [id])
+  gender                     Gender?
+  danceRole                  DanceRole?
+  selfLevel                  DanceLevel?
+  avatarUrl                  String?
+  createdAt                  DateTime    @default(now())
   // Приз зрительских симпатий (Audience Vote) виден на публичном профиле
   // (/dancers/[id]) остальным посетителям только если сам танцор это включил;
   // самому танцору и SUPER_ADMIN — виден всегда, независимо от этого поля
   // (docs/00_DECISIONS.md, план "Приз зрительских симпатий").
-  showAudienceAwardsPublicly Boolean @default(false)
+  showAudienceAwardsPublicly Boolean     @default(false)
 
   attendances   Attendance[]
   achievements  Achievement[]
@@ -981,7 +989,7 @@ model Division {
   // как и heatCapacity/rotation* выше.
   resultsReviewedAt   DateTime?
   resultsReviewedById String?
-  resultsReviewedBy   User?            @relation("DivisionResultsReviewedBy", fields: [resultsReviewedById], references: [id])
+  resultsReviewedBy   User?     @relation("DivisionResultsReviewedBy", fields: [resultsReviewedById], references: [id])
 
   rounds           Round[]
   registrations    Registration[]
@@ -1092,14 +1100,14 @@ model Round {
   // со всем соревнованием через publishCompetitionResults (Result).
   advancementPublishedAt   DateTime?
   advancementPublishedById String?
-  advancementPublishedBy   User?         @relation("RoundAdvancementPublishedBy", fields: [advancementPublishedById], references: [id])
+  advancementPublishedBy   User?     @relation("RoundAdvancementPublishedBy", fields: [advancementPublishedById], references: [id])
 
-  heats         Heat[]
-  results       RoundResult[]
-  confirmations JudgeRoundConfirmation[]
-  finalSession  FinalSession?
-  finalResults  FinalResult[]
-  officialResultsReached Result[] @relation("ResultRoundReached")
+  heats                  Heat[]
+  results                RoundResult[]
+  confirmations          JudgeRoundConfirmation[]
+  finalSession           FinalSession?
+  finalResults           FinalResult[]
+  officialResultsReached Result[]                 @relation("ResultRoundReached")
 
   @@unique([divisionId, order])
   @@index([status])
@@ -1404,17 +1412,17 @@ enum FinalFormat {
 // priority уникален и должен быть последователен (1..N) в рамках дивизиона —
 // проверяется в сервисе при старте финала, не в схеме.
 model FinalCriterion {
-  id         String   @id @default(cuid())
+  id         String                   @id @default(cuid())
   divisionId String
-  division   Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  division   Division                 @relation(fields: [divisionId], references: [id], onDelete: Cascade)
   name       String
   priority   Int // 1 = сравнивается первым при разрешении полной ничьей по общей сумме
   minScore   Int
   maxScore   Int
-  step       Int      @default(1)
-  sortOrder  Int      @default(0)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  step       Int                      @default(1)
+  sortOrder  Int                      @default(0)
+  isActive   Boolean                  @default(true)
+  createdAt  DateTime                 @default(now())
   // Из какой записи справочника скопированы значения при выборе (не живая
   // ссылка — см. комментарий у JudgingCriterionCatalog выше). Nullable —
   // критерий мог быть введён вручную с нуля, без справочника.
@@ -1470,21 +1478,21 @@ model FinalSession {
 // танцуют по одной). trackName — свободный текст, как уже принято для
 // HeatRotation.trackName; отдельного каталога треков в проекте нет.
 model FinalPair {
-  id                      String       @id @default(cuid())
-  finalSessionId          String
-  finalSession            FinalSession @relation(fields: [finalSessionId], references: [id], onDelete: Cascade)
-  heatId                  String       @unique
-  heat                    Heat         @relation(fields: [heatId], references: [id], onDelete: Cascade)
-  pairNumber              Int
-  leaderRegistrationId    String
-  leaderRegistration      Registration @relation("FinalPairLeader", fields: [leaderRegistrationId], references: [id])
-  followerRegistrationId  String
-  followerRegistration    Registration @relation("FinalPairFollower", fields: [followerRegistrationId], references: [id])
-  trackName               String?
-  seed                    String // сохранённый seed рандомизации (CLAUDE.md §6)
-  createdById             String
-  createdBy               User         @relation("FinalPairCreatedBy", fields: [createdById], references: [id])
-  createdAt               DateTime     @default(now())
+  id                     String       @id @default(cuid())
+  finalSessionId         String
+  finalSession           FinalSession @relation(fields: [finalSessionId], references: [id], onDelete: Cascade)
+  heatId                 String       @unique
+  heat                   Heat         @relation(fields: [heatId], references: [id], onDelete: Cascade)
+  pairNumber             Int
+  leaderRegistrationId   String
+  leaderRegistration     Registration @relation("FinalPairLeader", fields: [leaderRegistrationId], references: [id])
+  followerRegistrationId String
+  followerRegistration   Registration @relation("FinalPairFollower", fields: [followerRegistrationId], references: [id])
+  trackName              String?
+  seed                   String // сохранённый seed рандомизации (CLAUDE.md §6)
+  createdById            String
+  createdBy              User         @relation("FinalPairCreatedBy", fields: [createdById], references: [id])
+  createdAt              DateTime     @default(now())
 
   @@unique([finalSessionId, pairNumber])
   @@index([createdById])
@@ -1563,27 +1571,27 @@ enum ResultStatus {
 }
 
 model Result {
-  id             String       @id @default(cuid())
-  divisionId     String
-  division       Division     @relation(fields: [divisionId], references: [id], onDelete: Cascade)
-  registrationId String
-  registration   Registration @relation(fields: [registrationId], references: [id])
-  version        Int
+  id                 String       @id @default(cuid())
+  divisionId         String
+  division           Division     @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  registrationId     String
+  registration       Registration @relation(fields: [registrationId], references: [id])
+  version            Int
   // Последний раунд дивизиона (обычный, не TIE_BREAK), в котором участник
   // реально танцевал — либо финал (status=FINALIST), либо раунд, на котором
   // выбыл (status=ELIMINATED).
-  roundReachedId String
-  roundReached   Round        @relation("ResultRoundReached", fields: [roundReachedId], references: [id])
-  status         ResultStatus
-  placement      Int? // место в финале (роль считается отдельно, как и везде в движке); null при ELIMINATED
-  calculationVersion String  @default("v1")
-  publishedAt    DateTime?
-  publishedById  String?
-  publishedBy    User?        @relation("ResultPublishedBy", fields: [publishedById], references: [id])
-  createdById    String
-  createdBy      User         @relation("ResultCreatedBy", fields: [createdById], references: [id])
-  reason         String? // обязателен при исправлении (version > 1) — не при первом расчёте
-  createdAt      DateTime     @default(now())
+  roundReachedId     String
+  roundReached       Round        @relation("ResultRoundReached", fields: [roundReachedId], references: [id])
+  status             ResultStatus
+  placement          Int? // место в финале (роль считается отдельно, как и везде в движке); null при ELIMINATED
+  calculationVersion String       @default("v1")
+  publishedAt        DateTime?
+  publishedById      String?
+  publishedBy        User?        @relation("ResultPublishedBy", fields: [publishedById], references: [id])
+  createdById        String
+  createdBy          User         @relation("ResultCreatedBy", fields: [createdById], references: [id])
+  reason             String? // обязателен при исправлении (version > 1) — не при первом расчёте
+  createdAt          DateTime     @default(now())
 
   @@unique([divisionId, registrationId, version])
   @@index([divisionId, registrationId])
@@ -1719,8 +1727,8 @@ model Registration {
   drawParticipations   DrawParticipant[]
   roundResults         RoundResult[]
   finalResults         FinalResult[]
-  finalPairsAsLeader   FinalPair[]       @relation("FinalPairLeader")
-  finalPairsAsFollower FinalPair[]       @relation("FinalPairFollower")
+  finalPairsAsLeader   FinalPair[]          @relation("FinalPairLeader")
+  finalPairsAsFollower FinalPair[]          @relation("FinalPairFollower")
   officialResults      Result[]
   audienceVoteBallots  AudienceVoteBallot[]
   audienceVoteWins     AudienceVoteWinner[]
@@ -1828,16 +1836,16 @@ model AudienceVote {
 }
 
 model AudienceVoteBallot {
-  id             String       @id @default(cuid())
+  id             String           @id @default(cuid())
   audienceVoteId String
-  audienceVote   AudienceVote @relation(fields: [audienceVoteId], references: [id], onDelete: Cascade)
+  audienceVote   AudienceVote     @relation(fields: [audienceVoteId], references: [id], onDelete: Cascade)
   voterUserId    String
-  voterUser      User         @relation("AudienceVoteBallotVoter", fields: [voterUserId], references: [id], onDelete: Cascade)
+  voterUser      User             @relation("AudienceVoteBallotVoter", fields: [voterUserId], references: [id], onDelete: Cascade)
   role           AudienceVoteRole // ANY для GENERAL, LEADER/FOLLOWER для BY_ROLE
   registrationId String
-  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  registration   Registration     @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   // Сам механизм "1 голос на роль на пользователя" — зритель может передумать
   // (апсерт по этому ключу), пока голосование RUNNING, но не проголосовать
@@ -1847,17 +1855,223 @@ model AudienceVoteBallot {
 }
 
 model AudienceVoteWinner {
-  id             String       @id @default(cuid())
+  id             String           @id @default(cuid())
   audienceVoteId String
-  audienceVote   AudienceVote @relation(fields: [audienceVoteId], references: [id], onDelete: Cascade)
+  audienceVote   AudienceVote     @relation(fields: [audienceVoteId], references: [id], onDelete: Cascade)
   role           AudienceVoteRole
   registrationId String
-  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  registration   Registration     @relation(fields: [registrationId], references: [id], onDelete: Cascade)
   voteCount      Int // снимок числа голосов на момент подтверждения организатором
   confirmedById  String
-  confirmedBy    User         @relation("AudienceVoteWinnerConfirmedBy", fields: [confirmedById], references: [id])
-  confirmedAt    DateTime     @default(now())
+  confirmedBy    User             @relation("AudienceVoteWinnerConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedAt    DateTime         @default(now())
 
   @@unique([audienceVoteId, role, registrationId])
   @@index([registrationId])
+}
+
+// ---------------------------------------------------------------------------
+// Notification & Subscription Engine
+// ---------------------------------------------------------------------------
+// Независимый модуль: реагирует на доменные события, происходящие в Event
+// Engine (Event/School) и в JNJ Competition Engine (Competition/Round/Heat/
+// Registration/Result выше), не дублирует и не меняет их модели/бизнес-
+// логику — только читает то, что нужно для рассылки. Список доменных
+// событий, их приоритет/шаблон/тип аудитории — конфигурация в
+// src/lib/notifications/domain-event-registry.ts (по образцу уже
+// существующего src/lib/events/event-type-registry.ts), не if/else в коде.
+//
+// Subscription — универсальная модель (type + targetId), а не отдельная
+// таблица на каждый тип цели: добавление нового SubscriptionType не требует
+// новой миграции самой таблицы Subscription. Organizer как отдельная
+// сущность не заведена (Event.organizerName — свободный текст без id) —
+// подписка "на организатора" реализована через SCHOOL (Event.schoolId).
+// STYLE/ARTIST из ТЗ сознательно не заведены сейчас — в схеме нет
+// справочника стилей танца (только свободный текст School.directions/
+// PartyDetails.musicStyles), заводить подписку не на что; универсальная
+// модель позволит добавить их позже без переделки этой таблицы.
+enum SubscriptionType {
+  EVENT
+  SCHOOL
+  CITY
+  COUNTRY
+  EVENT_TYPE // значение — код EventFormat (PARTY/MASTERCLASS/...)
+  INSTRUCTOR // значение — id Teacher
+}
+
+enum SubscriptionSource {
+  USER // пользователь подписался сам
+  SYSTEM // подписка создана автоматически — зарезервировано, сейчас не используется
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      SubscriptionType
+  targetId  String // смысл зависит от type: id School/City/Country/Event/Teacher либо код EventFormat
+  source    SubscriptionSource @default(USER)
+  createdAt DateTime           @default(now())
+
+  @@unique([userId, type, targetId])
+  @@index([type, targetId])
+  @@index([userId])
+}
+
+enum NotificationChannel {
+  IN_APP
+  WEB_PUSH
+  EMAIL
+  TELEGRAM
+  MOBILE_PUSH
+  WHATSAPP
+}
+
+enum EmailFrequency {
+  IMMEDIATE
+  DAILY_DIGEST
+  WEEKLY_DIGEST
+}
+
+model NotificationPreference {
+  // Follow (Subscription) и Preference — разные уровни: подписка решает "на
+  // что я слежу", Preference — "что именно и как мне об этом присылать".
+  // Один на пользователя, создаётся с дефолтами при первом обращении.
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  eventFormatsEnabled EventFormat[] // какие форматы событий интересны при подписке на город/школу/тип
+  notifyReminders     Boolean       @default(true)
+  reminderHoursBefore Int[] // напр. [24, 2] — за сколько часов напоминать
+  notifyChanges       Boolean       @default(true) // изменение времени/места
+  notifyCancellations Boolean       @default(true)
+
+  channelsEnabled NotificationChannel[]
+  emailFrequency  EmailFrequency        @default(IMMEDIATE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NotificationEndpoint {
+  // Нужен только каналам с собственными регистрационными данными на
+  // устройстве/у провайдера (Web Push сейчас; Telegram/Mobile Push — когда
+  // будут реализованы). EMAIL берёт адрес из User.email напрямую, IN_APP
+  // отдельного endpoint не требует вообще — специально не создаю лишние
+  // строки под них.
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
+  endpoint  String // Web Push subscription endpoint URL / telegram chatId / FCM-APNS token
+  provider  String?
+  metadata  Json? // напр. { p256dh, auth } для Web Push
+  enabled   Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([userId, channel, endpoint])
+  @@index([userId, channel])
+}
+
+enum NotificationPriority {
+  INFO
+  IMPORTANT
+  URGENT
+}
+
+model NotificationTemplate {
+  // key совпадает с ключом в domain-event-registry.ts (напр. "EVENT_PUBLISHED").
+  // Тексты не зашиты в бизнес-логику (CLAUDE.md-стиль §16 этого документа) —
+  // рендерятся простой {{var}}-подстановкой над этими шаблонами.
+  id                String                @id @default(cuid())
+  key               String                @unique
+  titleTemplate     String
+  bodyTemplate      String
+  deepLinkTemplate  String?
+  defaultPriority   NotificationPriority  @default(INFO)
+  supportedChannels NotificationChannel[]
+  isActive          Boolean               @default(true)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+}
+
+enum NotificationJobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+model NotificationJob {
+  // Сырое доменное событие в очереди НА audience resolution — до того, как
+  // определена персональная аудитория (см. emitDomainEvent()). Один Job
+  // после обработки может породить много строк Notification (по одной на
+  // получателя) либо ни одной, если аудитория пуста.
+  id             String                @id @default(cuid())
+  eventType      String // ключ из domain-event-registry.ts
+  payload        Json
+  status         NotificationJobStatus @default(PENDING)
+  attemptCount   Int                   @default(0)
+  lastAttemptAt  DateTime?
+  nextRetryAt    DateTime?
+  errorMessage   String?
+  idempotencyKey String                @unique // напр. "EVENT_PUBLISHED:event_123" — повторный emit того же события не создаёт второй job
+  createdAt      DateTime              @default(now())
+
+  @@index([status, nextRetryAt])
+}
+
+model Notification {
+  // Персональное сообщение конкретному пользователю — то, что видно в
+  // Notification Center. Один Notification может иметь несколько
+  // NotificationDelivery (по одной на включённый канал).
+  id             String               @id @default(cuid())
+  userId         String
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String // ключ из domain-event-registry.ts
+  priority       NotificationPriority @default(INFO)
+  title          String
+  body           String
+  entityType     String? // для deep link, напр. "EVENT" / "SCHOOL" / "COMPETITION"
+  entityId       String?
+  deepLink       String?
+  isRead         Boolean              @default(false)
+  readAt         DateTime?
+  idempotencyKey String               @unique // напр. "EVENT_PUBLISHED:event_123:user_456" — защита от дублей при повторной/параллельной обработке job'а
+  createdAt      DateTime             @default(now())
+
+  deliveries NotificationDelivery[]
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, createdAt])
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+model NotificationDelivery {
+  id                String                     @id @default(cuid())
+  notificationId    String
+  notification      Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel           NotificationChannel
+  status            NotificationDeliveryStatus @default(PENDING)
+  attemptCount      Int                        @default(0)
+  lastAttemptAt     DateTime?
+  nextRetryAt       DateTime?
+  errorCode         String?
+  errorMessage      String?
+  providerMessageId String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  @@unique([notificationId, channel])
+  @@index([status, nextRetryAt])
 }

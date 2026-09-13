@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { transition, type TransitionTable } from "./machine";
 import { requirePermission } from "../rbac/authorize";
 import type { Permission } from "../rbac/permissions";
+import { emitDomainEvent } from "../notifications/emit-domain-event";
 
 // CLAUDE.md §9. Публикация — отдельное, более чувствительное право
 // (competition:publish), чем остальные переходы (competition:update, 03 §4).
@@ -56,6 +57,20 @@ export async function transitionCompetition(
         where: { id: competitionId, statusVersion: expectedVersion },
         data: { status: to, statusVersion: { increment: 1 } },
       });
+
+      // Notification & Subscription Engine (Phase 7) — "открыта регистрация"
+      // это единственный переход Competition, у которого есть готовый
+      // подписчик в Audience Resolver (город + подписка на конкурсы,
+      // EVENT_TYPE=CONTEST). result.count>0 — реально применили ИМЕННО МЫ,
+      // не гонка с конкурентным вызовом (та же транзакция, что и сам переход).
+      if (result.count > 0 && to === "REGISTRATION_OPEN") {
+        await emitDomainEvent(tx, {
+          type: "JNJ_REGISTRATION_OPENED",
+          payload: { entityId: competition.id, competitionName: competition.name, cityId: competition.cityId },
+          idempotencyKey: `JNJ_REGISTRATION_OPENED:${competition.id}`,
+        });
+      }
+
       return {
         before: { status: competition.status, statusVersion: expectedVersion },
         after: { status: to, statusVersion: expectedVersion + 1 },

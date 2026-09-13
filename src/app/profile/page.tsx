@@ -70,6 +70,32 @@ export default async function ProfilePage() {
       <div className="flex justify-end gap-2">
         <ProfileEditForm dancer={dancer} cities={cities} />
       </div>
+
+      {/* Notification & Subscription Engine (Phase 8) — на мобильном
+          колокольчика в навигации нет (см. NotificationBell.tsx — только
+          десктопный DarkTopNav), поэтому /profile остаётся единственным
+          входом в Notification Center на телефоне, как и задумано (ТЗ §9). */}
+      <div className="flex flex-wrap gap-2">
+        <Link
+          href="/notifications"
+          className="rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"
+        >
+          🔔 Уведомления
+        </Link>
+        <Link
+          href="/profile/subscriptions"
+          className="rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"
+        >
+          ❤️ Мои подписки
+        </Link>
+        <Link
+          href="/profile/notification-settings"
+          className="rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"
+        >
+          ⚙️ Настройки уведомлений
+        </Link>
+      </div>
+
       <DancerProfileView dancer={dancer} editable audienceAwards={audienceAwards} />
 
       <CompetitorStatisticsCard statistics={statistics} />

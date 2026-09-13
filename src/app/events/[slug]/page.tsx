@@ -7,6 +7,7 @@ import { formatDateTime } from "@/lib/format";
 import { AttendanceButtons } from "@/components/AttendanceButtons";
 import { ShareButtons } from "@/components/ShareButtons";
 import { PublicEventGallery } from "@/components/PublicEventGallery";
+import { FollowButton } from "@/components/notifications/FollowButton";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tag } from "@/components/ui/tag";
@@ -71,6 +72,12 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
               })
             : null
         )
+    : null;
+
+  const existingSubscription = user
+    ? await prisma.subscription.findUnique({
+        where: { userId_type_targetId: { userId: user.id, type: "EVENT", targetId: event.id } },
+      })
     : null;
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -163,6 +170,15 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
               {t.event.pastEvent}
             </Badge>
           )}
+        </div>
+        <div className="mt-2">
+          <FollowButton
+            type="EVENT"
+            targetId={event.id}
+            loggedIn={!!user}
+            initialSubscriptionId={existingSubscription?.id ?? null}
+            labelFollow="🔔 Подписаться на событие"
+          />
         </div>
       </div>
 

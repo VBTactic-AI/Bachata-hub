@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "../rbac/authorize";
 import { writeAudit, writeAuditMany } from "../audit/audit";
 import { ValidationFailedError } from "../errors";
+import { emitDomainEvent } from "../notifications/emit-domain-event";
 
 // Официальный протокол результатов дивизиона (Result, Этап 10,
 // docs/00_DECISIONS.md) — агрегирует путь участника через RoundResult
@@ -203,7 +204,7 @@ export async function publishCompetitionResults(competitionId: string): Promise<
         data: { publishedAt: new Date(), publishedById: actor.userId },
       });
     }
-    await tx.competition.update({ where: { id: competitionId }, data: { publicResults: true } });
+    const competition = await tx.competition.update({ where: { id: competitionId }, data: { publicResults: true } });
     await writeAudit(tx, {
       actor,
       action: "result.publish",
@@ -211,6 +212,15 @@ export async function publishCompetitionResults(competitionId: string): Promise<
       entityId: competitionId,
       after: { publishedCount: ids.length },
     });
+
+    // Notification & Subscription Engine (Phase 7) — те же подписчики, что и
+    // у "открыта регистрация" (город + подписка на конкурсы).
+    await emitDomainEvent(tx, {
+      type: "JNJ_RESULTS_PUBLISHED",
+      payload: { entityId: competition.id, competitionName: competition.name, cityId: competition.cityId },
+      idempotencyKey: `JNJ_RESULTS_PUBLISHED:${competition.id}`,
+    });
+
     return ids.length;
   });
 

@@ -20,6 +20,7 @@ const txCompetitionUpdate = vi.fn();
 const txAuditCreate = vi.fn();
 const txAuditCreateMany = vi.fn();
 const txResultFindMany = vi.fn();
+const txNotificationJobUpsert = vi.fn();
 
 const fakeTx = {
   result: {
@@ -32,6 +33,9 @@ const fakeTx = {
   division: { update: txDivisionUpdate },
   competition: { update: txCompetitionUpdate },
   auditLog: { create: txAuditCreate, createMany: txAuditCreateMany },
+  // Notification & Subscription Engine (Phase 7) — publishCompetitionResults()
+  // эмитит JNJ_RESULTS_PUBLISHED в этой же транзакции.
+  notificationJob: { upsert: (...a: unknown[]) => txNotificationJobUpsert(...a) },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -76,10 +80,11 @@ beforeEach(() => {
   txResultFindFirstOrThrow.mockReset();
   txResultCreate.mockReset().mockResolvedValue({ id: "res-new" });
   txDivisionUpdate.mockReset();
-  txCompetitionUpdate.mockReset();
+  txCompetitionUpdate.mockReset().mockResolvedValue({ id: "comp1", name: "Test Competition", cityId: "city1" });
   txAuditCreate.mockReset();
   txAuditCreateMany.mockReset();
   txResultFindMany.mockReset().mockResolvedValue([]);
+  txNotificationJobUpsert.mockReset().mockResolvedValue({});
 });
 
 describe("calculateResults() — расчёт официального протокола дивизиона", () => {
@@ -260,6 +265,22 @@ describe("publishCompetitionResults() — публикация всех диви
     divisionFindMany.mockResolvedValue([]);
     await publishCompetitionResults("comp1");
     expect(requirePermissionMock).toHaveBeenCalledWith("result:publish", "comp1");
+  });
+
+  it("Notification & Subscription Engine (Phase 7): эмитит JNJ_RESULTS_PUBLISHED в той же транзакции", async () => {
+    divisionFindMany.mockResolvedValue([]);
+
+    await publishCompetitionResults("comp1");
+
+    expect(txNotificationJobUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: "JNJ_RESULTS_PUBLISHED:comp1" },
+        create: expect.objectContaining({
+          eventType: "JNJ_RESULTS_PUBLISHED",
+          payload: { entityId: "comp1", competitionName: "Test Competition", cityId: "city1" },
+        }),
+      })
+    );
   });
 });
 

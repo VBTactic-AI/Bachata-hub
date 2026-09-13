@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
 import { getActor } from "@/server/rbac/actor";
 import { isJudgeOnlyActor } from "@/server/rbac/authorize";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 const NAV_LINK = "text-night-muted no-underline hover:text-night-text hover:no-underline";
 
@@ -52,6 +53,7 @@ export async function DarkTopNav() {
       </nav>
       {user ? (
         <div className="flex items-center gap-3 font-night text-sm">
+          <NotificationBell />
           {dancer && (
             <Link
               href="/profile"
