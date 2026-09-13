@@ -135,6 +135,7 @@ model User {
   notificationPreference NotificationPreference?
   notificationEndpoints  NotificationEndpoint[]
   notifications          Notification[]
+  notificationChannelPricesUpdated NotificationChannelPrice[] @relation("NotificationChannelPriceUpdatedBy")
 
   @@index([role])
 }
@@ -2074,4 +2075,23 @@ model NotificationDelivery {
 
   @@unique([notificationId, channel])
   @@index([status, nextRetryAt])
+}
+
+// Subscription & Notification Control Center (админка, Phase 9 из ТЗ
+// Notification Engine) — настраиваемая оценочная цена доставки за канал.
+// НЕ реальный биллинг: ни Resend, ни Web Push/Telegram не дают API с
+// фактической стоимостью конкретной рассылки (проверено при реализации,
+// см. docs/PROGRESS.md) — админ сам вводит цену за 1000 доставок (напр. по
+// своему тарифу Resend), дашборд считает объём × цену как ОЦЕНКУ, честно
+// подписанную как таковая (CLAUDE.md §46/§60 — не выдумываем реальные суммы).
+// IN_APP сюда не входит — этот канал не уходит вовне, стоимость всегда 0.
+model NotificationChannelPrice {
+  channel          NotificationChannel @id
+  pricePerThousand Decimal             @default(0) @db.Decimal(10, 4)
+  currency         String              @default("USD")
+  updatedAt        DateTime            @updatedAt
+  updatedById      String?
+  updatedBy        User?               @relation("NotificationChannelPriceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([updatedById])
 }

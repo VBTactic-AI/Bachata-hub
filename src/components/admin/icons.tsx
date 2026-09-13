@@ -232,6 +232,17 @@ export function PlusIcon() {
   );
 }
 
+// Пункт сайдбара "Оповещения" (Subscription & Notification Control Center) —
+// тот же нейтральный контурный стиль, что и остальные иконки этого файла.
+export function BellIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M6 10.5a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 14.5 6 10.5Z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10.5 19a1.7 1.7 0 0 0 3 0" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

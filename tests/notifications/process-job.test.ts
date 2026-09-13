@@ -54,9 +54,8 @@ vi.mock("@/server/notifications/providers/registry", () => ({
   PROVIDER_REGISTRY: { EMAIL: { channel: "EMAIL", send: (...a: unknown[]) => providerSendMock(...a) } },
 }));
 
-const { processNotificationJob, processDueNotificationJobs, processDueDeliveries, computeNextRetryAt } = await import(
-  "@/server/notifications/process-job"
-);
+const { processNotificationJob, processDueNotificationJobs, processDueDeliveries, computeNextRetryAt, retryDeliveryNow, DeliveryNotFoundError } =
+  await import("@/server/notifications/process-job");
 
 const DEFAULT_PREF = {
   eventFormatsEnabled: ["PARTY", "MASTERCLASS", "FESTIVAL", "CONTEST", "INTENSIVE"],
@@ -345,6 +344,49 @@ describe("processNotificationJob() — ошибка помечает job FAILED 
     expect(failCall).toBeDefined();
     expect(failCall![0].data.errorMessage).toContain("GHOST_EVENT");
     expect(failCall![0].data.nextRetryAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("retryDeliveryNow() — Control Center (Phase 9), \"Повторить сейчас\"", () => {
+  it("доставка не найдена — DeliveryNotFoundError, attemptDelivery не вызывается (провайдер не трогается)", async () => {
+    notificationDeliveryFindUnique.mockResolvedValueOnce(null);
+
+    await expect(retryDeliveryNow("ghost")).rejects.toThrow(DeliveryNotFoundError);
+    expect(providerSendMock).not.toHaveBeenCalled();
+  });
+
+  it("упавшая доставка — вызывает provider.send() с текстом из связанного Notification, обновляет статус", async () => {
+    notificationDeliveryFindUnique
+      .mockResolvedValueOnce({
+        id: "del9",
+        channel: "EMAIL",
+        notification: { userId: "u1", title: "t", body: "b", deepLink: "/x" },
+      })
+      .mockResolvedValueOnce({ id: "del9", attemptCount: 1, status: "FAILED" });
+    providerSendMock.mockResolvedValue({ status: "SENT", providerMessageId: "resend-2" });
+
+    await retryDeliveryNow("del9");
+
+    expect(providerSendMock).toHaveBeenCalledWith({ userId: "u1", title: "t", body: "b", deepLink: "/x" });
+    expect(notificationDeliveryUpdate).toHaveBeenCalledWith({
+      where: { id: "del9" },
+      data: expect.objectContaining({ status: "SENT", providerMessageId: "resend-2" }),
+    });
+  });
+
+  it("уже DELIVERED (повторный клик по уже почёсанной вручную строке) — идемпотентно, провайдер не вызывается", async () => {
+    notificationDeliveryFindUnique
+      .mockResolvedValueOnce({
+        id: "del9",
+        channel: "EMAIL",
+        notification: { userId: "u1", title: "t", body: "b", deepLink: null },
+      })
+      .mockResolvedValueOnce({ id: "del9", attemptCount: 2, status: "DELIVERED" });
+
+    await retryDeliveryNow("del9");
+
+    expect(providerSendMock).not.toHaveBeenCalled();
+    expect(notificationDeliveryUpdate).not.toHaveBeenCalled();
   });
 });
 

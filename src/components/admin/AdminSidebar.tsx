@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
-import { ShieldIcon, ChatIcon, BuildingIcon, AlertIcon, PeopleIcon, GridIcon, DatabaseIcon } from "@/components/admin/icons";
+import { ShieldIcon, ChatIcon, BuildingIcon, AlertIcon, PeopleIcon, GridIcon, DatabaseIcon, BellIcon } from "@/components/admin/icons";
 
 // Иконки — тот же приём, что и в compete/BottomNav.tsx: инлайн SVG-путь на
 // currentColor, без иконочного шрифта/библиотеки (CLAUDE.md §14).
@@ -182,6 +182,18 @@ const DATABASE_USAGE_ITEM: NavItem = {
   label: t.databaseUsage.navLabel,
   icon: <DatabaseIcon />,
   match: (p) => p.startsWith("/admin/database"),
+};
+
+// "Оповещения" (Subscription & Notification Control Center, 2026-09-13) —
+// кто на что подписан, какие каналы используются, объём/доставка/оценочная
+// стоимость уведомлений. Доступ — тот же isAdminUser, что и у "База
+// данных"/"Модерация": инфраструктурная сводка по всей платформе, не по
+// конкретному соревнованию/дивизиону.
+const NOTIFICATIONS_ITEM: NavItem = {
+  href: "/admin/notifications",
+  label: "Оповещения",
+  icon: <BellIcon />,
+  match: (p) => p.startsWith("/admin/notifications"),
 };
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
@@ -408,6 +420,12 @@ export function AdminSidebar({ isAdminUser, canManageContent }: { isAdminUser: b
       {isAdminUser && (
         <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-0.5 sm:flex-col sm:gap-0.5">
           <NavLink item={DATABASE_USAGE_ITEM} active={DATABASE_USAGE_ITEM.match(pathname)} />
+        </div>
+      )}
+
+      {isAdminUser && (
+        <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-0.5 sm:flex-col sm:gap-0.5">
+          <NavLink item={NOTIFICATIONS_ITEM} active={NOTIFICATIONS_ITEM.match(pathname)} />
         </div>
       )}
     </nav>

@@ -241,3 +241,28 @@ export async function processDueDeliveries(batchSize = 50): Promise<number> {
 
   return due.length;
 }
+
+export class DeliveryNotFoundError extends Error {}
+
+// Control Center (Phase 9) — "Повторить сейчас" на конкретной упавшей
+// доставке, не дожидаясь nextRetryAt/следующего sweep'а. Переиспользует
+// attemptDelivery() как есть — она идемпотентна (пропускает уже SENT/
+// DELIVERED), так что повторный клик по уже почёсанной вручную строке не
+// отправит письмо/push дважды.
+export async function retryDeliveryNow(deliveryId: string): Promise<void> {
+  const delivery = await prisma.notificationDelivery.findUnique({
+    where: { id: deliveryId },
+    include: { notification: { select: { userId: true, title: true, body: true, deepLink: true } } },
+  });
+  if (!delivery) throw new DeliveryNotFoundError();
+
+  await attemptDelivery(
+    { id: delivery.id, channel: delivery.channel },
+    {
+      userId: delivery.notification.userId,
+      title: delivery.notification.title,
+      body: delivery.notification.body,
+      deepLink: delivery.notification.deepLink,
+    }
+  );
+}
