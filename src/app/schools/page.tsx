@@ -92,7 +92,7 @@ export default async function SchoolsPage({
       {schools.length === 0 ? (
         <p className="text-sm text-night-muted">{t.school.noSchoolsFound}</p>
       ) : (
-        <div className="flex flex-col gap-2.5 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-3">
+        <div className="flex flex-col gap-2.5 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {schools.map((s) => (
             <SchoolCard key={s.id} school={s} />
           ))}
