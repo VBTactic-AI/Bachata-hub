@@ -136,6 +136,7 @@ model User {
   notificationEndpoints  NotificationEndpoint[]
   notifications          Notification[]
   notificationChannelPricesUpdated NotificationChannelPrice[] @relation("NotificationChannelPriceUpdatedBy")
+  broadcastsSent         Broadcast[]
 
   @@index([role])
 }
@@ -2031,7 +2032,7 @@ model Notification {
   id             String               @id @default(cuid())
   userId         String
   user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type           String // ключ из domain-event-registry.ts
+  type           String // ключ из domain-event-registry.ts, либо "BROADCAST" (см. Broadcast ниже — не через шаблон/job)
   priority       NotificationPriority @default(INFO)
   title          String
   body           String
@@ -2043,7 +2044,13 @@ model Notification {
   idempotencyKey String               @unique // напр. "EVENT_PUBLISHED:event_123:user_456" — защита от дублей при повторной/параллельной обработке job'а
   createdAt      DateTime             @default(now())
 
+  // Ручная рассылка (Broadcast, см. ниже) — заполнено только для type="BROADCAST".
+  broadcastId String?
+  broadcast   Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+
   deliveries NotificationDelivery[]
+
+  @@index([broadcastId])
 
   @@index([userId, isRead, createdAt])
   @@index([userId, createdAt])
@@ -2075,6 +2082,34 @@ model NotificationDelivery {
 
   @@unique([notificationId, channel])
   @@index([status, nextRetryAt])
+}
+
+// Broadcast — ручная рассылка админом (Control Center), НЕ через
+// DomainEventRegistry/NotificationTemplate: текст вводит админ вживую в
+// момент отправки, аудитория уже известна на входе (не резолвится later
+// job'ом). targetType=null означает "все пользователи"; иначе — подписчики
+// конкретной цели (та же модель type+targetId, что и Subscription).
+// targetLabel — СНИМОК отображаемого имени цели на момент отправки (школа/
+// город и т.п. могут быть переименованы или удалены позже, история рассылки
+// должна остаться читаемой, CLAUDE.md §50-51). Строка не редактируется и не
+// удаляется после отправки — это лог реального действия, не черновик.
+model Broadcast {
+  id              String            @id @default(cuid())
+  title           String
+  body            String
+  deepLink        String?
+  targetType      SubscriptionType?
+  targetId        String?
+  targetLabel     String
+  recipientCount  Int
+  sentById        String
+  sentBy          User              @relation(fields: [sentById], references: [id])
+  clientRequestId String            @unique // идемпотентность — повторный клик/ретрай не отправляет второй раз
+  createdAt       DateTime          @default(now())
+
+  notifications Notification[]
+
+  @@index([sentById])
 }
 
 // Subscription & Notification Control Center (админка, Phase 9 из ТЗ

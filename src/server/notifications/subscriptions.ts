@@ -19,7 +19,9 @@ export class SubscriptionTargetInvalidError extends Error {
 export class SubscriptionNotFoundError extends Error {}
 
 // Registry, а не if/else (CLAUDE.md §49) — по образцу EVENT_TYPE_REGISTRY.
-const TARGET_EXISTS: Record<SubscriptionType, (targetId: string) => Promise<boolean>> = {
+// Экспортирован — переиспользуется Broadcast (Control Center) для валидации
+// targetId перед рассылкой, без дублирования проверки по каждому типу.
+export const TARGET_EXISTS: Record<SubscriptionType, (targetId: string) => Promise<boolean>> = {
   EVENT: async (id) => (await prisma.event.findUnique({ where: { id }, select: { id: true } })) !== null,
   SCHOOL: async (id) => (await prisma.school.findUnique({ where: { id }, select: { id: true } })) !== null,
   CITY: async (id) => (await prisma.city.findUnique({ where: { id }, select: { id: true } })) !== null,

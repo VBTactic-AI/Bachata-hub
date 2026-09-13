@@ -14,8 +14,10 @@ import {
   listFailedDeliveries,
   listFailedJobs,
 } from "@/server/notifications/control-center";
+import { listBroadcastHistory } from "@/server/notifications/broadcast";
 import { ChannelPriceRow } from "@/components/admin/notifications/ChannelPriceRow";
 import { RetryButton } from "@/components/admin/notifications/RetryButton";
+import { BroadcastComposer } from "@/components/admin/notifications/BroadcastComposer";
 import { CHANNEL_LABELS } from "@/lib/notifications/channel-labels";
 
 // Subscription & Notification Control Center (2026-09-13) — сводная админ-
@@ -48,7 +50,7 @@ export default async function NotificationsControlCenterPage({
   const requestedDays = Number(sp.days);
   const days = (PERIODS as readonly number[]).includes(requestedDays) ? requestedDays : 30;
 
-  const [subscriptionOverview, channelUsage, volume, deliveryStats, cost, failedDeliveries, failedJobs] = await Promise.all([
+  const [subscriptionOverview, channelUsage, volume, deliveryStats, cost, failedDeliveries, failedJobs, broadcastHistory] = await Promise.all([
     getSubscriptionOverview(),
     getChannelUsageOverview(),
     getNotificationVolumeOverview(days),
@@ -56,6 +58,7 @@ export default async function NotificationsControlCenterPage({
     getEstimatedCost(days),
     listFailedDeliveries({ limit: 20 }),
     listFailedJobs({ limit: 20 }),
+    listBroadcastHistory(10),
   ]);
 
   const totalFailedDeliveries = deliveryStats.reduce((sum, s) => sum + s.failedCount, 0);
@@ -71,6 +74,32 @@ export default async function NotificationsControlCenterPage({
           Кто на что подписан, какие каналы используются, сколько уведомлений отправляется и сколько это стоит по оценке.
         </p>
       </div>
+
+      <Card className="flex flex-col gap-3 border-admin-border bg-admin-card">
+        <h2 className="m-0 font-night text-base font-bold text-night-text">Новая рассылка</h2>
+        <BroadcastComposer />
+      </Card>
+
+      {broadcastHistory.length > 0 && (
+        <Card className="flex flex-col gap-3 border-admin-border bg-admin-card">
+          <h2 className="m-0 font-night text-base font-bold text-night-text">История рассылок</h2>
+          <div className="flex flex-col gap-2">
+            {broadcastHistory.map((b) => (
+              <div key={b.id} className="rounded-app-sm border border-admin-border bg-admin-card2 p-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="m-0 text-sm font-semibold text-night-text">{b.title}</p>
+                  <p className="m-0 text-xs text-admin-disabled">{formatTimeAgo(b.createdAt)}</p>
+                </div>
+                <p className="m-0 mt-1 text-xs text-admin-muted">{b.body}</p>
+                <p className="m-0 mt-1.5 text-xs text-admin-disabled">
+                  {b.targetType ? `${SUBSCRIPTION_TYPE_LABELS[b.targetType] ?? b.targetType}: ${b.targetLabel}` : "Все пользователи"} ·{" "}
+                  {b.recipientCount} получателей · отправил {b.sentByEmail}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="flex items-center gap-2">
         {PERIODS.map((p) => (

@@ -37,7 +37,10 @@ export type SubscriptionOverview = {
 // Имена целей — разными таблицами в зависимости от типа (Subscription не
 // хранит displayName, только targetId, см. schema.prisma). EVENT_TYPE не
 // требует похода в БД — код формата уже описан в EVENT_TYPE_REGISTRY.
-async function resolveTargetLabels(type: SubscriptionType, targetIds: string[]): Promise<Map<string, string>> {
+// Экспортирована — переиспользуется Broadcast для снимка targetLabel при
+// отправке рассылки на конкретную цель (одна и та же логика "как назвать
+// эту цель", не дублируется).
+export async function resolveTargetLabels(type: SubscriptionType, targetIds: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (targetIds.length === 0) return map;
 
