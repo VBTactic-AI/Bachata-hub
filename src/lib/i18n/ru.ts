@@ -57,7 +57,6 @@ export const ru = {
     heroTitleAfter: " в одном месте",
     heroSubtitle: "Единый календарь бачата-вечеринок и мастер-классов, каталог школ и соревнования Jack & Jill.",
     heroCta: "Найти событие",
-    heroNearestLabel: "Ближайшее событие",
     today: "Сегодня",
     thisWeek: "Ближайшие мероприятия (1 неделя)",
     noEventsToday: "Сегодня событий не найдено",

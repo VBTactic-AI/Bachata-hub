@@ -146,8 +146,6 @@ export default async function HomePage() {
     getUpcomingCompetitionTeaser(),
   ]);
 
-  const heroFeaturedEvent = today[0] ?? thisWeek[0] ?? null;
-
   return (
     <div className="relative mx-[calc(50%-50vw)] -my-6 min-h-[100dvh] bg-night-bg font-night text-night-text">
       <AmbientParticles />
@@ -170,24 +168,6 @@ export default async function HomePage() {
                 className="object-cover object-[60%_20%]"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-night-bg via-night-bg/70 to-night-bg/10" aria-hidden="true" />
-
-              {/* Мини-карточка ближайшего события (по референсу пользователя) —
-                  только реальное первое событие из уже загруженных today/thisWeek,
-                  ничего не выдумываем; на мобильном места мало — скрыта до sm:. */}
-              {heroFeaturedEvent && (
-                <Link
-                  href={`/events/${heroFeaturedEvent.slug}`}
-                  className="absolute right-6 top-6 hidden w-[260px] flex-col gap-1.5 rounded-app border border-white/10 bg-night-card/80 p-4 no-underline backdrop-blur-md transition-colors hover:border-white/20 hover:bg-night-card2/85 sm:flex lg:right-10 lg:top-10"
-                >
-                  <span className="text-[0.68rem] font-bold uppercase tracking-wide text-night-muted">{t.home.heroNearestLabel}</span>
-                  <span className="line-clamp-2 font-night text-[0.95rem] font-bold leading-snug text-night-text">{heroFeaturedEvent.title}</span>
-                  <span className="text-sm font-semibold text-night-primary">
-                    {formatRelativeDayLabel(heroFeaturedEvent.startsAt) ? `${formatRelativeDayLabel(heroFeaturedEvent.startsAt)}, ` : ""}
-                    {formatEventTime(heroFeaturedEvent.startsAt)}
-                  </span>
-                  <span className="truncate text-xs text-night-muted">{heroFeaturedEvent.city.nameRu}</span>
-                </Link>
-              )}
 
               <div className="relative flex max-w-[420px] flex-col gap-3">
                 <span className="text-xs font-bold uppercase tracking-[0.15em] text-night-muted">{t.home.heroKicker}</span>
