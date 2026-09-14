@@ -350,6 +350,16 @@ enum EventFormat {
   FESTIVAL // фестиваль
   CONTEST // конкурс
   INTENSIVE // воркшоп-интенсив
+  // Events Engine (2026-09-15) — добавлены аддитивно (ALTER TYPE ... ADD
+  // VALUE, тот же приём, что и A27), НЕ переименование существующих значений:
+  // MASTERCLASS/CONTEST остаются как есть (используются 29 существующими
+  // событиями + PartyDetails/MasterclassDetails/Competition.eventId), новые
+  // форматы — самостоятельные значения без выделенной 1:1-таблицы деталей
+  // (используют generic-конфигурацию реестра, как FESTIVAL/INTENSIVE).
+  SOCIAL // соушл (танцевальный вечер без вечеринки-концепции)
+  OPEN_AIR // open air
+  PRACTICE // практика/тренировка
+  OTHER // прочее
 }
 
 // event_type: зарезервированная точка расширения для СЛОЯ 3.
@@ -380,6 +390,17 @@ enum EventStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+}
+
+// Events Engine (2026-09-15) — НЕЗАВИСИМАЯ ось от EventStatus (lifecycle) и
+// moderationStatus (решение модератора): certainty отвечает только на вопрос
+// "насколько точны дата/место", а не "виден ли Event и кому". Default —
+// CONFIRMED: все существующие на момент миграции события трактуются как
+// подтверждённые (что верно по факту — до этой задачи предварительных
+// событий в системе не было).
+enum EventCertainty {
+  TENTATIVE // дата/место ещё уточняются — публично помечается как предварительное событие
+  CONFIRMED
 }
 
 model Event {
@@ -418,6 +439,7 @@ model Event {
   externalLinkUrl     String? // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
   tags                String[]
   status              EventStatus      @default(PUBLISHED) // Event Engine: черновик мастера создания, см. комментарий у enum
+  certainty           EventCertainty   @default(CONFIRMED) // Events Engine: см. комментарий у enum — независимая ось от status/moderationStatus
   moderationStatus    ModerationStatus @default(PENDING)
   createdById         String
   createdBy           User             @relation("EventCreator", fields: [createdById], references: [id])

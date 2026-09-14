@@ -44,7 +44,11 @@ export const masterclassDetailsInputSchema = z.object({
 
 export const eventDraftSchema = z.object({
   status: z.enum(["DRAFT", "PUBLISHED"]),
-  format: z.enum(["PARTY", "MASTERCLASS", "FESTIVAL", "CONTEST", "INTENSIVE"]),
+  format: z.enum(["PARTY", "MASTERCLASS", "FESTIVAL", "CONTEST", "INTENSIVE", "SOCIAL", "OPEN_AIR", "PRACTICE", "OTHER"]),
+  // Events Engine — независимая ось от status: "дата уточняется" (TENTATIVE)
+  // vs подтверждённое событие. Default CONFIRMED, если организатор не отметил
+  // чекбокс в шаге "Дата и время".
+  certainty: z.enum(["TENTATIVE", "CONFIRMED"]).default("CONFIRMED"),
   title: z.string().max(160).optional(),
   description: z.string().max(4000).optional(),
   level: z.enum(["BEGINNER", "ALL_LEVELS", "ADVANCED"]).default("ALL_LEVELS"),

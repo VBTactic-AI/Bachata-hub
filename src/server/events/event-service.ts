@@ -104,6 +104,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       externalLinkUrl: input.externalLinkUrl || null,
       tags: input.tags ?? [],
       status: input.status,
+      certainty: input.certainty,
     };
 
     // Уведомления Event Engine (Notification & Subscription Engine, Phase 6):

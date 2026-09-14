@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n/dictionary";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
+import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
+import { COMPETITION_STATUS_LABELS } from "@/lib/competition-labels";
 import { AttendanceButtons } from "@/components/AttendanceButtons";
 import { ShareButtons } from "@/components/ShareButtons";
 import { PublicEventGallery } from "@/components/PublicEventGallery";
@@ -26,6 +29,19 @@ async function getEvent(slug: string) {
       priceOptions: { orderBy: { order: "asc" } },
       partyDetails: true,
       masterclassDetails: { include: { sessions: { include: { teacher: true }, orderBy: { order: "asc" } } } },
+      // "О соревновании" (2026-09-14) — только публичные поля Competition
+      // (rulesText/rulesUrl документированы в схеме как "для зрителей"),
+      // без затрагивания остального движка слоя 3 (divisions — только имена
+      // категорий для чипов, не сами дивизионы с их настройками).
+      competition: {
+        select: {
+          id: true,
+          status: true,
+          rulesText: true,
+          rulesUrl: true,
+          divisions: { select: { category: { select: { name: true } } }, orderBy: { category: { order: "asc" } } },
+        },
+      },
     },
   });
 }
@@ -47,6 +63,57 @@ export async function generateMetadata({
       images: event.media.length > 0 ? event.media.map((m) => m.url) : event.photoUrl ? [event.photoUrl] : undefined,
     },
   };
+}
+
+// Заголовок секции с цветной плашкой-акцентом — цвет секции привязан к тому,
+// к какому формату относятся данные под ним (EVENT_FORMAT_COLOR), а не к
+// формату самого события: на одной странице могут быть и общие блоки
+// ("Билеты", "Описание" — акцент night-primary по умолчанию), и блок про
+// соревнование (акцент CONTEST), даже если событие оформлено как FESTIVAL.
+function SectionTitle({ children, accent }: { children: ReactNode; accent?: string }) {
+  return (
+    <h2 className="m-0 mb-3 flex items-center gap-2.5 font-night text-base font-bold text-night-text">
+      <span className="h-4 w-[3px] shrink-0 rounded-full" style={{ backgroundColor: accent ?? "#ff2d8a" }} />
+      {children}
+    </h2>
+  );
+}
+
+// Список полей "лейбл — значение" — общий для блоков "О вечеринке"/"О
+// мастер-классе": вызывающий код сам решает, какие строки достойны показа
+// (см. partyRows/masterclassRows ниже), этот компонент просто ничего не
+// рендерит, если список пуст, чтобы вызывающему не нужно было отдельно
+// проверять "а стоит ли вообще выводить заголовок секции".
+function InfoRows({ rows }: { rows: { k: string; v: ReactNode }[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="flex flex-col border-t border-night-border/60">
+      {rows.map((r, i) => (
+        <div key={i} className="grid grid-cols-1 gap-1 border-b border-night-border/60 py-3 sm:grid-cols-[150px_1fr] sm:gap-4">
+          <span className="text-sm text-night-muted">{r.k}</span>
+          <span className="text-sm leading-relaxed text-night-text">{r.v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4 shrink-0">
+      <path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21Z" />
+      <circle cx="12" cy="9.5" r="2.4" />
+    </svg>
+  );
+}
+
+function BuildingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4 shrink-0">
+      <rect x="5" y="3.5" width="14" height="17" rx="1.2" />
+      <path d="M9 20.5V17h6v3.5M9 7.5h1M9 11h1M14 7.5h1M14 11h1" />
+    </svg>
+  );
 }
 
 export default async function EventPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -110,30 +177,67 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   };
 
   const isPast = event.startsAt < new Date();
+  const relativeDay = formatRelativeDayLabel(event.startsAt);
 
-  // Не показывать заголовок раздела, если реально нечего показать под ним —
-  // PartyDetails/MasterclassDetails создаются при каждом сохранении черновика
-  // этого формата (event-service.ts), даже если организатор ничего в шаге не
-  // заполнил (найдено вживую, 2026-09-13: пустой блок "О вечеринке" на
-  // реальной опубликованной карточке).
-  const pd = event.partyDetails;
-  const hasPartyContent =
-    !!pd &&
-    (pd.musicStyles.length > 0 ||
-      pd.djs.length > 0 ||
-      pd.danceFloors.length > 0 ||
-      pd.artists.length > 0 ||
-      !!pd.dressCode ||
-      !!pd.photographer ||
-      !!pd.foodAndDrinks ||
-      pd.parking ||
-      pd.cloakroom);
+  // Строки блока "О вечеринке"/"О мастер-классе" — только заполненные поля
+  // (по прямому запросу пользователя, 2026-09-14: "выводи только тогда,
+  // когда они заполнены"). PartyDetails/MasterclassDetails создаются при
+  // каждом сохранении черновика этого формата (event-service.ts), даже если
+  // организатор ничего в шаге не заполнил, поэтому проверка нужна на каждое
+  // поле отдельно, а не только на факт существования самой записи.
+  const partyRows: { k: string; v: ReactNode }[] = [];
+  if (event.format === "PARTY" && event.partyDetails) {
+    const pd = event.partyDetails;
+    if (pd.musicStyles.length > 0) partyRows.push({ k: "Музыкальные стили", v: pd.musicStyles.join(", ") });
+    if (pd.djs.length > 0) partyRows.push({ k: "Диджеи", v: pd.djs.join(", ") });
+    if (pd.danceFloors.length > 0) partyRows.push({ k: "Танцполы", v: pd.danceFloors.join(", ") });
+    if (pd.artists.length > 0) partyRows.push({ k: "Артисты", v: pd.artists.join(", ") });
+    if (pd.dressCode) partyRows.push({ k: "Дресс-код", v: pd.dressCode });
+    if (pd.photographer) partyRows.push({ k: "Фотограф", v: pd.photographer });
+    if (pd.foodAndDrinks) partyRows.push({ k: "Еда и напитки", v: pd.foodAndDrinks });
+    if (pd.parking || pd.cloakroom) {
+      partyRows.push({ k: "Удобства", v: [pd.parking && "Парковка", pd.cloakroom && "Гардероб"].filter(Boolean).join(" · ") });
+    }
+  }
 
-  const md = event.masterclassDetails;
-  const hasMasterclassContent = !!md && (!!md.style || !!md.format || md.partnerRequired || md.sessions.length > 0);
+  const masterclassRows: { k: string; v: ReactNode }[] = [];
+  if (event.format === "MASTERCLASS" && event.masterclassDetails) {
+    const md = event.masterclassDetails;
+    if (md.style) masterclassRows.push({ k: "Стиль", v: md.style });
+    if (md.format) masterclassRows.push({ k: "Формат", v: md.format });
+    if (md.partnerRequired) masterclassRows.push({ k: "Партнёр", v: "Нужен свой партнёр" });
+  }
+
+  // Расписание по дням — группировка по календарной дате сессии, сама
+  // структура (day → sessions[]) не хранится отдельно, дни выводятся в
+  // порядке первого появления (сессии уже отсортированы по полю order).
+  const sessions = event.masterclassDetails?.sessions ?? [];
+  const sessionDays: [string, typeof sessions][] =
+    sessions.length > 0
+      ? Array.from(
+          sessions.reduce((map, s) => {
+            const key = formatEventDate(s.startTime);
+            const list = map.get(key) ?? [];
+            list.push(s);
+            map.set(key, list);
+            return map;
+          }, new Map<string, typeof sessions>())
+        )
+      : [];
+
+  const competition = event.competition;
+  const divisionNames = competition ? Array.from(new Set(competition.divisions.map((d) => d.category.name))) : [];
+
+  // Факты справа — Уровень есть у любого события (обязательное поле),
+  // Вместимость/Цена — только когда организатор их заполнил.
+  const facts: { l: string; v: string }[] = [{ l: t.event.level, v: t.event.levels[event.level] }];
+  if (event.capacity != null) facts.push({ l: "Вместимость", v: `${event.capacity} чел.` });
+  if (event.priceText) facts.push({ l: t.event.price, v: event.priceText });
+
+  const formatAccent = EVENT_FORMAT_COLOR[event.format];
 
   return (
-    <article className="flex flex-col gap-4">
+    <article className="flex flex-col gap-6">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -156,39 +260,45 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-app" />
       )}
 
-      <div>
-        <p className="m-0 text-sm text-night-muted">
-          {formatDateTime(event.startsAt)}
-          {event.endsAt ? ` — ${formatDateTime(event.endsAt)}` : ""} · {event.city.nameRu}
-        </p>
-        <h1 className="m-0 mt-1 font-night text-2xl font-extrabold text-night-text">{event.title}</h1>
-        <div className="mt-2">
-          <Tag className="bg-night-card2 text-night-pink">{t.event.formats[event.format]}</Tag>
+      <div className="flex flex-col gap-3">
+        <div>
+          <Tag style={{ backgroundColor: `${formatAccent}26`, color: formatAccent }}>{t.event.formats[event.format]}</Tag>
           <Tag className="bg-night-card2 text-night-pink">{t.event.levels[event.level]}</Tag>
+          {event.certainty === "TENTATIVE" && (
+            <Badge variant="community" className="bg-night-primary/15 text-night-primary">
+              {t.event.tentativeBadgeTitle}
+            </Badge>
+          )}
           {isPast && (
             <Badge variant="community" className="bg-night-card2 text-night-muted">
               {t.event.pastEvent}
             </Badge>
           )}
         </div>
-        <div className="mt-2">
-          <FollowButton
-            type="EVENT"
-            targetId={event.id}
-            loggedIn={!!user}
-            initialSubscriptionId={existingSubscription?.id ?? null}
-            labelFollow="🔔 Подписаться на событие"
-          />
-        </div>
-      </div>
 
-      <Card className="flex flex-col gap-2 border-night-border bg-night-card">
-        <p className="m-0 text-sm text-night-text">
-          <strong>{t.event.place}:</strong> <span className="text-night-muted">{event.venueName}</span>
-          {event.venueAddress ? <span className="text-night-muted">{`, ${event.venueAddress}`}</span> : ""}
-          {event.latitude != null && event.longitude != null && (
-            <>
-              {" "}
+        <h1 className="m-0 font-night text-[1.7rem] font-extrabold leading-tight text-night-text sm:text-[2.1rem]">{event.title}</h1>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+          {relativeDay && (
+            <span className="rounded-full bg-night-primary/15 px-2.5 py-1 text-[0.72rem] font-bold uppercase tracking-wide text-night-primary">
+              {relativeDay}
+            </span>
+          )}
+          <span className="font-semibold tabular-nums text-night-text">
+            {formatDateTime(event.startsAt)}
+            {event.endsAt ? ` — ${formatDateTime(event.endsAt)}` : ""}
+          </span>
+          {event.certainty === "TENTATIVE" && (
+            <span className="text-night-muted">({t.event.tentativeBadgeSubtitle})</span>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1.5 text-sm text-night-muted sm:flex-row sm:flex-wrap sm:gap-x-5 sm:gap-y-1.5">
+          <span className="flex items-center gap-1.5">
+            <PinIcon />
+            {event.venueName}
+            {event.venueAddress ? `, ${event.venueAddress}` : ""} · {event.city.nameRu}
+            {event.latitude != null && event.longitude != null && (
               <a
                 href={`https://www.google.com/maps?q=${event.latitude},${event.longitude}`}
                 target="_blank"
@@ -197,161 +307,191 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
               >
                 (на карте)
               </a>
-            </>
-          )}
-        </p>
-        <p className="m-0 text-sm text-night-text">
-          <strong>{t.event.organizer}:</strong>{" "}
-          {event.school ? (
-            <a href={`/schools/${event.school.slug}`} className="text-night-primary">
-              {event.school.name}
-            </a>
-          ) : (
-            <span className="text-night-muted">{event.organizerName || "—"}</span>
-          )}
-        </p>
-        {event.priceText && (
-          <p className="m-0 text-sm text-night-text">
-            <strong>{t.event.price}:</strong> <span className="text-night-muted">{event.priceText}</span>
-          </p>
-        )}
-        {event.capacity != null && (
-          <p className="m-0 text-sm text-night-text">
-            <strong>Вместимость:</strong> <span className="text-night-muted">{event.capacity}</span>
-          </p>
-        )}
-        {event.externalLinkUrl && (
-          <p className="m-0 text-sm">
-            <a href={event.externalLinkUrl} target="_blank" rel="noopener noreferrer" className="text-night-primary">
-              {t.event.registerExternal} →
-            </a>
-            {event.registrationEnabled && <span className="ml-2 text-night-success">· регистрация открыта</span>}
-          </p>
-        )}
-      </Card>
+            )}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <BuildingIcon />
+            {event.school ? (
+              <a href={`/schools/${event.school.slug}`} className="text-night-text underline decoration-night-border underline-offset-2 hover:text-night-primary hover:decoration-night-primary">
+                {event.school.name}
+              </a>
+            ) : (
+              <span>{event.organizerName || "—"}</span>
+            )}
+          </span>
+        </div>
+      </div>
 
-      {event.priceOptions.length > 0 && (
-        <div>
-          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Билеты</h2>
-          <div className="flex flex-col gap-1.5">
-            {event.priceOptions.map((o) => (
-              <div key={o.id} className="flex items-center justify-between rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm">
-                <span className="text-night-text">{o.label}</span>
-                <span className="text-night-muted">{o.price != null ? `${o.price} ${o.currency ?? ""}`.trim() : "—"}</span>
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_320px] lg:items-start">
+        <main className="flex min-w-0 flex-col gap-8">
+          {partyRows.length > 0 && (
+            <section>
+              <SectionTitle accent={EVENT_FORMAT_COLOR.PARTY}>О вечеринке</SectionTitle>
+              <InfoRows rows={partyRows} />
+            </section>
+          )}
+
+          {masterclassRows.length > 0 && (
+            <section>
+              <SectionTitle accent={EVENT_FORMAT_COLOR.MASTERCLASS}>О мастер-классе</SectionTitle>
+              <InfoRows rows={masterclassRows} />
+            </section>
+          )}
+
+          {sessionDays.length > 0 && (
+            <section>
+              <SectionTitle accent={EVENT_FORMAT_COLOR.MASTERCLASS}>Расписание</SectionTitle>
+              <div className="flex flex-col gap-5">
+                {sessionDays.map(([day, list]) => (
+                  <div key={day}>
+                    <p className="m-0 mb-2 text-xs font-bold uppercase tracking-wide text-night-muted">{day}</p>
+                    <div className="flex flex-col gap-2">
+                      {list.map((s) => (
+                        <div
+                          key={s.id}
+                          className="grid grid-cols-[64px_1fr] items-start gap-3 rounded-app-sm border border-night-border bg-night-card px-3.5 py-3 sm:grid-cols-[90px_1fr]"
+                        >
+                          <span className="text-sm font-bold tabular-nums text-night-text">{formatEventTime(s.startTime)}</span>
+                          <div className="min-w-0">
+                            <p className="m-0 text-sm font-semibold text-night-text">{s.title}</p>
+                            <p className="m-0 mt-0.5 text-xs text-night-muted">
+                              {[s.teacher?.name, s.level ? t.event.levels[s.level] : null, s.room, s.capacity != null ? `до ${s.capacity} чел.` : null]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </section>
+          )}
 
-      {event.format === "PARTY" && hasPartyContent && event.partyDetails && (
-        <div className="flex flex-col gap-1.5">
-          <h2 className="m-0 mb-1 font-night text-base font-bold text-night-text">О вечеринке</h2>
-          {event.partyDetails.musicStyles.length > 0 && (
-            <p className="m-0 text-sm text-night-text">
-              <strong>Музыкальные стили:</strong> <span className="text-night-muted">{event.partyDetails.musicStyles.join(", ")}</span>
-            </p>
-          )}
-          {event.partyDetails.djs.length > 0 && (
-            <p className="m-0 text-sm text-night-text">
-              <strong>Диджеи:</strong> <span className="text-night-muted">{event.partyDetails.djs.join(", ")}</span>
-            </p>
-          )}
-          {event.partyDetails.danceFloors.length > 0 && (
-            <p className="m-0 text-sm text-night-text">
-              <strong>Танцполы:</strong> <span className="text-night-muted">{event.partyDetails.danceFloors.join(", ")}</span>
-            </p>
-          )}
-          {event.partyDetails.artists.length > 0 && (
-            <p className="m-0 text-sm text-night-text">
-              <strong>Артисты:</strong> <span className="text-night-muted">{event.partyDetails.artists.join(", ")}</span>
-            </p>
-          )}
-          {event.partyDetails.dressCode && (
-            <p className="m-0 text-sm text-night-text">
-              <strong>Дресс-код:</strong> <span className="text-night-muted">{event.partyDetails.dressCode}</span>
-            </p>
-          )}
-          {event.partyDetails.photographer && (
-            <p className="m-0 text-sm text-night-text">
-              <strong>Фотограф:</strong> <span className="text-night-muted">{event.partyDetails.photographer}</span>
-            </p>
-          )}
-          {event.partyDetails.foodAndDrinks && (
-            <p className="m-0 text-sm text-night-text">
-              <strong>Еда и напитки:</strong> <span className="text-night-muted">{event.partyDetails.foodAndDrinks}</span>
-            </p>
-          )}
-          {(event.partyDetails.parking || event.partyDetails.cloakroom) && (
-            <p className="m-0 text-sm text-night-muted">
-              {[event.partyDetails.parking && "Парковка", event.partyDetails.cloakroom && "Гардероб"].filter(Boolean).join(" · ")}
-            </p>
-          )}
-        </div>
-      )}
-
-      {event.format === "MASTERCLASS" && hasMasterclassContent && event.masterclassDetails && (
-        <div className="flex flex-col gap-2">
-          <h2 className="m-0 mb-1 font-night text-base font-bold text-night-text">О мастер-классе</h2>
-          <div className="flex flex-col gap-1.5">
-            {event.masterclassDetails.style && (
-              <p className="m-0 text-sm text-night-text">
-                <strong>Стиль:</strong> <span className="text-night-muted">{event.masterclassDetails.style}</span>
-              </p>
-            )}
-            {event.masterclassDetails.format && (
-              <p className="m-0 text-sm text-night-text">
-                <strong>Формат:</strong> <span className="text-night-muted">{event.masterclassDetails.format}</span>
-              </p>
-            )}
-            {event.masterclassDetails.partnerRequired && <p className="m-0 text-sm text-night-muted">Требуется партнёр</p>}
-          </div>
-
-          {event.masterclassDetails.sessions.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              {event.masterclassDetails.sessions.map((s) => (
-                <div key={s.id} className="rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm">
-                  <p className="m-0 font-semibold text-night-text">{s.title}</p>
-                  <p className="m-0 text-night-muted">
-                    {formatDateTime(s.startTime)}
-                    {" – "}
-                    {formatDateTime(s.endTime)}
-                    {s.room ? ` · ${s.room}` : ""}
-                    {s.teacher ? ` · ${s.teacher.name}` : ""}
-                    {s.level ? ` · ${t.event.levels[s.level]}` : ""}
-                    {s.capacity != null ? ` · до ${s.capacity} чел.` : ""}
-                  </p>
+          {competition && (
+            <section>
+              <SectionTitle accent={EVENT_FORMAT_COLOR.CONTEST}>О соревновании</SectionTitle>
+              <div className="flex flex-col gap-3 rounded-app border border-night-border bg-night-card p-4">
+                <div>
+                  <Tag className="bg-night-card2 text-night-pink">{COMPETITION_STATUS_LABELS[competition.status]}</Tag>
+                  {divisionNames.map((name) => (
+                    <Tag key={name} className="border border-night-border bg-transparent text-night-muted">
+                      {name}
+                    </Tag>
+                  ))}
                 </div>
+                {competition.rulesText && (
+                  <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-night-muted">{competition.rulesText}</p>
+                )}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <a
+                    href={`/compete/${competition.id}`}
+                    className="rounded-full border border-night-border px-4 py-2 text-sm font-semibold text-night-text no-underline hover:border-night-primary hover:text-night-primary hover:no-underline"
+                  >
+                    Страница соревнования →
+                  </a>
+                  {competition.status === "REGISTRATION_OPEN" && (
+                    <a
+                      href={`/compete/${competition.id}/register`}
+                      className="rounded-full bg-gradient-night-cta px-4 py-2 text-sm font-bold text-white no-underline hover:no-underline"
+                    >
+                      Регистрация участника →
+                    </a>
+                  )}
+                  {competition.rulesUrl && (
+                    <a
+                      href={competition.rulesUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full border border-night-border px-4 py-2 text-sm font-semibold text-night-text no-underline hover:border-night-primary hover:text-night-primary hover:no-underline"
+                    >
+                      Регламент →
+                    </a>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {event.priceOptions.length > 0 && (
+            <section>
+              <SectionTitle>Билеты</SectionTitle>
+              <div className="flex flex-col gap-1.5">
+                {event.priceOptions.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between rounded-app-sm border border-night-border bg-night-card px-3.5 py-2.5 text-sm">
+                    <span className="text-night-text">{o.label}</span>
+                    <span className="tabular-nums text-night-muted">{o.price != null ? `${o.price} ${o.currency ?? ""}`.trim() : "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {event.description && (
+            <section>
+              <SectionTitle>{t.event.description}</SectionTitle>
+              <p className="m-0 max-w-[64ch] whitespace-pre-wrap text-sm leading-relaxed text-night-muted">{event.description}</p>
+            </section>
+          )}
+
+          {event.tags.length > 0 && (
+            <div>
+              {event.tags.map((tag) => (
+                <Tag key={tag} className="bg-night-card2 text-night-pink">
+                  #{tag}
+                </Tag>
               ))}
             </div>
           )}
-        </div>
-      )}
+        </main>
 
-      {event.description && (
-        <div>
-          <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">{t.event.description}</h2>
-          <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-night-muted">{event.description}</p>
-        </div>
-      )}
+        <aside className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start">
+          <Card className="flex flex-col gap-3 border-night-border bg-night-card">
+            {facts.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {facts.map((f) => (
+                  <div key={f.l} className="min-w-[92px] flex-1 rounded-app-sm border border-night-border bg-night-card2 px-3 py-2">
+                    <div className="text-[0.64rem] font-semibold uppercase tracking-wide text-night-muted">{f.l}</div>
+                    <div className="mt-1 text-sm font-bold tabular-nums text-night-text">{f.v}</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-      {event.tags.length > 0 && (
-        <div>
-          {event.tags.map((tag) => (
-            <Tag key={tag} className="bg-night-card2 text-night-pink">
-              #{tag}
-            </Tag>
-          ))}
-        </div>
-      )}
+            {event.externalLinkUrl && (
+              <div className="flex flex-col gap-1.5 border-t border-night-border/60 pt-3">
+                <a
+                  href={event.externalLinkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block rounded-full bg-gradient-night-cta px-4 py-3 text-center text-sm font-bold text-white no-underline hover:no-underline"
+                >
+                  {t.event.registerExternal} →
+                </a>
+                {event.registrationEnabled && (
+                  <p className="m-0 text-center text-xs font-semibold text-night-success">Регистрация открыта</p>
+                )}
+              </div>
+            )}
 
-      <AttendanceButtons
-        eventSlug={event.slug}
-        initialStatus={attendance?.status ?? null}
-        loggedIn={!!user}
-      />
+            <div className="flex flex-col gap-2 border-t border-night-border/60 pt-3">
+              <AttendanceButtons eventSlug={event.slug} initialStatus={attendance?.status ?? null} loggedIn={!!user} />
+              <FollowButton
+                type="EVENT"
+                targetId={event.id}
+                loggedIn={!!user}
+                initialSubscriptionId={existingSubscription?.id ?? null}
+                labelFollow="🔔 Подписаться на событие"
+              />
+            </div>
+          </Card>
 
-      <ShareButtons url={pageUrl} title={event.title} />
+          <Card className="border-night-border bg-night-card">
+            <ShareButtons url={pageUrl} title={event.title} />
+          </Card>
+        </aside>
+      </div>
     </article>
   );
 }

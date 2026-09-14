@@ -18,6 +18,10 @@ export const FORMAT_EMOJI: Record<Event["format"], string> = {
   FESTIVAL: "🎪",
   CONTEST: "🏆",
   INTENSIVE: "🔥",
+  SOCIAL: "💃",
+  OPEN_AIR: "🌤️",
+  PRACTICE: "🕺",
+  OTHER: "✨",
 };
 
 // Тёмная тема по макету JBJ Platform (06.09.2026) — карточка используется

@@ -1,4 +1,4 @@
-import type { EventFormat, DanceLevel, EventStatus } from "@prisma/client";
+import type { EventFormat, DanceLevel, EventStatus, EventCertainty } from "@prisma/client";
 
 // Event Engine — форма черновика в состоянии React (клиент). Отдельно от
 // EventDraftInput (server/events/schemas.ts, zod) намеренно: инпуты формы
@@ -35,6 +35,9 @@ export type WizardDraft = {
   slug?: string;
   status: EventStatus;
   format: EventFormat;
+  // Events Engine — независимая ось от status, см. комментарий у enum
+  // EventCertainty в schema.prisma.
+  certainty: EventCertainty;
   title: string;
   description: string;
   media: WizardMediaItem[];
@@ -78,6 +81,7 @@ export function emptyWizardDraft(defaultCityId: string): WizardDraft {
   return {
     status: "DRAFT",
     format: "PARTY",
+    certainty: "CONFIRMED",
     title: "",
     description: "",
     media: [],
@@ -135,6 +139,7 @@ export function toApiPayload(d: WizardDraft, status: "DRAFT" | "PUBLISHED") {
   return {
     status,
     format: d.format,
+    certainty: d.certainty,
     title: d.title,
     description: d.description || undefined,
     level: d.level,

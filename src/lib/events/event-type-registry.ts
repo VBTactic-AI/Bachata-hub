@@ -79,6 +79,37 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     icon: "🔥",
     steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
   },
+  // Events Engine (2026-09-15) — добавлены аддитивно к enum EventFormat
+  // (см. комментарий у enum в schema.prisma), тоже generic-конфигурация: без
+  // выделенной 1:1-таблицы деталей, как и FESTIVAL/INTENSIVE выше.
+  SOCIAL: {
+    format: "SOCIAL",
+    label: "Соушл",
+    description: "Свободные танцы без концепции вечеринки",
+    icon: "💃",
+    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+  },
+  OPEN_AIR: {
+    format: "OPEN_AIR",
+    label: "Open Air",
+    description: "Танцы на открытом воздухе",
+    icon: "🌤️",
+    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+  },
+  PRACTICE: {
+    format: "PRACTICE",
+    label: "Практика",
+    description: "Практика/тренировка без преподавателя",
+    icon: "🕺",
+    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+  },
+  OTHER: {
+    format: "OTHER",
+    label: "Другое",
+    description: "Формат, не покрытый остальными категориями",
+    icon: "✨",
+    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+  },
 };
 
 // Порядок карточек на первом экране мастера — только три "первых типа" из
@@ -86,7 +117,17 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
 // формой без карточки, см. WIZARD_EVENT_FORMATS ниже), но не рекламируются
 // как основной путь.
 export const FEATURED_EVENT_FORMATS: EventFormat[] = ["PARTY", "MASTERCLASS", "CONTEST"];
-export const ALL_EVENT_FORMATS: EventFormat[] = ["PARTY", "MASTERCLASS", "FESTIVAL", "CONTEST", "INTENSIVE"];
+export const ALL_EVENT_FORMATS: EventFormat[] = [
+  "PARTY",
+  "MASTERCLASS",
+  "FESTIVAL",
+  "CONTEST",
+  "INTENSIVE",
+  "SOCIAL",
+  "OPEN_AIR",
+  "PRACTICE",
+  "OTHER",
+];
 
 export function getEventTypeConfig(format: EventFormat): EventTypeConfig {
   return EVENT_TYPE_REGISTRY[format];

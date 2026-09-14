@@ -44,6 +44,7 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
       slug: event.slug,
       status: event.status,
       format: event.format,
+      certainty: event.certainty,
       title: event.title,
       description: event.description ?? "",
       media: event.media.map((m) => ({

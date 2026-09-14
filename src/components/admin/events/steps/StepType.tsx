@@ -1,13 +1,16 @@
 "use client";
 
 import type { EventFormat } from "@prisma/client";
-import { EVENT_TYPE_REGISTRY, FEATURED_EVENT_FORMATS } from "@/lib/events/event-type-registry";
+import { ALL_EVENT_FORMATS, EVENT_TYPE_REGISTRY, FEATURED_EVENT_FORMATS } from "@/lib/events/event-type-registry";
 import { cn } from "@/lib/cn";
 
 // STEP 1 — большие карточки выбора типа события (задача "Select event type").
-// Три первых типа — карточки; остальные значения EventFormat (Festival/
-// Intensive) доступны отдельным списком под ними, без потери существующей
+// Три первых типа — карточки; остальные значения EventFormat доступны
+// отдельным списком под ними (вычисляется из ALL_EVENT_FORMATS, а не
+// захардкожен — новый формат в реестре появляется здесь без правки этого
+// файла, см. комментарий у EVENT_TYPE_REGISTRY), без потери существующей
 // возможности их создать, но не как главный путь.
+const OTHER_EVENT_FORMATS: EventFormat[] = ALL_EVENT_FORMATS.filter((f) => !FEATURED_EVENT_FORMATS.includes(f));
 export function StepType({
   value,
   onChange,
@@ -56,7 +59,7 @@ export function StepType({
       <details className="text-sm text-admin-muted">
         <summary className="cursor-pointer select-none text-admin-muted hover:text-night-text">Другие форматы</summary>
         <div className="mt-2 flex flex-wrap gap-2">
-          {(["FESTIVAL", "INTENSIVE"] as EventFormat[]).map((format) => {
+          {OTHER_EVENT_FORMATS.map((format) => {
             const config = EVENT_TYPE_REGISTRY[format];
             const selected = value === format;
             return (

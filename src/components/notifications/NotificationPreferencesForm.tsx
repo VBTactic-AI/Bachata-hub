@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { subscribeToWebPush, unsubscribeFromWebPush, WebPushError } from "@/lib/notifications/web-push-client";
 
-type EventFormat = "PARTY" | "MASTERCLASS" | "FESTIVAL" | "CONTEST" | "INTENSIVE";
+type EventFormat = "PARTY" | "MASTERCLASS" | "FESTIVAL" | "CONTEST" | "INTENSIVE" | "SOCIAL" | "OPEN_AIR" | "PRACTICE" | "OTHER";
 type EmailFrequency = "IMMEDIATE" | "DAILY_DIGEST" | "WEEKLY_DIGEST";
 
 type Preference = {
@@ -24,6 +24,10 @@ const FORMAT_LABELS: Record<EventFormat, string> = {
   FESTIVAL: "Фестивали",
   CONTEST: "Конкурсы (JNJ)",
   INTENSIVE: "Воркшоп-интенсивы",
+  SOCIAL: "Соушлы",
+  OPEN_AIR: "Open Air",
+  PRACTICE: "Практики",
+  OTHER: "Другое",
 };
 
 const rowClass = "flex items-center gap-2 text-sm text-night-text";

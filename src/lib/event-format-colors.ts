@@ -11,4 +11,9 @@ export const EVENT_FORMAT_COLOR: Record<EventFormat, string> = {
   FESTIVAL: "#fbbf24",
   CONTEST: "#a78bfa",
   INTENSIVE: "#34d399",
+  // Events Engine (2026-09-15) — новые форматы, см. EventFormat в schema.prisma.
+  SOCIAL: "#f472b6",
+  OPEN_AIR: "#4ade80",
+  PRACTICE: "#60a5fa",
+  OTHER: "#94a3b8",
 };

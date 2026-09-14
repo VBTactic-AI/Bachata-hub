@@ -29,6 +29,10 @@ const EVENT_FORMAT_LABEL: Record<EventFormat, string> = {
   FESTIVAL: "Фестиваль",
   CONTEST: "Соревнование",
   INTENSIVE: "Интенсив",
+  SOCIAL: "Соушл",
+  OPEN_AIR: "Open Air",
+  PRACTICE: "Практика",
+  OTHER: "Другое",
 };
 
 function EventCard({ event }: { event: SchoolDiscoveryEvent }) {

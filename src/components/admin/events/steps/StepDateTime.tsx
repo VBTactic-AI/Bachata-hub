@@ -22,6 +22,16 @@ export function StepDateTime({ draft, onChange }: { draft: WizardDraft; onChange
         {t.event.date} / {t.event.time} — окончание (необязательно)
         <DateTimeField value={draft.endsAt} onChange={(v) => onChange({ endsAt: v })} theme="admin" className={fieldClass} />
       </Label>
+
+      <label className="flex items-center gap-2 text-sm text-admin-muted">
+        <input
+          type="checkbox"
+          checked={draft.certainty === "TENTATIVE"}
+          onChange={(e) => onChange({ certainty: e.target.checked ? "TENTATIVE" : "CONFIRMED" })}
+          className="h-4 w-4 rounded border-admin-border accent-admin-primary"
+        />
+        {t.event.certaintyTentativeLabel}
+      </label>
     </div>
   );
 }

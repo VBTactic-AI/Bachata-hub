@@ -268,3 +268,58 @@ describe("cancelEvent() — EVENT_CANCELLED (Phase 6, минимальная о�
     expect(emitDomainEventMock).not.toHaveBeenCalled();
   });
 });
+
+// Events Engine, Stage 1 — certainty (TENTATIVE/CONFIRMED) сохраняется как
+// обычное поле черновика, независимо от status/moderationStatus (не
+// смешивается с логикой EVENT_PUBLISHED/EVENT_UPDATED выше).
+describe("upsertEventDraft() — certainty (Events Engine, Stage 1)", () => {
+  it("новое событие с certainty=TENTATIVE — передаёт его в tx.event.create", async () => {
+    eventCreate.mockResolvedValue({
+      id: "event10",
+      slug: "party-slug",
+      title: "Bachata Night",
+      cityId: "city1",
+      format: "PARTY",
+      schoolId: null,
+      startsAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await upsertEventDraft(baseInput({ certainty: "TENTATIVE" }), user);
+
+    expect(eventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ certainty: "TENTATIVE" }) })
+    );
+  });
+
+  it("обновление существующего события с certainty=CONFIRMED — передаёт его в tx.event.update", async () => {
+    eventFindUnique.mockResolvedValue({
+      id: "event11",
+      createdById: "creator1",
+      status: "PUBLISHED",
+      moderationStatus: "APPROVED",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Club X",
+      venueAddress: null,
+    });
+    eventUpdate.mockResolvedValue({
+      id: "event11",
+      slug: "s",
+      title: "x",
+      cityId: "city1",
+      format: "PARTY",
+      schoolId: null,
+      updatedAt: new Date(),
+    });
+
+    await upsertEventDraft(
+      baseInput({ certainty: "CONFIRMED", startsAt: "2026-09-01T00:00:00.000Z", venueName: "Club X" }),
+      user,
+      "event11"
+    );
+
+    expect(eventUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ certainty: "CONFIRMED" }) })
+    );
+  });
+});
