@@ -115,7 +115,6 @@ export function SchoolEventsDiscovery({
 
   const [centerIndex, setCenterIndex] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
-  const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [groups, setGroups] = useState<DiscoveryEventGroups>(initialGroups);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -124,9 +123,17 @@ export function SchoolEventsDiscovery({
   const containerRef = useRef<HTMLDivElement>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const firstRun = useRef(true);
-  const dragRef = useRef<{ startX: number; moved: boolean } | null>(null);
+  const dragRef = useRef<{ startX: number; moved: boolean; pointerId: number } | null>(null);
   const suppressClick = useRef(false);
   const wheelAccum = useRef(0);
+  // Во время драга положение карточек двигается напрямую через DOM (без
+  // setState на каждый пиксель) — иначе React перерисовывал бы всю карусель
+  // на каждое микро-движение пальца/мыши, что и давало заметную дёрганость
+  // (жалоба пользователя, 2026-09-15). liveDragOffset — текущий сдвиг для
+  // финального расчёта числа шагов при отпускании; slotElements — DOM-узлы
+  // видимых слотов по их индексу, чтобы двигать именно их.
+  const liveDragOffset = useRef(0);
+  const slotElements = useRef<Map<number, HTMLElement>>(new Map());
 
   const activeId = items[centerIndex] ?? null;
 
@@ -242,21 +249,44 @@ export function SchoolEventsDiscovery({
 
   // Драг/свайп — карусель больше не является нативно скроллящимся
   // элементом (виртуальная раскладка вокруг центра), поэтому и мышь, и тач
-  // обрабатываются одним и тем же способом. touchAction: pan-y на
-  // контейнере отдаёт вертикальные жесты странице, горизонтальные жесты
-  // обрабатываем сами.
+  // обрабатываются одним и тем же способом. touchAction: none на
+  // контейнере — с "pan-y" (разрешить браузеру вертикальный скролл)
+  // мобильный жест иногда прерывался нативной прокруткой страницы
+  // (браузер "перехватывал" смахивание с небольшим вертикальным
+  // отклонением и присылал pointercancel вместо pointermove), из-за чего
+  // карусель визуально "убегала" в случайное место — найдено пользователем
+  // вживую на телефоне, 2026-09-15. Ширина карусели небольшая (не во всю
+  // ширину экрана), поэтому потеря вертикального скролла именно над ней —
+  // приемлемый компромисс ради предсказуемого горизонтального жеста.
+  // setPointerCapture() откладывается до момента, когда движение реально
+  // распознано как драг (>4px) — если захватывать указатель сразу на
+  // pointerdown для ЛЮБОГО клика, браузер иногда не доводит обычный click
+  // до <Link> карточки школы (клик по уже выбранной центральной карточке
+  // не переходил на страницу школы — найдено пользователем вживую,
+  // 2026-09-15; тот же класс бага уже чинили в предыдущей версии карусели).
   function onPointerDown(e: PointerEvent) {
-    dragRef.current = { startX: e.clientX, moved: false };
-    setIsDragging(true);
-    containerRef.current?.setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, moved: false, pointerId: e.pointerId };
   }
 
   function onPointerMove(e: PointerEvent) {
     const state = dragRef.current;
     if (!state) return;
     const dx = e.clientX - state.startX;
-    if (Math.abs(dx) > 4) state.moved = true;
-    setDragOffset(dx);
+    if (!state.moved && Math.abs(dx) > 4) {
+      state.moved = true;
+      setIsDragging(true);
+      containerRef.current?.setPointerCapture(state.pointerId);
+    }
+    if (!state.moved) return;
+    liveDragOffset.current = dx;
+    // Прямое обновление transform DOM-узлов, минуя React state — драг
+    // должен успевать за пальцем/мышью на каждый кадр, а не на каждый
+    // ре-рендер компонента.
+    for (const { idx, d } of slots) {
+      const el = slotElements.current.get(idx);
+      if (!el) continue;
+      el.style.transform = `translate(-50%, -50%) translateX(${offsetForDistance(d) + dx}px)`;
+    }
   }
 
   function onPointerUp() {
@@ -266,11 +296,11 @@ export function SchoolEventsDiscovery({
       setTimeout(() => {
         suppressClick.current = false;
       }, 0);
-      const steps = Math.round(-dragOffset / dragStepPx);
+      const steps = Math.round(-liveDragOffset.current / dragStepPx);
       if (steps !== 0) shiftIndex(steps);
     }
     dragRef.current = null;
-    setDragOffset(0);
+    liveDragOffset.current = 0;
     setIsDragging(false);
   }
 
@@ -352,23 +382,27 @@ export function SchoolEventsDiscovery({
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
-              style={{ width: containerWidth, height: containerHeight, touchAction: "pan-y" }}
+              style={{ width: containerWidth, height: containerHeight, touchAction: "none" }}
               className="relative shrink-0 select-none cursor-grab active:cursor-grabbing"
             >
               {slots.map(({ idx, d }) => {
                 const id = items[idx];
                 const isCenter = d === 0;
                 const size = isCenter ? sizes.center : sizes.side;
-                const x = offsetForDistance(d) + dragOffset;
+                const x = offsetForDistance(d);
+                const registerSlotEl = (el: HTMLElement | null) => {
+                  if (el) slotElements.current.set(idx, el);
+                  else slotElements.current.delete(idx);
+                };
                 const style: CSSProperties = {
                   width: size,
                   height: size,
                   transform: `translate(-50%, -50%) translateX(${x}px)`,
                   zIndex: isCenter ? 20 : 10 - Math.abs(d),
-                  transitionDuration: isDragging ? "0ms" : "300ms",
+                  transitionDuration: isDragging ? "0ms" : "320ms",
                 };
                 const baseClass =
-                  "absolute left-1/2 top-1/2 flex flex-col items-center justify-center overflow-hidden rounded-app-sm border p-1.5 text-center transition-[transform,opacity,box-shadow] ease-out no-underline";
+                  "absolute left-1/2 top-1/2 flex flex-col items-center justify-center overflow-hidden rounded-app-sm border p-1.5 text-center transition-[transform,opacity,box-shadow] ease-brand no-underline";
                 const stateClass = isCenter
                   ? "border-night-primary opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.45),0_16px_32px_-12px_rgba(255,45,138,0.6)]"
                   : "border-white/10 opacity-70 hover:opacity-90";
@@ -378,6 +412,7 @@ export function SchoolEventsDiscovery({
                     <button
                       key="all"
                       type="button"
+                      ref={registerSlotEl}
                       role="option"
                       aria-selected={isCenter}
                       onClickCapture={(e) => onCardClickCapture(e, idx)}
@@ -400,6 +435,7 @@ export function SchoolEventsDiscovery({
                     <button
                       key="other"
                       type="button"
+                      ref={registerSlotEl}
                       role="option"
                       aria-selected={isCenter}
                       onClickCapture={(e) => onCardClickCapture(e, idx)}
@@ -423,6 +459,7 @@ export function SchoolEventsDiscovery({
                   <Link
                     key={school.id}
                     href={`/schools/${school.slug}`}
+                    ref={registerSlotEl}
                     role="option"
                     aria-selected={isCenter}
                     onClickCapture={(e) => onCardClickCapture(e, idx)}
