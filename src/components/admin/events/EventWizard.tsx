@@ -227,6 +227,9 @@ export function EventWizard({
                 <a href={`/admin/content/${e.id}/registrations`} className="text-xs text-admin-muted hover:text-night-text hover:underline">
                   Участники →
                 </a>
+                <a href={`/admin/content/${e.id}/team`} className="text-xs text-admin-muted hover:text-night-text hover:underline">
+                  Команда →
+                </a>
               </div>
             ))}
           </div>

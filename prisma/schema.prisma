@@ -103,6 +103,8 @@ model User {
   moderationLogs   ModerationLog[] @relation("ModerationActor")
   accessRequestsSubmitted AccessRequest[] @relation("AccessRequestApplicant")
   accessRequestsReviewed  AccessRequest[] @relation("AccessRequestReviewer")
+  eventTeamMemberships    EventTeamMember[] @relation("EventTeamMemberUser")
+  eventTeamInvitesSent    EventTeamMember[] @relation("EventTeamMemberInvitedBy")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -454,6 +456,7 @@ model Event {
   achievements  Achievement[]
   competition   Competition? // СЛОЙ 3: когда eventType = CONTEST, здесь — привязанное соревнование движка Jack & Jill (см. docs/00_DECISIONS.md, D3)
   registrations EventRegistration[] // Events Engine: регистрации на само событие (Party/Masterclass/...), НЕ то же самое, что Registration Competition Engine
+  teamMembers   EventTeamMember[] // Events Engine, этап 5: совместное управление событием, см. комментарий у модели
 
   // Event Engine — type-specific конфигурация (расширяемый реестр типов,
   // см. src/lib/events/event-type-registry.ts). PARTY/MASTERCLASS хранят
@@ -705,6 +708,43 @@ model EventRegistration {
   @@index([eventId])
   @@index([dancerId])
   @@index([eventId, status])
+}
+
+// ---------------------------------------------------------------------------
+// EventTeamMember — совместное управление событием (Events Engine, этап 5)
+// ---------------------------------------------------------------------------
+//
+// Минимальная RBAC-модель (по прямому требованию задания — "не создавай
+// сложную enterprise permission system"): OWNER не хранится отдельной
+// строкой — это уже существующий Event.createdById (тот же паттерн, что и
+// School.ownerUserId). Здесь — ДОПОЛНИТЕЛЬНЫЕ люди, которых владелец
+// подключил к своему событию. В этой версии все не-владельческие роли дают
+// ОДИНАКОВЫЙ эффективный доступ (просмотр + управление статусом/оплатой
+// регистраций, см. registration-service.ts hasEventAccess) — значение role
+// пока используется только для отображения "кто есть кто" в UI команды,
+// разграничение возможностей по ролям — сознательно отложенная задача
+// следующего прохода, а не тихо забытое требование.
+enum EventTeamRole {
+  MANAGER
+  EDITOR
+  CHECK_IN
+  FINANCE
+}
+
+model EventTeamMember {
+  id          String        @id @default(cuid())
+  eventId     String
+  event       Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation("EventTeamMemberUser", fields: [userId], references: [id])
+  role        EventTeamRole
+  invitedById String
+  invitedBy   User          @relation("EventTeamMemberInvitedBy", fields: [invitedById], references: [id])
+  createdAt   DateTime      @default(now())
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import type { EventRegistration, Prisma, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { hasEventAccess } from "./access";
 
 // Events Engine, этап 2 — регистрация на обычное событие (Party/Masterclass/
 // ...). НЕ путать с Registration Competition Engine (Слой 3, J&J с ролями/
@@ -34,10 +35,6 @@ async function requireRegistrableEvent(eventId: string) {
     throw new RegistrationClosedError();
   }
   return event;
-}
-
-function isOwnerOrAdmin(event: { createdById: string }, user: User) {
-  return event.createdById === user.id || user.role === "ADMIN";
 }
 
 // Самостоятельная регистрация текущего пользователя. Идемпотентно:
@@ -120,9 +117,10 @@ export type RegistrationListPage = {
   waitlistCount: number;
 };
 
-// Список участников — только владелец события или ADMIN (тот же owner-check,
-// что и в event-service.ts), server-side пагинация с самого начала (CLAUDE.md
-// §24 Performance — не грузить весь список одним запросом).
+// Список участников — владелец события, ADMIN или член команды события
+// (Events Engine, этап 5 — EventTeamMember, любая роль), server-side
+// пагинация с самого начала (CLAUDE.md §24 Performance — не грузить весь
+// список одним запросом).
 export async function listEventRegistrations(
   eventId: string,
   user: User,
@@ -130,7 +128,7 @@ export async function listEventRegistrations(
 ): Promise<RegistrationListPage> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new RegistrationNotFoundError();
-  if (!isOwnerOrAdmin(event, user)) throw new RegistrationForbiddenError("forbidden");
+  if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
 
   const safePageSize = Math.min(Math.max(pageSize, 1), 100);
   const safePage = Math.max(page, 1);
@@ -166,7 +164,7 @@ export async function updateEventRegistration(
     include: { event: true },
   });
   if (!registration) throw new RegistrationNotFoundError();
-  if (!isOwnerOrAdmin(registration.event, user)) throw new RegistrationForbiddenError("forbidden");
+  if (!(await hasEventAccess(registration.event, user))) throw new RegistrationForbiddenError("forbidden");
 
   return prisma.eventRegistration.update({
     where: { id: registrationId },

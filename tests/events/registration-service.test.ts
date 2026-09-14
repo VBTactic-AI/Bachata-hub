@@ -15,6 +15,10 @@ const topLevelEventRegistrationCount = vi.fn();
 const topLevelEventRegistrationFindUnique = vi.fn();
 const topLevelEventRegistrationUpdate = vi.fn();
 const executeRaw = vi.fn().mockResolvedValue(0);
+// Events Engine, этап 5 — hasEventAccess (src/server/events/access.ts) query
+// команды события; в тестах владелец/ADMIN всегда short-circuit'ят раньше
+// этого запроса, но mock всё равно должен существовать для "чужого события".
+const eventTeamMemberFindUnique = vi.fn().mockResolvedValue(null);
 
 const fakeTx = {
   $executeRaw: executeRaw,
@@ -36,6 +40,7 @@ vi.mock("@/lib/prisma", () => ({
       count: (...a: unknown[]) => topLevelEventRegistrationCount(...a),
       update: (...a: unknown[]) => topLevelEventRegistrationUpdate(...a),
     },
+    eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
@@ -83,6 +88,7 @@ const user = makeUser();
 beforeEach(() => {
   dancerFindUnique.mockReset().mockResolvedValue(dancer);
   eventFindUnique.mockReset().mockResolvedValue(registrableEvent);
+  eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
   eventRegistrationFindUnique.mockReset().mockResolvedValue(null);
   eventRegistrationCount.mockReset().mockResolvedValue(0);
   eventRegistrationCreate.mockReset().mockResolvedValue({ id: "reg1", status: "REGISTERED" });
