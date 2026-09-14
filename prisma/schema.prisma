@@ -450,9 +450,10 @@ model Event {
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 
-  attendances  Attendance[]
-  achievements Achievement[]
-  competition  Competition? // СЛОЙ 3: когда eventType = CONTEST, здесь — привязанное соревнование движка Jack & Jill (см. docs/00_DECISIONS.md, D3)
+  attendances   Attendance[]
+  achievements  Achievement[]
+  competition   Competition? // СЛОЙ 3: когда eventType = CONTEST, здесь — привязанное соревнование движка Jack & Jill (см. docs/00_DECISIONS.md, D3)
+  registrations EventRegistration[] // Events Engine: регистрации на само событие (Party/Masterclass/...), НЕ то же самое, что Registration Competition Engine
 
   // Event Engine — type-specific конфигурация (расширяемый реестр типов,
   // см. src/lib/events/event-type-registry.ts). PARTY/MASTERCLASS хранят
@@ -650,11 +651,60 @@ model Dancer {
   // (docs/00_DECISIONS.md, план "Приз зрительских симпатий").
   showAudienceAwardsPublicly Boolean     @default(false)
 
-  attendances   Attendance[]
-  achievements  Achievement[]
-  registrations Registration[] // СЛОЙ 3: регистрации на соревнования Jack & Jill
+  attendances        Attendance[]
+  achievements       Achievement[]
+  registrations      Registration[] // СЛОЙ 3: регистрации на соревнования Jack & Jill
+  eventRegistrations EventRegistration[] // Events Engine: регистрации на обычные события (НЕ путать с Registration выше — другой домен, см. комментарий у модели)
 
   @@index([cityId])
+}
+
+// ---------------------------------------------------------------------------
+// EventRegistration — регистрация на обычное событие (Events Engine, этап 2)
+// ---------------------------------------------------------------------------
+//
+// НЕ путать с моделью Registration (Competition Engine, Слой 3) — та про
+// J&J-соревнования с ролями LEADER/FOLLOWER и дивизионами, эта — про обычные
+// Party/Masterclass/... без ролей и дивизионов (audit_report.md Risk #1:
+// переиспользование Registration для обычных событий нарушило бы её
+// текущие ограничения — @@unique([competitionId, divisionId, dancerId]),
+// обязательный role). Активируется через уже существующий
+// Event.registrationEnabled.
+//
+// isPaid/paidAt — тот же принцип ручного чекбокса "оплачено", что уже
+// используется в Registration.isPaid Competition Engine (docs/00_DECISIONS.md,
+// redesign 2026-09-09: только факт оплаты, без сумм/валюты/платёжного
+// провайдера) — переиспользуем проверенный паттерн, а не изобретаем richer
+// PaymentStatus enum для того же самого MVP-уровня задачи.
+enum EventRegistrationStatus {
+  REGISTERED
+  CONFIRMED
+  WAITLIST // Event.capacity уже заполнен на момент регистрации
+  CANCELLED // самим участником — статус, не физическое удаление строки
+  REJECTED // решение организатора — самостоятельно участник это не отменяет (см. registration-service.ts)
+  NO_SHOW
+}
+
+model EventRegistration {
+  id          String                  @id @default(cuid())
+  eventId     String
+  event       Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  dancerId    String
+  dancer      Dancer                  @relation(fields: [dancerId], references: [id])
+  status      EventRegistrationStatus @default(REGISTERED)
+  isPaid      Boolean                 @default(false)
+  paidAt      DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  // Одна регистрация на пару событие-танцор — повторная попытка
+  // реактивирует существующую строку (см. registerForEvent), а не создаёт
+  // дубликат (тот же принцип, что и у Attendance.@@unique([dancerId, eventId])).
+  @@unique([eventId, dancerId])
+  @@index([eventId])
+  @@index([dancerId])
+  @@index([eventId, status])
 }
 
 // ---------------------------------------------------------------------------
