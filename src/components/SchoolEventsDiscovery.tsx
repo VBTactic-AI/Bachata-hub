@@ -5,9 +5,8 @@ import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import Link from "next/link";
 import type { EventFormat } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
-import { formatEventTime, formatRelativeDayLabel, pluralizeRu } from "@/lib/format";
+import { formatEventTime, formatRelativeDayLabel } from "@/lib/format";
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
-import { VerificationBadge } from "@/components/VerificationBadge";
 import { OTHER_EVENTS_ID } from "@/lib/school-discovery-constants";
 import type { DiscoveryEventGroups, SchoolDiscoveryData, SchoolDiscoveryEvent } from "@/lib/school-discovery";
 
@@ -32,6 +31,14 @@ const EVENT_FORMAT_LABEL: Record<EventFormat, string> = {
 };
 
 const CARD_WIDTH = "w-[78%] sm:w-[46%] md:w-[31%] lg:w-[23%] xl:w-[19%]";
+// Карточки реальных школ — квадратные и маленькие, только фото/название
+// (по прямому запросу пользователя, 2026-09-14: "минимализм", "в разы 3
+// меньше", один размер что на мобильном, что на десктопе — раньше карточка
+// школы была ~290px на мобильном/~280px на десктопе, 96px даёт нужное
+// уменьшение примерно в 3 раза на обоих). "Все школы"/"Другие события"
+// сознательно оставлены как есть — другого размера (CARD_WIDTH), по прямому
+// решению пользователя не трогать их.
+const SCHOOL_CARD_SIZE = "h-24 w-24";
 
 function EventCard({ event }: { event: SchoolDiscoveryEvent }) {
   const startsAt = new Date(event.startsAt);
@@ -144,6 +151,29 @@ export function SchoolEventsDiscovery({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
+
+  // Прокрутка карусели колесом мыши (по прямому запросу пользователя,
+  // 2026-09-14) — переводим вертикальный wheel-delta в горизонтальный скролл
+  // трека. Слушатель добавлен нативно через addEventListener, а не через
+  // JSX onWheel: React вешает onWheel как passive-листенер, в котором
+  // preventDefault() тихо игнорируется браузером (нельзя было бы подавить
+  // скролл страницы). На границах списка (уже проскроллено до конца в эту
+  // сторону) событие НЕ перехватывается — колесо отдаётся странице, чтобы
+  // не запирать вертикальный скролл сайта над каруселью.
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    function onWheel(e: WheelEvent) {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const atStart = track!.scrollLeft <= 0 && e.deltaY < 0;
+      const atEnd = track!.scrollLeft + track!.clientWidth >= track!.scrollWidth - 1 && e.deltaY > 0;
+      if (atStart || atEnd) return;
+      e.preventDefault();
+      track!.scrollLeft += e.deltaY;
+    }
+    track.addEventListener("wheel", onWheel, { passive: false });
+    return () => track.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Индексы карточек: 0 = "Все школы", 1 = "Другие события", 2..n+1 = школы.
   function idAtIndex(i: number): string | null {
@@ -303,25 +333,7 @@ export function SchoolEventsDiscovery({
         <p className="m-0 text-sm text-night-muted">{t.schoolDiscovery.noSchools}</p>
       ) : (
         <>
-          <div className="relative">
-            {/* Стрелки — только на десктопе (п.9 ТЗ), на мобильном достаточно свайпа */}
-            <button
-              type="button"
-              onClick={goPrev}
-              aria-label={t.schoolDiscovery.prevSchool}
-              className="absolute -left-3 top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              onClick={goNext}
-              aria-label={t.schoolDiscovery.nextSchool}
-              className="absolute -right-3 top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
-            >
-              →
-            </button>
-
+          <div>
             <div
               ref={trackRef}
               role="listbox"
@@ -334,9 +346,29 @@ export function SchoolEventsDiscovery({
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
               style={{ touchAction: "pan-x" }}
-              className="flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-px-4 pb-1 pl-4 pr-4 [-ms-overflow-style:none] [scrollbar-width:none] select-none cursor-grab active:cursor-grabbing [&::-webkit-scrollbar]:hidden sm:scroll-px-10 sm:pl-10 sm:pr-10"
+              className="flex items-start snap-x snap-mandatory gap-3 overflow-x-auto scroll-pl-4 scroll-pr-4 pb-1 pl-4 pr-4 [-ms-overflow-style:none] [scrollbar-width:none] select-none cursor-grab active:cursor-grabbing [&::-webkit-scrollbar]:hidden sm:scroll-pl-12 sm:scroll-pr-12"
             >
-              {/* Псевдо-карточка "Все школы" — всегда первая (п.4/п.36 ТЗ) */}
+              {/* Стрелки — только на десктопе (п.9 ТЗ), на мобильном достаточно
+                  свайпа. Внутри трека, а не абсолютно поверх него — position:
+                  sticky на первом/последнем flex-элементе скроллящегося
+                  контейнера сама "прилипает" к видимому краю ТОЛЬКО пока есть
+                  что скроллить; если карточек не хватает на всю ширину, стрелка
+                  просто остаётся в потоке сразу после последней карточки, а не
+                  висит в пустоте у края колонки (по прямому запросу
+                  пользователя, 2026-09-15) — без замера overflow через JS. */}
+              <button
+                type="button"
+                onClick={goPrev}
+                aria-label={t.schoolDiscovery.prevSchool}
+                className="sticky left-0 z-10 hidden h-9 w-9 shrink-0 self-center items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
+              >
+                ←
+              </button>
+
+              {/* Псевдо-карточка "Все школы" — всегда первая (п.4/п.36 ТЗ).
+                  Тот же размер и минимализм, что у карточек школ (по прямому
+                  запросу пользователя, 2026-09-14) — иконка + короткая
+                  подпись, без статистики. */}
               <button
                 type="button"
                 ref={(el) => {
@@ -346,29 +378,23 @@ export function SchoolEventsDiscovery({
                 aria-selected={activeId === null}
                 onClick={() => selectIndex(0)}
                 onFocus={() => setActiveId(null)}
-                className={`shrink-0 snap-center rounded-app border p-4 text-left transition-all duration-[250ms] ease-out ${CARD_WIDTH} ${
+                className={`flex shrink-0 snap-center flex-col items-center justify-center gap-1 rounded-app-sm border p-2 text-center transition-all duration-[250ms] ease-out ${SCHOOL_CARD_SIZE} ${
                   activeId === null
-                    ? "scale-[1.02] border-night-primary bg-gradient-night-cta opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_20px_40px_-15px_rgba(255,45,138,0.5)]"
-                    : "border-white/10 bg-night-card/75 opacity-80 hover:opacity-100"
+                    ? "scale-[1.05] border-night-primary bg-gradient-night-cta opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_12px_24px_-10px_rgba(255,45,138,0.5)]"
+                    : "border-white/10 bg-gradient-night-cta opacity-80 hover:opacity-100"
                 }`}
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-lg" aria-hidden="true">
+                <span className="text-lg text-white" aria-hidden="true">
                   ✦
                 </span>
-                <h3 className="m-0 mt-3 font-night text-base font-bold text-white">{t.schoolDiscovery.allSchoolsTitle}</h3>
-                <p className="m-0 mt-1 text-xs text-white/80">{t.schoolDiscovery.allSchoolsSubtitle}</p>
-                <p className="m-0 mt-3 text-xs font-semibold text-white/90">
-                  {data.totalSchools} {pluralizeRu(data.totalSchools, t.school.schoolsFoundCount)}
-                  {" · "}
-                  {data.totalUpcomingEvents} {pluralizeRu(data.totalUpcomingEvents, t.event.eventsFoundCount)}
-                </p>
+                <span className="line-clamp-2 text-[0.66rem] font-semibold leading-tight text-white">{t.schoolDiscovery.allSchoolsTitle}</span>
               </button>
 
               {/* Псевдо-карточка "Другие события" — события без привязанной школы
                   (по прямому решению пользователя, 2026-09-14) — визуально
                   отличается от "Все школы" (нейтральный фон вместо акцентного
                   градиента), чтобы не создавать впечатление второй "главной"
-                  карточки. */}
+                  карточки. Тот же размер/минимализм, что у карточек школ. */}
               <button
                 type="button"
                 ref={(el) => {
@@ -378,25 +404,25 @@ export function SchoolEventsDiscovery({
                 aria-selected={activeId === OTHER_EVENTS_ID}
                 onClick={() => selectIndex(1)}
                 onFocus={() => setActiveId(OTHER_EVENTS_ID)}
-                className={`shrink-0 snap-center rounded-app border p-4 text-left transition-all duration-[250ms] ease-out ${CARD_WIDTH} ${
+                className={`flex shrink-0 snap-center flex-col items-center justify-center gap-1 rounded-app-sm border p-2 text-center transition-all duration-[250ms] ease-out ${SCHOOL_CARD_SIZE} ${
                   activeId === OTHER_EVENTS_ID
-                    ? "scale-[1.02] border-night-primary bg-night-card2 opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_20px_40px_-15px_rgba(255,45,138,0.5)]"
-                    : "border-white/10 bg-night-card/75 opacity-80 hover:opacity-100"
+                    ? "scale-[1.05] border-night-primary bg-night-card2 opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_12px_24px_-10px_rgba(255,45,138,0.5)]"
+                    : "border-white/10 bg-night-card2 opacity-80 hover:opacity-100"
                 }`}
               >
-                <span
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-night-card2 text-lg text-night-pink"
-                  aria-hidden="true"
-                >
+                <span className="text-lg text-night-pink" aria-hidden="true">
                   ⋯
                 </span>
-                <h3 className="m-0 mt-3 font-night text-base font-bold text-night-text">{t.schoolDiscovery.otherEventsTitle}</h3>
-                <p className="m-0 mt-1 text-xs text-night-muted">{t.schoolDiscovery.otherEventsSubtitle}</p>
-                <p className="m-0 mt-3 text-xs font-semibold text-night-muted">
-                  {data.otherEventsCount} {pluralizeRu(data.otherEventsCount, t.event.eventsFoundCount)}
-                </p>
+                <span className="line-clamp-2 text-[0.66rem] font-semibold leading-tight text-night-text">
+                  {t.schoolDiscovery.otherEventsTitle}
+                </span>
               </button>
 
+              {/* Карточки реальных школ — минимализм (по прямому запросу
+                  пользователя, 2026-09-14): только фото/лого и название,
+                  квадратные и маленькие. Логотипа/обложки школа не хранит
+                  (нет такого поля в схеме) — как и раньше, градиент-
+                  плейсхолдер вместо выдуманного фото. */}
               {data.schools.map((school, i) => {
                 const isActive = activeId === school.id;
                 return (
@@ -410,59 +436,33 @@ export function SchoolEventsDiscovery({
                     aria-selected={isActive}
                     onFocus={() => setActiveId(school.id)}
                     onClick={(e) => onSchoolCardClick(e, school.id)}
-                    className={`group shrink-0 snap-center overflow-hidden rounded-app border no-underline transition-all duration-[250ms] ease-out hover:-translate-y-[3px] ${CARD_WIDTH} ${
+                    className={`group relative shrink-0 snap-center overflow-hidden rounded-app-sm border no-underline transition-all duration-[250ms] ease-out ${SCHOOL_CARD_SIZE} ${
                       isActive
-                        ? "scale-[1.02] border-night-primary bg-night-card opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_20px_40px_-15px_rgba(255,45,138,0.5)]"
-                        : "border-white/10 bg-night-card/75 opacity-80 hover:opacity-100"
+                        ? "scale-[1.05] border-night-primary opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_12px_24px_-10px_rgba(255,45,138,0.5)]"
+                        : "border-white/10 opacity-80 hover:opacity-100"
                     }`}
                   >
-                    <div className="relative h-[110px] w-full overflow-hidden">
-                      <div
-                        className={`h-full w-full bg-gradient-night-hero bg-cover bg-center transition-transform duration-300 ease-out group-hover:scale-[1.03] ${
-                          isActive ? "brightness-110" : "brightness-90"
-                        }`}
-                        aria-hidden="true"
-                      />
-                      <div className="absolute left-2.5 top-2.5">
-                        <VerificationBadge status={school.verificationStatus} />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1.5 p-3.5">
-                      <h3 className={`m-0 truncate text-[0.95rem] font-semibold ${isActive ? "text-night-text" : "text-night-text/85"}`}>
-                        {school.name}
-                      </h3>
-                      <p className="m-0 truncate text-xs text-night-muted">{school.cityName}</p>
-                      {school.description && <p className="m-0 line-clamp-2 text-xs text-night-muted">{school.description}</p>}
-                      {school.directions.length > 0 && (
-                        <div className="mt-0.5 flex flex-wrap gap-1.5">
-                          {school.directions.slice(0, 2).map((d) => (
-                            <span key={d} className="rounded-full bg-night-card2 px-2 py-0.5 text-[0.68rem] font-semibold text-night-pink">
-                              {d}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <div className="mt-1 flex items-center justify-between gap-2 border-t border-night-border pt-2">
-                        <span className="truncate text-[0.72rem] text-night-muted">
-                          {school.avgRating !== null ? `★ ${school.avgRating.toFixed(1)} · ` : ""}
-                          {school.teachersCount} {pluralizeRu(school.teachersCount, ["преподаватель", "преподавателя", "преподавателей"])}
-                        </span>
-                        {/* Явный переход одним кликом (п.17 ТЗ) — stopPropagation,
-                            чтобы клик не перехватывался onSchoolCardClick (там
-                            одиночный клик по остальной карточке только выбирает
-                            школу, переход — по двойному клику, по прямому
-                            запросу пользователя, 2026-09-14). */}
-                        <span
-                          onClick={(e) => e.stopPropagation()}
-                          className="shrink-0 text-xs font-semibold text-night-primary"
-                        >
-                          {t.common.details} →
-                        </span>
-                      </div>
+                    <div
+                      className={`h-full w-full bg-gradient-night-hero bg-cover bg-center transition-transform duration-300 ease-out group-hover:scale-105 ${
+                        isActive ? "brightness-110" : "brightness-90"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-1.5 pb-1.5 pt-4">
+                      <span className="block truncate text-center text-[0.66rem] font-semibold leading-tight text-white">{school.name}</span>
                     </div>
                   </Link>
                 );
               })}
+
+              <button
+                type="button"
+                onClick={goNext}
+                aria-label={t.schoolDiscovery.nextSchool}
+                className="sticky right-0 z-10 hidden h-9 w-9 shrink-0 self-center items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
+              >
+                →
+              </button>
             </div>
           </div>
 
