@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
+import { can, hasStaffAccessToCompetition } from "@/server/rbac/authorize";
 import { buttonVariants } from "@/components/ui/button";
 import { cardVariants } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,15 +14,19 @@ export default async function CompetitionsPage() {
   if (!actor) redirect("/login");
 
   const isSuperAdmin = can(actor, "competition:create");
-  // Не только "свои" соревнования — иначе танцор, который ещё никуда не
-  // регистрировался, вообще не может узнать, что открыта регистрация
-  // (некуда было бы кликнуть, чтобы записаться в первый раз).
+  // Рабочий инструмент организатора/персонала — только СВОИ соревнования, где
+  // реально назначен штатно (EVENT_ADMIN/HEAD_JUDGE/SCORER/DJ/MC), не любое
+  // членство (рядовой COMPETITOR исключён, hasStaffAccessToCompetition) и не
+  // "у кого угодно открыта регистрация" (для этого — публичная витрина
+  // /compete, уточнено пользователем, 2026-09-14 — раньше сюда ошибочно
+  // попадал и рядовой танцор).
+  const staffCompetitionIds = [...actor.permissionsByCompetition.keys()].filter((id) =>
+    hasStaffAccessToCompetition(actor, id)
+  );
   const competitions = isSuperAdmin
     ? await prisma.competition.findMany({ orderBy: { createdAt: "desc" } })
     : await prisma.competition.findMany({
-        where: {
-          OR: [{ members: { some: { userId: actor.userId } } }, { status: "REGISTRATION_OPEN" }],
-        },
+        where: { id: { in: staffCompetitionIds } },
         orderBy: { createdAt: "desc" },
       });
 

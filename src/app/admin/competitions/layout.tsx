@@ -1,23 +1,27 @@
 import { redirect } from "next/navigation";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
 import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
+import { hasNoAdminAccess } from "@/server/rbac/authorize";
 import { AdminSectionShell } from "@/components/admin/AdminSectionShell";
 import { CompetitionAdminSidebar } from "@/components/admin/sidebars/CompetitionAdminSidebar";
 
-// Соревнования — организатор соревнований (глобальное право competition:create,
-// выданное через AccessRequest, см. docs/00_DECISIONS.md) ИЛИ участник хотя бы
-// одного соревнования в любой роли (CompetitionMember — HEAD_JUDGE/JUDGE/
-// SCORER/DJ/MC тоже заходят сюда посмотреть своё, страница
-// /admin/competitions уже показывает им только относящееся к ним + открытые
-// для регистрации). Справочники внутри сайдбара — отдельно только для
-// isAdmin (супер-админ).
+// Соревнования — ТОЛЬКО реальный персонал: организатор (глобальное
+// competition:create, выданное через AccessRequest) ИЛИ штатное назначение
+// хотя бы в одном соревновании (EVENT_ADMIN/HEAD_JUDGE/SCORER/DJ/MC —
+// hasNoAdminAccess уже отделяет их от рядовых прав участника/судьи). Рядовой
+// зарегистрированный танцор сюда не попадает, даже если у него открыта
+// регистрация где-то — это его собственная витрина/регистрация — /compete
+// (см. её комментарий: "/admin/competitions — рабочий инструмент
+// организатора/судьи, /compete — витрина для танцора"), не рабочий
+// инструмент организатора (уточнено пользователем, 2026-09-14 — раньше
+// здесь ошибочно пускало и рядового COMPETITOR).  Справочники внутри
+// сайдбара — отдельно только для isAdmin (супер-админ).
 export default async function CompetitionsAdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const actor = await getActor();
-  const hasAccess = isAdmin(user) || can(actor, "competition:create") || (actor?.permissionsByCompetition.size ?? 0) > 0;
+  const hasAccess = isAdmin(user) || (actor !== null && !hasNoAdminAccess(actor));
   if (!hasAccess) redirect("/admin");
 
   return <AdminSectionShell sidebar={<CompetitionAdminSidebar isAdminUser={isAdmin(user)} />}>{children}</AdminSectionShell>;

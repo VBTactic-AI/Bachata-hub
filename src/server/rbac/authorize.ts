@@ -52,6 +52,26 @@ export function hasNoAdminAccess(actor: Actor): boolean {
   return true;
 }
 
+// Тот же критерий "рядовые права vs штатное назначение", что и у
+// hasNoAdminAccess() выше, но для ОДНОГО конкретного соревнования — нужен
+// /admin/competitions[/[id]] (2026-09-14), куда пускают только реальный
+// персонал (EVENT_ADMIN/HEAD_JUDGE/SCORER/DJ/MC/SUPER_ADMIN), а не любого,
+// у кого там есть CompetitionMember роли COMPETITOR/JUDGE-only, и не любого
+// авторизованного пользователя просто потому, что регистрация открыта —
+// для обычного танцора это /compete/[id] (публичная витрина), не рабочий
+// инструмент организатора.
+export function hasStaffAccessToCompetition(actor: Actor, competitionId: string): boolean {
+  for (const p of actor.globalPermissions) {
+    if (!NON_STAFF_PERMISSIONS.has(p)) return true;
+  }
+  const set = actor.permissionsByCompetition.get(competitionId);
+  if (!set) return false;
+  for (const p of set) {
+    if (!NON_STAFF_PERMISSIONS.has(p)) return true;
+  }
+  return false;
+}
+
 // Реализует шаги "Authentication -> RBAC -> competition membership" конвейера
 // авторизации (03 §3). Шаги "resource ownership/assignment", "state
 // validation" и "business rule validation" — ответственность вызывающего

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getMyDancerRef } from "@/lib/dancer";
 import { measureServerOperation } from "@/lib/performance-debug/server";
 import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
+import { can, hasStaffAccessToCompetition } from "@/server/rbac/authorize";
 import { Card } from "@/components/ui/card";
 import { DivisionSettingsPanel } from "@/components/admin/DivisionSettingsPanel";
 import { DivisionsOverviewTable, type DivisionOverviewRow } from "@/components/admin/DivisionsOverviewTable";
@@ -174,13 +174,15 @@ export default async function CompetitionDetailPage({ params }: { params: Promis
   );
   if (!competition) notFound();
 
-  // Доступ к странице — глобальные права (SUPER_ADMIN), любое членство в
-  // этом конкретном соревновании, ИЛИ открытая регистрация (иначе танцор,
-  // который ещё никуда не записан, не смог бы дойти до формы регистрации,
-  // на которую сам список /admin/competitions его уже пускает); управление
-  // (кнопки) — отдельная, более узкая проверка ниже.
-  const isMember = actor.permissionsByCompetition.has(competition.id) || actor.globalPermissions.size > 0;
-  if (!isMember && competition.status !== "REGISTRATION_OPEN") redirect("/admin/competitions");
+  // Доступ к странице — только реальный персонал этого соревнования
+  // (глобальные права SUPER_ADMIN/организатора, либо штатное назначение
+  // EVENT_ADMIN/HEAD_JUDGE/SCORER/DJ/MC). Рядовой зарегистрированный
+  // участник и просто открытая регистрация сюда больше не пускают — это
+  // рабочий инструмент организатора/судьи, не витрина танцора (/compete/[id]
+  // для этого); уточнено пользователем, 2026-09-14 — раньше пускало и
+  // рядового COMPETITOR, и вообще любого авторизованного при открытой
+  // регистрации. Управление (кнопки) — отдельная, более узкая проверка ниже.
+  if (!hasStaffAccessToCompetition(actor, competition.id)) redirect("/admin/competitions");
 
   const canManage = can(actor, "competition:update", competition.id);
   const canManageRegistrations = can(actor, "registration:manage", competition.id);
