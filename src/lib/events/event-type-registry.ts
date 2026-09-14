@@ -17,6 +17,7 @@ export type EventStepId =
   | "partyDetails"
   | "sessions"
   | "details"
+  | "festivalProgram"
   | "tickets"
   | "preview"
   | "publish";
@@ -63,14 +64,16 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     // (/admin/competitions/[id]), не дублируется здесь.
     steps: ["type", "basic", "location", "datetime", "preview", "publish"],
   },
-  // Generic-конфигурация — сохраняет существующую (до этой задачи) возможность
-  // создать эти форматы, без специфичных для них полей/шагов.
+  // Events Engine, этап 6 — программа фестиваля (FestivalDetails +
+  // EventProgramItem, см. schema.prisma). Раньше FESTIVAL был
+  // generic-конфигурацией без своего шага — теперь у него есть "Программа",
+  // по аналогии со StepSessions у MASTERCLASS.
   FESTIVAL: {
     format: "FESTIVAL",
     label: "Фестиваль",
     description: "Многодневный танцевальный фестиваль",
     icon: "🎪",
-    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+    steps: ["type", "basic", "location", "datetime", "festivalProgram", "tickets", "preview", "publish"],
   },
   INTENSIVE: {
     format: "INTENSIVE",

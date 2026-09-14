@@ -246,6 +246,7 @@ model Teacher {
 
   schedules           ClassSchedule[]
   masterclassSessions MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
+  festivalProgramItems EventProgramItem[] // Events Engine, этап 6 — тот же принцип переиспользования, что и masterclassSessions выше
 
   @@index([schoolId])
 }
@@ -464,8 +465,15 @@ model Event {
   // выше — новых таблиц для него не заводим.
   partyDetails       PartyDetails?
   masterclassDetails MasterclassDetails?
+  festivalDetails    FestivalDetails? // Events Engine, этап 6 — заполняется только когда format = FESTIVAL
   priceOptions       EventPriceOption[]
   media              EventMedia[]
+  // Обратная связь для EventProgramItem.linkedEvent ниже — отдельное
+  // "настоящее" событие (party/workshop/contest) со своей публичной
+  // страницей, на которое ссылается пункт программы фестиваля. Не путать с
+  // festivalDetails выше — то событие ЯВЛЯЕТСЯ фестивалем, это — событие, НА
+  // КОТОРОЕ ссылается программа чужого фестиваля.
+  linkedFromProgramItems EventProgramItem[] @relation("ProgramItemLinkedEvent")
 
   @@index([cityId, startsAt])
   @@index([schoolId])
@@ -591,6 +599,59 @@ model MasterclassSession {
 
   @@index([masterclassDetailsId])
   @@index([teacherId])
+}
+
+// ---------------------------------------------------------------------------
+// FestivalDetails / EventProgramItem — программа фестиваля (Events Engine,
+// этап 6)
+// ---------------------------------------------------------------------------
+//
+// 1:1 к Event — тот же паттерн, что и PartyDetails/MasterclassDetails,
+// заполняется только когда Event.format = FESTIVAL (audit_report.md FEST-001:
+// "не создавать параллельную модель Festival, по аналогии с PartyDetails
+// добавить FestivalDetails/EventProgramItem[]"). "Пропуска"/цены festival —
+// НЕ новая сущность: переиспользуется уже существующий EventPriceOption
+// (общий для PARTY/MASTERCLASS/FESTIVAL, см. комментарий у него).
+// "Преподаватели фестиваля" — НЕ отдельный денормализованный список, а
+// производная от EventProgramItem.teacherId у пунктов типа WORKSHOP (тот же
+// принцип переиспользования Teacher, что и MasterclassSession.teacherId) —
+// без риска рассинхронизации отдельного списка с реальным расписанием.
+enum FestivalProgramItemType {
+  WORKSHOP
+  PARTY
+  COMPETITION
+  OTHER
+}
+
+model FestivalDetails {
+  id      String @id @default(cuid())
+  eventId String @unique
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  programItems EventProgramItem[]
+}
+
+model EventProgramItem {
+  id                String                  @id @default(cuid())
+  festivalDetailsId String
+  festivalDetails   FestivalDetails         @relation(fields: [festivalDetailsId], references: [id], onDelete: Cascade)
+  title             String
+  type              FestivalProgramItemType
+  startTime         DateTime
+  endTime           DateTime?
+  teacherId         String?
+  teacher           Teacher?                @relation(fields: [teacherId], references: [id])
+  // Опциональная ссылка на дочернее "настоящее" событие со своей публичной
+  // страницей (party/workshop как отдельный Event, или CONTEST — у которого,
+  // в свою очередь, уже есть Event.competition, см. D3) — не заводим
+  // отдельный linkedCompetitionId, Event уже покрывает оба случая.
+  linkedEventId     String?
+  linkedEvent       Event?                  @relation("ProgramItemLinkedEvent", fields: [linkedEventId], references: [id])
+  order             Int                     @default(0)
+
+  @@index([festivalDetailsId])
+  @@index([teacherId])
+  @@index([linkedEventId])
 }
 
 // ---------------------------------------------------------------------------

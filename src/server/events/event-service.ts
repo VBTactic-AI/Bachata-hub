@@ -217,6 +217,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
 
     if (input.format === "PARTY") {
       await tx.masterclassDetails.deleteMany({ where: { eventId: row.id } });
+      await tx.festivalDetails.deleteMany({ where: { eventId: row.id } });
       await tx.partyDetails.upsert({
         where: { eventId: row.id },
         create: { eventId: row.id, ...(input.party ?? {}) },
@@ -224,6 +225,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       });
     } else if (input.format === "MASTERCLASS") {
       await tx.partyDetails.deleteMany({ where: { eventId: row.id } });
+      await tx.festivalDetails.deleteMany({ where: { eventId: row.id } });
       const details = await tx.masterclassDetails.upsert({
         where: { eventId: row.id },
         create: {
@@ -254,9 +256,32 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
           })),
         });
       }
+    } else if (input.format === "FESTIVAL") {
+      await tx.partyDetails.deleteMany({ where: { eventId: row.id } });
+      await tx.masterclassDetails.deleteMany({ where: { eventId: row.id } });
+      const details = await tx.festivalDetails.upsert({
+        where: { eventId: row.id },
+        create: { eventId: row.id },
+        update: {},
+      });
+      await tx.eventProgramItem.deleteMany({ where: { festivalDetailsId: details.id } });
+      if (input.festival?.programItems?.length) {
+        await tx.eventProgramItem.createMany({
+          data: input.festival.programItems.map((p, order) => ({
+            festivalDetailsId: details.id,
+            title: p.title,
+            type: p.type,
+            startTime: new Date(p.startTime),
+            endTime: p.endTime ? new Date(p.endTime) : null,
+            teacherId: p.teacherId || null,
+            order,
+          })),
+        });
+      }
     } else {
       await tx.partyDetails.deleteMany({ where: { eventId: row.id } });
       await tx.masterclassDetails.deleteMany({ where: { eventId: row.id } });
+      await tx.festivalDetails.deleteMany({ where: { eventId: row.id } });
     }
 
     return row;
@@ -337,6 +362,7 @@ export async function getEventDraftForEdit(eventId: string, user: User) {
       school: true,
       partyDetails: true,
       masterclassDetails: { include: { sessions: { orderBy: { order: "asc" } } } },
+      festivalDetails: { include: { programItems: { orderBy: { order: "asc" } } } },
       priceOptions: { orderBy: { order: "asc" } },
       media: { orderBy: { sortOrder: "asc" } },
       competition: true,

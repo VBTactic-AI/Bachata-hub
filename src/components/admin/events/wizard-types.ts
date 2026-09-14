@@ -30,6 +30,17 @@ export type WizardMasterclassSession = {
   capacity: string;
 };
 
+// Events Engine, этап 6 — пункт программы фестиваля. linkedEventId
+// сознательно не редактируется из Wizard'а (см. комментарий у
+// festivalProgramItemSchema, server/events/schemas.ts).
+export type WizardProgramItem = {
+  title: string;
+  type: "WORKSHOP" | "PARTY" | "COMPETITION" | "OTHER";
+  startTime: string;
+  endTime: string;
+  teacherId: string;
+};
+
 export type WizardDraft = {
   id?: string;
   slug?: string;
@@ -74,6 +85,9 @@ export type WizardDraft = {
     partnerRequired: boolean;
     sessions: WizardMasterclassSession[];
   };
+  festival: {
+    programItems: WizardProgramItem[];
+  };
   competitionId: string | null;
 };
 
@@ -113,6 +127,7 @@ export function emptyWizardDraft(defaultCityId: string): WizardDraft {
       cloakroom: false,
     },
     masterclass: { style: "", format: "", partnerRequired: false, sessions: [] },
+    festival: { programItems: [] },
     competitionId: null,
   };
 }
@@ -190,6 +205,20 @@ export function toApiPayload(d: WizardDraft, status: "DRAFT" | "PUBLISHED") {
                 room: s.room || undefined,
                 level: s.level || undefined,
                 capacity: s.capacity ? Number(s.capacity) : undefined,
+              })),
+          }
+        : undefined,
+    festival:
+      d.format === "FESTIVAL"
+        ? {
+            programItems: d.festival.programItems
+              .filter((p) => p.title.trim())
+              .map((p) => ({
+                title: p.title,
+                type: p.type,
+                startTime: p.startTime,
+                endTime: p.endTime || undefined,
+                teacherId: p.teacherId || undefined,
               })),
           }
         : undefined,
