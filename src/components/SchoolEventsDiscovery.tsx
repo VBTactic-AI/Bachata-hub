@@ -109,8 +109,7 @@ export function SchoolEventsDiscovery({
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const firstRun = useRef(true);
-  const dragRef = useRef<{ startX: number; startScrollLeft: number; dragging: boolean } | null>(null);
-  const suppressClick = useRef(false);
+  const dragRef = useRef<{ startX: number; startScrollLeft: number; dragging: boolean; pointerId: number } | null>(null);
   const suppressScrollDetection = useRef(false);
 
   async function loadEvents(id: string | null) {
@@ -238,12 +237,19 @@ export function SchoolEventsDiscovery({
   // Drag для мыши на десктопе (п.10 ТЗ) — тач-устройства скроллят нативно,
   // сюда не заходим (touch-action: pan-x на треке и так не конфликтует с
   // вертикальным скроллом страницы).
+  //
+  // track.setPointerCapture() вызывается НЕ на pointerdown, а только когда
+  // движение реально распознано как drag (>4px) — раньше он вызывался сразу
+  // на pointerdown для любого клика, из-за чего браузер иногда не доводил
+  // обычный клик по карточке школы до её <Link> (клик "не проваливался" в
+  // школу — баг пользователя, 2026-09-14, воспроизводился только на
+  // десктопе, где есть mouse-drag; на тач-устройствах эта функция не
+  // вызывается вовсе).
   function onPointerDown(e: PointerEvent) {
     if (e.pointerType === "touch") return;
     const track = trackRef.current;
     if (!track) return;
-    dragRef.current = { startX: e.clientX, startScrollLeft: track.scrollLeft, dragging: false };
-    track.setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, startScrollLeft: track.scrollLeft, dragging: false, pointerId: e.pointerId };
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -251,25 +257,31 @@ export function SchoolEventsDiscovery({
     const track = trackRef.current;
     if (!state || !track) return;
     const dx = e.clientX - state.startX;
-    if (Math.abs(dx) > 4) state.dragging = true;
+    if (!state.dragging && Math.abs(dx) > 4) {
+      state.dragging = true;
+      track.setPointerCapture(state.pointerId);
+    }
     if (state.dragging) track.scrollLeft = state.startScrollLeft - dx;
   }
 
   function onPointerUp() {
-    if (dragRef.current?.dragging) {
-      suppressClick.current = true;
-      setTimeout(() => {
-        suppressClick.current = false;
-      }, 0);
-    }
     dragRef.current = null;
   }
 
-  function onCardClickCapture(e: MouseEvent) {
-    if (suppressClick.current) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+  // Клик по карточке реальной школы (п.14 ТЗ, уточнено пользователем,
+  // 2026-09-14): одиночный клик выбирает школу активной (то же самое, что
+  // уже делают скролл/фокус), двойной клик — переход на страницу школы.
+  // Различаем через MouseEvent.detail: 0 — активация с клавиатуры
+  // (Enter/Space на сфокусированной ссылке, не трогаем — должна работать
+  // как обычная ссылка), 1 — первый клик мышью (перехватываем, только
+  // выбор), 2+ — второй клик того же двойного клика (не перехватываем,
+  // даём сработать обычной навигации по ссылке). Модификаторы
+  // (Ctrl/Cmd/Shift/колёсико) не трогаем — должны открывать в новой вкладке
+  // как обычная ссылка.
+  function onSchoolCardClick(e: MouseEvent, schoolId: string) {
+    if (e.detail === 0 || e.detail >= 2 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    setActiveId(schoolId);
   }
 
   const activeSchool = activeId && activeId !== OTHER_EVENTS_ID ? data.schools.find((s) => s.id === activeId) : null;
@@ -397,7 +409,7 @@ export function SchoolEventsDiscovery({
                     role="option"
                     aria-selected={isActive}
                     onFocus={() => setActiveId(school.id)}
-                    onClickCapture={onCardClickCapture}
+                    onClick={(e) => onSchoolCardClick(e, school.id)}
                     className={`group shrink-0 snap-center overflow-hidden rounded-app border no-underline transition-all duration-[250ms] ease-out hover:-translate-y-[3px] ${CARD_WIDTH} ${
                       isActive
                         ? "scale-[1.02] border-night-primary bg-night-card opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_20px_40px_-15px_rgba(255,45,138,0.5)]"
@@ -435,7 +447,17 @@ export function SchoolEventsDiscovery({
                           {school.avgRating !== null ? `★ ${school.avgRating.toFixed(1)} · ` : ""}
                           {school.teachersCount} {pluralizeRu(school.teachersCount, ["преподаватель", "преподавателя", "преподавателей"])}
                         </span>
-                        <span className="shrink-0 text-xs font-semibold text-night-primary">{t.common.details} →</span>
+                        {/* Явный переход одним кликом (п.17 ТЗ) — stopPropagation,
+                            чтобы клик не перехватывался onSchoolCardClick (там
+                            одиночный клик по остальной карточке только выбирает
+                            школу, переход — по двойному клику, по прямому
+                            запросу пользователя, 2026-09-14). */}
+                        <span
+                          onClick={(e) => e.stopPropagation()}
+                          className="shrink-0 text-xs font-semibold text-night-primary"
+                        >
+                          {t.common.details} →
+                        </span>
                       </div>
                     </div>
                   </Link>
