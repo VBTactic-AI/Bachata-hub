@@ -37,37 +37,6 @@ export const activeEventFilter = (): Prisma.EventWhereInput => ({
   isArchived: false,
 });
 
-export function eventsForHome(cityId: string | null) {
-  const { end: weekEnd } = thisWeekRange();
-  const { start: todayStart, end: todayEnd } = todayRange();
-
-  const cityFilter: Prisma.EventWhereInput = cityId ? { cityId } : {};
-
-  return Promise.all([
-    prisma.event.findMany({
-      where: {
-        ...activeEventFilter(),
-        ...cityFilter,
-        startsAt: { gte: todayStart, lt: todayEnd },
-      },
-      orderBy: { startsAt: "asc" },
-      include: { city: true, school: true, priceOptions: { orderBy: { order: "asc" } } },
-    }),
-    prisma.event.findMany({
-      where: {
-        ...activeEventFilter(),
-        ...cityFilter,
-        // "на этой неделе" = после сегодняшних (которые уже показаны отдельным
-        // блоком) и до конца 7-дневного окна.
-        startsAt: { gte: todayEnd, lt: weekEnd },
-      },
-      orderBy: { startsAt: "asc" },
-      include: { city: true, school: true, priceOptions: { orderBy: { order: "asc" } } },
-      take: 12,
-    }),
-  ]);
-}
-
 // month: 1-12 (человеческий номер месяца, не JS-индекс с нуля) — так его
 // удобнее передавать в URL/query-параметрах API и меньше риска ошибиться на
 // вызывающей стороне.

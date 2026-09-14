@@ -77,6 +77,8 @@ export const ru = {
     subtitle: "Выбери школу — ниже покажутся её ближайшие события",
     allSchoolsTitle: "Все школы",
     allSchoolsSubtitle: "События всех школ",
+    otherEventsTitle: "Другие события",
+    otherEventsSubtitle: "Без привязанной школы",
     emptyForSchool: "У этой школы пока нет ближайших событий",
     emptyForAll: "Пока нет ближайших событий",
     viewSchool: "Посмотреть школу",

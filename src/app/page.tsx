@@ -3,14 +3,10 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { t } from "@/lib/i18n/dictionary";
 import { getPreferredCity } from "@/lib/city-preference";
-import { eventsForHome, eventsForCalendarMonth } from "@/lib/events";
+import { eventsForCalendarMonth } from "@/lib/events";
 import { getLiveCompetitionSummary, getUpcomingCompetitionTeaser } from "@/lib/home-live";
-import { getSchoolDiscoveryData, getUpcomingEventsForSchool } from "@/lib/school-discovery";
-import { formatEventCardPrice } from "@/lib/event-price";
-import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
+import { getSchoolDiscoveryData, getDiscoveryEventGroups } from "@/lib/school-discovery";
 import { EventCalendar } from "@/components/EventCalendar";
-import { formatEventTime, formatRelativeDayLabel } from "@/lib/format";
-import { CardLightSweep } from "@/components/CardLightSweep";
 import { AmbientParticles } from "@/components/AmbientParticles";
 import { ScrollReveal } from "@/components/ScrollReveal";
 import { LiveDot } from "@/components/LiveDot";
@@ -18,67 +14,6 @@ import { CompetitionCard } from "@/components/compete/CompetitionCard";
 import { SchoolEventsDiscovery } from "@/components/SchoolEventsDiscovery";
 import { DarkTopNav } from "@/components/dark/DarkTopNav";
 import { BottomNavGate } from "@/components/compete/BottomNavGate";
-import type { City, Event, EventFormat, EventPriceOption, School } from "@prisma/client";
-
-type EventWithRelations = Event & { city: City; school: School | null; priceOptions: EventPriceOption[] };
-
-// Русские подписи формата события для карточек — короткая форма
-// (единственное число), в отличие от FORMAT_LABELS в SubscriptionsManager.tsx
-// (там нужна форма для чекбоксов "Мастер-классы" во множественном числе) —
-// разные экраны, разный грамматический контекст, отдельная небольшая карта
-// не стоит выносить в общий файл ради двух строк использования.
-const EVENT_FORMAT_LABEL: Record<EventFormat, string> = {
-  PARTY: "Вечеринка",
-  MASTERCLASS: "Мастер-класс",
-  FESTIVAL: "Фестиваль",
-  CONTEST: "Соревнование",
-  INTENSIVE: "Интенсив",
-};
-
-// Визуальная карточка события для сетки "Сейчас в Bachata Hub" — фото,
-// бейдж формата, дата/место, цена (formatEventCardPrice — уже существующая
-// логика показа цены, CLAUDE.md §64: не изобретаем вторую). Не переиспользует
-// светлый общий EventCard (тот обслуживает /events, остаётся светлым).
-function HomeEventCard({ event, sweepDelay = 0 }: { event: EventWithRelations; sweepDelay?: number }) {
-  const relativeDay = formatRelativeDayLabel(event.startsAt);
-  const meta = [event.city.nameRu, event.school?.name].filter(Boolean).join(" · ");
-  const price = formatEventCardPrice(event.priceText, event.priceOptions);
-  const accent = EVENT_FORMAT_COLOR[event.format];
-
-  return (
-    <Link
-      href={`/events/${event.slug}`}
-      className="group relative flex flex-col overflow-hidden rounded-app border border-white/10 bg-night-card/75 no-underline backdrop-blur-md transition-colors hover:border-white/20 hover:bg-night-card2/85"
-    >
-      <div className="relative h-[132px] w-full shrink-0 overflow-hidden">
-        <div
-          className="h-full w-full bg-gradient-night-hero bg-cover bg-center transition-transform duration-500 ease-out group-hover:scale-110"
-          style={event.photoUrl ? { backgroundImage: `url(${event.photoUrl})` } : undefined}
-          aria-hidden="true"
-        />
-        <span
-          className="absolute left-2.5 top-2.5 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-white"
-          style={{ backgroundColor: accent }}
-        >
-          {EVENT_FORMAT_LABEL[event.format]}
-        </span>
-      </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
-        <span className="line-clamp-2 text-[0.95rem] font-semibold leading-snug text-night-text">{event.title}</span>
-        <span className="text-sm font-medium text-night-primary">
-          {relativeDay ? `${relativeDay}, ` : ""}
-          {formatEventTime(event.startsAt)}
-        </span>
-        {meta && <span className="truncate text-xs text-night-muted">{meta}</span>}
-        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <span className="truncate text-xs font-semibold text-night-text">{price ?? ""}</span>
-          <span className="shrink-0 text-xs font-semibold text-night-primary">{t.common.details} →</span>
-        </div>
-      </div>
-      <CardLightSweep sweepDelay={sweepDelay} />
-    </Link>
-  );
-}
 
 export default async function HomePage() {
   const preferredCity = await getPreferredCity();
@@ -86,14 +21,13 @@ export default async function HomePage() {
   const calendarYear = now.getFullYear();
   const calendarMonth = now.getMonth() + 1;
 
-  const [[today, thisWeek], schoolDiscovery, discoveryEvents, calendarEvents, liveCompetition, upcomingCompetition] = await Promise.all([
-    eventsForHome(preferredCity?.id ?? null),
-    getSchoolDiscoveryData(),
+  const [schoolDiscovery, initialGroups, calendarEvents, liveCompetition, upcomingCompetition] = await Promise.all([
+    getSchoolDiscoveryData(preferredCity?.id ?? null),
     // Начальное состояние блока "Школы → события" — карточка "Все школы"
     // активна по умолчанию (см. SchoolEventsDiscovery.tsx), поэтому здесь
-    // сразу тянем события всех школ, а не делаем клиентский запрос при
-    // первой отрисовке.
-    getUpcomingEventsForSchool(null, 6),
+    // сразу тянем "Сегодня"/"Ближайшие" для всех школ, а не делаем
+    // клиентский запрос при первой отрисовке.
+    getDiscoveryEventGroups(null, preferredCity?.id ?? null),
     eventsForCalendarMonth(preferredCity?.id ?? null, calendarYear, calendarMonth),
     getLiveCompetitionSummary(),
     getUpcomingCompetitionTeaser(),
@@ -140,108 +74,84 @@ export default async function HomePage() {
             </section>
           </ScrollReveal>
 
-          <ScrollReveal delay={0.2}>
-            <section className="flex flex-col gap-3">
-              <h2 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{t.home.today}</h2>
-              {today.length === 0 ? (
-                <p className="m-0 text-sm text-night-muted">{t.home.noEventsToday}</p>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {today.map((e, i) => (
-                    <HomeEventCard key={e.id} event={e} sweepDelay={(i % 5) * 0.5} />
-                  ))}
-                </div>
-              )}
+          {/* Карусель школ (слева, шире) + календарь (справа) — по раскладке
+              пользователя, 2026-09-14: карусель со своими "Сегодня"/
+              "Ближайшие (1 неделя)" теперь первый содержательный блок
+              страницы, календарь — рядом с ней, а не отдельной секцией ниже. */}
+          <ScrollReveal delay={0.15}>
+            <section className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+              <div className="lg:col-span-2">
+                <SchoolEventsDiscovery data={schoolDiscovery} initialGroups={initialGroups} />
+              </div>
+              <div className="flex flex-col gap-3">
+                <h2 className="m-0 font-night text-lg font-bold text-night-text">{t.nav.calendar}</h2>
+                <EventCalendar
+                  initialYear={calendarYear}
+                  initialMonth={calendarMonth}
+                  initialEvents={calendarEvents.map((e) => ({
+                    id: e.id,
+                    slug: e.slug,
+                    title: e.title,
+                    format: e.format,
+                    startsAt: e.startsAt.toISOString(),
+                    cityName: e.cityName,
+                    schoolName: e.schoolName,
+                  }))}
+                  cityId={preferredCity?.id ?? null}
+                />
+                <Link href="/events" className="self-start text-sm font-semibold text-night-primary no-underline hover:no-underline">
+                  {t.home.seeFullCalendar} →
+                </Link>
+              </div>
             </section>
           </ScrollReveal>
 
-          <ScrollReveal delay={0.25}>
-            <section className="flex flex-col gap-3">
-              <h2 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{t.home.thisWeek}</h2>
-              {thisWeek.length === 0 ? (
-                <p className="m-0 text-sm text-night-muted">{t.home.noEventsWeek}</p>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {thisWeek.map((e, i) => (
-                    <HomeEventCard key={e.id} event={e} sweepDelay={(i % 5) * 0.5} />
-                  ))}
-                </div>
-              )}
-            </section>
-          </ScrollReveal>
-
+          {/* LIVE — ниже блока школы+календарь, во всю ширину (по раскладке
+              пользователя, 2026-09-14). */}
           {(liveCompetition || upcomingCompetition) && (
             <ScrollReveal delay={0.3}>
               <section className="flex flex-col gap-3 rounded-app border border-white/10 bg-night-card/75 p-5 backdrop-blur-md sm:p-6">
                 {liveCompetition ? (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <LiveDot />
-                        <span className="text-xs font-bold uppercase tracking-wide text-night-success">LIVE</span>
-                      </div>
-                      <h3 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{liveCompetition.name}</h3>
-                      {liveCompetition.currentStageLabel && (
-                        <p className="m-0 text-sm font-semibold text-night-primary">
-                          {liveCompetition.currentStageLabel}
-                          {liveCompetition.heatNumber ? ` · Заезд ${liveCompetition.heatNumber}` : ""}
-                          {liveCompetition.categoryName ? ` · ${liveCompetition.categoryName}` : ""}
-                        </p>
-                      )}
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-night-muted">
-                        <span>
-                          {liveCompetition.leadersCount} {t.home.liveStatLeaders}
-                        </span>
-                        <span>
-                          {liveCompetition.followersCount} {t.home.liveStatFollowers}
-                        </span>
-                        <span>
-                          {liveCompetition.divisionsCount} {t.home.liveStatDivisions}
-                        </span>
-                      </div>
-                      <Link
-                        href={`/compete/${liveCompetition.id}`}
-                        className="mt-1 self-start rounded-full bg-gradient-night-cta px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white no-underline hover:no-underline"
-                      >
-                        {t.home.liveWatch} →
-                      </Link>
-                    </>
-                  ) : upcomingCompetition ? (
-                    <>
-                      <span className="text-xs font-bold uppercase tracking-wide text-night-muted">{t.home.liveUpcomingLabel}</span>
-                      <CompetitionCard competition={upcomingCompetition} />
-                    </>
+                  <>
+                    <div className="flex items-center gap-2">
+                      <LiveDot />
+                      <span className="text-xs font-bold uppercase tracking-wide text-night-success">LIVE</span>
+                    </div>
+                    <h3 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{liveCompetition.name}</h3>
+                    {liveCompetition.currentStageLabel && (
+                      <p className="m-0 text-sm font-semibold text-night-primary">
+                        {liveCompetition.currentStageLabel}
+                        {liveCompetition.heatNumber ? ` · Заезд ${liveCompetition.heatNumber}` : ""}
+                        {liveCompetition.categoryName ? ` · ${liveCompetition.categoryName}` : ""}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-night-muted">
+                      <span>
+                        {liveCompetition.leadersCount} {t.home.liveStatLeaders}
+                      </span>
+                      <span>
+                        {liveCompetition.followersCount} {t.home.liveStatFollowers}
+                      </span>
+                      <span>
+                        {liveCompetition.divisionsCount} {t.home.liveStatDivisions}
+                      </span>
+                    </div>
+                    <Link
+                      href={`/compete/${liveCompetition.id}`}
+                      className="mt-1 self-start rounded-full bg-gradient-night-cta px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white no-underline hover:no-underline"
+                    >
+                      {t.home.liveWatch} →
+                    </Link>
+                  </>
+                ) : upcomingCompetition ? (
+                  <>
+                    <span className="text-xs font-bold uppercase tracking-wide text-night-muted">{t.home.liveUpcomingLabel}</span>
+                    <CompetitionCard competition={upcomingCompetition} />
+                  </>
                 ) : null}
               </section>
             </ScrollReveal>
           )}
-
-          <ScrollReveal delay={0.4}>
-            <section className="flex flex-col gap-3">
-              <h2 className="m-0 font-night text-lg font-bold text-night-text">{t.nav.calendar}</h2>
-              <EventCalendar
-                initialYear={calendarYear}
-                initialMonth={calendarMonth}
-                initialEvents={calendarEvents.map((e) => ({
-                  id: e.id,
-                  slug: e.slug,
-                  title: e.title,
-                  format: e.format,
-                  startsAt: e.startsAt.toISOString(),
-                  cityName: e.cityName,
-                  schoolName: e.schoolName,
-                }))}
-                cityId={preferredCity?.id ?? null}
-              />
-            </section>
-          </ScrollReveal>
-
-          <Link href="/events" className="self-start text-sm font-semibold text-night-primary no-underline hover:no-underline">
-            {t.home.seeFullCalendar} →
-          </Link>
-
-          <ScrollReveal delay={0.5}>
-            <SchoolEventsDiscovery data={schoolDiscovery} initialEvents={discoveryEvents} />
-          </ScrollReveal>
 
           <footer className="mt-6 flex flex-col gap-6 border-t border-night-border pt-6 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-1.5">

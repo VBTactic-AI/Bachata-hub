@@ -8,19 +8,21 @@ import { t } from "@/lib/i18n/dictionary";
 import { formatEventTime, formatRelativeDayLabel, pluralizeRu } from "@/lib/format";
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { VerificationBadge } from "@/components/VerificationBadge";
-import type { SchoolDiscoveryData, SchoolDiscoveryEvent } from "@/lib/school-discovery";
+import { OTHER_EVENTS_ID } from "@/lib/school-discovery-constants";
+import type { DiscoveryEventGroups, SchoolDiscoveryData, SchoolDiscoveryEvent } from "@/lib/school-discovery";
 
 // Интерактивный блок "Школы → события" на главной (ТЗ пользователя,
-// 2026-09-14): горизонтальная карусель школ (первая карточка — псевдо-школа
-// "Все школы") управляет тем, какие события показаны ниже — карусель как
-// discovery-фильтр, а не самостоятельная галерея (п.36 ТЗ).
+// 2026-09-14, дополнено в тот же день: блок переехал наверх страницы,
+// "Сегодня"/"Ближайшие (1 неделя)" стали частью карусели вместо отдельных
+// безусловных секций; добавлена карточка "Другие события" для событий без
+// привязанной школы — по прямому решению пользователя, чтобы такие события
+// не выпадали из вида при фильтрации по школам).
 //
-// Карусель — CSS scroll-snap + немного React-логики (п.20/23 ТЗ: не тащить
-// carousel-библиотеку, в проекте её и так нет, см. package.json), активная
-// карточка определяется по фактическому положению скролла (дебounce после
-// остановки), а не по клику — клик по карточке реальной школы ведёт на её
-// страницу (п.17), это НЕ то же действие, что "пролистать и посмотреть
-// события" (п.2/п.7).
+// Карусель — CSS scroll-snap + немного React-логики (в проекте нет carousel-
+// библиотеки, ТЗ явно разрешало обойтись без неё). Активная карточка
+// определяется по фактическому положению скролла (debounce после остановки)
+// и по фокусу с клавиатуры — клик по карточке реальной школы ведёт на её
+// страницу, это отдельное действие от "пролистать и посмотреть события".
 const EVENT_FORMAT_LABEL: Record<EventFormat, string> = {
   PARTY: "Вечеринка",
   MASTERCLASS: "Мастер-класс",
@@ -72,15 +74,33 @@ function EventCard({ event }: { event: SchoolDiscoveryEvent }) {
   );
 }
 
+function EventGroup({ title, events, emptyText }: { title: string; events: SchoolDiscoveryEvent[]; emptyText: string }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <h3 className="m-0 font-night text-base font-bold text-night-text">{title}</h3>
+      {events.length === 0 ? (
+        <p className="m-0 text-sm text-night-muted">{emptyText}</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {events.map((event) => (
+            <EventCard key={event.id} event={event} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SchoolEventsDiscovery({
   data,
-  initialEvents,
+  initialGroups,
 }: {
   data: SchoolDiscoveryData;
-  initialEvents: SchoolDiscoveryEvent[];
+  initialGroups: DiscoveryEventGroups;
 }) {
+  // null → "Все школы", OTHER_EVENTS_ID → "Другие события", иначе — id школы.
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [events, setEvents] = useState<SchoolDiscoveryEvent[]>(initialEvents);
+  const [groups, setGroups] = useState<DiscoveryEventGroups>(initialGroups);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [visible, setVisible] = useState(true);
 
@@ -91,14 +111,15 @@ export function SchoolEventsDiscovery({
   const firstRun = useRef(true);
   const dragRef = useRef<{ startX: number; startScrollLeft: number; dragging: boolean } | null>(null);
   const suppressClick = useRef(false);
+  const suppressScrollDetection = useRef(false);
 
   async function loadEvents(id: string | null) {
     setStatus("loading");
     try {
       const res = await fetch(`/api/school-events?schoolId=${id ?? "all"}`);
       if (!res.ok) throw new Error("bad status");
-      const json = (await res.json()) as { events: SchoolDiscoveryEvent[] };
-      setEvents(json.events ?? []);
+      const json = (await res.json()) as DiscoveryEventGroups;
+      setGroups({ today: json.today ?? [], thisWeek: json.thisWeek ?? [] });
       setStatus("idle");
     } catch {
       setStatus("error");
@@ -125,6 +146,20 @@ export function SchoolEventsDiscovery({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
+  // Индексы карточек: 0 = "Все школы", 1 = "Другие события", 2..n+1 = школы.
+  function idAtIndex(i: number): string | null {
+    if (i === 0) return null;
+    if (i === 1) return OTHER_EVENTS_ID;
+    return data.schools[i - 2]?.id ?? null;
+  }
+
+  function currentIndex() {
+    if (activeId === null) return 0;
+    if (activeId === OTHER_EVENTS_ID) return 1;
+    const idx = data.schools.findIndex((s) => s.id === activeId);
+    return idx === -1 ? 0 : idx + 2;
+  }
+
   function computeActiveFromScroll() {
     const track = trackRef.current;
     if (!track) return;
@@ -141,19 +176,27 @@ export function SchoolEventsDiscovery({
         bestIndex = i;
       }
     });
-    const nextId = bestIndex === 0 ? null : (data.schools[bestIndex - 1]?.id ?? null);
+    const nextId = idAtIndex(bestIndex);
     setActiveId((prev) => (prev === nextId ? prev : nextId));
   }
 
   function handleScroll() {
     if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(computeActiveFromScroll, 130);
-  }
-
-  function currentIndex() {
-    if (activeId === null) return 0;
-    const idx = data.schools.findIndex((s) => s.id === activeId);
-    return idx === -1 ? 0 : idx + 1;
+    scrollTimer.current = setTimeout(() => {
+      // Скролл, запущенный программно (клик/клавиатура), уже выставил
+      // правильный activeId синхронно в selectIndex() — не даём этому же
+      // скроллу, когда он долистает и уляжется, "исправить" выбор по своим
+      // расчётам "ближайшая к центру". Без этого быстрые повторные клики
+      // (например 2× "→" подряд) иногда откатывали выделение на 1 карточку
+      // назад: новый scrollIntoView прерывал предыдущую анимацию, и итоговое
+      // положение скролла не всегда точно совпадало с той карточкой, на
+      // которую реально кликнули (найдено вживую, 2026-09-14).
+      if (suppressScrollDetection.current) {
+        suppressScrollDetection.current = false;
+        return;
+      }
+      computeActiveFromScroll();
+    }, 130);
   }
 
   function scrollToIndex(i: number) {
@@ -162,13 +205,14 @@ export function SchoolEventsDiscovery({
 
   // Кнопки/клавиатура выбирают карточку НАПРЯМУЮ (не полагаясь на то, что
   // scroll-based определение "по центру" случайно совпадёт с нужным
-  // индексом) — у крайних карточек списка центрировать физически некуда
-  // (некуда скроллить левее первой/правее последней), и алгоритм "ближайшая
-  // к центру" в этом случае определял бы совсем другую карточку, чем та,
-  // на которую реально перешли (найдено вживую при проверке кнопки "→").
+  // индексом) — у крайних карточек списка центрировать физически некуда, и
+  // алгоритм "ближайшая к центру" в этом случае определял бы совсем другую
+  // карточку, чем та, на которую реально перешли (найдено вживую при
+  // проверке кнопки "→").
   function selectIndex(i: number) {
     const clamped = Math.max(0, Math.min(cardRefs.current.length - 1, i));
-    const id = clamped === 0 ? null : (data.schools[clamped - 1]?.id ?? null);
+    const id = idAtIndex(clamped);
+    suppressScrollDetection.current = true;
     setActiveId((prev) => (prev === id ? prev : id));
     scrollToIndex(clamped);
   }
@@ -228,10 +272,11 @@ export function SchoolEventsDiscovery({
     }
   }
 
-  const activeSchool = activeId ? data.schools.find((s) => s.id === activeId) : null;
+  const activeSchool = activeId && activeId !== OTHER_EVENTS_ID ? data.schools.find((s) => s.id === activeId) : null;
+  const isEmpty = groups.today.length === 0 && groups.thisWeek.length === 0;
 
   return (
-    <section aria-label={t.schoolDiscovery.title} className="flex flex-col gap-3">
+    <section aria-label={t.schoolDiscovery.title} className="flex flex-col gap-4">
       <div className="flex items-baseline justify-between gap-3">
         <div>
           <h2 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{t.schoolDiscovery.title}</h2>
@@ -287,10 +332,7 @@ export function SchoolEventsDiscovery({
                 }}
                 role="option"
                 aria-selected={activeId === null}
-                onClick={() => {
-                  setActiveId(null);
-                  scrollToIndex(0);
-                }}
+                onClick={() => selectIndex(0)}
                 onFocus={() => setActiveId(null)}
                 className={`shrink-0 snap-center rounded-app border p-4 text-left transition-all duration-[250ms] ease-out ${CARD_WIDTH} ${
                   activeId === null
@@ -310,6 +352,39 @@ export function SchoolEventsDiscovery({
                 </p>
               </button>
 
+              {/* Псевдо-карточка "Другие события" — события без привязанной школы
+                  (по прямому решению пользователя, 2026-09-14) — визуально
+                  отличается от "Все школы" (нейтральный фон вместо акцентного
+                  градиента), чтобы не создавать впечатление второй "главной"
+                  карточки. */}
+              <button
+                type="button"
+                ref={(el) => {
+                  cardRefs.current[1] = el;
+                }}
+                role="option"
+                aria-selected={activeId === OTHER_EVENTS_ID}
+                onClick={() => selectIndex(1)}
+                onFocus={() => setActiveId(OTHER_EVENTS_ID)}
+                className={`shrink-0 snap-center rounded-app border p-4 text-left transition-all duration-[250ms] ease-out ${CARD_WIDTH} ${
+                  activeId === OTHER_EVENTS_ID
+                    ? "scale-[1.02] border-night-primary bg-night-card2 opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_20px_40px_-15px_rgba(255,45,138,0.5)]"
+                    : "border-white/10 bg-night-card/75 opacity-80 hover:opacity-100"
+                }`}
+              >
+                <span
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-night-card2 text-lg text-night-pink"
+                  aria-hidden="true"
+                >
+                  ⋯
+                </span>
+                <h3 className="m-0 mt-3 font-night text-base font-bold text-night-text">{t.schoolDiscovery.otherEventsTitle}</h3>
+                <p className="m-0 mt-1 text-xs text-night-muted">{t.schoolDiscovery.otherEventsSubtitle}</p>
+                <p className="m-0 mt-3 text-xs font-semibold text-night-muted">
+                  {data.otherEventsCount} {pluralizeRu(data.otherEventsCount, t.event.eventsFoundCount)}
+                </p>
+              </button>
+
               {data.schools.map((school, i) => {
                 const isActive = activeId === school.id;
                 return (
@@ -317,7 +392,7 @@ export function SchoolEventsDiscovery({
                     key={school.id}
                     href={`/schools/${school.slug}`}
                     ref={(el) => {
-                      cardRefs.current[i + 1] = el;
+                      cardRefs.current[i + 2] = el;
                     }}
                     role="option"
                     aria-selected={isActive}
@@ -370,12 +445,12 @@ export function SchoolEventsDiscovery({
           </div>
 
           <div
-            className="grid grid-cols-1 gap-3 transition-opacity duration-200 ease-out sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            className="flex flex-col gap-5 transition-opacity duration-200 ease-out"
             style={{ opacity: visible ? 1 : 0 }}
             aria-live="polite"
           >
             {status === "error" ? (
-              <div className="col-span-full flex flex-col items-start gap-2">
+              <div className="flex flex-col items-start gap-2">
                 <p className="m-0 text-sm text-night-muted">{t.schoolDiscovery.loadError}</p>
                 <button
                   type="button"
@@ -385,8 +460,8 @@ export function SchoolEventsDiscovery({
                   {t.common.retry}
                 </button>
               </div>
-            ) : events.length === 0 ? (
-              <div className="col-span-full flex flex-col items-start gap-3">
+            ) : isEmpty ? (
+              <div className="flex flex-col items-start gap-3">
                 <p className="m-0 text-sm text-night-muted">
                   {activeSchool ? t.schoolDiscovery.emptyForSchool : t.schoolDiscovery.emptyForAll}
                 </p>
@@ -408,7 +483,10 @@ export function SchoolEventsDiscovery({
                 </div>
               </div>
             ) : (
-              events.map((event) => <EventCard key={event.id} event={event} />)
+              <>
+                <EventGroup title={t.home.today} events={groups.today} emptyText={t.home.noEventsToday} />
+                <EventGroup title={t.home.thisWeek} events={groups.thisWeek} emptyText={t.home.noEventsWeek} />
+              </>
             )}
           </div>
         </>
