@@ -12,9 +12,9 @@ import { getCompetitorStatistics } from "@/server/statistics/competitor-statisti
 import { getAudienceAwardsForDancer } from "@/server/statistics/audience-vote-statistics";
 import { isNoShow } from "@/server/competition/no-show";
 import { getMyAccessRequests } from "@/server/access-requests/queries";
-import { AccessRequestStatusList } from "@/components/become-organizer/AccessRequestStatusList";
 import { getActor } from "@/server/rbac/actor";
 import { getAdminSectionAccess, hasAnyAdminAccess } from "@/lib/admin-access";
+import { isAdmin } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import {
   COMPETITION_STATUS_LABELS,
@@ -50,16 +50,23 @@ export default async function ProfilePage() {
     </Link>
   ) : null;
 
-  const accessRequestBlock = (
-    <div className="flex flex-col gap-2">
-      {myAccessRequests.length > 0 && <AccessRequestStatusList requests={myAccessRequests} />}
-      <Link
-        href="/become-organizer"
-        className="self-start rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"
-      >
-        🧑‍💼 {myAccessRequests.length > 0 ? "Подать ещё одну заявку" : "Стать организатором"}
-      </Link>
-    </div>
+  // Супер-админ (site-роль ADMIN) уже мостом получает полный SUPER_ADMIN
+  // движка соревнований (docs/00_DECISIONS.md, D2) и сам утверждает чужие
+  // заявки на "Стать организатором" — подавать такую заявку себе ему незачем.
+  //
+  // Сами заявки и их статусы (AccessRequestStatusList) здесь больше НЕ
+  // показываются — единственное место для этого теперь /become-organizer
+  // (по прямому запросу пользователя, 2026-09-14: статусы должны жить в
+  // одном месте, не дублироваться между /profile и /become-organizer).
+  // Ссылка здесь — просто вход туда, с текстом-подсказкой, есть ли уже
+  // поданные заявки.
+  const accessRequestBlock = isAdmin(user) ? null : (
+    <Link
+      href="/become-organizer"
+      className="self-start rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"
+    >
+      🧑‍💼 {myAccessRequests.length > 0 ? "Мои заявки на доступ" : "Стать организатором"}
+    </Link>
   );
 
   // У служебных аккаунтов (админ/модератор/школа) профиля танцора может не
@@ -153,7 +160,7 @@ export default async function ProfilePage() {
                 competitionStatus: r.competition.status,
               });
               return (
-                <Link key={r.id} href={`/admin/competitions/${r.competition.id}`} className="block no-underline">
+                <Link key={r.id} href={`/compete/${r.competition.id}`} className="block no-underline">
                   <Card interactive className="border-night-border bg-night-card hover:border-night-primary/60">
                     <strong className="text-night-text">{r.competition.name}</strong>
                     <p className="mt-1 text-sm text-night-muted">

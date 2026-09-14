@@ -92,6 +92,20 @@ const TEACHERS_COUNT_LABELS: Record<string, string> = {
   "10_PLUS": "10+",
 };
 
+// Обязательность полей — по серверной схеме валидации
+// (src/server/access-requests/schemas.ts), не выдумана заново: помечены
+// ровно те поля, которые там заданы через .min(1)/без .optional() (по
+// прямому запросу пользователя, 2026-09-14 — "обязательные поля" должны
+// быть видны, а не обнаруживаться только по ошибке после отправки).
+function Required() {
+  return (
+    <span className="text-red-400" aria-hidden>
+      {" "}
+      *
+    </span>
+  );
+}
+
 function csvToArray(s: string): string[] {
   return s
     .split(",")
@@ -266,9 +280,16 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
 
   return (
     <div className="flex flex-col gap-4">
+      <p className="m-0 text-xs text-night-muted">
+        <span className="text-red-400">*</span> — обязательное поле
+      </p>
+
       {current === "TYPES" && (
         <div className="flex flex-col gap-3">
-          <h2 className="m-0 font-night text-lg font-bold text-night-text">Какой доступ вам нужен?</h2>
+          <h2 className="m-0 font-night text-lg font-bold text-night-text">
+            Какой доступ вам нужен?
+            <Required />
+          </h2>
           <p className="m-0 text-sm text-night-muted">Можно выбрать несколько — например, руководитель школы и организатор фестиваля одновременно.</p>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {TYPE_CARDS.map((c) => {
@@ -296,11 +317,17 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
         <div className="flex flex-col gap-3">
           <h2 className="m-0 font-night text-lg font-bold text-night-text">Основная информация</h2>
           <Label className="text-night-muted">
-            Как вас представить (название/бренд)
+            <span>
+              Как вас представить (название/бренд)
+              <Required />
+            </span>
             <Input value={brandName} onChange={(e) => setBrandName(e.target.value)} className={inputClass} placeholder="Warsaw Bachata Community" />
           </Label>
           <Label className="text-night-muted">
-            Краткое описание
+            <span>
+              Краткое описание
+              <Required />
+            </span>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value.slice(0, 500))}
@@ -310,7 +337,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
             />
           </Label>
           <Label className="text-night-muted">
-            Город
+            <span>
+              Город
+              <Required />
+            </span>
             <Select value={cityId} onChange={(e) => setCityId(e.target.value)} className={selectClass}>
               <option value="">—</option>
               {cities.map((c) => (
@@ -325,7 +355,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
           </Label>
           <div className="flex flex-col gap-2">
-            <p className="m-0 text-sm text-night-muted">Ссылки на деятельность</p>
+            <p className="m-0 text-sm text-night-muted">
+              Ссылки на деятельность
+              <Required /> <span className="text-xs">(хотя бы одна)</span>
+            </p>
             {links.map((l, i) => (
               <div key={i} className="flex gap-2">
                 <Select value={l.type} onChange={(e) => updateLink(i, { type: e.target.value as LinkType })} className={`${selectClass} !w-[130px]`}>
@@ -352,7 +385,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
         <div className="flex flex-col gap-3">
           <h2 className="m-0 font-night text-lg font-bold text-night-text">Организатор мероприятий</h2>
           <div className="flex flex-col gap-1.5">
-            <p className="m-0 text-sm text-night-muted">Какие мероприятия вы организуете?</p>
+            <p className="m-0 text-sm text-night-muted">
+              Какие мероприятия вы организуете?
+              <Required />
+            </p>
             {Object.entries(EVENT_TYPE_LABELS).map(([k, label]) => (
               <label key={k} className="flex items-center gap-2 text-sm text-night-text">
                 <input type="checkbox" checked={eventTypes.includes(k)} onChange={() => setEventTypes((prev) => toggle(prev, k))} />
@@ -361,7 +397,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
             ))}
           </div>
           <Label className="text-night-muted">
-            Как давно организуете мероприятия?
+            <span>
+              Как давно организуете мероприятия?
+              <Required />
+            </span>
             <Select value={eventExperience} onChange={(e) => setEventExperience(e.target.value)} className={selectClass}>
               {Object.entries(EXPERIENCE_LABELS).map(([k, label]) => (
                 <option key={k} value={k}>
@@ -381,7 +420,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
         <div className="flex flex-col gap-3">
           <h2 className="m-0 font-night text-lg font-bold text-night-text">Организатор фестиваля</h2>
           <Label className="text-night-muted">
-            Название фестиваля/бренда
+            <span>
+              Название фестиваля/бренда
+              <Required />
+            </span>
             <Input value={festivalName} onChange={(e) => setFestivalName(e.target.value)} className={inputClass} placeholder="Bachata Warsaw Festival" />
           </Label>
           <Label className="text-night-muted">
@@ -389,7 +431,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
             <Input value={festivalUrl} onChange={(e) => setFestivalUrl(e.target.value)} className={inputClass} />
           </Label>
           <Label className="text-night-muted">
-            Периодичность
+            <span>
+              Периодичность
+              <Required />
+            </span>
             <Select value={festivalFrequency} onChange={(e) => setFestivalFrequency(e.target.value)} className={selectClass}>
               {Object.entries(FESTIVAL_FREQUENCY_LABELS).map(([k, label]) => (
                 <option key={k} value={k}>
@@ -399,7 +444,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
             </Select>
           </Label>
           <Label className="text-night-muted">
-            Примерный масштаб
+            <span>
+              Примерный масштаб
+              <Required />
+            </span>
             <Select value={festivalScale} onChange={(e) => setFestivalScale(e.target.value)} className={selectClass}>
               {Object.entries(FESTIVAL_SCALE_LABELS).map(([k, label]) => (
                 <option key={k} value={k}>
@@ -409,7 +457,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
             </Select>
           </Label>
           <div className="flex flex-col gap-1.5">
-            <p className="m-0 text-sm text-night-muted">Что организуете?</p>
+            <p className="m-0 text-sm text-night-muted">
+              Что организуете?
+              <Required />
+            </p>
             {Object.entries(FESTIVAL_FORMAT_LABELS).map(([k, label]) => (
               <label key={k} className="flex items-center gap-2 text-sm text-night-text">
                 <input type="checkbox" checked={festivalFormats.includes(k)} onChange={() => setFestivalFormats((prev) => toggle(prev, k))} />
@@ -428,7 +479,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
         <div className="flex flex-col gap-3">
           <h2 className="m-0 font-night text-lg font-bold text-night-text">Руководитель школы</h2>
           <Label className="text-night-muted">
-            Название школы
+            <span>
+              Название школы
+              <Required />
+            </span>
             <Input value={schoolName} onChange={(e) => setSchoolName(e.target.value)} className={inputClass} placeholder="Bachata Warsaw" />
           </Label>
           <Label className="text-night-muted">
@@ -440,11 +494,17 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
             <Input value={schoolInstagram} onChange={(e) => setSchoolInstagram(e.target.value)} className={inputClass} />
           </Label>
           <Label className="text-night-muted">
-            Что преподаёте (через запятую)
+            <span>
+              Что преподаёте (через запятую)
+              <Required />
+            </span>
             <Input value={teachingStylesCsv} onChange={(e) => setTeachingStylesCsv(e.target.value)} className={inputClass} placeholder="Bachata, Sensual, Dominicana" />
           </Label>
           <Label className="text-night-muted">
-            Количество преподавателей
+            <span>
+              Количество преподавателей
+              <Required />
+            </span>
             <Select value={teachersCount} onChange={(e) => setTeachersCount(e.target.value)} className={selectClass}>
               {Object.entries(TEACHERS_COUNT_LABELS).map(([k, label]) => (
                 <option key={k} value={k}>
@@ -468,11 +528,17 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
         <div className="flex flex-col gap-3">
           <h2 className="m-0 font-night text-lg font-bold text-night-text">Организатор соревнований</h2>
           <Label className="text-night-muted">
-            Какие форматы Jack & Jill проводите/планируете (через запятую)
+            <span>
+              Какие форматы Jack & Jill проводите/планируете (через запятую)
+              <Required />
+            </span>
             <Input value={compFormatsCsv} onChange={(e) => setCompFormatsCsv(e.target.value)} className={inputClass} placeholder="Jack & Jill, Strictly" />
           </Label>
           <Label className="text-night-muted">
-            Опыт проведения/судейства
+            <span>
+              Опыт проведения/судейства
+              <Required />
+            </span>
             <Select value={compExperience} onChange={(e) => setCompExperience(e.target.value)} className={selectClass}>
               {Object.entries(EXPERIENCE_LABELS).map(([k, label]) => (
                 <option key={k} value={k}>
@@ -499,7 +565,10 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
           </Card>
           <label className="flex items-start gap-2 text-sm text-night-text">
             <input type="checkbox" checked={confirmedAccurate} onChange={(e) => setConfirmedAccurate(e.target.checked)} className="mt-0.5" />
-            Я подтверждаю, что предоставленная информация является достоверной.
+            <span>
+              Я подтверждаю, что предоставленная информация является достоверной.
+              <Required />
+            </span>
           </label>
         </div>
       )}
