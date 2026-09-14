@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import Link from "next/link";
 import type { EventFormat } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
@@ -10,18 +10,19 @@ import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { OTHER_EVENTS_ID } from "@/lib/school-discovery-constants";
 import type { DiscoveryEventGroups, SchoolDiscoveryData, SchoolDiscoveryEvent } from "@/lib/school-discovery";
 
-// Интерактивный блок "Школы → события" на главной (ТЗ пользователя,
-// 2026-09-14, дополнено в тот же день: блок переехал наверх страницы,
-// "Сегодня"/"Ближайшие (1 неделя)" стали частью карусели вместо отдельных
-// безусловных секций; добавлена карточка "Другие события" для событий без
-// привязанной школы — по прямому решению пользователя, чтобы такие события
-// не выпадали из вида при фильтрации по школам).
-//
-// Карусель — CSS scroll-snap + немного React-логики (в проекте нет carousel-
-// библиотеки, ТЗ явно разрешало обойтись без неё). Активная карточка
-// определяется по фактическому положению скролла (debounce после остановки)
-// и по фокусу с клавиатуры — клик по карточке реальной школы ведёт на её
-// страницу, это отдельное действие от "пролистать и посмотреть события".
+// Интерактивный блок "Школы → события" на главной. История решений
+// пользователя (2026-09-14/15):
+// - карусель школ вверху страницы, "Сегодня"/"Ближайшие (1 неделя)" —
+//   часть карусели, фильтруются по выбранной карточке;
+// - "Другие события" — события без привязанной школы, отдельная псевдо-
+//   карточка рядом с "Все школы" (не теряются при фильтрации по школам);
+// - карточки минималистичные (только фото/лого + название);
+// - закольцованная "фокусная" карусель: по центру всегда выбранная школа
+//   (крупнее, с рамкой), по бокам — соседи (видно ~1.5 карточки с каждой
+//   стороны), прокручивается кругом (после последней снова первая);
+// - по клику — переход на страницу школы; выбор (центрирование через
+//   стрелки/колесо/драг/клавиатуру) только показывает события ниже, сам по
+//   себе никуда не ведёт.
 const EVENT_FORMAT_LABEL: Record<EventFormat, string> = {
   PARTY: "Вечеринка",
   MASTERCLASS: "Мастер-класс",
@@ -29,16 +30,6 @@ const EVENT_FORMAT_LABEL: Record<EventFormat, string> = {
   CONTEST: "Соревнование",
   INTENSIVE: "Интенсив",
 };
-
-const CARD_WIDTH = "w-[78%] sm:w-[46%] md:w-[31%] lg:w-[23%] xl:w-[19%]";
-// Карточки реальных школ — квадратные и маленькие, только фото/название
-// (по прямому запросу пользователя, 2026-09-14: "минимализм", "в разы 3
-// меньше", один размер что на мобильном, что на десктопе — раньше карточка
-// школы была ~290px на мобильном/~280px на десктопе, 96px даёт нужное
-// уменьшение примерно в 3 раза на обоих). "Все школы"/"Другие события"
-// сознательно оставлены как есть — другого размера (CARD_WIDTH), по прямому
-// решению пользователя не трогать их.
-const SCHOOL_CARD_SIZE = "h-24 w-24";
 
 function EventCard({ event }: { event: SchoolDiscoveryEvent }) {
   const startsAt = new Date(event.startsAt);
@@ -98,6 +89,19 @@ function EventGroup({ title, events, emptyText }: { title: string; events: Schoo
   );
 }
 
+// Размеры "фокусной" карусели: центр в 1.5 раза крупнее соседей (по прямому
+// запросу пользователя, 2026-09-15). Ширина контейнера подобрана так, чтобы
+// показывать ровно центр + по 1.5 карточки с каждой стороны (1 целая
+// соседняя + половина следующей, обрезанная overflow:hidden контейнера).
+const SIZES = {
+  mobile: { center: 88, side: 56, gap: 8 },
+  desktop: { center: 144, side: 96, gap: 12 },
+};
+
+function mod(n: number, m: number) {
+  return ((n % m) + m) % m;
+}
+
 export function SchoolEventsDiscovery({
   data,
   initialGroups,
@@ -105,19 +109,47 @@ export function SchoolEventsDiscovery({
   data: SchoolDiscoveryData;
   initialGroups: DiscoveryEventGroups;
 }) {
-  // null → "Все школы", OTHER_EVENTS_ID → "Другие события", иначе — id школы.
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // Элементы карусели: 0 = "Все школы" (null), 1 = "Другие события", 2..n+1 = школы.
+  const items = useMemo<(string | null)[]>(() => [null, OTHER_EVENTS_ID, ...data.schools.map((s) => s.id)], [data.schools]);
+  const itemsCount = items.length;
+
+  const [centerIndex, setCenterIndex] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const [groups, setGroups] = useState<DiscoveryEventGroups>(initialGroups);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [visible, setVisible] = useState(true);
 
-  const trackRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<(HTMLElement | null)[]>([]);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const containerRef = useRef<HTMLDivElement>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const firstRun = useRef(true);
-  const dragRef = useRef<{ startX: number; startScrollLeft: number; dragging: boolean; pointerId: number } | null>(null);
-  const suppressScrollDetection = useRef(false);
+  const dragRef = useRef<{ startX: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const wheelAccum = useRef(0);
+
+  const activeId = items[centerIndex] ?? null;
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  const sizes = isMobile ? SIZES.mobile : SIZES.desktop;
+  const neighbor1Offset = sizes.center / 2 + sizes.gap + sizes.side / 2;
+  const neighbor2Offset = neighbor1Offset + sizes.side + sizes.gap;
+  const containerWidth = neighbor2Offset * 2;
+  const containerHeight = sizes.center;
+  const dragStepPx = sizes.side + sizes.gap;
+
+  function offsetForDistance(d: number) {
+    if (d === 0) return 0;
+    const magnitude = Math.abs(d) === 1 ? neighbor1Offset : neighbor2Offset;
+    return d < 0 ? -magnitude : magnitude;
+  }
 
   async function loadEvents(id: string | null) {
     setStatus("loading");
@@ -134,8 +166,8 @@ export function SchoolEventsDiscovery({
     }
   }
 
-  // Плавная смена событий (п.13 ТЗ): затухание, подмена данных, проявление —
-  // 200-300ms суммарно, без анимационной библиотеки.
+  // Плавная смена событий (затухание, подмена данных, проявление —
+  // 200-300ms), без анимационной библиотеки.
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;
@@ -152,109 +184,31 @@ export function SchoolEventsDiscovery({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
-  // Прокрутка карусели колесом мыши (по прямому запросу пользователя,
-  // 2026-09-14) — переводим вертикальный wheel-delta в горизонтальный скролл
-  // трека. Слушатель добавлен нативно через addEventListener, а не через
-  // JSX onWheel: React вешает onWheel как passive-листенер, в котором
-  // preventDefault() тихо игнорируется браузером (нельзя было бы подавить
-  // скролл страницы). На границах списка (уже проскроллено до конца в эту
-  // сторону) событие НЕ перехватывается — колесо отдаётся странице, чтобы
-  // не запирать вертикальный скролл сайта над каруселью.
-  useEffect(() => {
-    const track = trackRef.current;
-    if (!track) return;
-    function onWheel(e: WheelEvent) {
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-      const atStart = track!.scrollLeft <= 0 && e.deltaY < 0;
-      const atEnd = track!.scrollLeft + track!.clientWidth >= track!.scrollWidth - 1 && e.deltaY > 0;
-      if (atStart || atEnd) return;
-      e.preventDefault();
-      track!.scrollLeft += e.deltaY;
-    }
-    track.addEventListener("wheel", onWheel, { passive: false });
-    return () => track.removeEventListener("wheel", onWheel);
-  }, []);
-
-  // Индексы карточек: 0 = "Все школы", 1 = "Другие события", 2..n+1 = школы.
-  function idAtIndex(i: number): string | null {
-    if (i === 0) return null;
-    if (i === 1) return OTHER_EVENTS_ID;
-    return data.schools[i - 2]?.id ?? null;
-  }
-
-  function currentIndex() {
-    if (activeId === null) return 0;
-    if (activeId === OTHER_EVENTS_ID) return 1;
-    const idx = data.schools.findIndex((s) => s.id === activeId);
-    return idx === -1 ? 0 : idx + 2;
-  }
-
-  function computeActiveFromScroll() {
-    const track = trackRef.current;
-    if (!track) return;
-    const trackRect = track.getBoundingClientRect();
-    const centerX = trackRect.left + trackRect.width / 2;
-    let bestIndex = 0;
-    let bestDist = Infinity;
-    cardRefs.current.forEach((el, i) => {
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const dist = Math.abs(r.left + r.width / 2 - centerX);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIndex = i;
-      }
+  // goToIndex — абсолютный переход (клик по конкретной карточке, идёт в
+  // паре с уже известным idx, устаревшее замыкание тут не страшно).
+  // shiftIndex — относительный шаг (стрелки/клавиатура/драг): специально
+  // через функциональное обновление, а не "goToIndex(centerIndex ± 1)",
+  // иначе быстрые повторные клики "←"/"→" (до перерисовки) читали бы одно и
+  // то же устаревшее centerIndex из замыкания рендера и не накапливались бы
+  // (тот же класс бага, что уже чинили в прошлой версии карусели на
+  // scroll-detection, найдено вживую при проверке двойного клика "←").
+  function goToIndex(i: number) {
+    setCenterIndex((prev) => {
+      const next = mod(i, itemsCount);
+      return next === prev ? prev : next;
     });
-    const nextId = idAtIndex(bestIndex);
-    setActiveId((prev) => (prev === nextId ? prev : nextId));
   }
-
-  function handleScroll() {
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      // Скролл, запущенный программно (клик/клавиатура), уже выставил
-      // правильный activeId синхронно в selectIndex() — не даём этому же
-      // скроллу, когда он долистает и уляжется, "исправить" выбор по своим
-      // расчётам "ближайшая к центру". Без этого быстрые повторные клики
-      // (например 2× "→" подряд) иногда откатывали выделение на 1 карточку
-      // назад: новый scrollIntoView прерывал предыдущую анимацию, и итоговое
-      // положение скролла не всегда точно совпадало с той карточкой, на
-      // которую реально кликнули (найдено вживую, 2026-09-14).
-      if (suppressScrollDetection.current) {
-        suppressScrollDetection.current = false;
-        return;
-      }
-      computeActiveFromScroll();
-    }, 130);
+  function shiftIndex(delta: number) {
+    setCenterIndex((prev) => mod(prev + delta, itemsCount));
   }
-
-  function scrollToIndex(i: number) {
-    cardRefs.current[i]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  }
-
-  // Кнопки/клавиатура выбирают карточку НАПРЯМУЮ (не полагаясь на то, что
-  // scroll-based определение "по центру" случайно совпадёт с нужным
-  // индексом) — у крайних карточек списка центрировать физически некуда, и
-  // алгоритм "ближайшая к центру" в этом случае определял бы совсем другую
-  // карточку, чем та, на которую реально перешли (найдено вживую при
-  // проверке кнопки "→").
-  function selectIndex(i: number) {
-    const clamped = Math.max(0, Math.min(cardRefs.current.length - 1, i));
-    const id = idAtIndex(clamped);
-    suppressScrollDetection.current = true;
-    setActiveId((prev) => (prev === id ? prev : id));
-    scrollToIndex(clamped);
-  }
-
   function goPrev() {
-    selectIndex(currentIndex() - 1);
+    shiftIndex(-1);
   }
-
   function goNext() {
-    selectIndex(currentIndex() + 1);
+    shiftIndex(1);
   }
 
-  function onTrackKeyDown(e: KeyboardEvent) {
+  function onContainerKeyDown(e: KeyboardEvent) {
     if (e.key === "ArrowLeft") {
       e.preventDefault();
       goPrev();
@@ -264,58 +218,103 @@ export function SchoolEventsDiscovery({
     }
   }
 
-  // Drag для мыши на десктопе (п.10 ТЗ) — тач-устройства скроллят нативно,
-  // сюда не заходим (touch-action: pan-x на треке и так не конфликтует с
-  // вертикальным скроллом страницы).
-  //
-  // track.setPointerCapture() вызывается НЕ на pointerdown, а только когда
-  // движение реально распознано как drag (>4px) — раньше он вызывался сразу
-  // на pointerdown для любого клика, из-за чего браузер иногда не доводил
-  // обычный клик по карточке школы до её <Link> (клик "не проваливался" в
-  // школу — баг пользователя, 2026-09-14, воспроизводился только на
-  // десктопе, где есть mouse-drag; на тач-устройствах эта функция не
-  // вызывается вовсе).
+  // Прокрутка колесом мыши (по прямому запросу пользователя) — переводим
+  // вертикальный delta в шаг карусели. Слушатель добавлен нативно (не через
+  // JSX onWheel): React вешает onWheel как passive, preventDefault() в нём
+  // тихо игнорируется браузером.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      wheelAccum.current += e.deltaY;
+      const threshold = 60;
+      if (Math.abs(wheelAccum.current) >= threshold) {
+        const dir = wheelAccum.current > 0 ? 1 : -1;
+        setCenterIndex((prev) => mod(prev + dir, itemsCount));
+        wheelAccum.current = 0;
+      }
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [itemsCount]);
+
+  // Драг/свайп — карусель больше не является нативно скроллящимся
+  // элементом (виртуальная раскладка вокруг центра), поэтому и мышь, и тач
+  // обрабатываются одним и тем же способом. touchAction: pan-y на
+  // контейнере отдаёт вертикальные жесты странице, горизонтальные жесты
+  // обрабатываем сами.
   function onPointerDown(e: PointerEvent) {
-    if (e.pointerType === "touch") return;
-    const track = trackRef.current;
-    if (!track) return;
-    dragRef.current = { startX: e.clientX, startScrollLeft: track.scrollLeft, dragging: false, pointerId: e.pointerId };
+    dragRef.current = { startX: e.clientX, moved: false };
+    setIsDragging(true);
+    containerRef.current?.setPointerCapture(e.pointerId);
   }
 
   function onPointerMove(e: PointerEvent) {
     const state = dragRef.current;
-    const track = trackRef.current;
-    if (!state || !track) return;
+    if (!state) return;
     const dx = e.clientX - state.startX;
-    if (!state.dragging && Math.abs(dx) > 4) {
-      state.dragging = true;
-      track.setPointerCapture(state.pointerId);
-    }
-    if (state.dragging) track.scrollLeft = state.startScrollLeft - dx;
+    if (Math.abs(dx) > 4) state.moved = true;
+    setDragOffset(dx);
   }
 
   function onPointerUp() {
+    const state = dragRef.current;
+    if (state?.moved) {
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+      const steps = Math.round(-dragOffset / dragStepPx);
+      if (steps !== 0) shiftIndex(steps);
+    }
     dragRef.current = null;
+    setDragOffset(0);
+    setIsDragging(false);
   }
 
-  // Клик по карточке реальной школы (п.14 ТЗ, уточнено пользователем,
-  // 2026-09-14): одиночный клик выбирает школу активной (то же самое, что
-  // уже делают скролл/фокус), двойной клик — переход на страницу школы.
-  // Различаем через MouseEvent.detail: 0 — активация с клавиатуры
-  // (Enter/Space на сфокусированной ссылке, не трогаем — должна работать
-  // как обычная ссылка), 1 — первый клик мышью (перехватываем, только
-  // выбор), 2+ — второй клик того же двойного клика (не перехватываем,
-  // даём сработать обычной навигации по ссылке). Модификаторы
-  // (Ctrl/Cmd/Shift/колёсико) не трогаем — должны открывать в новой вкладке
-  // как обычная ссылка.
-  function onSchoolCardClick(e: MouseEvent, schoolId: string) {
-    if (e.detail === 0 || e.detail >= 2 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    setActiveId(schoolId);
+  // По клику — переход на страницу школы (уточнено пользователем,
+  // 2026-09-15, уточнено: "по клику на ВЫДЕЛЕННУЮ сущность — провалиться в
+  // неё"): переход на страницу школы — только по клику на уже
+  // центральную/выбранную карточку. Клик по боковой (ещё не выбранной)
+  // карточке — только выбирает её (centerIndex), без перехода, это то же
+  // самое действие, что делают стрелки/колесо/драг/клавиатура. Также
+  // перехватываем клик сразу после драга (иначе отпускание пальца/мыши
+  // после свайпа само по себе засчиталось бы кликом).
+  function onCardClickCapture(e: MouseEvent, idx: number) {
+    if (suppressClick.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (idx !== centerIndex) {
+      e.preventDefault();
+      e.stopPropagation();
+      goToIndex(idx);
+    }
   }
 
   const activeSchool = activeId && activeId !== OTHER_EVENTS_ID ? data.schools.find((s) => s.id === activeId) : null;
   const isEmpty = groups.today.length === 0 && groups.thisWeek.length === 0;
+
+  // Видимые слоты: центр + ближайшие 2 соседа с каждой стороны (контейнер
+  // обрежет второго соседа ровно наполовину — "1.5 карточки по бокам").
+  // Порядок обхода — от центра наружу, чтобы при малом числе элементов
+  // (закольцованных) дубликаты индексов отбрасывались в пользу меньшей
+  // дистанции до центра.
+  const slots = useMemo(() => {
+    const order = [0, -1, 1, -2, 2];
+    const seen = new Set<number>();
+    const result: { idx: number; d: number }[] = [];
+    for (const d of order) {
+      const idx = mod(centerIndex + d, itemsCount);
+      if (seen.has(idx)) continue;
+      seen.add(idx);
+      result.push({ idx, d });
+    }
+    return result;
+  }, [centerIndex, itemsCount]);
 
   return (
     <section aria-label={t.schoolDiscovery.title} className="flex flex-col gap-4">
@@ -333,137 +332,126 @@ export function SchoolEventsDiscovery({
         <p className="m-0 text-sm text-night-muted">{t.schoolDiscovery.noSchools}</p>
       ) : (
         <>
-          <div>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={goPrev}
+              aria-label={t.schoolDiscovery.prevSchool}
+              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
+            >
+              ←
+            </button>
+
             <div
-              ref={trackRef}
+              ref={containerRef}
               role="listbox"
               aria-label={t.schoolDiscovery.title}
               tabIndex={0}
-              onScroll={handleScroll}
-              onKeyDown={onTrackKeyDown}
+              onKeyDown={onContainerKeyDown}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
-              onPointerLeave={onPointerUp}
-              style={{ touchAction: "pan-x" }}
-              className="flex items-start snap-x snap-mandatory gap-3 overflow-x-auto scroll-pl-4 scroll-pr-4 pb-1 pl-4 pr-4 [-ms-overflow-style:none] [scrollbar-width:none] select-none cursor-grab active:cursor-grabbing [&::-webkit-scrollbar]:hidden sm:scroll-pl-12 sm:scroll-pr-12"
+              onPointerCancel={onPointerUp}
+              style={{ width: containerWidth, height: containerHeight, touchAction: "pan-y" }}
+              className="relative shrink-0 select-none cursor-grab active:cursor-grabbing"
             >
-              {/* Стрелки — только на десктопе (п.9 ТЗ), на мобильном достаточно
-                  свайпа. Внутри трека, а не абсолютно поверх него — position:
-                  sticky на первом/последнем flex-элементе скроллящегося
-                  контейнера сама "прилипает" к видимому краю ТОЛЬКО пока есть
-                  что скроллить; если карточек не хватает на всю ширину, стрелка
-                  просто остаётся в потоке сразу после последней карточки, а не
-                  висит в пустоте у края колонки (по прямому запросу
-                  пользователя, 2026-09-15) — без замера overflow через JS. */}
-              <button
-                type="button"
-                onClick={goPrev}
-                aria-label={t.schoolDiscovery.prevSchool}
-                className="sticky left-0 z-10 hidden h-9 w-9 shrink-0 self-center items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
-              >
-                ←
-              </button>
+              {slots.map(({ idx, d }) => {
+                const id = items[idx];
+                const isCenter = d === 0;
+                const size = isCenter ? sizes.center : sizes.side;
+                const x = offsetForDistance(d) + dragOffset;
+                const style: CSSProperties = {
+                  width: size,
+                  height: size,
+                  transform: `translate(-50%, -50%) translateX(${x}px)`,
+                  zIndex: isCenter ? 20 : 10 - Math.abs(d),
+                  transitionDuration: isDragging ? "0ms" : "300ms",
+                };
+                const baseClass =
+                  "absolute left-1/2 top-1/2 flex flex-col items-center justify-center overflow-hidden rounded-app-sm border p-1.5 text-center transition-[transform,opacity,box-shadow] ease-out no-underline";
+                const stateClass = isCenter
+                  ? "border-night-primary opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.45),0_16px_32px_-12px_rgba(255,45,138,0.6)]"
+                  : "border-white/10 opacity-70 hover:opacity-90";
 
-              {/* Псевдо-карточка "Все школы" — всегда первая (п.4/п.36 ТЗ).
-                  Тот же размер и минимализм, что у карточек школ (по прямому
-                  запросу пользователя, 2026-09-14) — иконка + короткая
-                  подпись, без статистики. */}
-              <button
-                type="button"
-                ref={(el) => {
-                  cardRefs.current[0] = el;
-                }}
-                role="option"
-                aria-selected={activeId === null}
-                onClick={() => selectIndex(0)}
-                onFocus={() => setActiveId(null)}
-                className={`flex shrink-0 snap-center flex-col items-center justify-center gap-1 rounded-app-sm border p-2 text-center transition-all duration-[250ms] ease-out ${SCHOOL_CARD_SIZE} ${
-                  activeId === null
-                    ? "scale-[1.05] border-night-primary bg-gradient-night-cta opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_12px_24px_-10px_rgba(255,45,138,0.5)]"
-                    : "border-white/10 bg-gradient-night-cta opacity-80 hover:opacity-100"
-                }`}
-              >
-                <span className="text-lg text-white" aria-hidden="true">
-                  ✦
-                </span>
-                <span className="line-clamp-2 text-[0.66rem] font-semibold leading-tight text-white">{t.schoolDiscovery.allSchoolsTitle}</span>
-              </button>
+                if (id === null) {
+                  return (
+                    <button
+                      key="all"
+                      type="button"
+                      role="option"
+                      aria-selected={isCenter}
+                      onClickCapture={(e) => onCardClickCapture(e, idx)}
+                      onFocus={() => goToIndex(idx)}
+                      style={style}
+                      className={`${baseClass} ${stateClass} bg-gradient-night-cta`}
+                    >
+                      <span className="text-lg text-white" aria-hidden="true">
+                        ✦
+                      </span>
+                      <span className="line-clamp-2 text-[0.62rem] font-semibold leading-tight text-white">
+                        {t.schoolDiscovery.allSchoolsTitle}
+                      </span>
+                    </button>
+                  );
+                }
 
-              {/* Псевдо-карточка "Другие события" — события без привязанной школы
-                  (по прямому решению пользователя, 2026-09-14) — визуально
-                  отличается от "Все школы" (нейтральный фон вместо акцентного
-                  градиента), чтобы не создавать впечатление второй "главной"
-                  карточки. Тот же размер/минимализм, что у карточек школ. */}
-              <button
-                type="button"
-                ref={(el) => {
-                  cardRefs.current[1] = el;
-                }}
-                role="option"
-                aria-selected={activeId === OTHER_EVENTS_ID}
-                onClick={() => selectIndex(1)}
-                onFocus={() => setActiveId(OTHER_EVENTS_ID)}
-                className={`flex shrink-0 snap-center flex-col items-center justify-center gap-1 rounded-app-sm border p-2 text-center transition-all duration-[250ms] ease-out ${SCHOOL_CARD_SIZE} ${
-                  activeId === OTHER_EVENTS_ID
-                    ? "scale-[1.05] border-night-primary bg-night-card2 opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_12px_24px_-10px_rgba(255,45,138,0.5)]"
-                    : "border-white/10 bg-night-card2 opacity-80 hover:opacity-100"
-                }`}
-              >
-                <span className="text-lg text-night-pink" aria-hidden="true">
-                  ⋯
-                </span>
-                <span className="line-clamp-2 text-[0.66rem] font-semibold leading-tight text-night-text">
-                  {t.schoolDiscovery.otherEventsTitle}
-                </span>
-              </button>
+                if (id === OTHER_EVENTS_ID) {
+                  return (
+                    <button
+                      key="other"
+                      type="button"
+                      role="option"
+                      aria-selected={isCenter}
+                      onClickCapture={(e) => onCardClickCapture(e, idx)}
+                      onFocus={() => goToIndex(idx)}
+                      style={style}
+                      className={`${baseClass} ${stateClass} bg-night-card2`}
+                    >
+                      <span className="text-lg text-night-pink" aria-hidden="true">
+                        ⋯
+                      </span>
+                      <span className="line-clamp-2 text-[0.62rem] font-semibold leading-tight text-night-text">
+                        {t.schoolDiscovery.otherEventsTitle}
+                      </span>
+                    </button>
+                  );
+                }
 
-              {/* Карточки реальных школ — минимализм (по прямому запросу
-                  пользователя, 2026-09-14): только фото/лого и название,
-                  квадратные и маленькие. Логотипа/обложки школа не хранит
-                  (нет такого поля в схеме) — как и раньше, градиент-
-                  плейсхолдер вместо выдуманного фото. */}
-              {data.schools.map((school, i) => {
-                const isActive = activeId === school.id;
+                const school = data.schools.find((s) => s.id === id);
+                if (!school) return null;
                 return (
                   <Link
                     key={school.id}
                     href={`/schools/${school.slug}`}
-                    ref={(el) => {
-                      cardRefs.current[i + 2] = el;
-                    }}
                     role="option"
-                    aria-selected={isActive}
-                    onFocus={() => setActiveId(school.id)}
-                    onClick={(e) => onSchoolCardClick(e, school.id)}
-                    className={`group relative shrink-0 snap-center overflow-hidden rounded-app-sm border no-underline transition-all duration-[250ms] ease-out ${SCHOOL_CARD_SIZE} ${
-                      isActive
-                        ? "scale-[1.05] border-night-primary opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.4),0_12px_24px_-10px_rgba(255,45,138,0.5)]"
-                        : "border-white/10 opacity-80 hover:opacity-100"
-                    }`}
+                    aria-selected={isCenter}
+                    onClickCapture={(e) => onCardClickCapture(e, idx)}
+                    onFocus={() => goToIndex(idx)}
+                    style={style}
+                    className={`${baseClass} ${stateClass} group p-0`}
                   >
                     <div
-                      className={`h-full w-full bg-gradient-night-hero bg-cover bg-center transition-transform duration-300 ease-out group-hover:scale-105 ${
-                        isActive ? "brightness-110" : "brightness-90"
+                      className={`h-full w-full bg-gradient-night-hero bg-cover bg-center transition-[filter] duration-300 ease-out ${
+                        isCenter ? "brightness-110" : "brightness-90"
                       }`}
                       aria-hidden="true"
                     />
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-1.5 pb-1.5 pt-4">
-                      <span className="block truncate text-center text-[0.66rem] font-semibold leading-tight text-white">{school.name}</span>
+                      <span className="block truncate text-center text-[0.62rem] font-semibold leading-tight text-white">{school.name}</span>
                     </div>
                   </Link>
                 );
               })}
-
-              <button
-                type="button"
-                onClick={goNext}
-                aria-label={t.schoolDiscovery.nextSchool}
-                className="sticky right-0 z-10 hidden h-9 w-9 shrink-0 self-center items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
-              >
-                →
-              </button>
             </div>
+
+            <button
+              type="button"
+              onClick={goNext}
+              aria-label={t.schoolDiscovery.nextSchool}
+              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full border border-night-border bg-night-card/90 text-night-text backdrop-blur-md hover:border-night-primary/60 sm:flex"
+            >
+              →
+            </button>
           </div>
 
           <div

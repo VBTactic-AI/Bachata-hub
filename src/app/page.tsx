@@ -77,13 +77,17 @@ export default async function HomePage() {
           {/* Карусель школ (слева, шире) + календарь (справа) — по раскладке
               пользователя, 2026-09-14: карусель со своими "Сегодня"/
               "Ближайшие (1 неделя)" теперь первый содержательный блок
-              страницы, календарь — рядом с ней, а не отдельной секцией ниже. */}
+              страницы, календарь — рядом с ней, а не отдельной секцией ниже.
+              На мобильном (одна колонка) порядок наоборот — сначала календарь,
+              потом карусель школ (по прямому запросу пользователя, 2026-09-15):
+              order переключается только по lg:, сама раскладка (grid-cols-3,
+              col-span) не меняется. */}
           <ScrollReveal delay={0.15}>
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
-              <div className="lg:col-span-2">
+              <div className="order-2 lg:order-1 lg:col-span-2">
                 <SchoolEventsDiscovery data={schoolDiscovery} initialGroups={initialGroups} />
               </div>
-              <div className="flex flex-col gap-3">
+              <div className="order-1 flex flex-col gap-3 lg:order-2">
                 <h2 className="m-0 font-night text-lg font-bold text-night-text">{t.nav.calendar}</h2>
                 <EventCalendar
                   initialYear={calendarYear}
