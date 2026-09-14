@@ -70,4 +70,17 @@ describe("shouldAutoApproveEvent", () => {
     const user = makeUser({ role: "ORGANIZER" });
     expect(shouldAutoApproveEvent(user, null)).toBe(false);
   });
+
+  // 2026-09-15: bug — реальный пользователь с одобренным AccessRequest
+  // (EVENT_ORGANIZER) всё равно уходил на модерацию, потому что этот флаг
+  // не проверялся здесь вообще.
+  it("bypasses moderation for a verified event organizer (isVerifiedEventOrganizer), even without a school", () => {
+    const user = makeUser({ role: "DANCER", isVerifiedEventOrganizer: true });
+    expect(shouldAutoApproveEvent(user, null)).toBe(true);
+  });
+
+  it("plain role=ORGANIZER (unverified, free self-selected role) still does NOT bypass, even though it looks similar", () => {
+    const user = makeUser({ role: "ORGANIZER", isVerifiedEventOrganizer: false });
+    expect(shouldAutoApproveEvent(user, null)).toBe(false);
+  });
 });
