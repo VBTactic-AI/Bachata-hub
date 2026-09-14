@@ -5,7 +5,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n/dictionary";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ReviewForm } from "@/components/ReviewForm";
-import { ClaimSchoolButton } from "@/components/ClaimSchoolButton";
 import { FollowButton } from "@/components/notifications/FollowButton";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
@@ -80,8 +79,6 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
       : undefined,
   };
 
-  const canClaim = user && user.role === "SCHOOL_REP" && school.ownerUserId !== user.id;
-
   const existingSubscription = user
     ? await prisma.subscription.findUnique({
         where: { userId_type_targetId: { userId: user.id, type: "SCHOOL", targetId: school.id } },
@@ -106,7 +103,6 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
             loggedIn={!!user}
             initialSubscriptionId={existingSubscription?.id ?? null}
           />
-          {canClaim && <ClaimSchoolButton schoolSlug={school.slug} />}
         </div>
       </div>
 

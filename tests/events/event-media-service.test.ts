@@ -62,6 +62,8 @@ const owner: User = {
   updatedAt: new Date(),
   lastLoginAt: null,
   isBlocked: false,
+  isVerifiedEventOrganizer: false,
+  isVerifiedFestivalOrganizer: false,
 };
 
 function makeEvent(overrides: Partial<{ createdById: string; status: string; moderationStatus: string }> = {}) {

@@ -20,6 +20,7 @@ export default async function ModerationOverviewPage() {
   const queueCards = [
     { href: "/admin/moderation/events", label: t.moderation.events, value: queue.pendingEvents },
     { href: "/admin/moderation/schools", label: t.moderation.schoolClaims, value: queue.pendingClaims },
+    { href: "/admin/moderation/organizer-requests", label: "Заявки организаторов", value: queue.pendingOrganizerRequests },
     { href: "/admin/moderation/reviews", label: t.moderation.reviews, value: queue.newReviews },
   ];
 
@@ -30,7 +31,7 @@ export default async function ModerationOverviewPage() {
         <p className="m-0 mt-1 text-sm text-admin-muted">Очередь на проверку и общие метрики платформы</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {queueCards.map((c) => (
           <Link
             key={c.href}

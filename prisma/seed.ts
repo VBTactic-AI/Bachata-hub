@@ -295,16 +295,27 @@ export async function main(prisma: PrismaClient) {
     }
   }
 
-  // --- заявка на владение школой (демо очереди модерации) ----------------
-  await prisma.schoolClaim.upsert({
-    where: { id: "seed-claim-1" },
+  // --- заявка "Руководитель школы" (демо очереди модерации) ---------------
+  // Раньше — SchoolClaim (модель удалена, см. docs/00_DECISIONS.md,
+  // 2026-09-14) — теперь единая AccessRequest(type: SCHOOL_HEAD).
+  await prisma.accessRequest.upsert({
+    where: { id: "seed-access-request-1" },
     update: {},
     create: {
-      id: "seed-claim-1",
-      schoolId: schools["bachata-moderna"].id,
-      claimantId: schoolReps[5].id, // school6-unclaimed@bachata.by
+      id: "seed-access-request-1",
+      userId: schoolReps[5].id, // school6-unclaimed@bachata.by
+      type: "SCHOOL_HEAD",
+      brandName: "Bachata Moderna",
+      description: "Я один из основателей школы, могу подтвердить через Instagram-аккаунт студии.",
+      cityId: schools["bachata-moderna"].cityId,
+      links: [],
+      payload: {
+        schoolName: "Bachata Moderna",
+        teachingStyles: ["Bachata"],
+        teachersCount: "2_5",
+        hasRegularClasses: true,
+      },
       status: "PENDING",
-      proofNote: "Я один из основателей школы, могу подтвердить через Instagram-аккаунт студии.",
     },
   });
 

@@ -14,7 +14,6 @@ export function RegisterForm({ cities }: { cities: City[] }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState<"DANCER" | "SCHOOL_REP" | "ORGANIZER">("DANCER");
   const [cityId, setCityId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -30,7 +29,7 @@ export function RegisterForm({ cities }: { cities: City[] }) {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, displayName, role, cityId }),
+      body: JSON.stringify({ email, password, displayName, cityId }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -82,15 +81,6 @@ export function RegisterForm({ cities }: { cities: City[] }) {
           ))}
         </Select>
       </Label>
-      <Label>
-        {t.auth.registerAs}
-        <Select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
-          <option value="DANCER">{t.auth.roleDancer}</option>
-          <option value="SCHOOL_REP">{t.auth.roleSchoolRep}</option>
-          <option value="ORGANIZER">{t.auth.roleOrganizer}</option>
-        </Select>
-      </Label>
-      {role === "SCHOOL_REP" && <p className="hint-text">{t.auth.schoolRepHint}</p>}
       {error && <p className="error-text">{error}</p>}
       <Button type="submit" disabled={loading}>
         {t.nav.register}

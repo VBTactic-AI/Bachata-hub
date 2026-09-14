@@ -88,16 +88,21 @@ model User {
   updatedAt      DateTime  @updatedAt
   lastLoginAt    DateTime?
   isBlocked      Boolean   @default(false)
+  // Проверенный доступ, выдаваемый ТОЛЬКО через одобрение AccessRequest
+  // супер-админом (не выбирается пользователем сам, см. docs/00_DECISIONS.md
+  // и /become-organizer) — расширяет canCreateEvents()/доступ к /admin/festival.
+  isVerifiedEventOrganizer    Boolean @default(false)
+  isVerifiedFestivalOrganizer Boolean @default(false)
 
   dancer           Dancer?
-  schoolClaims     SchoolClaim[]   @relation("Claimant")
-  reviewedClaims   SchoolClaim[]   @relation("ClaimReviewer")
   ownedSchools     School[]        @relation("SchoolOwner")
   createdEvents    Event[]         @relation("EventCreator")
   moderatedEvents  Event[]         @relation("EventModerator")
   reviews          Review[]        @relation("ReviewAuthor")
   moderatedReviews Review[]        @relation("ReviewModerator")
   moderationLogs   ModerationLog[] @relation("ModerationActor")
+  accessRequestsSubmitted AccessRequest[] @relation("AccessRequestApplicant")
+  accessRequestsReviewed  AccessRequest[] @relation("AccessRequestReviewer")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -153,7 +158,8 @@ model Country {
   code   String @unique // ISO 3166-1 alpha-2, напр. "BY", "RU", "PL"
   nameRu String
 
-  cities City[]
+  cities         City[]
+  accessRequests AccessRequest[]
 }
 
 model City {
@@ -169,6 +175,7 @@ model City {
   dancers        Dancer[]
   schoolBranches SchoolBranch[]
   competitions   Competition[]
+  accessRequests AccessRequest[]
 
   @@index([countryId])
 }
@@ -206,7 +213,6 @@ model School {
   schedules ClassSchedule[]
   events    Event[]
   reviews   Review[]
-  claims    SchoolClaim[]
 
   @@index([cityId])
   @@index([verificationStatus])
@@ -276,32 +282,62 @@ enum DanceLevel {
 }
 
 // ---------------------------------------------------------------------------
-// SchoolClaim — заявка на владение карточкой школы
+// AccessRequest — заявка на выдачу проверенного доступа (организатор событий/
+// фестиваля, руководитель школы, организатор соревнований). Заменяет собой
+// прежний узкоспециализированный SchoolClaim (удалён — все данные были
+// тестовыми, см. решение пользователя 2026-09-14) единой моделью на все 4
+// вида доступа: одна заявка = один запрошенный тип, чтобы супер-админ мог
+// одобрять/отклонять/отзывать каждый тип независимо, даже если поданы вместе
+// в одной сессии визарда "Стать организатором" (/become-organizer).
 // ---------------------------------------------------------------------------
 
-enum ClaimStatus {
-  PENDING
-  APPROVED
-  REJECTED
+enum AccessRequestType {
+  EVENT_ORGANIZER
+  FESTIVAL_ORGANIZER
+  SCHOOL_HEAD
+  COMPETITION_ORGANIZER
 }
 
-model SchoolClaim {
-  id            String      @id @default(cuid())
-  schoolId      String
-  school        School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  claimantId    String
-  claimant      User        @relation("Claimant", fields: [claimantId], references: [id])
-  status        ClaimStatus @default(PENDING)
-  proofNote     String? // как заявитель подтверждает свою связь со школой
-  reviewedById  String?
-  reviewedBy    User?       @relation("ClaimReviewer", fields: [reviewedById], references: [id])
-  reviewedAt    DateTime?
-  reviewComment String?
-  createdAt     DateTime    @default(now())
+enum AccessRequestStatus {
+  PENDING
+  NEEDS_INFO
+  APPROVED
+  REJECTED
+  REVOKED
+}
 
-  @@index([schoolId, status])
-  @@index([claimantId])
-  @@index([reviewedById])
+model AccessRequest {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation("AccessRequestApplicant", fields: [userId], references: [id])
+  type      AccessRequestType
+
+  // Общие поля анкеты (одинаковые для всех 4 типов).
+  brandName   String // "Как вас представить" — название/бренд
+  description String // краткое описание, до 500 символов (проверяется в zod-схеме)
+  cityId      String?
+  city        City?    @relation(fields: [cityId], references: [id])
+  countryId   String?
+  country     Country? @relation(fields: [countryId], references: [id])
+  phone       String?
+  links       Json // [{ type: "INSTAGRAM"|"FACEBOOK"|"WEBSITE"|"TELEGRAM"|"OTHER", url: string }]
+
+  // Поля, специфичные для конкретного type (форма показывает только
+  // relevant-подмножество) — см. src/server/access-requests/schemas.ts.
+  payload Json
+
+  status        AccessRequestStatus @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?                @relation("AccessRequestReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  reviewComment String? // причина reject/needs_info — видна заявителю
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([type, status])
 }
 
 // ---------------------------------------------------------------------------
@@ -659,7 +695,7 @@ model Achievement {
 enum ModerationEntity {
   EVENT
   REVIEW
-  SCHOOL_CLAIM
+  ACCESS_REQUEST
   SCHOOL
   USER
 }

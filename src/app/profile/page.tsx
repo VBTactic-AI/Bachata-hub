@@ -11,6 +11,8 @@ import { CompetitorStatisticsCard } from "@/components/CompetitorStatisticsCard"
 import { getCompetitorStatistics } from "@/server/statistics/competitor-statistics";
 import { getAudienceAwardsForDancer } from "@/server/statistics/audience-vote-statistics";
 import { isNoShow } from "@/server/competition/no-show";
+import { getMyAccessRequests } from "@/server/access-requests/queries";
+import { AccessRequestStatusList } from "@/components/become-organizer/AccessRequestStatusList";
 import { Card } from "@/components/ui/card";
 import {
   COMPETITION_STATUS_LABELS,
@@ -22,10 +24,23 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [dancer, cities] = await Promise.all([
+  const [dancer, cities, myAccessRequests] = await Promise.all([
     getDancerByUserId(user.id),
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
+    getMyAccessRequests(user.id),
   ]);
+
+  const accessRequestBlock = (
+    <div className="flex flex-col gap-2">
+      {myAccessRequests.length > 0 && <AccessRequestStatusList requests={myAccessRequests} />}
+      <Link
+        href="/become-organizer"
+        className="self-start rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"
+      >
+        🧑‍💼 {myAccessRequests.length > 0 ? "Подать ещё одну заявку" : "Стать организатором"}
+      </Link>
+    </div>
+  );
 
   // У служебных аккаунтов (админ/модератор/школа) профиля танцора может не
   // быть — это не ошибка (см. seed.ts), но молча кидать на главную без
@@ -37,6 +52,7 @@ export default async function ProfilePage() {
       <div className="flex flex-col gap-3">
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text">{t.dancer.publicProfileOf}</h1>
         <p className="text-sm text-night-muted">{t.dancer.noProfileForThisAccount}</p>
+        {accessRequestBlock}
       </div>
     );
   }
@@ -95,6 +111,8 @@ export default async function ProfilePage() {
           ⚙️ Настройки уведомлений
         </Link>
       </div>
+
+      {accessRequestBlock}
 
       <DancerProfileView dancer={dancer} editable audienceAwards={audienceAwards} />
 

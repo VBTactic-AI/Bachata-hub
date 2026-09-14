@@ -3,11 +3,15 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, createSession } from "@/lib/auth";
 
+// Роль больше не выбирается при регистрации (по прямому решению
+// пользователя, 2026-09-14) — все регистрируются как обычные танцоры
+// (DANCER, дефолт схемы). Проверенный доступ (организатор событий/
+// фестиваля, руководитель школы, организатор соревнований) выдаётся только
+// через одобрение AccessRequest, см. /become-organizer.
 const schema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   displayName: z.string().min(1).max(80),
-  role: z.enum(["DANCER", "SCHOOL_REP", "ORGANIZER"]),
   cityId: z.string().optional(),
 });
 
@@ -17,7 +21,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  const { password, displayName, role, cityId } = parsed.data;
+  const { password, displayName, cityId } = parsed.data;
   const email = parsed.data.email.trim().toLowerCase();
 
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -30,7 +34,6 @@ export async function POST(req: NextRequest) {
     data: {
       email,
       passwordHash,
-      role,
       dancer: {
         create: {
           displayName,

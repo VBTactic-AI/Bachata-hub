@@ -111,9 +111,21 @@ export function hasRole(user: User | null, ...roles: UserRole[]): boolean {
 }
 
 // Кто может добавлять события: представитель школы, организатор без школы,
-// модератор и админ (см. таблицу ролей в ТЗ). Обычный танцор — нет.
+// модератор и админ (см. таблицу ролей в ТЗ) — старые пути НЕ убраны, чтобы
+// не потерять доступ у уже существующих пользователей с этими ролями
+// (роль больше не выбирается при регистрации, см. docs/00_DECISIONS.md,
+// 2026-09-14). Новый путь — isVerifiedEventOrganizer, выдаётся ТОЛЬКО через
+// одобрение AccessRequest(type: EVENT_ORGANIZER) супер-админом
+// (см. src/server/access-requests/review.ts), не выбирается пользователем сам.
 export function canCreateEvents(user: User | null): boolean {
-  return hasRole(user, "SCHOOL_REP", "ORGANIZER", "MODERATOR", "ADMIN");
+  return hasRole(user, "SCHOOL_REP", "ORGANIZER", "MODERATOR", "ADMIN") || !!user?.isVerifiedEventOrganizer;
+}
+
+// Доступ к /admin/festival — выдаётся ТОЛЬКО через одобрение
+// AccessRequest(type: FESTIVAL_ORGANIZER), система ведения фестивалей пока в
+// разработке (заглушка-доступ).
+export function isVerifiedFestivalOrganizer(user: User | null): boolean {
+  return !!user?.isVerifiedFestivalOrganizer;
 }
 
 export function isModerator(user: User | null): boolean {

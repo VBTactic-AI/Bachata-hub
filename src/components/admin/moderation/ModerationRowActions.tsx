@@ -9,13 +9,17 @@ import { Input } from "@/components/ui/field";
 // Admin-тёмная версия старого src/components/ModerationActions.tsx (жил на
 // светлой /moderation) — та же логика (approve/reject с необязательной
 // причиной, тот же эндпоинт), только вёрстка под admin-* (2026-09-11).
-export function ModerationRowActions({ endpoint }: { endpoint: string }) {
+// showNeedsInfo (2026-09-14) — третья кнопка "Нужна информация", нужна только
+// заявкам на доступ (AccessRequest); события/отзывы её не используют, их
+// PATCH-роуты не понимают action:"needs_info" — поэтому по умолчанию false,
+// ничего не меняется для существующих страниц.
+export function ModerationRowActions({ endpoint, showNeedsInfo = false }: { endpoint: string; showNeedsInfo?: boolean }) {
   const router = useRouter();
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function act(action: "approve" | "reject") {
+  async function act(action: "approve" | "reject" | "needs_info") {
     setLoading(true);
     setError(null);
     const res = await fetch(endpoint, {
@@ -43,6 +47,18 @@ export function ModerationRowActions({ endpoint }: { endpoint: string }) {
       <Button type="button" size="sm" disabled={loading} onClick={() => act("approve")} className="border-none bg-gradient-admin-cta">
         {t.moderation.approve}
       </Button>
+      {showNeedsInfo && (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={loading}
+          onClick={() => act("needs_info")}
+          className="border-admin-border bg-transparent text-amber-400 hover:bg-admin-card2"
+        >
+          Нужна информация
+        </Button>
+      )}
       <Button
         type="button"
         size="sm"

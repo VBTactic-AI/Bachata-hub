@@ -53,7 +53,7 @@ export type DomainEventPayloadMap = {
     entityId: string; // School.id
     schoolSlug: string;
     schoolName: string;
-    directUserId: string; // заявитель, чья SchoolClaim одобрена
+    directUserId: string; // заявитель, чья заявка AccessRequest(SCHOOL_HEAD) одобрена
   };
   JNJ_REGISTRATION_OPENED: {
     entityId: string; // Competition.id

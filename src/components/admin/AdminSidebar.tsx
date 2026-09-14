@@ -141,6 +141,16 @@ function moderationItems(): NavItem[] {
     { href: "/admin/moderation/events", label: t.moderation.events, icon: <AlertIcon />, match: (p) => p.startsWith("/admin/moderation/events") },
     { href: "/admin/moderation/reviews", label: t.moderation.reviews, icon: <ChatIcon />, match: (p) => p.startsWith("/admin/moderation/reviews") },
     { href: "/admin/moderation/schools", label: t.moderation.schoolClaims, icon: <BuildingIcon />, match: (p) => p.startsWith("/admin/moderation/schools") },
+    // Заявки на доступ (Access Request Engine, 2026-09-14) — три
+    // организаторских типа вместе (Событий/Фестиваля/Соревнований), школа
+    // осталась на своём историческом пункте выше (заменила SchoolClaim).
+    {
+      href: "/admin/moderation/organizer-requests",
+      label: "Заявки организаторов",
+      icon: <PeopleIcon />,
+      match: (p) => p.startsWith("/admin/moderation/organizer-requests"),
+    },
+    { href: "/admin/moderation/access", label: "Выданные доступы", icon: <ShieldIcon />, match: (p) => p.startsWith("/admin/moderation/access") },
     { href: "/admin/moderation/users", label: t.moderation.users, icon: <PeopleIcon />, match: (p) => p.startsWith("/admin/moderation/users") },
     { href: "/admin/moderation/log", label: "Журнал", icon: <BookIcon />, match: (p) => p.startsWith("/admin/moderation/log") },
   ];

@@ -29,10 +29,17 @@ export async function getGrowthStats() {
 }
 
 export async function getModerationQueueCounts() {
-  const [pendingEvents, pendingClaims, newReviews] = await Promise.all([
+  // pendingClaims — имя поля сохранено (не переименовано в pendingSchoolAccessRequests)
+  // ради минимального диффа в потребителях (admin/page.tsx, admin/moderation/page.tsx,
+  // AdminSidebar.tsx) — источник данных сменился со SchoolClaim на
+  // AccessRequest(type: SCHOOL_HEAD), сам смысл счётчика не изменился.
+  const [pendingEvents, pendingClaims, newReviews, pendingOrganizerRequests] = await Promise.all([
     prisma.event.count({ where: { moderationStatus: "PENDING" } }),
-    prisma.schoolClaim.count({ where: { status: "PENDING" } }),
+    prisma.accessRequest.count({ where: { type: "SCHOOL_HEAD", status: { in: ["PENDING", "NEEDS_INFO"] } } }),
     prisma.review.count({ where: { moderatedById: null } }),
+    prisma.accessRequest.count({
+      where: { type: { in: ["EVENT_ORGANIZER", "FESTIVAL_ORGANIZER", "COMPETITION_ORGANIZER"] }, status: { in: ["PENDING", "NEEDS_INFO"] } },
+    }),
   ]);
-  return { pendingEvents, pendingClaims, newReviews };
+  return { pendingEvents, pendingClaims, newReviews, pendingOrganizerRequests };
 }

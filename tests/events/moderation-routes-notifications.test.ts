@@ -19,29 +19,18 @@ vi.mock("@/server/notifications/emit-domain-event", () => ({
 
 const eventFindUnique = vi.fn();
 const eventUpdate = vi.fn();
-const schoolClaimFindUnique = vi.fn();
-const schoolClaimUpdate = vi.fn();
-const schoolClaimUpdateMany = vi.fn();
-const schoolUpdate = vi.fn();
 
 const fakeTx = {
   event: { findUnique: (...a: unknown[]) => eventFindUnique(...a), update: (...a: unknown[]) => eventUpdate(...a) },
-  schoolClaim: {
-    update: (...a: unknown[]) => schoolClaimUpdate(...a),
-    updateMany: (...a: unknown[]) => schoolClaimUpdateMany(...a),
-  },
-  school: { update: (...a: unknown[]) => schoolUpdate(...a) },
 };
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    schoolClaim: { findUnique: (...a: unknown[]) => schoolClaimFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
 const { PATCH: patchEventModeration } = await import("@/app/api/moderation/events/[id]/route");
-const { PATCH: patchClaimModeration } = await import("@/app/api/moderation/claims/[id]/route");
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -54,6 +43,8 @@ function makeUser(overrides: Partial<User> = {}): User {
     updatedAt: new Date(),
     lastLoginAt: null,
     isBlocked: false,
+    isVerifiedEventOrganizer: false,
+    isVerifiedFestivalOrganizer: false,
     ...overrides,
   };
 }
@@ -69,10 +60,6 @@ beforeEach(() => {
   emitDomainEventMock.mockReset();
   eventFindUnique.mockReset();
   eventUpdate.mockReset();
-  schoolClaimFindUnique.mockReset();
-  schoolClaimUpdate.mockReset();
-  schoolClaimUpdateMany.mockReset();
-  schoolUpdate.mockReset();
 });
 
 describe("PATCH /api/moderation/events/[id] — EVENT_PUBLISHED, второй возможный момент публикации", () => {
@@ -134,38 +121,7 @@ describe("PATCH /api/moderation/events/[id] — EVENT_PUBLISHED, второй в
   });
 });
 
-describe("PATCH /api/moderation/claims/[id] — SCHOOL_VERIFIED", () => {
-  it("approve заявки — DIRECT-уведомление заявителю", async () => {
-    schoolClaimFindUnique.mockResolvedValue({ id: "claim1", schoolId: "school1", claimantId: "user9" });
-    schoolUpdate.mockResolvedValue({ id: "school1", slug: "bachata-warsaw", name: "Bachata Warsaw" });
-
-    await patchClaimModeration(fakeRequest({ action: "approve" }), { params: Promise.resolve({ id: "claim1" }) });
-
-    expect(emitDomainEventMock).toHaveBeenCalledWith(
-      fakeTx,
-      expect.objectContaining({
-        type: "SCHOOL_VERIFIED",
-        payload: { entityId: "school1", schoolSlug: "bachata-warsaw", schoolName: "Bachata Warsaw", directUserId: "user9" },
-        idempotencyKey: "SCHOOL_VERIFIED:claim1",
-      })
-    );
-  });
-
-  it("reject заявки — НЕ эмитит, School не трогается", async () => {
-    schoolClaimFindUnique.mockResolvedValue({ id: "claim2", schoolId: "school2", claimantId: "user9" });
-
-    await patchClaimModeration(fakeRequest({ action: "reject" }), { params: Promise.resolve({ id: "claim2" }) });
-
-    expect(schoolUpdate).not.toHaveBeenCalled();
-    expect(emitDomainEventMock).not.toHaveBeenCalled();
-  });
-
-  it("заявка не найдена — 404, эмитить нечего", async () => {
-    schoolClaimFindUnique.mockResolvedValue(null);
-
-    const res = await patchClaimModeration(fakeRequest({ action: "approve" }), { params: Promise.resolve({ id: "ghost" }) });
-
-    expect(res.status).toBe(404);
-    expect(emitDomainEventMock).not.toHaveBeenCalled();
-  });
-});
+// Тесты SCHOOL_VERIFIED для approve заявки "Руководитель школы" —
+// см. tests/access-requests/review.test.ts (источник переехал с
+// PATCH /api/moderation/claims/[id] на reviewAccessRequest(), SchoolClaim
+// удалена, docs/00_DECISIONS.md 2026-09-14).

@@ -13,6 +13,8 @@ function makeUser(overrides: Partial<User> = {}): User {
     updatedAt: new Date(),
     lastLoginAt: null,
     isBlocked: false,
+    isVerifiedEventOrganizer: false,
+    isVerifiedFestivalOrganizer: false,
     ...overrides,
   };
 }

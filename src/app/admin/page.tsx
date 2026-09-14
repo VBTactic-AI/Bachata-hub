@@ -54,7 +54,7 @@ export default async function AdminDashboardPage() {
   let topSchools: SchoolActivity[] = [];
   let recentFeed: FeedEvent[] = [];
   let systemHealth: SystemHealth | null = null;
-  let moderationQueue: { pendingEvents: number; pendingClaims: number; newReviews: number } | null = null;
+  let moderationQueue: { pendingEvents: number; pendingClaims: number; newReviews: number; pendingOrganizerRequests: number } | null = null;
   let dbUsagePercent: number | null = null;
   let dbSizeBytes: number | null = null;
 
@@ -122,7 +122,10 @@ export default async function AdminDashboardPage() {
                   <div>
                     <p className="m-0 text-sm text-admin-muted">{t.adminDashboard.moderationCardTitle}</p>
                     <p className="m-0 text-xl font-extrabold text-night-text">
-                      {moderationQueue.pendingEvents + moderationQueue.pendingClaims + moderationQueue.newReviews}{" "}
+                      {moderationQueue.pendingEvents +
+                        moderationQueue.pendingClaims +
+                        moderationQueue.newReviews +
+                        moderationQueue.pendingOrganizerRequests}{" "}
                       {t.adminDashboard.moderationCardHint}
                     </p>
                   </div>
@@ -135,6 +138,10 @@ export default async function AdminDashboardPage() {
                   <li className="flex items-center justify-between">
                     <span>{t.moderation.schoolClaims}</span>
                     <span className="font-semibold text-night-text">{moderationQueue.pendingClaims}</span>
+                  </li>
+                  <li className="flex items-center justify-between">
+                    <span>Заявки организаторов</span>
+                    <span className="font-semibold text-night-text">{moderationQueue.pendingOrganizerRequests}</span>
                   </li>
                   <li className="flex items-center justify-between">
                     <span>{t.moderation.reviews}</span>

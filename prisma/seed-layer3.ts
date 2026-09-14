@@ -83,6 +83,13 @@ const PERMISSIONS = [
 // соревнование (CompetitionMember).
 const ROLES = [
   { code: "SUPER_ADMIN", name: "Супер-администратор", scope: "GLOBAL" as const },
+  // Глобальная роль, выдаваемая через одобрение AccessRequest(type:
+  // COMPETITION_ORGANIZER) — единственное право competition:create, всё
+  // остальное человек получает автоматически как EVENT_ADMIN уже СОЗДАННОГО
+  // им соревнования (createCompetition() сам создаёт CompetitionMember,
+  // см. src/server/competition/create-competition.ts) — отдельно назначать
+  // права внутри соревнования не требуется.
+  { code: "COMPETITION_ORGANIZER", name: "Организатор соревнований (глобально)", scope: "GLOBAL" as const },
   { code: "EVENT_ADMIN", name: "Администратор соревнования", scope: "COMPETITION" as const },
   { code: "HEAD_JUDGE", name: "Главный судья", scope: "COMPETITION" as const },
   { code: "JUDGE", name: "Судья", scope: "COMPETITION" as const },
@@ -95,6 +102,7 @@ const ROLES = [
 // Матрица роль -> права по docs/03_ENGINE_ALGORITHMS_AND_RBAC.md §4 и
 // CLAUDE.md §30. SUPER_ADMIN получает все права ниже отдельным циклом.
 const ROLE_PERMISSIONS: Record<string, string[]> = {
+  COMPETITION_ORGANIZER: ["competition:create"],
   EVENT_ADMIN: [
     "competition:update",
     "competition:publish",
