@@ -5,23 +5,22 @@ import { t } from "@/lib/i18n/dictionary";
 import { getPreferredCity } from "@/lib/city-preference";
 import { eventsForHome, eventsForCalendarMonth } from "@/lib/events";
 import { getLiveCompetitionSummary, getUpcomingCompetitionTeaser } from "@/lib/home-live";
+import { getSchoolDiscoveryData, getUpcomingEventsForSchool } from "@/lib/school-discovery";
 import { formatEventCardPrice } from "@/lib/event-price";
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { EventCalendar } from "@/components/EventCalendar";
-import { formatEventTime, formatRelativeDayLabel, pluralizeRu } from "@/lib/format";
+import { formatEventTime, formatRelativeDayLabel } from "@/lib/format";
 import { CardLightSweep } from "@/components/CardLightSweep";
 import { AmbientParticles } from "@/components/AmbientParticles";
 import { ScrollReveal } from "@/components/ScrollReveal";
 import { LiveDot } from "@/components/LiveDot";
-import { VerificationBadge } from "@/components/VerificationBadge";
 import { CompetitionCard } from "@/components/compete/CompetitionCard";
-import { prisma } from "@/lib/prisma";
+import { SchoolEventsDiscovery } from "@/components/SchoolEventsDiscovery";
 import { DarkTopNav } from "@/components/dark/DarkTopNav";
 import { BottomNavGate } from "@/components/compete/BottomNavGate";
 import type { City, Event, EventFormat, EventPriceOption, School } from "@prisma/client";
 
 type EventWithRelations = Event & { city: City; school: School | null; priceOptions: EventPriceOption[] };
-type SchoolWithExtras = School & { city: City; _count: { teachers: number } };
 
 // Русские подписи формата события для карточек — короткая форма
 // (единственное число), в отличие от FORMAT_LABELS в SubscriptionsManager.tsx
@@ -81,66 +80,20 @@ function HomeEventCard({ event, sweepDelay = 0 }: { event: EventWithRelations; s
   );
 }
 
-// Более визуальная карточка школы для главной (по прямому запросу
-// пользователя) — крупная область фото (пока плейсхолдер-градиент: School не
-// хранит обложку, docs не предполагали её на этом этапе), значок
-// подтверждения, реальное число преподавателей (_count.teachers) и реальные
-// направления школы. Не рейтинг/выдуманная метрика популярности — та же
-// витрина, что и раньше (see prisma-запрос ниже), просто крупнее и с большим
-// количеством реальных полей на карточке.
-function HomeSchoolCard({ school, sweepDelay = 0 }: { school: SchoolWithExtras; sweepDelay?: number }) {
-  const teachersCount = school._count.teachers;
-
-  return (
-    <Link
-      href={`/schools/${school.slug}`}
-      className="group relative flex flex-col overflow-hidden rounded-app border border-white/10 bg-night-card/75 no-underline backdrop-blur-md transition-[transform,box-shadow,background-color,border-color] duration-300 ease-out hover:z-10 hover:scale-[1.03] hover:border-white/20 hover:bg-night-card2/85 hover:shadow-[0_25px_50px_-15px_rgba(0,0,0,0.6)]"
-    >
-      <div className="relative h-[128px] w-full shrink-0 overflow-hidden">
-        <div
-          className="h-full w-full bg-gradient-night-hero bg-cover bg-center transition-transform duration-500 ease-out group-hover:scale-110"
-          aria-hidden="true"
-        />
-      </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
-        <VerificationBadge status={school.verificationStatus} />
-        <span className="truncate text-[0.95rem] font-semibold text-night-text">{school.name}</span>
-        <span className="truncate text-xs text-night-muted">
-          {school.city.nameRu}
-          {teachersCount > 0 ? ` · ${teachersCount} ${pluralizeRu(teachersCount, ["преподаватель", "преподавателя", "преподавателей"])}` : ""}
-        </span>
-        {school.directions.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {school.directions.slice(0, 3).map((d) => (
-              <span key={d} className="rounded-full bg-night-card2 px-2 py-0.5 text-[0.68rem] font-semibold text-night-pink">
-                {d}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      <CardLightSweep sweepDelay={sweepDelay} />
-    </Link>
-  );
-}
-
 export default async function HomePage() {
   const preferredCity = await getPreferredCity();
   const now = new Date();
   const calendarYear = now.getFullYear();
   const calendarMonth = now.getMonth() + 1;
 
-  const [[today, thisWeek], popularSchools, calendarEvents, liveCompetition, upcomingCompetition] = await Promise.all([
+  const [[today, thisWeek], schoolDiscovery, discoveryEvents, calendarEvents, liveCompetition, upcomingCompetition] = await Promise.all([
     eventsForHome(preferredCity?.id ?? null),
-    // Витрина, не рейтинг: без отдельной метрики популярности показываем
-    // первые активные школы (подтверждённые — раньше), тот же порядок, что и
-    // на /schools — не выдумываем алгоритм ранжирования для тизера.
-    prisma.school.findMany({
-      where: { isActive: true },
-      include: { city: true, _count: { select: { teachers: true } } },
-      orderBy: [{ verificationStatus: "asc" }, { name: "asc" }],
-      take: 10,
-    }),
+    getSchoolDiscoveryData(),
+    // Начальное состояние блока "Школы → события" — карточка "Все школы"
+    // активна по умолчанию (см. SchoolEventsDiscovery.tsx), поэтому здесь
+    // сразу тянем события всех школ, а не делаем клиентский запрос при
+    // первой отрисовке.
+    getUpcomingEventsForSchool(null, 6),
     eventsForCalendarMonth(preferredCity?.id ?? null, calendarYear, calendarMonth),
     getLiveCompetitionSummary(),
     getUpcomingCompetitionTeaser(),
@@ -286,26 +239,9 @@ export default async function HomePage() {
             {t.home.seeFullCalendar} →
           </Link>
 
-          {popularSchools.length > 0 && (
-            <ScrollReveal delay={0.5}>
-              <section className="flex flex-col gap-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <div>
-                    <h2 className="m-0 font-night text-lg font-bold text-night-text sm:text-xl">{t.home.popularSchools}</h2>
-                    <p className="m-0 mt-0.5 text-sm text-night-muted">{t.home.popularSchoolsSubtitle}</p>
-                  </div>
-                  <Link href="/schools" className="shrink-0 text-sm font-semibold text-night-primary no-underline hover:no-underline">
-                    {t.home.seeAllSchools}
-                  </Link>
-                </div>
-                <div className="grid grid-flow-col auto-cols-[168px] grid-rows-1 gap-3 overflow-x-auto pb-1 sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {popularSchools.map((s, i) => (
-                    <HomeSchoolCard key={s.id} school={s} sweepDelay={(i % 5) * 0.5} />
-                  ))}
-                </div>
-              </section>
-            </ScrollReveal>
-          )}
+          <ScrollReveal delay={0.5}>
+            <SchoolEventsDiscovery data={schoolDiscovery} initialEvents={discoveryEvents} />
+          </ScrollReveal>
 
           <footer className="mt-6 flex flex-col gap-6 border-t border-night-border pt-6 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-1.5">
