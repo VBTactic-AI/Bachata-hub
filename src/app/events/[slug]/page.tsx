@@ -8,6 +8,7 @@ import { formatDateTime, formatEventDate, formatEventTime, formatRelativeDayLabe
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { COMPETITION_STATUS_LABELS } from "@/lib/competition-labels";
 import { AttendanceButtons } from "@/components/AttendanceButtons";
+import { EventRegistrationButton } from "@/components/EventRegistrationButton";
 import { ShareButtons } from "@/components/ShareButtons";
 import { PublicEventGallery } from "@/components/PublicEventGallery";
 import { FollowButton } from "@/components/notifications/FollowButton";
@@ -136,6 +137,20 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
           dancer
             ? prisma.attendance.findUnique({
                 where: { dancerId_eventId: { dancerId: dancer.id, eventId: event.id } },
+              })
+            : null
+        )
+    : null;
+
+  // Events Engine, этап 4 — своя регистрация участника, независимая от
+  // Attendance (RSVP) выше. Тот же паттерн запроса (через Dancer.userId).
+  const myRegistration = user
+    ? await prisma.dancer
+        .findUnique({ where: { userId: user.id } })
+        .then((dancer) =>
+          dancer
+            ? prisma.eventRegistration.findUnique({
+                where: { eventId_dancerId: { eventId: event.id, dancerId: dancer.id } },
               })
             : null
         )
@@ -469,9 +484,16 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
                 >
                   {t.event.registerExternal} →
                 </a>
-                {event.registrationEnabled && (
-                  <p className="m-0 text-center text-xs font-semibold text-night-success">Регистрация открыта</p>
-                )}
+              </div>
+            )}
+
+            {/* Events Engine, этап 4 — собственная регистрация (НЕ то же
+                самое, что внешняя ссылка выше: организатор может включить
+                и то, и другое одновременно, например платный вход по внешней
+                ссылке + бесплатный учёт мест здесь). */}
+            {event.registrationEnabled && (
+              <div className="flex flex-col gap-1.5 border-t border-night-border/60 pt-3">
+                <EventRegistrationButton eventSlug={event.slug} initialStatus={myRegistration?.status ?? null} loggedIn={!!user} />
               </div>
             )}
 
