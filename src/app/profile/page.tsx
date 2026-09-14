@@ -13,6 +13,8 @@ import { getAudienceAwardsForDancer } from "@/server/statistics/audience-vote-st
 import { isNoShow } from "@/server/competition/no-show";
 import { getMyAccessRequests } from "@/server/access-requests/queries";
 import { AccessRequestStatusList } from "@/components/become-organizer/AccessRequestStatusList";
+import { getActor } from "@/server/rbac/actor";
+import { getAdminSectionAccess, hasAnyAdminAccess } from "@/lib/admin-access";
 import { Card } from "@/components/ui/card";
 import {
   COMPETITION_STATUS_LABELS,
@@ -24,11 +26,29 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [dancer, cities, myAccessRequests] = await Promise.all([
+  const [dancer, cities, myAccessRequests, actor] = await Promise.all([
     getDancerByUserId(user.id),
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     getMyAccessRequests(user.id),
+    getActor(),
   ]);
+
+  // Кнопка "Админ панель" — видна любому, у кого есть хотя бы один
+  // проверенный доступ (организатор мероприятий/фестиваля/соревнований,
+  // руководитель школы) или сайтовая ADMIN/MODERATOR-роль; ровно тот же
+  // источник правды, что и у самого хаба /admin (getAdminSectionAccess) —
+  // не отдельная копия условия (по прямому запросу пользователя, 2026-09-14).
+  const adminAccess = await getAdminSectionAccess(user, actor);
+  const showAdminPanelButton = hasAnyAdminAccess(adminAccess);
+
+  const adminPanelButton = showAdminPanelButton ? (
+    <Link
+      href="/admin"
+      className="self-start rounded-full border-none bg-gradient-night-cta px-5 py-2.5 text-sm font-bold text-white no-underline hover:no-underline"
+    >
+      ⚙️ Админ панель
+    </Link>
+  ) : null;
 
   const accessRequestBlock = (
     <div className="flex flex-col gap-2">
@@ -52,6 +72,7 @@ export default async function ProfilePage() {
       <div className="flex flex-col gap-3">
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text">{t.dancer.publicProfileOf}</h1>
         <p className="text-sm text-night-muted">{t.dancer.noProfileForThisAccount}</p>
+        {adminPanelButton}
         {accessRequestBlock}
       </div>
     );
@@ -83,7 +104,8 @@ export default async function ProfilePage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {adminPanelButton ?? <span />}
         <ProfileEditForm dancer={dancer} cities={cities} />
       </div>
 

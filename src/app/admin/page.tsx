@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser, isAdmin, canCreateEvents } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { getActor } from "@/server/rbac/actor";
-import { can, hasNoAdminAccess } from "@/server/rbac/authorize";
-import { prisma } from "@/lib/prisma";
+import { getAdminSectionAccess } from "@/lib/admin-access";
 import { AdminSectionShell } from "@/components/admin/AdminSectionShell";
 import { cardVariants } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
@@ -11,32 +10,34 @@ import { HomeIcon, TrophyIcon, ContentIcon, SchoolIcon, FestivalIcon } from "@/c
 
 // Хаб-пикер — точка входа /admin. Пять отдельных админок
 // (Мониторинг/Ивенты/Соревнования/Школа/Фестивали, docs/00_DECISIONS.md,
-// 2026-09-14): доступ к каждой проверяется независимо. У кого доступ ровно к
-// одной — сразу редирект туда, без лишнего клика. У кого к нескольким (типично
-// только у SUPER_ADMIN) — карточки выбора. У кого ни к одной — как и раньше
-// (hasNoAdminAccess), редирект на публичный сайт.
+// 2026-09-14): доступ к каждой проверяется независимо через
+// getAdminSectionAccess() (общий источник и для этой страницы, и для кнопки
+// "Админ панель" на /profile). У кого доступ ровно к одной — сразу редирект
+// туда, без лишнего клика. У кого к нескольким (типично только у
+// SUPER_ADMIN) — карточки выбора. У кого ни к одной — редирект на публичный
+// сайт.
+//
+// Раньше здесь ДОПОЛНИТЕЛЬНО стоял ранний гейт hasNoAdminAccess(actor) — он
+// смотрит только на RBAC-права слоя 3 (соревнования) и ничего не знает про
+// isVerifiedEventOrganizer/владение школой/isVerifiedFestivalOrganizer:
+// человек ТОЛЬКО с одним из этих трёх доступов (без единого права в
+// движке соревнований) им ошибочно выкидывался на "/" ещё до того, как
+// вообще успевали посчитаться sections ниже (найдено при добавлении кнопки
+// "Админ панель" на профиль, 2026-09-14). Убран — sections/available.length
+// уже сами по себе полный и единственный гейт.
 export default async function AdminHubPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const actor = await getActor();
-  if (!actor || hasNoAdminAccess(actor)) redirect("/");
-
-  const school = await prisma.school.findFirst({ where: { ownerUserId: user.id }, select: { id: true } });
+  const access = await getAdminSectionAccess(user, actor);
 
   const sections = [
-    { key: "system", href: "/admin/system", label: "Мониторинг", desc: "Главная, модерация, оповещения, БД — вся платформа", icon: <HomeIcon />, has: isAdmin(user) },
-    { key: "content", href: "/admin/content", label: "Ивенты", desc: "Создание и ведение своих мероприятий", icon: <ContentIcon />, has: canCreateEvents(user) },
-    {
-      key: "competitions",
-      href: "/admin/competitions",
-      label: "Соревнования",
-      desc: "Создание и проведение Jack & Jill",
-      icon: <TrophyIcon />,
-      has: isAdmin(user) || can(actor, "competition:create") || (actor?.permissionsByCompetition.size ?? 0) > 0,
-    },
-    { key: "school", href: "/admin/school", label: "Школа", desc: "CRM и карточка своей школы", icon: <SchoolIcon />, has: !!school },
-    { key: "festival", href: "/admin/festival", label: "Фестивали", desc: "Доступ к системе ведения фестивалей", icon: <FestivalIcon />, has: user.isVerifiedFestivalOrganizer },
+    { key: "system", href: "/admin/system", label: "Мониторинг", desc: "Главная, модерация, оповещения, БД — вся платформа", icon: <HomeIcon />, has: access.system },
+    { key: "content", href: "/admin/content", label: "Ивенты", desc: "Создание и ведение своих мероприятий", icon: <ContentIcon />, has: access.content },
+    { key: "competitions", href: "/admin/competitions", label: "Соревнования", desc: "Создание и проведение Jack & Jill", icon: <TrophyIcon />, has: access.competitions },
+    { key: "school", href: "/admin/school", label: "Школа", desc: "CRM и карточка своей школы", icon: <SchoolIcon />, has: access.school },
+    { key: "festival", href: "/admin/festival", label: "Фестивали", desc: "Доступ к системе ведения фестивалей", icon: <FestivalIcon />, has: access.festival },
   ];
 
   const available = sections.filter((s) => s.has);
