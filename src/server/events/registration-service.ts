@@ -113,6 +113,11 @@ export type RegistrationListPage = {
   total: number;
   page: number;
   pageSize: number;
+  // Сводка по ВСЕМ регистрациям события (не только текущей странице) — для
+  // KPI-карточек в UI (Stage 3), тот же принцип, что и StatCard в
+  // ParticipantsPanel Competition Engine.
+  paidCount: number;
+  waitlistCount: number;
 };
 
 // Список участников — только владелец события или ADMIN (тот же owner-check,
@@ -130,7 +135,7 @@ export async function listEventRegistrations(
   const safePageSize = Math.min(Math.max(pageSize, 1), 100);
   const safePage = Math.max(page, 1);
 
-  const [items, total] = await Promise.all([
+  const [items, total, paidCount, waitlistCount] = await Promise.all([
     prisma.eventRegistration.findMany({
       where: { eventId },
       include: { dancer: { select: { id: true, displayName: true, avatarUrl: true } } },
@@ -139,9 +144,11 @@ export async function listEventRegistrations(
       take: safePageSize,
     }),
     prisma.eventRegistration.count({ where: { eventId } }),
+    prisma.eventRegistration.count({ where: { eventId, isPaid: true } }),
+    prisma.eventRegistration.count({ where: { eventId, status: "WAITLIST" } }),
   ]);
 
-  return { items, total, page: safePage, pageSize: safePageSize };
+  return { items, total, page: safePage, pageSize: safePageSize, paidCount, waitlistCount };
 }
 
 // Организатор/ADMIN меняет статус и/или отметку оплаты — плейн-обновление

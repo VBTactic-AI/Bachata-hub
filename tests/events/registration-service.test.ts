@@ -213,7 +213,7 @@ describe("listEventRegistrations() — owner-check", () => {
 
     const result = await listEventRegistrations("event1", user, { page: 1, pageSize: 50 });
 
-    expect(result).toEqual({ items: [{ id: "reg1" }], total: 1, page: 1, pageSize: 50 });
+    expect(result).toEqual({ items: [{ id: "reg1" }], total: 1, page: 1, pageSize: 50, paidCount: 1, waitlistCount: 1 });
   });
 
   it("ADMIN видит чужое событие", async () => {

@@ -224,6 +224,9 @@ export function EventWizard({
                     Открыть карточку →
                   </a>
                 )}
+                <a href={`/admin/content/${e.id}/registrations`} className="text-xs text-admin-muted hover:text-night-text hover:underline">
+                  Участники →
+                </a>
               </div>
             ))}
           </div>
