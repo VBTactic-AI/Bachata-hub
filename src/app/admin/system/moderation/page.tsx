@@ -18,10 +18,10 @@ export default async function ModerationOverviewPage() {
   const [stats, queue] = await Promise.all([getGrowthStats(), getModerationQueueCounts()]);
 
   const queueCards = [
-    { href: "/admin/moderation/events", label: t.moderation.events, value: queue.pendingEvents },
-    { href: "/admin/moderation/schools", label: t.moderation.schoolClaims, value: queue.pendingClaims },
-    { href: "/admin/moderation/organizer-requests", label: "Заявки организаторов", value: queue.pendingOrganizerRequests },
-    { href: "/admin/moderation/reviews", label: t.moderation.reviews, value: queue.newReviews },
+    { href: "/admin/system/moderation/events", label: t.moderation.events, value: queue.pendingEvents },
+    { href: "/admin/system/moderation/schools", label: t.moderation.schoolClaims, value: queue.pendingClaims },
+    { href: "/admin/system/moderation/organizer-requests", label: "Заявки организаторов", value: queue.pendingOrganizerRequests },
+    { href: "/admin/system/moderation/reviews", label: t.moderation.reviews, value: queue.newReviews },
   ];
 
   return (

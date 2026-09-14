@@ -105,7 +105,7 @@ export default async function NotificationsControlCenterPage({
         {PERIODS.map((p) => (
           <Link
             key={p}
-            href={`/admin/notifications?days=${p}`}
+            href={`/admin/system/notifications?days=${p}`}
             className={`rounded-full px-3 py-1.5 text-sm font-semibold no-underline transition-colors hover:no-underline ${
               p === days ? "bg-admin-primary/15 text-admin-primaryHover" : "text-admin-muted hover:bg-admin-card2"
             }`}

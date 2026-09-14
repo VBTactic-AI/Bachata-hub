@@ -39,13 +39,13 @@ export default async function ModerationReviewsPage({
 
       <div className="flex gap-2">
         <a
-          href="/admin/moderation/reviews?tab=new"
+          href="/admin/system/moderation/reviews?tab=new"
           className={buttonVariants({ variant: tab === "new" ? "admin" : "adminOutline", size: "sm", className: "no-underline" })}
         >
           {t.moderation.newReviewsTab}
         </a>
         <a
-          href="/admin/moderation/reviews?tab=all"
+          href="/admin/system/moderation/reviews?tab=all"
           className={buttonVariants({ variant: tab === "all" ? "admin" : "adminOutline", size: "sm", className: "no-underline" })}
         >
           {t.moderation.allReviewsTab}

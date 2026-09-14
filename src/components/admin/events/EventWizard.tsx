@@ -52,6 +52,7 @@ export function EventWizard({
   canCreateCompetition,
   initialDraft,
   myEvents,
+  eventListLabel = "Мои события",
 }: {
   cities: { id: string; nameRu: string }[];
   ownedSchools: { id: string; name: string; verificationStatus: "COMMUNITY" | "VERIFIED" }[];
@@ -59,6 +60,10 @@ export function EventWizard({
   canCreateCompetition: boolean;
   initialDraft: WizardDraft;
   myEvents: MyEventListItem[];
+  // "Мои события" не точно, когда список — ВСЕ события платформы (Мониторинг
+  // → /admin/system/events, docs/00_DECISIONS.md, 2026-09-14) — параметризовано,
+  // а не переименовано жёстко, чтобы /admin/content (реально "свои") не менялся.
+  eventListLabel?: string;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState<WizardDraft>(initialDraft);
@@ -204,7 +209,7 @@ export function EventWizard({
     <div className="flex flex-col gap-4">
       {myEvents.length > 0 && !draft.id && (
         <div className="rounded-app border border-admin-border bg-admin-card px-4 py-3 text-sm">
-          <p className="m-0 mb-2 font-semibold text-night-text">Мои события</p>
+          <p className="m-0 mb-2 font-semibold text-night-text">{eventListLabel}</p>
           <div className="flex flex-col gap-1.5">
             {myEvents.map((e) => (
               <div key={e.id} className="flex flex-wrap items-center gap-2">
