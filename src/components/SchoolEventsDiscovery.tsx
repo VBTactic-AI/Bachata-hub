@@ -134,6 +134,20 @@ export function SchoolEventsDiscovery({
   // видимых слотов по их индексу, чтобы двигать именно их.
   const liveDragOffset = useRef(0);
   const slotElements = useRef<Map<number, HTMLElement>>(new Map());
+  // Снимок centerIndex на момент pointerdown — клик сверяется с ним, а не с
+  // "живым" centerIndex из замыкания рендера. На тач-устройствах браузер
+  // сначала переводит фокус на элемент под пальцем (pointerdown → focus),
+  // а onFocus здесь тоже центрирует карточку (goToIndex) — то есть к моменту
+  // события click centerIndex мог уже успеть смениться на idx этой самой
+  // карточки, и проверка "idx !== centerIndex" ошибочно решила бы, что
+  // карточка уже была центральной, и пропустила бы переход по первому тапу
+  // на ещё боковую карточку (жалоба пользователя, 2026-09-14: "можно
+  // провалиться по клику, не только в центральную карточку").
+  const pointerDownCenterIndex = useRef<number | null>(null);
+  // Для "флика" на релизе (см. onPointerUp) — скорость движения указателя
+  // непосредственно перед отпусканием.
+  const velocityRef = useRef(0);
+  const lastMoveSample = useRef<{ x: number; t: number } | null>(null);
 
   const activeId = items[centerIndex] ?? null;
 
@@ -266,6 +280,9 @@ export function SchoolEventsDiscovery({
   // 2026-09-15; тот же класс бага уже чинили в предыдущей версии карусели).
   function onPointerDown(e: PointerEvent) {
     dragRef.current = { startX: e.clientX, moved: false, pointerId: e.pointerId };
+    pointerDownCenterIndex.current = centerIndex;
+    velocityRef.current = 0;
+    lastMoveSample.current = { x: e.clientX, t: e.timeStamp };
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -275,10 +292,26 @@ export function SchoolEventsDiscovery({
     if (!state.moved && Math.abs(dx) > 4) {
       state.moved = true;
       setIsDragging(true);
-      containerRef.current?.setPointerCapture(state.pointerId);
+      // setPointerCapture может бросить (например, если браузер уже считает
+      // этот pointerId неактивным к этому моменту) — без try/catch это
+      // прервало бы остаток обработчика и потеряло бы первый кадр драга.
+      try {
+        containerRef.current?.setPointerCapture(state.pointerId);
+      } catch {
+        // не критично: драг продолжит работать и без захвата указателя.
+      }
     }
     if (!state.moved) return;
     liveDragOffset.current = dx;
+    // Мгновенная скорость (px/ms) для распознавания "флика" на релизе —
+    // сглаживаем через последнюю пару замеров, а не среднее за весь жест,
+    // чтобы резкое замедление пальца в конце свайпа не давало ложный флик.
+    const last = lastMoveSample.current;
+    if (last) {
+      const dt = e.timeStamp - last.t;
+      if (dt > 0) velocityRef.current = (e.clientX - last.x) / dt;
+    }
+    lastMoveSample.current = { x: e.clientX, t: e.timeStamp };
     // Прямое обновление transform DOM-узлов, минуя React state — драг
     // должен успевать за пальцем/мышью на каждый кадр, а не на каждый
     // ре-рендер компонента.
@@ -296,11 +329,25 @@ export function SchoolEventsDiscovery({
       setTimeout(() => {
         suppressClick.current = false;
       }, 0);
-      const steps = Math.round(-liveDragOffset.current / dragStepPx);
+      let steps = Math.round(-liveDragOffset.current / dragStepPx);
+      // Короткий быстрый жест (типичный "флик" пальцем на телефоне — палец
+      // физически не проходит ту же дистанцию, что мышь на десктопе) может
+      // не дотянуть до dragStepPx и округлиться в 0 шагов, хотя по скорости
+      // это явно свайп с намерением перелистнуть. Порог подобран эмпирически
+      // (0.5 px/ms ≈ обычный уверенный свайп, не задевает случайные дрожания
+      // при попытке тапнуть). Жалоба пользователя, 2026-09-14: свайп на
+      // мобильном не крутит карусель "как в полной версии" (на десктопе
+      // мышью легко тянуть на бОльшую дистанцию, чем требует thumb-флик).
+      const FLICK_VELOCITY_PX_MS = 0.5;
+      if (steps === 0 && Math.abs(velocityRef.current) > FLICK_VELOCITY_PX_MS) {
+        steps = velocityRef.current > 0 ? -1 : 1;
+      }
       if (steps !== 0) shiftIndex(steps);
     }
     dragRef.current = null;
     liveDragOffset.current = 0;
+    velocityRef.current = 0;
+    lastMoveSample.current = null;
     setIsDragging(false);
   }
 
@@ -318,7 +365,13 @@ export function SchoolEventsDiscovery({
       e.stopPropagation();
       return;
     }
-    if (idx !== centerIndex) {
+    // Сверяемся со снимком centerIndex на момент pointerdown, а не с
+    // текущим состоянием (см. комментарий у pointerDownCenterIndex) — иначе
+    // на тач-устройствах успевший отработать onFocus мог бы задним числом
+    // "подтвердить" ещё боковую карточку как уже центральную.
+    const referenceCenter = pointerDownCenterIndex.current ?? centerIndex;
+    pointerDownCenterIndex.current = null;
+    if (idx !== referenceCenter) {
       e.preventDefault();
       e.stopPropagation();
       goToIndex(idx);
@@ -372,6 +425,16 @@ export function SchoolEventsDiscovery({
               ←
             </button>
 
+            {
+              // overflow-x-hidden (не overflow-hidden) — контейнеру нужно
+              // обрезать боковых соседей по горизонтали (задумано как "видно
+              // ~1.5 карточки", раньше не обрезалось вовсе — соседи
+              // отображались целиком, найдено визуально при проверке),
+              // но НЕ обрезать по вертикали: containerHeight равен высоте
+              // центральной карточки без запаса, а у неё есть свечение
+              // (box-shadow с blur) при выборе — overflow-hidden срезал бы
+              // его плоско сверху/снизу.
+            }
             <div
               ref={containerRef}
               role="listbox"
@@ -383,7 +446,7 @@ export function SchoolEventsDiscovery({
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
               style={{ width: containerWidth, height: containerHeight, touchAction: "none" }}
-              className="relative shrink-0 select-none cursor-grab active:cursor-grabbing"
+              className="relative shrink-0 select-none overflow-x-hidden cursor-grab active:cursor-grabbing"
             >
               {slots.map(({ idx, d }) => {
                 const id = items[idx];
@@ -402,7 +465,13 @@ export function SchoolEventsDiscovery({
                   transitionDuration: isDragging ? "0ms" : "320ms",
                 };
                 const baseClass =
-                  "absolute left-1/2 top-1/2 flex flex-col items-center justify-center overflow-hidden rounded-app-sm border p-1.5 text-center transition-[transform,opacity,box-shadow] ease-brand no-underline";
+                  // [-webkit-tap-highlight-color:transparent] — на тач-
+                  // устройствах браузер иначе на каждый тап мигает своим
+                  // прямоугольником поверх карточки поверх нашей плавной
+                  // CSS-анимации выбора, что и ощущается как "дёрганость"
+                  // (жалоба пользователя на недостаточную плавность,
+                  // 2026-09-14).
+                  "absolute left-1/2 top-1/2 flex flex-col items-center justify-center overflow-hidden rounded-app-sm border p-1.5 text-center transition-[transform,opacity,box-shadow] ease-brand no-underline [-webkit-tap-highlight-color:transparent]";
                 const stateClass = isCenter
                   ? "border-night-primary opacity-100 shadow-[0_0_0_1px_rgba(255,45,138,0.45),0_16px_32px_-12px_rgba(255,45,138,0.6)]"
                   : "border-white/10 opacity-70 hover:opacity-90";
