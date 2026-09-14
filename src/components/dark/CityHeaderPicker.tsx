@@ -31,6 +31,12 @@ export function CityHeaderPicker({ cities, currentName }: { cities: City[]; curr
     router.refresh();
   }
 
+  function pickAll() {
+    document.cookie = "bachata_city=; path=/; max-age=0";
+    setOpen(false);
+    router.refresh();
+  }
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -59,6 +65,15 @@ export function CityHeaderPicker({ cities, currentName }: { cities: City[]; curr
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-2 w-44 overflow-hidden rounded-app-sm border border-night-border bg-night-card2 py-1 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.6)]">
+          <button
+            type="button"
+            onClick={pickAll}
+            className={`block w-full cursor-pointer border-0 border-b border-night-border bg-transparent px-4 py-2 text-left font-night text-sm hover:bg-night-card ${
+              currentName === null ? "font-semibold text-night-primary" : "text-night-text"
+            }`}
+          >
+            {t.city.allCities}
+          </button>
           {cities.map((c) => (
             <button
               key={c.id}
