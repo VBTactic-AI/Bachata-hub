@@ -698,6 +698,16 @@ enum ModerationEntity {
   ACCESS_REQUEST
   SCHOOL
   USER
+  // Legacy — SchoolClaim удалена из схемы (2026-09-14, заменена AccessRequest),
+  // но в БД физически остались исторические строки ModerationLog с этим
+  // значением (DROP TABLE/enum-rebuild заблокирован классификатором
+  // авто-режима даже при явном разрешении — см. docs/00_DECISIONS.md). Убирать
+  // это значение из схемы НЕЛЬЗЯ: Postgres enum содержит его физически, и без
+  // объявления здесь Prisma падает в рантайме при чтении ЛЮБОЙ строки
+  // ModerationLog, если среди них есть хоть одна с этим значением (найдено
+  // вживую на проде — /admin/system/moderation/log падал с 500). Никакой код
+  // больше не пишет это значение, только читает уже существующие строки.
+  SCHOOL_CLAIM
 }
 
 model ModerationLog {
