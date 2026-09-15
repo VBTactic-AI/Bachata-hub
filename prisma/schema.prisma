@@ -108,6 +108,7 @@ model User {
   eventSuggestionsSubmitted   EventSuggestion[]   @relation("EventSuggestionSubmitter")
   eventSuggestionsReviewed    EventSuggestion[]   @relation("EventSuggestionReviewer")
   eventRegistrationsCheckedIn EventRegistration[] @relation("EventRegistrationCheckedInBy")
+  ticketsIssued               Ticket[]            @relation("TicketIssuedBy")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -517,6 +518,7 @@ model Event {
   priceOptions           EventPriceOption[]
   // СЛОЙ 2 — платный доступ к событию (см. комментарий у Pass ниже).
   passes                 Pass[]
+  tickets                Ticket[]
   media                  EventMedia[]
   // Обратная связь для EventProgramItem.linkedEvent ниже — отдельное
   // "настоящее" событие (party/workshop/contest) со своей публичной
@@ -672,52 +674,88 @@ model Pass {
 }
 
 // ---------------------------------------------------------------------------
-// Ticket — конкретный экземпляр доступа, выданный/купленный ОДНИМ танцором
-// на ОДИН Pass (2026-09-16). Ticket ≠ EventRegistration: EventRegistration
-// (см. ниже) остаётся единственным источником истины "иду ли я на это
-// событие" + door check-in, ничего в ней не меняется и не дублируется —
-// Ticket отвечает только на вопрос "какой именно Pass купил этот танцор".
+// Ticket — УНИВЕРСАЛЬНЫЙ билет доступа на событие (2026-09-16, по прямому
+// решению пользователя после обсуждения). Схема одна: 1 Ticket = 1 оплата,
+// вне зависимости от того, есть ли у события Pass:
 //
-// Ключевое бизнес-правило (прямое указание пользователя, 2026-09-16): один
-// танцор НЕ может купить один и тот же Pass дважды (`@@unique([dancerId,
-// passId])`), но МОЖЕТ иметь несколько Ticket на одно и то же мероприятие,
-// если купил несколько РАЗНЫХ Pass этого события (например Party Pass на
-// пятницу + отдельно Party Pass на субботу, или Workshop Pass вдобавок к
-// Full Pass) — поэтому уникальность именно по (dancerId, passId), а НЕ по
-// (dancerId, eventId) как у EventRegistration.
+// - Событие БЕЗ Pass (обычная вечеринка без тиров доступа) — заводится ОДИН
+//   passless Ticket (passId = null) на пару (event, dancer). Это прямая
+//   замена старому EventRegistration.isPaid/paidAt (удалены отсюда —
+//   перенесены в такие passless Ticket одноразовой миграцией
+//   20260916060000_ticket_universal_payment): "нет тикета или тикет есть, но
+//   isPaid=false" — значит не оплачено, ленивое создание (тикет заводится
+//   только когда организатор первый раз отмечает оплату, не заранее при
+//   регистрации).
+// - Событие С Pass — один Ticket на каждый купленный Pass (танцор может
+//   держать несколько Ticket на одно событие, если купил несколько РАЗНЫХ
+//   Pass — см. @@unique([dancerId, passId]) ниже, работает только когда
+//   passId not null, потому что PostgreSQL не считает два NULL равными).
+//   Уникальность "один passless Ticket на танцора на событие" обеспечена
+//   частичным индексом Ticket_dancerId_eventId_no_pass_key (WHERE passId IS
+//   NULL, см. migration.sql) + advisory-lock в ticket-service.ts.
 //
-// Только схема (по прямому указанию пользователя, тот же принцип, что и у
-// Pass) — сервис выдачи билета, инкремент Pass.soldQuantity, оплата, QR-код
-// на входе, привязка к EventRegistration/check-in — сознательно вне рамок
-// этой задачи, добавятся вместе с реальной фичей продажи.
+// EventRegistration.status (сама явка/лист ожидания/check-in) НЕ затронута —
+// это отдельная, независимая ось, которая осталась как была.
+//
+// Ticket Engine + Payment (isPaid/paidAt) — простой штампик, тот же принцип,
+// что и в остальном проекте ("используй существующую Payment-систему, не
+// создавай новую платёжную архитектуру"). Сегодня оплата отмечается
+// organizer/ADMIN вручную (наличные/перевод вне системы). Архитектура
+// открыта под будущее онлайн-эквайринг (ЕРИП/bePaid, см. шапку файла) и под
+// будущую роль "дистрибьютор" (человек, назначенный организатором, продаёт
+// билеты и сообщает организатору — тот вручную подтверждает): оба будущих
+// сценария просто вызовут ту же функцию отметки оплаты, что и ручная кнопка
+// в админке сегодня — новых полей под них заранее не заводим.
 enum TicketStatus {
   ISSUED // выдан/куплен, действителен
   CANCELLED // отменён (танцором или организатором) — история не удаляется
-  REFUNDED // оформлен возврат — сама механика возврата ещё не реализована, статус фиксируем заранее
+  REFUNDED // оформлен возврат денег
 }
 
 model Ticket {
-  id       String @id @default(cuid())
-  passId   String
-  pass     Pass   @relation(fields: [passId], references: [id])
+  id       String  @id @default(cuid())
+  eventId  String
+  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  passId   String? // null — билет без тиров доступа (см. комментарий у модели выше)
+  pass     Pass?   @relation(fields: [passId], references: [id])
   dancerId String
-  dancer   Dancer @relation(fields: [dancerId], references: [id])
+  dancer   Dancer  @relation(fields: [dancerId], references: [id])
 
   status   TicketStatus @default(ISSUED)
   // Снимок цены/валюты НА МОМЕНТ выдачи — не пересчитывается задним числом
   // при изменении Pass.price (тот же принцип неизменности исторических
   // данных, что и у Result/Points в Competition Engine, CLAUDE.md §39/§51).
+  // Для passless Ticket остаётся null — там нет фиксированной цены Pass.
   price    Decimal?     @db.Decimal(10, 2)
   currency String?
+
+  // Бесплатный Pass (price = null/0) выдаётся сразу с isPaid=true — не
+  // должен выглядеть как "висящий долг" и не требует отдельного шага оплаты
+  // (прямое требование ТЗ: "бесплатный билет не создаёт ошибочный payment").
+  isPaid Boolean   @default(false)
+  paidAt DateTime?
+
+  // Кто выдал билет — организатор/член команды события, которому танцор
+  // отдал деньги лично (тот же принцип атрибуции, что и
+  // EventRegistration.checkedInById).
+  issuedById String?
+  issuedBy   User?   @relation("TicketIssuedBy", fields: [issuedById], references: [id])
 
   issuedAt    DateTime  @default(now())
   cancelledAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // Работает только для passId NOT NULL (PostgreSQL не считает два NULL
+  // равными — уникальность passless-билета обеспечена ОТДЕЛЬНЫМ частичным
+  // индексом Ticket_dancerId_eventId_no_pass_key, см. migration.sql, его
+  // здесь нет — Prisma DSL не поддерживает partial unique index).
   @@unique([dancerId, passId])
+  @@index([eventId])
+  @@index([eventId, dancerId])
   @@index([passId])
   @@index([dancerId])
+  @@index([passId, status])
 }
 
 // 1:1 к Event — заполняется только когда Event.format = PARTY.
@@ -902,11 +940,15 @@ model Dancer {
 // обязательный role). Активируется через уже существующий
 // Event.registrationEnabled.
 //
-// isPaid/paidAt — тот же принцип ручного чекбокса "оплачено", что уже
-// используется в Registration.isPaid Competition Engine (docs/00_DECISIONS.md,
-// redesign 2026-09-09: только факт оплаты, без сумм/валюты/платёжного
-// провайдера) — переиспользуем проверенный паттерн, а не изобретаем richer
-// PaymentStatus enum для того же самого MVP-уровня задачи.
+// Оплата (2026-09-16, Ticket Engine) — НЕ хранится здесь. Раньше был простой
+// чекбокс isPaid/paidAt (тот же принцип, что и Registration.isPaid
+// Competition Engine), но по прямому решению пользователя оплата
+// унифицирована через Ticket: "1 тикет — 1 оплата", и это верно даже для
+// события БЕЗ Pass — там просто заводится один passless Ticket (passId=null)
+// на пару (event, dancer), см. комментарий у модели Ticket. Старые
+// isPaid/paidAt перенесены в такие passless Ticket одноразовой миграцией
+// (20260916060000_ticket_universal_payment) и удалены отсюда — учитывать
+// оплату теперь через Ticket, не через эту модель.
 enum EventRegistrationStatus {
   REGISTERED
   CONFIRMED
@@ -923,8 +965,6 @@ model EventRegistration {
   dancerId      String
   dancer        Dancer                  @relation(fields: [dancerId], references: [id])
   status        EventRegistrationStatus @default(REGISTERED)
-  isPaid        Boolean                 @default(false)
-  paidAt        DateTime?
   cancelledAt   DateTime?
   // Door check-in (2026-09-16, по образцу CheckIn Competition Engine, но без
   // отдельной таблицы — здесь не нужны бирки/заезды, только факт+время+кто

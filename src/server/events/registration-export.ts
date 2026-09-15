@@ -11,11 +11,12 @@ import {
   syncNoShowForEvent,
   type RegistrationFilter,
 } from "./registration-service";
+import { listTicketsByDancerForEvent, summarizePayment } from "./ticket-service";
 
 // §11 ТЗ (Event CRM) — экспорт списка участников. Уважает те же
-// search/status/isPaid/sort, что и listEventRegistrations() (общий
-// where/orderBy — см. registration-service.ts), но без пагинации: экспорт
-// должен отдать ВСЁ, что подходит под фильтр, не только текущую страницу.
+// search/status/sort, что и listEventRegistrations() (общий where/orderBy —
+// см. registration-service.ts), но без пагинации: экспорт должен отдать ВСЁ,
+// что подходит под фильтр, не только текущую страницу.
 
 // Защита от неограниченной выгрузки одним запросом — типичное событие на
 // порядки меньше; если когда-нибудь понадобится больше, это осознанный
@@ -44,7 +45,16 @@ export type RegistrationExportRow = {
   displayName: string;
   createdAt: Date;
   status: EventRegistration["status"];
-  isPaid: boolean;
+  // Готовая метка ("Да"/"Нет"/"Частично") — считает вызывающая сторона
+  // (2026-09-16: оплата больше не поле EventRegistration, см.
+  // ticket-service.ts::summarizePayment), сама CSV-функция остаётся чистой.
+  paymentLabel: string;
+};
+
+const PAYMENT_SUMMARY_LABELS: Record<"PAID" | "PARTIAL" | "UNPAID", string> = {
+  PAID: "Да",
+  PARTIAL: "Частично",
+  UNPAID: "Нет",
 };
 
 // Чистая функция — тестируется отдельно от БД/прав доступа.
@@ -53,9 +63,7 @@ export function buildRegistrationsCsv(rows: RegistrationExportRow[]): string {
   const lines = [header.join(DELIMITER)];
   for (const r of rows) {
     lines.push(
-      [csvField(r.displayName), csvField(formatDateTime(r.createdAt)), csvField(STATUS_LABELS[r.status]), csvField(r.isPaid ? "Да" : "Нет")].join(
-        DELIMITER
-      )
+      [csvField(r.displayName), csvField(formatDateTime(r.createdAt)), csvField(STATUS_LABELS[r.status]), csvField(r.paymentLabel)].join(DELIMITER)
     );
   }
   // BOM — чтобы Excel корректно определил UTF-8 и не показал кириллицу
@@ -71,12 +79,22 @@ export async function exportEventRegistrationsCsv(eventId: string, user: User, f
 
   const rows = await prisma.eventRegistration.findMany({
     where: buildRegistrationWhere(eventId, filter),
-    include: { dancer: { select: { displayName: true } } },
+    include: { dancer: { select: { id: true, displayName: true } } },
     orderBy: buildRegistrationOrderBy(filter.sortBy, filter.sortDir),
     take: MAX_EXPORT_ROWS,
   });
 
+  const byDancer = await listTicketsByDancerForEvent(
+    eventId,
+    rows.map((r) => r.dancer.id)
+  );
+
   return buildRegistrationsCsv(
-    rows.map((r) => ({ displayName: r.dancer.displayName, createdAt: r.createdAt, status: r.status, isPaid: r.isPaid }))
+    rows.map((r) => ({
+      displayName: r.dancer.displayName,
+      createdAt: r.createdAt,
+      status: r.status,
+      paymentLabel: PAYMENT_SUMMARY_LABELS[summarizePayment(byDancer.get(r.dancer.id))],
+    }))
   );
 }

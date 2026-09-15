@@ -171,7 +171,7 @@ export async function registerForEvent(eventId: string, user: User): Promise<Eve
     if (existing) {
       return tx.eventRegistration.update({
         where: { id: existing.id },
-        data: { status, isPaid: false, paidAt: null, cancelledAt: null },
+        data: { status, cancelledAt: null },
       });
     }
     return tx.eventRegistration.create({ data: { eventId: event.id, dancerId: dancer.id, status } });
@@ -237,31 +237,35 @@ export async function cancelMyRegistration(eventId: string, user: User): Promise
 export type RegistrationListPage = {
   items: (EventRegistration & { dancer: { id: string; displayName: string; avatarUrl: string | null } })[];
   // Сколько строк подходит под ТЕКУЩИЙ фильтр — используется для пагинации
-  // ("страница X из Y найденного"), меняется вместе с search/status/isPaid.
+  // ("страница X из Y найденного"), меняется вместе с search/status.
   total: number;
   // Сколько всего регистраций у события БЕЗ фильтра — для KPI-карточек
   // (Stage 3, тот же принцип, что и StatCard в ParticipantsPanel Competition
-  // Engine). Специально отдельное поле от `total`: иначе при активном
-  // фильтре карточки "Оплачено"/"Не оплачено" (paidCount/waitlistCount тоже
-  // считаются по всему событию) давали бы бессмысленную арифметику вида
-  // "не оплачено: -37".
+  // Engine).
   totalOverall: number;
   page: number;
   pageSize: number;
-  paidCount: number;
+  // paidCount больше НЕ считается здесь (2026-09-16, Ticket Engine) — оплата
+  // теперь живёт в Ticket (см. ticket-service.ts::getEventPaymentSummaryCounts),
+  // не в этой модели; страница считает её отдельным запросом по dancerId'ам
+  // текущей выборки.
   waitlistCount: number;
 };
 
-export type RegistrationSortBy = "date" | "name" | "paid";
+export type RegistrationSortBy = "date" | "name";
 export type RegistrationSortDir = "asc" | "desc";
 
 // §11 ТЗ (Event CRM) — поиск/фильтры/сортировка. Один и тот же where/orderBy
 // нужен и постраничному списку (listEventRegistrations), и экспорту
 // (registration-export.ts) — вынесено сюда, чтобы не разойтись.
+//
+// isPaid убран отсюда (2026-09-16) — оплата больше не поле EventRegistration
+// (см. ticket-service.ts), фильтр/сортировка по оплате через агрегат по
+// Ticket сюда пока не переносились (не выражается простым Prisma where/
+// orderBy без отдельного join — см. docs/PROGRESS.md).
 export type RegistrationFilter = {
   search?: string; // подстрока имени участника, без учёта регистра
   status?: EventRegistration["status"];
-  isPaid?: boolean;
   sortBy?: RegistrationSortBy;
   sortDir?: RegistrationSortDir;
 };
@@ -272,7 +276,6 @@ export function buildRegistrationWhere(eventId: string, filter: RegistrationFilt
     eventId,
     ...(search ? { dancer: { displayName: { contains: search, mode: "insensitive" } } } : {}),
     ...(filter.status ? { status: filter.status } : {}),
-    ...(filter.isPaid !== undefined ? { isPaid: filter.isPaid } : {}),
   };
 }
 
@@ -281,7 +284,6 @@ export function buildRegistrationOrderBy(
   sortDir: RegistrationSortDir = "asc"
 ): Prisma.EventRegistrationOrderByWithRelationInput {
   if (sortBy === "name") return { dancer: { displayName: sortDir } };
-  if (sortBy === "paid") return { isPaid: sortDir };
   return { createdAt: sortDir };
 }
 
@@ -305,7 +307,7 @@ export async function listEventRegistrations(
   const safePage = Math.max(page, 1);
   const where = buildRegistrationWhere(eventId, filter);
 
-  const [items, total, totalOverall, paidCount, waitlistCount] = await Promise.all([
+  const [items, total, totalOverall, waitlistCount] = await Promise.all([
     prisma.eventRegistration.findMany({
       where,
       include: { dancer: { select: { id: true, displayName: true, avatarUrl: true } } },
@@ -315,22 +317,20 @@ export async function listEventRegistrations(
     }),
     prisma.eventRegistration.count({ where }),
     prisma.eventRegistration.count({ where: { eventId } }),
-    prisma.eventRegistration.count({ where: { eventId, isPaid: true } }),
     prisma.eventRegistration.count({ where: { eventId, status: "WAITLIST" } }),
   ]);
 
-  return { items, total, totalOverall, page: safePage, pageSize: safePageSize, paidCount, waitlistCount };
+  return { items, total, totalOverall, page: safePage, pageSize: safePageSize, waitlistCount };
 }
 
-// Организатор/ADMIN меняет статус и/или отметку оплаты — плейн-обновление
-// полей, без state-machine (тот же уровень MVP, что и Registration.isPaid
-// Competition Engine, см. комментарий у модели). Полноценный workflow с
-// проверкой допустимых переходов — избыточен для регистрации на обычное
-// событие (Audit.md §"Важные правила" п.9 — не усложнять MVP преждевременно).
+// Организатор/ADMIN меняет статус — плейн-обновление поля, без
+// state-machine (Audit.md §"Важные правила" п.9 — не усложнять MVP
+// преждевременно). Отметка оплаты сюда больше не входит (2026-09-16) — см.
+// ticket-service.ts::markRegistrationPayment/updateTicketPayment.
 export async function updateEventRegistration(
   registrationId: string,
   user: User,
-  patch: { status?: EventRegistration["status"]; isPaid?: boolean }
+  patch: { status?: EventRegistration["status"] }
 ): Promise<EventRegistration> {
   const registration = await prisma.eventRegistration.findUnique({
     where: { id: registrationId },
@@ -397,7 +397,6 @@ export async function updateEventRegistration(
       where: { id: registrationId },
       data: {
         ...(patch.status ? { status: patch.status } : {}),
-        ...(patch.isPaid !== undefined ? { isPaid: patch.isPaid, paidAt: patch.isPaid ? new Date() : null } : {}),
       },
     });
 

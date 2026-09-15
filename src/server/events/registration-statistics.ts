@@ -2,6 +2,7 @@ import type { EventRegistrationStatus, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess } from "./access";
 import { RegistrationForbiddenError, RegistrationNotFoundError, syncNoShowForEvent } from "./registration-service";
+import { getEventPaymentSummaryCounts } from "./ticket-service";
 import { EVENT_REGISTRATION_STATUS_VALUES } from "@/lib/events/event-type-registry";
 
 // §19 ТЗ (Event Statistics) — полноценное представление вместо 4 инлайн-
@@ -31,11 +32,19 @@ export async function getEventRegistrationStatistics(eventId: string, user: User
   if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
   await syncNoShowForEvent(event);
 
-  const [grouped, paidCount, createdAtRows] = await Promise.all([
+  const [grouped, registrationRows] = await Promise.all([
     prisma.eventRegistration.groupBy({ by: ["status"], where: { eventId }, _count: { _all: true } }),
-    prisma.eventRegistration.count({ where: { eventId, isPaid: true } }),
-    prisma.eventRegistration.findMany({ where: { eventId }, select: { createdAt: true } }),
+    prisma.eventRegistration.findMany({ where: { eventId }, select: { dancerId: true, createdAt: true } }),
   ]);
+
+  // Оплата (2026-09-16, Ticket Engine) больше не поле EventRegistration —
+  // "оплачено" здесь значит "ВСЕ билеты этого танцора на событие оплачены"
+  // (см. ticket-service.ts::getEventPaymentSummaryCounts/summarizePayment).
+  const { paidCount } = await getEventPaymentSummaryCounts(
+    eventId,
+    registrationRows.map((r) => r.dancerId)
+  );
+  const createdAtRows = registrationRows;
 
   const byStatus = Object.fromEntries(EVENT_REGISTRATION_STATUS_VALUES.map((s) => [s, 0])) as Record<EventRegistrationStatus, number>;
   let totalOverall = 0;

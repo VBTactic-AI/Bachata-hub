@@ -10,6 +10,7 @@ const eventFindUnique = vi.fn();
 const eventRegistrationFindMany = vi.fn();
 const eventRegistrationUpdateMany = vi.fn(); // syncNoShowForEvent, вызывается перед выборкой
 const eventTeamMemberFindUnique = vi.fn();
+const ticketFindMany = vi.fn(); // listTicketsByDancerForEvent (Ticket Engine, 2026-09-16)
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -19,6 +20,7 @@ vi.mock("@/lib/prisma", () => ({
       updateMany: (...a: unknown[]) => eventRegistrationUpdateMany(...a),
     },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
+    ticket: { findMany: (...a: unknown[]) => ticketFindMany(...a) },
   },
 }));
 
@@ -52,6 +54,7 @@ beforeEach(() => {
   eventRegistrationFindMany.mockReset().mockResolvedValue([]);
   eventRegistrationUpdateMany.mockReset().mockResolvedValue({ count: 0 });
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
+  ticketFindMany.mockReset().mockResolvedValue([]);
 });
 
 describe("buildRegistrationsCsv()", () => {
@@ -66,30 +69,32 @@ describe("buildRegistrationsCsv()", () => {
   // обычная запятая внутри значения (например, в дате "вт, 15 сентября") не
   // требует экранирования, это уже не спецсимвол формата.
   it("обычная запятая внутри значения (например, в дате) НЕ экранируется — она больше не разделитель", () => {
-    const csv = buildRegistrationsCsv([{ displayName: "Иванов, Иван", createdAt: new Date("2026-01-01T10:00:00Z"), status: "REGISTERED", isPaid: true }]);
+    const csv = buildRegistrationsCsv([
+      { displayName: "Иванов, Иван", createdAt: new Date("2026-01-01T10:00:00Z"), status: "REGISTERED", paymentLabel: "Да" },
+    ]);
     const rows = csv.replace("﻿", "").split("\r\n");
     expect(rows[1]).toMatch(/^Иванов, Иван;/);
   });
 
   it("экранирует ';' внутри значения кавычками (значение содержит настоящий разделитель)", () => {
-    const csv = buildRegistrationsCsv([{ displayName: "Иванов; Иван", createdAt: new Date(), status: "REGISTERED", isPaid: true }]);
+    const csv = buildRegistrationsCsv([{ displayName: "Иванов; Иван", createdAt: new Date(), status: "REGISTERED", paymentLabel: "Да" }]);
     const rows = csv.replace("﻿", "").split("\r\n");
     expect(rows[1]).toMatch(/^"Иванов; Иван";/);
   });
 
   it("экранирует кавычку внутри значения удвоением", () => {
-    const csv = buildRegistrationsCsv([{ displayName: 'Иван "Огонь"', createdAt: new Date(), status: "REGISTERED", isPaid: false }]);
+    const csv = buildRegistrationsCsv([{ displayName: 'Иван "Огонь"', createdAt: new Date(), status: "REGISTERED", paymentLabel: "Нет" }]);
     expect(csv).toContain('"Иван ""Огонь"""');
   });
 
-  it("переводит статус в человекочитаемую метку и оплату в Да/Нет", () => {
-    const csv = buildRegistrationsCsv([{ displayName: "A", createdAt: new Date(), status: "WAITLIST", isPaid: false }]);
+  it("переводит статус в человекочитаемую метку, оплата — уже готовая метка (Да/Нет/Частично)", () => {
+    const csv = buildRegistrationsCsv([{ displayName: "A", createdAt: new Date(), status: "WAITLIST", paymentLabel: "Нет" }]);
     expect(csv).toContain("Лист ожидания");
     expect(csv).toContain(";Нет");
   });
 
   it("не экранирует обычные значения без ';'/кавычек/переносов", () => {
-    const csv = buildRegistrationsCsv([{ displayName: "Просто Имя", createdAt: new Date(), status: "CONFIRMED", isPaid: true }]);
+    const csv = buildRegistrationsCsv([{ displayName: "Просто Имя", createdAt: new Date(), status: "CONFIRMED", paymentLabel: "Да" }]);
     expect(csv).toContain("Просто Имя;");
     expect(csv).not.toContain('"Просто Имя"');
   });
@@ -110,7 +115,7 @@ describe("exportEventRegistrationsCsv() — RBAC и фильтры", () => {
 
   it("владелец — экспортирует с учётом фильтра status", async () => {
     eventRegistrationFindMany.mockResolvedValue([
-      { dancer: { displayName: "Тестов Тест" }, createdAt: new Date("2026-02-02T12:00:00Z"), status: "REJECTED", isPaid: false },
+      { dancer: { id: "dancer1", displayName: "Тестов Тест" }, createdAt: new Date("2026-02-02T12:00:00Z"), status: "REJECTED" },
     ]);
 
     const csv = await exportEventRegistrationsCsv("event1", user, { status: "REJECTED" });

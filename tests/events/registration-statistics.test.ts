@@ -11,6 +11,7 @@ const eventRegistrationCount = vi.fn();
 const eventRegistrationFindMany = vi.fn();
 const eventRegistrationUpdateMany = vi.fn(); // syncNoShowForEvent, вызывается перед подсчётами
 const eventTeamMemberFindUnique = vi.fn();
+const ticketFindMany = vi.fn(); // listTicketsByDancerForEvent (Ticket Engine, 2026-09-16)
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -22,6 +23,7 @@ vi.mock("@/lib/prisma", () => ({
       updateMany: (...a: unknown[]) => eventRegistrationUpdateMany(...a),
     },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
+    ticket: { findMany: (...a: unknown[]) => ticketFindMany(...a) },
   },
 }));
 
@@ -58,6 +60,7 @@ beforeEach(() => {
   eventRegistrationFindMany.mockReset().mockResolvedValue([]);
   eventRegistrationUpdateMany.mockReset().mockResolvedValue({ count: 0 });
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
+  ticketFindMany.mockReset().mockResolvedValue([]);
 });
 
 describe("getEventRegistrationStatistics() — RBAC", () => {
@@ -91,13 +94,29 @@ describe("getEventRegistrationStatistics() — подсчёты", () => {
     });
   });
 
-  it("byStatus/totalOverall/paidCount считаются из groupBy/count", async () => {
+  it("byStatus/totalOverall считаются из groupBy, paidCount — из Ticket (все билеты дансера оплачены)", async () => {
     eventRegistrationGroupBy.mockResolvedValue([
       { status: "REGISTERED", _count: { _all: 3 } },
       { status: "WAITLIST", _count: { _all: 2 } },
       { status: "NO_SHOW", _count: { _all: 1 } },
     ]);
-    eventRegistrationCount.mockResolvedValue(4);
+    // 6 регистраций (по числу из groupBy) — findMany отдаёт их dancerId для
+    // подсчёта оплаты по Ticket (2026-09-16, Ticket Engine).
+    eventRegistrationFindMany.mockResolvedValue([
+      { dancerId: "d1", createdAt: new Date() },
+      { dancerId: "d2", createdAt: new Date() },
+      { dancerId: "d3", createdAt: new Date() },
+      { dancerId: "d4", createdAt: new Date() },
+      { dancerId: "d5", createdAt: new Date() },
+      { dancerId: "d6", createdAt: new Date() },
+    ]);
+    // Только d1..d4 полностью оплатили (passless Ticket, isPaid=true) — d5/d6 не оплачены.
+    ticketFindMany.mockResolvedValue([
+      { dancerId: "d1", passId: null, isPaid: true, pass: null },
+      { dancerId: "d2", passId: null, isPaid: true, pass: null },
+      { dancerId: "d3", passId: null, isPaid: true, pass: null },
+      { dancerId: "d4", passId: null, isPaid: true, pass: null },
+    ]);
 
     const stats = await getEventRegistrationStatistics("event1", user);
 

@@ -207,7 +207,7 @@ describe("registerForEvent()", () => {
     expect(txEventRegistrationCreate).not.toHaveBeenCalled();
     expect(txEventRegistrationUpdate).toHaveBeenCalledWith({
       where: { id: "reg1" },
-      data: { status: "REGISTERED", isPaid: false, paidAt: null, cancelledAt: null },
+      data: { status: "REGISTERED", cancelledAt: null },
     });
   });
 
@@ -314,7 +314,6 @@ describe("listEventRegistrations() — owner-check", () => {
       totalOverall: 1,
       page: 1,
       pageSize: 50,
-      paidCount: 1,
       waitlistCount: 1,
     });
   });
@@ -363,8 +362,9 @@ describe("listEventRegistrations() — owner-check", () => {
     });
   });
 
-  // §11 ТЗ (Event CRM) — поиск/фильтры/сортировка server-side.
-  describe("search/status/isPaid/sort (§11 Event CRM)", () => {
+  // §11 ТЗ (Event CRM) — поиск/фильтры/сортировка server-side. isPaid убран
+  // отсюда (2026-09-16, Ticket Engine) — см. tests/events/ticket-service.test.ts.
+  describe("search/status/sort (§11 Event CRM)", () => {
     beforeEach(() => {
       eventFindUnique.mockResolvedValue({ ...registrableEvent, createdById: "user1" });
     });
@@ -399,19 +399,10 @@ describe("listEventRegistrations() — owner-check", () => {
       );
     });
 
-    it("isPaid — фильтрует по отметке оплаты, включая false (не путается с undefined)", async () => {
-      await listEventRegistrations("event1", user, { isPaid: false });
-
-      expect(eventRegistrationFindMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { eventId: "event1", isPaid: false } })
-      );
-    });
-
-    it("totalOverall/paidCount/waitlistCount игнорируют текущий фильтр (весь event)", async () => {
+    it("totalOverall/waitlistCount игнорируют текущий фильтр (весь event)", async () => {
       await listEventRegistrations("event1", user, { status: "REJECTED" });
 
-      // paidCount и waitlistCount всегда считаются по eventId, без status/isPaid/search
-      expect(topLevelEventRegistrationCount).toHaveBeenCalledWith({ where: { eventId: "event1", isPaid: true } });
+      // waitlistCount всегда считается по eventId, без status/search
       expect(topLevelEventRegistrationCount).toHaveBeenCalledWith({ where: { eventId: "event1", status: "WAITLIST" } });
     });
 
@@ -421,12 +412,6 @@ describe("listEventRegistrations() — owner-check", () => {
       expect(eventRegistrationFindMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { dancer: { displayName: "desc" } } })
       );
-    });
-
-    it("sortBy=paid — сортирует по isPaid", async () => {
-      await listEventRegistrations("event1", user, { sortBy: "paid", sortDir: "asc" });
-
-      expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { isPaid: "asc" } }));
     });
 
     it("без sortBy — поведение по умолчанию не изменилось (createdAt asc)", async () => {
@@ -445,42 +430,12 @@ describe("updateEventRegistration() — owner-check", () => {
       event: { ...registrableEvent, createdById: "someone-else" },
     });
 
-    await expect(updateEventRegistration("reg1", user, { isPaid: true })).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    await expect(updateEventRegistration("reg1", user, { status: "CONFIRMED" })).rejects.toBeInstanceOf(RegistrationForbiddenError);
   });
 
-  // QA Test Gap #10 — раньше проверялось только "чужой организатор", не
-  // конкретно "сам участник пытается выставить isPaid=true себе". Механика
-  // та же (hasEventAccess не пропускает никого, кроме владельца/ADMIN/team),
-  // но это отдельное, явно названное свойство безопасности — участник не
-  // может сам себя отметить оплаченным, минуя организатора.
-  it("сам участник (владелец регистрации, не события) не может выставить себе isPaid=true", async () => {
-    const participant = makeUser({ id: "participant1" });
-    topLevelEventRegistrationFindUnique.mockResolvedValue({
-      id: "reg1",
-      eventId: "event1",
-      dancerId: "dancer-of-participant1",
-      event: { ...registrableEvent, createdById: "organizer1" },
-    });
-
-    await expect(updateEventRegistration("reg1", participant, { isPaid: true })).rejects.toBeInstanceOf(RegistrationForbiddenError);
-    expect(txEventRegistrationUpdate).not.toHaveBeenCalled();
-  });
-
-  it("владелец — переключает isPaid, ставит paidAt", async () => {
-    topLevelEventRegistrationFindUnique.mockResolvedValue({
-      id: "reg1",
-      eventId: "event1",
-      event: { ...registrableEvent, createdById: "user1" },
-    });
-    txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "REGISTERED" });
-
-    await updateEventRegistration("reg1", user, { isPaid: true });
-
-    expect(txEventRegistrationUpdate).toHaveBeenCalledWith({
-      where: { id: "reg1" },
-      data: expect.objectContaining({ isPaid: true, paidAt: expect.any(Date) }),
-    });
-  });
+  // Оплата (isPaid) убрана из updateEventRegistration (2026-09-16, Ticket
+  // Engine) — соответствующие проверки access/paidAt теперь в
+  // tests/events/ticket-service.test.ts (markRegistrationPayment/updateTicketPayment).
 
   // 2026-09-15, по прямому запросу пользователя — CANCELLED теперь
   // зарезервирован только за самим участником (симметрично тому, как
@@ -512,23 +467,6 @@ describe("updateEventRegistration() — owner-check", () => {
       expect(txEventRegistrationUpdate).not.toHaveBeenCalled();
     });
 
-    it("регистрация уже CANCELLED — isPaid всё ещё можно менять (guard только про status)", async () => {
-      topLevelEventRegistrationFindUnique.mockResolvedValue({
-        id: "reg1",
-        eventId: "event1",
-        status: "CANCELLED",
-        event: { ...registrableEvent, createdById: "user1", capacity: null },
-        dancer: { userId: "participant1" },
-      });
-      txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "CANCELLED" });
-
-      await updateEventRegistration("reg1", user, { isPaid: true });
-
-      expect(txEventRegistrationUpdate).toHaveBeenCalledWith({
-        where: { id: "reg1" },
-        data: expect.objectContaining({ isPaid: true }),
-      });
-    });
   });
 
   // §20 ТЗ (продолжение) — организатор вручную возвращает активного участника
@@ -554,7 +492,7 @@ describe("updateEventRegistration() — owner-check", () => {
 
   it("регистрация не найдена — RegistrationNotFoundError", async () => {
     topLevelEventRegistrationFindUnique.mockResolvedValue(null);
-    await expect(updateEventRegistration("missing", user, { isPaid: true })).rejects.toBeInstanceOf(RegistrationNotFoundError);
+    await expect(updateEventRegistration("missing", user, { status: "CONFIRMED" })).rejects.toBeInstanceOf(RegistrationNotFoundError);
   });
 
   // QA BUG-004 regression — главный найденный баг: организатор промоутит
@@ -670,7 +608,7 @@ describe("updateEventRegistration() — owner-check", () => {
       );
     });
 
-    it("статус не меняется (только isPaid) — промоушен не запускается", async () => {
+    it("статус не передан (пустой patch) — промоушен не запускается", async () => {
       topLevelEventRegistrationFindUnique.mockResolvedValue({
         id: "reg1",
         eventId: "event1",
@@ -678,7 +616,7 @@ describe("updateEventRegistration() — owner-check", () => {
       });
       txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "REGISTERED" });
 
-      await updateEventRegistration("reg1", user, { isPaid: true });
+      await updateEventRegistration("reg1", user, {});
 
       expect(txEventRegistrationFindFirst).not.toHaveBeenCalled();
     });

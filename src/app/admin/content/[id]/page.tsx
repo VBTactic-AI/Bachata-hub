@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isOwnerOrAdmin } from "@/server/events/access";
 import { listEventRegistrations, RegistrationForbiddenError } from "@/server/events/registration-service";
+import { getEventPaymentSummaryCounts } from "@/server/events/ticket-service";
 import { listTeamMembers } from "@/server/events/team-service";
 import { EVENT_TYPE_REGISTRY } from "@/lib/events/event-type-registry";
 import { StatCard } from "@/components/admin/StatCard";
@@ -29,7 +30,7 @@ export default async function EventOverviewPage({ params }: { params: Promise<{ 
   // Доступ уже проверен в layout.tsx (hasEventAccess) — здесь просто читаем
   // данные через те же сервисные функции, что и их собственные вкладки,
   // чтобы не разойтись в цифрах. pageSize:1 — нужны только totalOverall/
-  // paidCount/waitlistCount, не сам список.
+  // waitlistCount, не сам список.
   let stats;
   try {
     stats = await listEventRegistrations(event.id, user, { pageSize: 1 });
@@ -37,6 +38,13 @@ export default async function EventOverviewPage({ params }: { params: Promise<{ 
     if (e instanceof RegistrationForbiddenError) redirect("/admin/content");
     throw e;
   }
+
+  // Оплата (2026-09-16, Ticket Engine) — считается по Ticket, не по
+  // EventRegistration (см. ticket-service.ts).
+  const allDancerIds = (await prisma.eventRegistration.findMany({ where: { eventId: event.id }, select: { dancerId: true } })).map(
+    (r) => r.dancerId
+  );
+  const paymentCounts = await getEventPaymentSummaryCounts(event.id, allDancerIds);
 
   const canManage = isOwnerOrAdmin(event, user);
   const teamCount = canManage ? (await listTeamMembers(event.id, user)).length : null;
@@ -88,19 +96,19 @@ export default async function EventOverviewPage({ params }: { params: Promise<{ 
           <StatCard label="Всего регистраций" value={stats.totalOverall} icon={<PeopleIcon />} tone="primary" href={`${basePath}/registrations`} />
           <StatCard
             label="Оплачено"
-            value={stats.paidCount}
+            value={paymentCounts.paidCount}
             icon={<CardIcon />}
             tone="success"
-            percent={pct(stats.paidCount)}
-            href={`${basePath}/registrations?paid=yes`}
+            percent={pct(paymentCounts.paidCount)}
+            href={`${basePath}/registrations`}
           />
           <StatCard
             label="Не оплачено"
-            value={stats.totalOverall - stats.paidCount}
+            value={paymentCounts.unpaidCount}
             icon={<AlertIcon />}
             tone="danger"
-            percent={pct(stats.totalOverall - stats.paidCount)}
-            href={`${basePath}/registrations?paid=no`}
+            percent={pct(paymentCounts.unpaidCount)}
+            href={`${basePath}/registrations`}
           />
           <StatCard
             label="Лист ожидания"

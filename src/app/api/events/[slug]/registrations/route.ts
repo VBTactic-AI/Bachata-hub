@@ -13,7 +13,7 @@ import {
 } from "@/server/events/registration-service";
 import { EVENT_REGISTRATION_STATUS_VALUES as STATUS_VALUES } from "@/lib/events/event-type-registry";
 
-const SORT_VALUES: RegistrationSortBy[] = ["date", "name", "paid"];
+const SORT_VALUES: RegistrationSortBy[] = ["date", "name"];
 
 // Events Engine, этап 2 — регистрация на обычное событие. НЕ путать с
 // /api/registrations/** (Competition Engine, Слой 3) — другой домен, другая
@@ -91,8 +91,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   const page = Number(url.searchParams.get("page") ?? "1") || 1;
   const pageSize = Number(url.searchParams.get("pageSize") ?? "50") || 50;
   const status = STATUS_VALUES.find((s) => s === url.searchParams.get("status"));
-  const paidParam = url.searchParams.get("paid");
-  const isPaid = paidParam === "yes" ? true : paidParam === "no" ? false : undefined;
   const sortBy = SORT_VALUES.find((s) => s === url.searchParams.get("sort"));
   const sortDir = url.searchParams.get("dir") === "desc" ? "desc" : "asc";
 
@@ -102,7 +100,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       pageSize,
       search: url.searchParams.get("q") ?? undefined,
       status,
-      isPaid,
       sortBy,
       sortDir,
     });

@@ -7,8 +7,9 @@ import {
   type RegistrationSortBy,
   type RegistrationSortDir,
 } from "@/server/events/registration-service";
+import { listTicketsByDancerForEvent, getEventPaymentSummaryCounts } from "@/server/events/ticket-service";
 import { EventRegistrationStatusSelect } from "@/components/admin/events/EventRegistrationStatusSelect";
-import { EventRegistrationPaymentToggle } from "@/components/admin/events/EventRegistrationPaymentToggle";
+import { TicketPaymentCell } from "@/components/admin/events/TicketPaymentCell";
 import { EventRegistrationCheckInToggle } from "@/components/admin/events/EventRegistrationCheckInToggle";
 import { StatCard } from "@/components/admin/StatCard";
 import { PeopleIcon, CardIcon, AlertIcon } from "@/components/admin/icons";
@@ -37,10 +38,16 @@ import {
 // паттерн, что и /events (публичный список) и /admin/system/moderation/
 // users: обычная GET-форма, без JS, полностью индексируемо/работает без
 // клиентского рантайма.
+//
+// Оплата (2026-09-16, Ticket Engine) — больше не поле EventRegistration
+// (см. ticket-service.ts). "Оплата"/"Билеты"-фильтр и сортировка по оплате
+// сознательно убраны из этой server-side формы (агрегат по Ticket не
+// выражается простым Prisma where/orderBy без join) — сама колонка оплаты
+// осталась, просто больше не фильтрует список (см. docs/PROGRESS.md).
 
-const SORT_VALUES: RegistrationSortBy[] = ["date", "name", "paid"];
+const SORT_VALUES: RegistrationSortBy[] = ["date", "name"];
 
-type SearchParams = { page?: string; q?: string; status?: string; paid?: string; sort?: string; dir?: string };
+type SearchParams = { page?: string; q?: string; status?: string; sort?: string; dir?: string };
 
 function buildHref(basePath: string, current: Record<string, string | undefined>, overrides: Record<string, string | undefined>) {
   const qs = new URLSearchParams();
@@ -71,17 +78,35 @@ export default async function EventRegistrationsPage({
 
   const page = Math.max(Number(sp.page) || 1, 1);
   const status = STATUS_VALUES.find((s) => s === sp.status);
-  const isPaid = sp.paid === "yes" ? true : sp.paid === "no" ? false : undefined;
   const sortBy = SORT_VALUES.find((s) => s === sp.sort);
   const sortDir: RegistrationSortDir = sp.dir === "desc" ? "desc" : "asc";
 
   let result;
   try {
-    result = await listEventRegistrations(event.id, user, { page, pageSize: 50, search: sp.q, status, isPaid, sortBy, sortDir });
+    result = await listEventRegistrations(event.id, user, { page, pageSize: 50, search: sp.q, status, sortBy, sortDir });
   } catch (e) {
     if (e instanceof RegistrationForbiddenError) redirect("/admin/content");
     throw e;
   }
+
+  // Билеты/оплата (Ticket Engine) — hasPassCatalog решает, показывать ли
+  // названия Pass в колонке или просто простой тумблер "Оплата", как раньше.
+  const [passCount, ticketsByDancer, paymentCounts] = await Promise.all([
+    prisma.pass.count({ where: { eventId: event.id } }),
+    listTicketsByDancerForEvent(
+      event.id,
+      result.items.map((r) => r.dancerId)
+    ),
+    getEventPaymentSummaryCounts(
+      event.id,
+      // Счётчики KPI — по ВСЕМ регистрациям события, не только текущей
+      // странице (тот же принцип, что и totalOverall/waitlistCount).
+      (
+        await prisma.eventRegistration.findMany({ where: { eventId: event.id }, select: { dancerId: true } })
+      ).map((r) => r.dancerId)
+    ),
+  ]);
+  const hasPassCatalog = passCount > 0;
 
   const totalPages = Math.max(Math.ceil(result.total / result.pageSize), 1);
   const pctOverall = (count: number) => (result.totalOverall === 0 ? 0 : Math.round((count / result.totalOverall) * 100));
@@ -90,7 +115,7 @@ export default async function EventRegistrationsPage({
   // "Текущие" параметры фильтра — переносятся во ВСЕ остальные ссылки
   // (пагинация, сортировка, экспорт), чтобы переключение одного не сбрасывало
   // остальные.
-  const currentFilterParams = { q: sp.q, status: sp.status, paid: sp.paid, sort: sp.sort, dir: sp.dir };
+  const currentFilterParams = { q: sp.q, status: sp.status, sort: sp.sort, dir: sp.dir };
   const exportHref = buildHref("/api/events/" + event.slug + "/registrations/export", currentFilterParams, {});
 
   function sortHref(field: RegistrationSortBy) {
@@ -102,23 +127,12 @@ export default async function EventRegistrationsPage({
     return <span aria-hidden="true">{sortDir === "asc" ? " ▲" : " ▼"}</span>;
   }
 
-  const hasActiveFilter = Boolean(sp.q || sp.status || sp.paid);
+  const hasActiveFilter = Boolean(sp.q || sp.status);
 
-  // §11 ТЗ, продолжение (2026-09-15, по прямому запросу пользователя) — сами
-  // KPI-карточки одновременно и быстрый фильтр, тот же принцип, что и
-  // StatCard в ParticipantsPanel Competition Engine (клик по "Оплачено"/"Не
-  // оплачено" переключает фильтр). Здесь — серверная страница, поэтому не
-  // onClick, а обычная ссылка (`href` у StatCard уже поддерживает это, см.
-  // комментарий там про "проваливание по клику"); повторный клик по уже
-  // активной карточке снимает фильтр (тот же toggle, что и в ParticipantsPanel).
-  const paidActive = sp.paid === "yes";
-  const notPaidActive = sp.paid === "no";
   const waitlistActive = sp.status === "WAITLIST";
   const totalActive = !hasActiveFilter;
 
   const totalHref = basePath;
-  const paidHref = buildHref(basePath, currentFilterParams, { paid: paidActive ? undefined : "yes", page: undefined });
-  const notPaidHref = buildHref(basePath, currentFilterParams, { paid: notPaidActive ? undefined : "no", page: undefined });
   const waitlistHref = buildHref(basePath, currentFilterParams, { status: waitlistActive ? undefined : "WAITLIST", page: undefined });
 
   return (
@@ -134,21 +148,17 @@ export default async function EventRegistrationsPage({
         <StatCard label="Всего регистраций" value={result.totalOverall} icon={<PeopleIcon />} tone="primary" href={totalHref} active={totalActive} />
         <StatCard
           label="Оплачено"
-          value={result.paidCount}
+          value={paymentCounts.paidCount}
           icon={<CardIcon />}
           tone="success"
-          percent={pctOverall(result.paidCount)}
-          href={paidHref}
-          active={paidActive}
+          percent={pctOverall(paymentCounts.paidCount)}
         />
         <StatCard
           label="Не оплачено"
-          value={result.totalOverall - result.paidCount}
+          value={paymentCounts.unpaidCount}
           icon={<AlertIcon />}
           tone="danger"
-          percent={pctOverall(result.totalOverall - result.paidCount)}
-          href={notPaidHref}
-          active={notPaidActive}
+          percent={pctOverall(paymentCounts.unpaidCount)}
         />
         <StatCard
           label="Лист ожидания"
@@ -160,6 +170,9 @@ export default async function EventRegistrationsPage({
           active={waitlistActive}
         />
       </div>
+      {paymentCounts.partialCount > 0 && (
+        <p className="m-0 text-xs text-admin-muted">Частично оплачено (не все билеты): {paymentCounts.partialCount}.</p>
+      )}
 
       <form method="get" className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
         <label className="flex flex-col gap-1 text-xs text-admin-muted">
@@ -185,18 +198,6 @@ export default async function EventRegistrationsPage({
                 {STATUS_LABELS[s]}
               </option>
             ))}
-          </Select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-admin-muted">
-          Оплата
-          <Select
-            name="paid"
-            defaultValue={sp.paid ?? ""}
-            className="max-w-[150px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
-          >
-            <option value="">Все</option>
-            <option value="yes">Оплачено</option>
-            <option value="no">Не оплачено</option>
           </Select>
         </label>
         {/* Сортировка тоже управляется через клик по заголовку колонки ниже —
@@ -242,12 +243,7 @@ export default async function EventRegistrationsPage({
                     </a>
                   </th>
                   <th className="px-3 py-2 font-semibold">Статус</th>
-                  <th className="px-3 py-2 font-semibold">
-                    <a href={sortHref("paid")} className="hover:text-night-text hover:underline">
-                      Оплата
-                      {sortIndicator("paid")}
-                    </a>
-                  </th>
+                  <th className="px-3 py-2 font-semibold">{hasPassCatalog ? "Билеты" : "Оплата"}</th>
                   <th className="px-3 py-2 font-semibold">Check-in</th>
                 </tr>
               </thead>
@@ -260,7 +256,12 @@ export default async function EventRegistrationsPage({
                       <EventRegistrationStatusSelect eventSlug={event.slug} registrationId={r.id} status={r.status} />
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <EventRegistrationPaymentToggle eventSlug={event.slug} registrationId={r.id} isPaid={r.isPaid} />
+                      <TicketPaymentCell
+                        eventSlug={event.slug}
+                        registrationId={r.id}
+                        hasPassCatalog={hasPassCatalog}
+                        initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
+                      />
                     </td>
                     <td className="px-3 py-2 align-top">
                       <EventRegistrationCheckInToggle eventSlug={event.slug} registrationId={r.id} checkedIn={r.checkedInAt != null} />
@@ -277,7 +278,12 @@ export default async function EventRegistrationsPage({
               <div key={r.id} className="rounded-app-sm border border-admin-border bg-admin-card p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="m-0 font-medium text-night-text">{r.dancer.displayName}</p>
-                  <EventRegistrationPaymentToggle eventSlug={event.slug} registrationId={r.id} isPaid={r.isPaid} />
+                  <TicketPaymentCell
+                    eventSlug={event.slug}
+                    registrationId={r.id}
+                    hasPassCatalog={hasPassCatalog}
+                    initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
+                  />
                 </div>
                 <p className="m-0 mt-1 text-xs text-admin-muted">{formatDateTime(r.createdAt)}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">

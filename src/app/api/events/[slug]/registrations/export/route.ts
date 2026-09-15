@@ -5,12 +5,12 @@ import { exportEventRegistrationsCsv } from "@/server/events/registration-export
 import { RegistrationForbiddenError, RegistrationNotFoundError, type RegistrationSortBy } from "@/server/events/registration-service";
 import { EVENT_REGISTRATION_STATUS_VALUES as STATUS_VALUES } from "@/lib/events/event-type-registry";
 
-// §11 ТЗ (Event CRM) — экспорт CSV. Те же search/status/paid/sort, что и
-// вкладка "Участники" (та же валидация значений, что и в page.tsx — простые
-// ручные проверки по фиксированному набору значений, тот же приём, что и в
+// §11 ТЗ (Event CRM) — экспорт CSV. Те же search/status/sort, что и вкладка
+// "Участники" (та же валидация значений, что и в page.tsx — простые ручные
+// проверки по фиксированному набору значений, тот же приём, что и в
 // остальных read-only GET-роутах проекта, см. searchEvents()/public/events
 // /calendar; Zod здесь избыточен — ничего не мутирует).
-const SORT_VALUES: RegistrationSortBy[] = ["date", "name", "paid"];
+const SORT_VALUES: RegistrationSortBy[] = ["date", "name"];
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -22,8 +22,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
   const sp = req.nextUrl.searchParams;
   const status = STATUS_VALUES.find((s) => s === sp.get("status"));
-  const paidParam = sp.get("paid");
-  const isPaid = paidParam === "yes" ? true : paidParam === "no" ? false : undefined;
   const sortBy = SORT_VALUES.find((s) => s === sp.get("sort"));
   const sortDir = sp.get("dir") === "desc" ? "desc" : "asc";
 
@@ -31,7 +29,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     const csv = await exportEventRegistrationsCsv(event.id, user, {
       search: sp.get("q") ?? undefined,
       status,
-      isPaid,
       sortBy,
       sortDir,
     });
