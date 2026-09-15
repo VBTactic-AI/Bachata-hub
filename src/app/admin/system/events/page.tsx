@@ -123,7 +123,9 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
                 {events.map((e) => (
                   <tr key={e.id} className="border-t border-admin-border hover:bg-admin-card2/50">
                     <td className="px-3 py-2 align-top">
-                      <a href={`/admin/system/events/edit/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                      {/* Клик по названию = "Управление" (карточка события), как и на
+                          /admin/content — по прямому уточнению пользователя. */}
+                      <a href={`/admin/content/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
                         {e.title || "Без названия"}
                       </a>
                     </td>
@@ -160,7 +162,7 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
             {events.map((e) => (
               <div key={e.id} className="rounded-app-sm border border-admin-border bg-admin-card p-3">
                 <div className="flex items-start justify-between gap-2">
-                  <a href={`/admin/system/events/edit/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                  <a href={`/admin/content/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
                     {e.title || "Без названия"}
                   </a>
                   <EventDeleteButton eventId={e.id} title={e.title} />
