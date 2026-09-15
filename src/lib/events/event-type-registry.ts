@@ -33,6 +33,49 @@ export function myEventStatusLabel(status: EventStatus, moderationStatus: Modera
   return "На модерации";
 }
 
+// Цвет точки статуса (StatusBadge) — вынесено из [id]/layout.tsx (было
+// инлайн-тернарником только там) в общий хелпер, чтобы таблица "Мои события"
+// (admin/content/page.tsx) и карточка события считали цвет одинаково, не
+// дублируя тернарник в двух местах.
+export type MyEventStatusVariant = "success" | "danger" | "warning" | "neutral";
+export function myEventStatusVariant(status: EventStatus, moderationStatus: ModerationStatus): MyEventStatusVariant {
+  if (status === "PUBLISHED" && moderationStatus === "APPROVED") return "success";
+  if (moderationStatus === "REJECTED") return "danger";
+  if (status === "ARCHIVED") return "neutral";
+  return "neutral";
+}
+
+// Фильтр "Статус" на табличке "Мои события" — пять пользовательских
+// категорий из myEventStatusLabel(), сведённые в explicit where-условие
+// (не голый `status`/`moderationStatus` — их комбинация нетривиальна, см.
+// myEventStatusLabel() выше). "" (по умолчанию) = всё, кроме архива, то же
+// поведение, что и раньше было жёстко зашито в page.tsx.
+export type MyEventStatusFilter = "DRAFT" | "PENDING" | "PUBLISHED" | "REJECTED" | "ARCHIVED";
+export const MY_EVENT_STATUS_FILTER_OPTIONS: { value: MyEventStatusFilter; label: string }[] = [
+  { value: "DRAFT", label: "Черновик" },
+  { value: "PENDING", label: "На модерации" },
+  { value: "PUBLISHED", label: "Опубликовано" },
+  { value: "REJECTED", label: "Отклонено модератором" },
+  { value: "ARCHIVED", label: "В архиве" },
+];
+export function myEventStatusFilterWhere(filter?: string) {
+  switch (filter as MyEventStatusFilter | undefined) {
+    case "DRAFT":
+      return { status: "DRAFT" as const };
+    case "PUBLISHED":
+      return { status: "PUBLISHED" as const, moderationStatus: "APPROVED" as const };
+    case "REJECTED":
+      return { status: { not: "ARCHIVED" as const }, moderationStatus: "REJECTED" as const };
+    case "PENDING":
+      return { status: { notIn: ["DRAFT", "ARCHIVED"] as EventStatus[] }, moderationStatus: "PENDING" as const };
+    case "ARCHIVED":
+      return { status: "ARCHIVED" as const };
+    default:
+      // По умолчанию — как и раньше: всё, кроме архива.
+      return { status: { not: "ARCHIVED" as const } };
+  }
+}
+
 // Event Engine — расширяемый реестр типов события (задача "Event Engine").
 // Чистый модуль без React и без Prisma-запросов: используется и клиентским
 // EventWizard (список шагов/подписи), и сервером (Publish checklist — CLAUDE.md

@@ -2,15 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { EventFormat, EventStatus, ModerationStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
-import {
-  EVENT_TYPE_REGISTRY,
-  computePublishChecklist,
-  isChecklistComplete,
-  myEventStatusLabel,
-  type EventStepId,
-} from "@/lib/events/event-type-registry";
+import { EVENT_TYPE_REGISTRY, computePublishChecklist, isChecklistComplete, type EventStepId } from "@/lib/events/event-type-registry";
 import { WizardNav } from "./WizardNav";
 import { EventTypeSelector } from "./EventTypeSelector";
 import { EventPreviewSidebar } from "./EventPreviewSidebar";
@@ -23,15 +16,6 @@ import { StepMasterclassDetails } from "./steps/StepMasterclassDetails";
 import { StepTickets } from "./steps/StepTickets";
 import { StepPublish } from "./steps/StepPublish";
 import { toApiPayload, type WizardDraft } from "./wizard-types";
-
-export type MyEventListItem = {
-  id: string;
-  slug: string;
-  title: string;
-  format: EventFormat;
-  status: EventStatus;
-  moderationStatus: ModerationStatus;
-};
 
 // Event Engine — единый Create Event Wizard (задача "ОБЩИЙ CREATE EVENT
 // ENGINE"): один компонент управляет состоянием черновика и навигацией,
@@ -64,8 +48,7 @@ export function EventWizard({
   canCreateCompetition,
   isVerifiedEventOrganizer = false,
   initialDraft,
-  myEvents,
-  eventListLabel = "Мои события",
+  basePath = "/admin/content",
 }: {
   cities: { id: string; nameRu: string }[];
   ownedSchools: { id: string; name: string; verificationStatus: "COMMUNITY" | "VERIFIED" }[];
@@ -76,11 +59,14 @@ export function EventWizard({
   // организатор), а не только с верифицированной школой.
   isVerifiedEventOrganizer?: boolean;
   initialDraft: WizardDraft;
-  myEvents: MyEventListItem[];
-  // "Мои события" не точно, когда список — ВСЕ события платформы (Мониторинг
-  // → /admin/system/events, docs/00_DECISIONS.md, 2026-09-14) — параметризовано,
-  // а не переименовано жёстко, чтобы /admin/content (реально "свои") не менялся.
-  eventListLabel?: string;
+  // Редизайн (2026-09-16, по прямому запросу пользователя) — список "Мои
+  // события" переехал на отдельную табличную страницу (admin/content/
+  // page.tsx), мастер больше не рендерит его внутри себя. basePath различает
+  // "свои события" (/admin/content) и "все события" (/admin/system/events,
+  // Мониторинг) — используется только для редиректа на страницу
+  // редактирования сразу после первого сохранения черновика (см. save()
+  // ниже), чтобы URL стал `${basePath}/edit/${id}`, а не остался на "/new".
+  basePath?: string;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState<WizardDraft>(initialDraft);
@@ -154,6 +140,7 @@ export function EventWizard({
         }
         return;
       }
+      const isFirstSave = !draft.id;
       setDraft((d) => ({
         ...d,
         id: body.event.id,
@@ -161,6 +148,12 @@ export function EventWizard({
         status: body.event.status,
         competitionId: body.competitionId ?? d.competitionId,
       }));
+      if (isFirstSave) {
+        // Первое сохранение черновика создаёт Event — переезжаем с "/new" на
+        // постоянный URL редактирования, чтобы обновление страницы и "Мои
+        // события" вели на тот же черновик, а не на пустую форму.
+        router.replace(`${basePath}/edit/${body.event.id}`);
+      }
       if (status === "PUBLISHED") {
         // Задача: после публикации показать понятное сообщение
         // (опубликовано / на модерации) и перекинуть на карточку события,
@@ -228,39 +221,15 @@ export function EventWizard({
 
   return (
     <div className="flex flex-col gap-4">
-      {myEvents.length > 0 && !draft.id && (
-        <div className="rounded-app border border-admin-border bg-admin-card px-4 py-3 text-sm">
-          <p className="m-0 mb-2 font-semibold text-night-text">{eventListLabel}</p>
-          <div className="flex flex-col gap-1.5">
-            {myEvents.map((e) => (
-              <div key={e.id} className="flex flex-wrap items-center gap-2">
-                <a href={`/admin/content?draft=${e.id}`} className="text-admin-primary hover:underline">
-                  {e.title || "Без названия"}
-                </a>
-                <span className="text-xs text-admin-muted">
-                  {EVENT_TYPE_REGISTRY[e.format].label} · {myEventStatusLabel(e.status, e.moderationStatus)}
-                </span>
-                {e.status === "PUBLISHED" && e.moderationStatus === "APPROVED" && (
-                  <a href={`/events/${e.slug}`} target="_blank" className="text-xs text-admin-muted hover:text-night-text hover:underline">
-                    Открыть карточку →
-                  </a>
-                )}
-                {/* §12 ТЗ (Event Dashboard, 2026-09-15) — раньше здесь было две
-                    отдельные ссылки ("Участники →"/"Команда →"); теперь одна
-                    точка входа в единую оболочку события (Обзор + вкладки),
-                    а не два несвязанных экрана. */}
-                <a href={`/admin/content/${e.id}`} className="text-xs text-admin-muted hover:text-night-text hover:underline">
-                  Управление →
-                </a>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <a href={basePath} className="text-sm text-admin-muted hover:text-night-text hover:underline">
+        ← К списку событий
+      </a>
 
       <div className="overflow-hidden rounded-app border border-admin-border bg-admin-card">
         <div className="flex items-center justify-between border-b border-admin-border px-5 py-3.5">
-          <h1 className="m-0 font-night text-base font-extrabold uppercase tracking-wide text-night-text">Создание события</h1>
+          <h1 className="m-0 font-night text-base font-extrabold uppercase tracking-wide text-night-text">
+            {draft.id ? "Редактирование события" : "Создание события"}
+          </h1>
           <Button type="button" variant="adminOutline" size="sm" disabled={!canSaveDraft || saving !== null} onClick={() => save("DRAFT")}>
             {saving === "draft" ? "…" : "Сохранить черновик"}
           </Button>

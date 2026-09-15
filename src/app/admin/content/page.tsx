@@ -1,176 +1,199 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, canCreateEvents } from "@/lib/auth";
-import { getDancerByUserId } from "@/lib/dancer";
 import { prisma } from "@/lib/prisma";
-import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
-import { getEventDraftForEdit, EventNotFoundError, EventForbiddenError } from "@/server/events/event-service";
-import { EventWizard } from "@/components/admin/events/EventWizard";
-import { emptyWizardDraft, dateToLocalInputValue, type WizardDraft } from "@/components/admin/events/wizard-types";
+import { Input, Select } from "@/components/ui/field";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { StatusBadge } from "@/components/admin/StatusBadge";
+import { EventDeleteButton } from "@/components/admin/events/EventDeleteButton";
+import {
+  EVENT_TYPE_REGISTRY,
+  ALL_EVENT_FORMATS,
+  MY_EVENT_STATUS_FILTER_OPTIONS,
+  myEventStatusLabel,
+  myEventStatusVariant,
+  myEventStatusFilterWhere,
+} from "@/lib/events/event-type-registry";
+import { cn } from "@/lib/cn";
 
-// Перенесено из /events/new (2026-09-11); с этой задачи ("Event Engine") —
-// вместо одностраничной AddEventForm единый EventWizard (Type -> Basic ->
-// Location -> Date&Time -> type-specific -> Tickets -> Preview -> Publish).
-// Права те же, что и были — canCreateEvents.
-export default async function AdminContentPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ draft?: string }>;
-}) {
+// Табличка "Мои события" (редизайн 2026-09-16, по прямому запросу
+// пользователя) — раньше эта страница сразу показывала мастер создания
+// события (EventWizard) под списком ссылок; теперь список — самостоятельная
+// табличная страница в стиле остальной админки (см. `.../[id]/registrations/
+// page.tsx` — тот же паттерн: server-side фильтр через GET-форму без JS,
+// таблица на десктопе + карточки на мобильном). Мастер переехал на отдельные
+// страницы: "Создать новое событие" → /admin/content/new, "Редактировать" →
+// /admin/content/edit/[id] (НЕ /admin/content/[id]/edit — там уже сидит
+// `[id]/layout.tsx`, оборачивающий вкладками "карточку одного события", под
+// него мастер заезжать не должен).
+type SearchParams = { q?: string; format?: string; status?: string };
+
+export default async function AdminContentPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canCreateEvents(user)) redirect("/admin");
 
-  const { draft: draftId } = await searchParams;
+  const sp = await searchParams;
+  const format = ALL_EVENT_FORMATS.find((f) => f === sp.format);
 
-  const [cities, ownedSchoolsRaw, teachers, actor, drafts, dancer] = await Promise.all([
-    prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
-    user.role === "SCHOOL_REP"
-      ? prisma.school.findMany({ where: { ownerUserId: user.id }, orderBy: { name: "asc" } })
-      : Promise.resolve([]),
-    prisma.teacher.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    getActor(),
-    prisma.event.findMany({
-      // Все свои события (не только черновики) — organizer должен видеть и
-      // уже опубликованные/на модерации, чтобы вернуться и отредактировать
-      // (по прямому запросу пользователя, 2026-09-13).
-      where: { createdById: user.id, status: { not: "ARCHIVED" } },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true, slug: true, title: true, format: true, status: true, moderationStatus: true },
-    }),
-    getDancerByUserId(user.id),
-  ]);
+  const events = await prisma.event.findMany({
+    where: {
+      createdById: user.id,
+      ...myEventStatusFilterWhere(sp.status),
+      ...(format ? { format } : {}),
+      ...(sp.q ? { title: { contains: sp.q, mode: "insensitive" } } : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true, format: true, status: true, moderationStatus: true },
+  });
 
-  const ownedSchools = ownedSchoolsRaw.map((s) => ({ id: s.id, name: s.name, verificationStatus: s.verificationStatus }));
-  const canCreateCompetition = can(actor, "competition:create");
-
-  // Редизайн мастера (2026-09-16, по прямому запросу пользователя) —
-  // "Организатор" больше не редактируется в самом мастере (см. StepBasic.tsx
-  // — поле убрано), а подтягивается автоматически: своя школа, если она
-  // есть (первая, если их несколько — выбор конкретной школы из нескольких
-  // сознательно не поддержан в этой версии, тот же принцип упрощения, что и
-  // просил пользователь), иначе — отображаемое имя танцора из профиля.
-  let initialDraft: WizardDraft = {
-    ...emptyWizardDraft(cities[0]?.id ?? ""),
-    schoolId: ownedSchools[0]?.id ?? "",
-    organizerName: ownedSchools.length === 0 ? (dancer?.displayName ?? "") : "",
-  };
-  if (draftId) {
-    // Ссылка на черновик могла устареть (черновик удалён/архивирован после
-    // QA-очистки, или скопирована из чужого аккаунта) — раньше
-    // EventNotFoundError/EventForbiddenError вылетали из Server Component
-    // необработанными и роняли всю страницу в "Application error" (белый
-    // экран без единой подсказки, найдено вживую). Невалидный draft
-    // безопасно игнорируем — мастер просто открывается с чистого листа,
-    // ничего не удаляется и не перезаписывается.
-    let event: Awaited<ReturnType<typeof getEventDraftForEdit>> | null = null;
-    try {
-      event = await getEventDraftForEdit(draftId, user);
-    } catch (err) {
-      if (!(err instanceof EventNotFoundError) && !(err instanceof EventForbiddenError)) throw err;
-    }
-    if (event) initialDraft = {
-      id: event.id,
-      slug: event.slug,
-      status: event.status,
-      format: event.format,
-      certainty: event.certainty,
-      title: event.title,
-      description: event.description ?? "",
-      media: event.media.map((m) => ({
-        id: m.id,
-        url: m.url,
-        isMain: m.isMain,
-        sortOrder: m.sortOrder,
-        width: m.width,
-        height: m.height,
-        objectPosition: m.objectPosition,
-      })),
-      level: event.level,
-      cityId: event.cityId,
-      schoolId: event.schoolId ?? "",
-      organizerName: event.organizerName ?? "",
-      venueName: event.venueName,
-      venueAddress: event.venueAddress ?? "",
-      latitude: event.latitude != null ? String(event.latitude) : "",
-      longitude: event.longitude != null ? String(event.longitude) : "",
-      startsAt: dateToLocalInputValue(event.startsAt),
-      endsAt: event.endsAt ? dateToLocalInputValue(event.endsAt) : "",
-      capacity: event.capacity != null ? String(event.capacity) : "",
-      registrationEnabled: event.registrationEnabled,
-      ticketingMode: event.ticketingMode,
-      priceText: event.priceText ?? "",
-      externalLinkUrl: event.externalLinkUrl ?? "",
-      tags: event.tags.join(", "),
-      priceOptions: event.priceOptions.map((p) => ({
-        label: p.label,
-        price: p.price != null ? String(p.price) : "",
-        currency: p.currency ?? "",
-      })),
-      party: {
-        musicStyles: event.partyDetails?.musicStyles.join(", ") ?? "",
-        djs: event.partyDetails?.djs.join(", ") ?? "",
-        danceFloors: event.partyDetails?.danceFloors.join(", ") ?? "",
-        artists: event.partyDetails?.artists.join(", ") ?? "",
-        dressCode: event.partyDetails?.dressCode ?? "",
-        photographer: event.partyDetails?.photographer ?? "",
-        foodAndDrinks: event.partyDetails?.foodAndDrinks ?? "",
-        parking: event.partyDetails?.parking ?? false,
-        cloakroom: event.partyDetails?.cloakroom ?? false,
-      },
-      masterclass: {
-        style: event.masterclassDetails?.style ?? "",
-        format: event.masterclassDetails?.format ?? "",
-        partnerRequired: event.masterclassDetails?.partnerRequired ?? false,
-        sessions:
-          event.masterclassDetails?.sessions.map((s) => ({
-            title: s.title,
-            teacherId: s.teacherId ?? "",
-            startTime: dateToLocalInputValue(s.startTime),
-            endTime: dateToLocalInputValue(s.endTime),
-            room: s.room ?? "",
-            level: s.level ?? "",
-            capacity: s.capacity != null ? String(s.capacity) : "",
-          })) ?? [],
-      },
-      festival: {
-        programItems:
-          event.festivalDetails?.programItems.map((p) => ({
-            title: p.title,
-            type: p.type,
-            startTime: dateToLocalInputValue(p.startTime),
-            endTime: p.endTime ? dateToLocalInputValue(p.endTime) : "",
-            teacherId: p.teacherId ?? "",
-          })) ?? [],
-      },
-      competitionId: event.competition?.id ?? null,
-    };
-  }
+  const hasActiveFilter = Boolean(sp.q || sp.format || sp.status);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Контент</h1>
-          <p className="m-0 mt-1 text-sm text-admin-muted">Создание событий — вечеринки, мастер-классы, соревнования.</p>
+          <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Мои события</h1>
+          <p className="m-0 mt-1 text-sm text-admin-muted">Вечеринки, мастер-классы, соревнования — всё, что вы создали.</p>
         </div>
-        <a href="/admin/content/pass-templates" className="text-sm text-admin-primaryHover hover:underline">
-          Шаблоны Pass →
+        <a href="/admin/content/new" className={cn(buttonVariants({ variant: "admin", size: "sm" }), "no-underline")}>
+          + Создать новое событие
         </a>
       </div>
-      <EventWizard
-        cities={cities}
-        ownedSchools={ownedSchools}
-        teachers={teachers}
-        canCreateCompetition={canCreateCompetition}
-        // QA BUG-012: индикатор "будет опубликовано без модерации" раньше
-        // учитывал только верифицированную школу — организатор, верифицированный
-        // лично (isVerifiedEventOrganizer, без школы), видел неверное "на
-        // модерации", хотя сервер его и так одобрит автоматически.
-        isVerifiedEventOrganizer={user.role === "ADMIN" || user.isVerifiedEventOrganizer}
-        initialDraft={initialDraft}
-        myEvents={drafts.filter((d) => d.id !== draftId)}
-      />
+
+      <form method="get" className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Поиск
+          <Input
+            type="text"
+            name="q"
+            defaultValue={sp.q ?? ""}
+            placeholder="Название события…"
+            className="max-w-[220px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Тип
+          <Select
+            name="format"
+            defaultValue={sp.format ?? ""}
+            className="max-w-[200px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          >
+            <option value="">Все типы</option>
+            {ALL_EVENT_FORMATS.map((f) => (
+              <option key={f} value={f}>
+                {EVENT_TYPE_REGISTRY[f].icon} {EVENT_TYPE_REGISTRY[f].label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Статус
+          <Select
+            name="status"
+            defaultValue={sp.status ?? ""}
+            className="max-w-[180px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          >
+            <option value="">Все, кроме архива</option>
+            {MY_EVENT_STATUS_FILTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <Button type="submit" size="sm">
+          Найти
+        </Button>
+        {hasActiveFilter && (
+          <a href="/admin/content" className="text-sm text-admin-muted hover:text-night-text hover:underline">
+            Сбросить
+          </a>
+        )}
+      </form>
+
+      {events.length === 0 ? (
+        <p className="text-sm text-admin-muted">
+          {hasActiveFilter ? "Ничего не найдено по текущему фильтру." : "Событий пока нет — создайте первое."}
+        </p>
+      ) : (
+        <>
+          {/* Desktop/tablet — таблица, тот же стиль, что и вкладка "Участники". */}
+          <div className="hidden overflow-x-auto rounded-app border border-admin-border sm:block">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Название</th>
+                  <th className="px-3 py-2 font-semibold">Тип события</th>
+                  <th className="px-3 py-2 font-semibold">Статус</th>
+                  <th className="px-3 py-2 font-semibold">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((e) => (
+                  <tr key={e.id} className="border-t border-admin-border hover:bg-admin-card2/50">
+                    <td className="px-3 py-2 align-top">
+                      {/* Клик по названию = "Редактировать" (открывает мастер), не карточка
+                          управления — по прямому запросу пользователя. */}
+                      <a href={`/admin/content/edit/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                        {e.title || "Без названия"}
+                      </a>
+                    </td>
+                    <td className="px-3 py-2 align-top text-admin-muted">
+                      {EVENT_TYPE_REGISTRY[e.format].icon} {EVENT_TYPE_REGISTRY[e.format].label}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={myEventStatusVariant(e.status, e.moderationStatus)} />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={`/admin/content/${e.id}`}
+                          className="rounded-app-sm px-2 py-1 text-xs font-semibold text-admin-primaryHover hover:bg-admin-card2 hover:underline"
+                        >
+                          Управление
+                        </a>
+                        <a
+                          href={`/admin/content/edit/${e.id}`}
+                          className="rounded-app-sm px-2 py-1 text-xs font-semibold text-night-text hover:bg-admin-card2 hover:underline"
+                        >
+                          Редактировать
+                        </a>
+                        <EventDeleteButton eventId={e.id} title={e.title} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile — карточки вместо широкой таблицы. */}
+          <div className="flex flex-col gap-2 sm:hidden">
+            {events.map((e) => (
+              <div key={e.id} className="rounded-app-sm border border-admin-border bg-admin-card p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <a href={`/admin/content/edit/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                    {e.title || "Без названия"}
+                  </a>
+                  <EventDeleteButton eventId={e.id} title={e.title} />
+                </div>
+                <p className="m-0 mt-1 text-xs text-admin-muted">
+                  {EVENT_TYPE_REGISTRY[e.format].icon} {EVENT_TYPE_REGISTRY[e.format].label}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={myEventStatusVariant(e.status, e.moderationStatus)} />
+                  <a href={`/admin/content/${e.id}`} className="text-xs font-semibold text-admin-primaryHover hover:underline">
+                    Управление →
+                  </a>
+                  <a href={`/admin/content/edit/${e.id}`} className="text-xs font-semibold text-night-text hover:underline">
+                    Редактировать →
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

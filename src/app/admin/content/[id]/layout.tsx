@@ -57,8 +57,11 @@ export default async function EventDashboardLayout({
         </div>
         <div className="mt-2 flex flex-wrap gap-3 text-sm">
           {canManage && (
-            <a href={`/admin/content?draft=${event.id}`} className={cn(buttonVariants({ variant: "adminOutline", size: "sm" }), "no-underline")}>
-              Редактировать
+            // Сделана более заметной (2026-09-16, по прямому запросу
+            // пользователя) — раньше выглядела как второстепенная (adminOutline),
+            // хотя это основное действие в этом хедере.
+            <a href={`/admin/content/edit/${event.id}`} className={cn(buttonVariants({ variant: "admin" }), "no-underline")}>
+              ✎ Редактировать
             </a>
           )}
           {isLive && (

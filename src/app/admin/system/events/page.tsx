@@ -1,140 +1,187 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
-import { getEventDraftForEdit } from "@/server/events/event-service";
-import { EventWizard } from "@/components/admin/events/EventWizard";
-import { emptyWizardDraft, dateToLocalInputValue, type WizardDraft } from "@/components/admin/events/wizard-types";
+import { Input, Select } from "@/components/ui/field";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { StatusBadge } from "@/components/admin/StatusBadge";
+import { EventDeleteButton } from "@/components/admin/events/EventDeleteButton";
+import {
+  EVENT_TYPE_REGISTRY,
+  ALL_EVENT_FORMATS,
+  MY_EVENT_STATUS_FILTER_OPTIONS,
+  myEventStatusLabel,
+  myEventStatusVariant,
+  myEventStatusFilterWhere,
+} from "@/lib/events/event-type-registry";
+import { cn } from "@/lib/cn";
 
-// Мониторинг → "Ивенты (все)" — супер-админ видит и может редактировать ЛЮБОЕ
-// событие (не только свои), в отличие от /admin/content (только свои).
-// Технически это уже поддержано existing-сервисами без изменений:
-// getEventDraftForEdit()/upsertEventDraft() и так пропускают ADMIN мимо
-// проверки createdById (см. src/server/events/event-service.ts) — здесь
-// только убран фильтр `where: { createdById }` при построении списка.
-// Намеренное дублирование с admin/content/page.tsx (не общий компонент) —
-// разные списки (все/свои), разный заголовок; выносить в общую функцию
-// ради экономии ~15 строк не стал (CLAUDE.md §54).
-export default async function SystemEventsPage({ searchParams }: { searchParams: Promise<{ draft?: string }> }) {
+// Мониторинг → "Ивенты (все)" — та же табличная вёрстка, что и
+// /admin/content (см. её комментарий), но без фильтра по createdById и с
+// другим заголовком. Намеренное дублирование с admin/content/page.tsx (не
+// общий компонент) — разные списки (все/свои), см. существующий комментарий
+// в этом же файле до редизайна (CLAUDE.md §54).
+type SearchParams = { q?: string; format?: string; status?: string };
+
+export default async function SystemEventsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!isAdmin(user)) redirect("/admin");
 
-  const { draft: draftId } = await searchParams;
+  const sp = await searchParams;
+  const format = ALL_EVENT_FORMATS.find((f) => f === sp.format);
 
-  const [cities, teachers, actor, allEvents] = await Promise.all([
-    prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
-    prisma.teacher.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    getActor(),
-    prisma.event.findMany({
-      where: { status: { not: "ARCHIVED" } },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true, slug: true, title: true, format: true, status: true, moderationStatus: true },
-    }),
-  ]);
+  const events = await prisma.event.findMany({
+    where: {
+      ...myEventStatusFilterWhere(sp.status),
+      ...(format ? { format } : {}),
+      ...(sp.q ? { title: { contains: sp.q, mode: "insensitive" } } : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true, format: true, status: true, moderationStatus: true },
+  });
 
-  const canCreateCompetition = can(actor, "competition:create");
-
-  let initialDraft: WizardDraft = emptyWizardDraft(cities[0]?.id ?? "");
-  if (draftId) {
-    const event = await getEventDraftForEdit(draftId, user);
-    initialDraft = {
-      id: event.id,
-      slug: event.slug,
-      status: event.status,
-      format: event.format,
-      certainty: event.certainty,
-      title: event.title,
-      description: event.description ?? "",
-      media: event.media.map((m) => ({
-        id: m.id,
-        url: m.url,
-        isMain: m.isMain,
-        sortOrder: m.sortOrder,
-        width: m.width,
-        height: m.height,
-        objectPosition: m.objectPosition,
-      })),
-      level: event.level,
-      cityId: event.cityId,
-      schoolId: event.schoolId ?? "",
-      organizerName: event.organizerName ?? "",
-      venueName: event.venueName,
-      venueAddress: event.venueAddress ?? "",
-      latitude: event.latitude != null ? String(event.latitude) : "",
-      longitude: event.longitude != null ? String(event.longitude) : "",
-      startsAt: dateToLocalInputValue(event.startsAt),
-      endsAt: event.endsAt ? dateToLocalInputValue(event.endsAt) : "",
-      capacity: event.capacity != null ? String(event.capacity) : "",
-      registrationEnabled: event.registrationEnabled,
-      ticketingMode: event.ticketingMode,
-      priceText: event.priceText ?? "",
-      externalLinkUrl: event.externalLinkUrl ?? "",
-      tags: event.tags.join(", "),
-      priceOptions: event.priceOptions.map((p) => ({
-        label: p.label,
-        price: p.price != null ? String(p.price) : "",
-        currency: p.currency ?? "",
-      })),
-      party: {
-        musicStyles: event.partyDetails?.musicStyles.join(", ") ?? "",
-        djs: event.partyDetails?.djs.join(", ") ?? "",
-        danceFloors: event.partyDetails?.danceFloors.join(", ") ?? "",
-        artists: event.partyDetails?.artists.join(", ") ?? "",
-        dressCode: event.partyDetails?.dressCode ?? "",
-        photographer: event.partyDetails?.photographer ?? "",
-        foodAndDrinks: event.partyDetails?.foodAndDrinks ?? "",
-        parking: event.partyDetails?.parking ?? false,
-        cloakroom: event.partyDetails?.cloakroom ?? false,
-      },
-      masterclass: {
-        style: event.masterclassDetails?.style ?? "",
-        format: event.masterclassDetails?.format ?? "",
-        partnerRequired: event.masterclassDetails?.partnerRequired ?? false,
-        sessions:
-          event.masterclassDetails?.sessions.map((s) => ({
-            title: s.title,
-            teacherId: s.teacherId ?? "",
-            startTime: dateToLocalInputValue(s.startTime),
-            endTime: dateToLocalInputValue(s.endTime),
-            room: s.room ?? "",
-            level: s.level ?? "",
-            capacity: s.capacity != null ? String(s.capacity) : "",
-          })) ?? [],
-      },
-      festival: {
-        programItems:
-          event.festivalDetails?.programItems.map((p) => ({
-            title: p.title,
-            type: p.type,
-            startTime: dateToLocalInputValue(p.startTime),
-            endTime: p.endTime ? dateToLocalInputValue(p.endTime) : "",
-            teacherId: p.teacherId ?? "",
-          })) ?? [],
-      },
-      competitionId: event.competition?.id ?? null,
-    };
-  }
+  const hasActiveFilter = Boolean(sp.q || sp.format || sp.status);
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Все события</h1>
-        <p className="m-0 mt-1 text-sm text-admin-muted">Мониторинг — видны и редактируемы ВСЕ события всех организаторов.</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Все события</h1>
+          <p className="m-0 mt-1 text-sm text-admin-muted">Мониторинг — видны и редактируемы ВСЕ события всех организаторов.</p>
+        </div>
+        <a href="/admin/system/events/new" className={cn(buttonVariants({ variant: "admin", size: "sm" }), "no-underline")}>
+          + Создать событие
+        </a>
       </div>
-      <EventWizard
-        cities={cities}
-        ownedSchools={[]}
-        teachers={teachers}
-        canCreateCompetition={canCreateCompetition}
-        // Страница уже гейтится isAdmin(user) выше — ADMIN всегда auto-approve
-        // (QA BUG-012, тот же индикатор, что и в admin/content/page.tsx).
-        isVerifiedEventOrganizer
-        initialDraft={initialDraft}
-        myEvents={allEvents.filter((d) => d.id !== draftId)}
-        eventListLabel="Все события"
-      />
+
+      <form method="get" className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Поиск
+          <Input
+            type="text"
+            name="q"
+            defaultValue={sp.q ?? ""}
+            placeholder="Название события…"
+            className="max-w-[220px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Тип
+          <Select
+            name="format"
+            defaultValue={sp.format ?? ""}
+            className="max-w-[200px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          >
+            <option value="">Все типы</option>
+            {ALL_EVENT_FORMATS.map((f) => (
+              <option key={f} value={f}>
+                {EVENT_TYPE_REGISTRY[f].icon} {EVENT_TYPE_REGISTRY[f].label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Статус
+          <Select
+            name="status"
+            defaultValue={sp.status ?? ""}
+            className="max-w-[180px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          >
+            <option value="">Все, кроме архива</option>
+            {MY_EVENT_STATUS_FILTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <Button type="submit" size="sm">
+          Найти
+        </Button>
+        {hasActiveFilter && (
+          <a href="/admin/system/events" className="text-sm text-admin-muted hover:text-night-text hover:underline">
+            Сбросить
+          </a>
+        )}
+      </form>
+
+      {events.length === 0 ? (
+        <p className="text-sm text-admin-muted">{hasActiveFilter ? "Ничего не найдено по текущему фильтру." : "Событий пока нет."}</p>
+      ) : (
+        <>
+          <div className="hidden overflow-x-auto rounded-app border border-admin-border sm:block">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Название</th>
+                  <th className="px-3 py-2 font-semibold">Тип события</th>
+                  <th className="px-3 py-2 font-semibold">Статус</th>
+                  <th className="px-3 py-2 font-semibold">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((e) => (
+                  <tr key={e.id} className="border-t border-admin-border hover:bg-admin-card2/50">
+                    <td className="px-3 py-2 align-top">
+                      <a href={`/admin/system/events/edit/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                        {e.title || "Без названия"}
+                      </a>
+                    </td>
+                    <td className="px-3 py-2 align-top text-admin-muted">
+                      {EVENT_TYPE_REGISTRY[e.format].icon} {EVENT_TYPE_REGISTRY[e.format].label}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={myEventStatusVariant(e.status, e.moderationStatus)} />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={`/admin/content/${e.id}`}
+                          className="rounded-app-sm px-2 py-1 text-xs font-semibold text-admin-primaryHover hover:bg-admin-card2 hover:underline"
+                        >
+                          Управление
+                        </a>
+                        <a
+                          href={`/admin/system/events/edit/${e.id}`}
+                          className="rounded-app-sm px-2 py-1 text-xs font-semibold text-night-text hover:bg-admin-card2 hover:underline"
+                        >
+                          Редактировать
+                        </a>
+                        <EventDeleteButton eventId={e.id} title={e.title} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:hidden">
+            {events.map((e) => (
+              <div key={e.id} className="rounded-app-sm border border-admin-border bg-admin-card p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <a href={`/admin/system/events/edit/${e.id}`} className="font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                    {e.title || "Без названия"}
+                  </a>
+                  <EventDeleteButton eventId={e.id} title={e.title} />
+                </div>
+                <p className="m-0 mt-1 text-xs text-admin-muted">
+                  {EVENT_TYPE_REGISTRY[e.format].icon} {EVENT_TYPE_REGISTRY[e.format].label}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={myEventStatusVariant(e.status, e.moderationStatus)} />
+                  <a href={`/admin/content/${e.id}`} className="text-xs font-semibold text-admin-primaryHover hover:underline">
+                    Управление →
+                  </a>
+                  <a href={`/admin/system/events/edit/${e.id}`} className="text-xs font-semibold text-night-text hover:underline">
+                    Редактировать →
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
