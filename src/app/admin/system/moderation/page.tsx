@@ -21,6 +21,7 @@ export default async function ModerationOverviewPage() {
     { href: "/admin/system/moderation/events", label: t.moderation.events, value: queue.pendingEvents },
     { href: "/admin/system/moderation/schools", label: t.moderation.schoolClaims, value: queue.pendingClaims },
     { href: "/admin/system/moderation/organizer-requests", label: "Заявки организаторов", value: queue.pendingOrganizerRequests },
+    { href: "/admin/system/moderation/event-suggestions", label: "Предложения событий", value: queue.pendingEventSuggestions },
     { href: "/admin/system/moderation/reviews", label: t.moderation.reviews, value: queue.newReviews },
   ];
 

@@ -89,6 +89,22 @@ const TEMPLATES = [
     defaultPriority: "IMPORTANT" as const,
     supportedChannels: ["IN_APP", "EMAIL"] as const,
   },
+  {
+    key: "EVENT_SUGGESTION_APPROVED",
+    titleTemplate: "Предложение принято",
+    bodyTemplate: "Ваше предложение «{{title}}» одобрено — мы посмотрим на это событие",
+    deepLinkTemplate: "/profile",
+    defaultPriority: "INFO" as const,
+    supportedChannels: ["IN_APP", "EMAIL"] as const,
+  },
+  {
+    key: "EVENT_SUGGESTION_REJECTED",
+    titleTemplate: "Предложение отклонено",
+    bodyTemplate: "Ваше предложение «{{title}}» отклонено",
+    deepLinkTemplate: "/profile",
+    defaultPriority: "INFO" as const,
+    supportedChannels: ["IN_APP", "EMAIL"] as const,
+  },
 ];
 
 async function main() {

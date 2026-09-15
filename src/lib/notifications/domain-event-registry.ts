@@ -103,6 +103,21 @@ export type DomainEventPayloadMap = {
     title: string;
     directUserId: string;
   };
+  // §7 ТЗ (Event Suggestions) — решение админа по предложению события от
+  // обычного пользователя. DIRECT, получатель — сам предложивший
+  // (EventSuggestion.suggestedById). Нет eventSlug/deepLink на само событие —
+  // approve не создаёт Event автоматически (см. review.ts), деплинк ведёт на
+  // /profile, где заявитель видит статус своих предложений.
+  EVENT_SUGGESTION_APPROVED: {
+    entityId: string; // EventSuggestion.id
+    title: string;
+    directUserId: string;
+  };
+  EVENT_SUGGESTION_REJECTED: {
+    entityId: string;
+    title: string;
+    directUserId: string;
+  };
 };
 
 export type DomainEventKey = keyof DomainEventPayloadMap;
@@ -151,5 +166,17 @@ export const DOMAIN_EVENT_REGISTRY: Record<DomainEventKey, DomainEventConfig> = 
     defaultPriority: "IMPORTANT",
     audienceKind: "DIRECT",
     entityType: "EVENT",
+  },
+  EVENT_SUGGESTION_APPROVED: {
+    templateKey: "EVENT_SUGGESTION_APPROVED",
+    defaultPriority: "INFO",
+    audienceKind: "DIRECT",
+    entityType: "EVENT_SUGGESTION",
+  },
+  EVENT_SUGGESTION_REJECTED: {
+    templateKey: "EVENT_SUGGESTION_REJECTED",
+    defaultPriority: "INFO",
+    audienceKind: "DIRECT",
+    entityType: "EVENT_SUGGESTION",
   },
 };

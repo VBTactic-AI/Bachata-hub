@@ -12,6 +12,7 @@ import { getCompetitorStatistics } from "@/server/statistics/competitor-statisti
 import { getAudienceAwardsForDancer } from "@/server/statistics/audience-vote-statistics";
 import { isNoShow } from "@/server/competition/no-show";
 import { getMyAccessRequests } from "@/server/access-requests/queries";
+import { getMyEventSuggestions } from "@/server/event-suggestions/queries";
 import { getActor } from "@/server/rbac/actor";
 import { getAdminSectionAccess, hasAnyAdminAccess } from "@/lib/admin-access";
 import { isAdmin } from "@/lib/auth";
@@ -26,10 +27,11 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [dancer, cities, myAccessRequests, actor] = await Promise.all([
+  const [dancer, cities, myAccessRequests, mySuggestions, actor] = await Promise.all([
     getDancerByUserId(user.id),
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     getMyAccessRequests(user.id),
+    getMyEventSuggestions(user.id),
     getActor(),
   ]);
 
@@ -69,6 +71,18 @@ export default async function ProfilePage() {
     </Link>
   );
 
+  // §7 ТЗ (Event Suggestions) — вход в /suggest-event, тот же принцип, что и
+  // ссылка выше: текст меняется, если уже что-то предлагали. Видна и
+  // ADMIN — предложить событие может кто угодно, это не про права доступа.
+  const suggestEventBlock = (
+    <Link
+      href="/suggest-event"
+      className="self-start rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"
+    >
+      💡 {mySuggestions.length > 0 ? "Мои предложения событий" : "Предложить событие"}
+    </Link>
+  );
+
   // У служебных аккаунтов (админ/модератор/школа) профиля танцора может не
   // быть — это не ошибка (см. seed.ts), но молча кидать на главную без
   // объяснения — плохой UX. Профиль появится сам собой, как только аккаунт
@@ -81,6 +95,7 @@ export default async function ProfilePage() {
         <p className="text-sm text-night-muted">{t.dancer.noProfileForThisAccount}</p>
         {adminPanelButton}
         {accessRequestBlock}
+        {suggestEventBlock}
       </div>
     );
   }
@@ -141,7 +156,10 @@ export default async function ProfilePage() {
         </Link>
       </div>
 
-      {accessRequestBlock}
+      <div className="flex flex-wrap gap-2">
+        {accessRequestBlock}
+        {suggestEventBlock}
+      </div>
 
       <DancerProfileView dancer={dancer} editable audienceAwards={audienceAwards} />
 

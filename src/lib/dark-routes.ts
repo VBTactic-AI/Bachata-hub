@@ -13,6 +13,9 @@ export const DARK_ROUTE_PREFIXES = [
   "/admin",
   "/rating",
   "/become-organizer",
+  // §7 ТЗ (Event Suggestions) — тот же тёмный раздел, что и /become-organizer
+  // (аналогичная лёгкая форма от обычного пользователя).
+  "/suggest-event",
   // Notification Center (Notification & Subscription Engine, Phase 8) —
   // тот же тёмный раздел, что и /profile, откуда на неё ведёт колокольчик.
   "/notifications",

@@ -105,6 +105,8 @@ model User {
   accessRequestsReviewed  AccessRequest[] @relation("AccessRequestReviewer")
   eventTeamMemberships    EventTeamMember[] @relation("EventTeamMemberUser")
   eventTeamInvitesSent    EventTeamMember[] @relation("EventTeamMemberInvitedBy")
+  eventSuggestionsSubmitted EventSuggestion[] @relation("EventSuggestionSubmitter")
+  eventSuggestionsReviewed  EventSuggestion[] @relation("EventSuggestionReviewer")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -178,6 +180,7 @@ model City {
   schoolBranches SchoolBranch[]
   competitions   Competition[]
   accessRequests AccessRequest[]
+  eventSuggestions EventSuggestion[]
 
   @@index([countryId])
 }
@@ -341,6 +344,50 @@ model AccessRequest {
   @@index([userId])
   @@index([status])
   @@index([type, status])
+}
+
+// ---------------------------------------------------------------------------
+// EventSuggestion — §7 Events Engine ТЗ: обычный (не верифицированный)
+// пользователь не может создать Event сам (canCreateEvents() гейтит это), но
+// может ПРЕДЛОЖИТЬ идею события админу — лёгкая заявка-подсказка "я слышал
+// про такое, посмотрите", не полноценный Event Wizard. НЕ путать с
+// AccessRequest (это заявка на ПРАВО создавать события вообще, а не на
+// конкретное событие) — они решают разные проблемы, см. docs/00_DECISIONS.md
+// (там же зафиксировано, что более раннее предположение "AccessRequest уже
+// закрывает §7" было ошибочным).
+enum EventSuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model EventSuggestion {
+  id            String  @id @default(cuid())
+  suggestedById String
+  suggestedBy   User    @relation("EventSuggestionSubmitter", fields: [suggestedById], references: [id])
+  title         String
+  description   String
+  cityId        String?
+  city          City?   @relation(fields: [cityId], references: [id])
+  // Предполагаемая дата — часто неизвестна точно тому, кто просто слышал про
+  // событие, поэтому необязательна (в отличие от Event.startsAt, который
+  // обязателен для настоящего Event).
+  proposedDate DateTime?
+  // Ссылка-доказательство (пост в соцсети/сайт) — необязательна, но обычно
+  // единственный способ админу быстро проверить, что это реально существует.
+  link String?
+
+  status        EventSuggestionStatus @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?                 @relation("EventSuggestionReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  reviewComment String? // причина отказа — видна заявителю через уведомление
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([suggestedById])
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------
@@ -879,6 +926,7 @@ enum ModerationEntity {
   ACCESS_REQUEST
   SCHOOL
   USER
+  EVENT_SUGGESTION
   // Legacy — SchoolClaim удалена из схемы (2026-09-14, заменена AccessRequest),
   // но в БД физически остались исторические строки ModerationLog с этим
   // значением (DROP TABLE/enum-rebuild заблокирован классификатором

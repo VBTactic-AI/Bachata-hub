@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
-import { ShieldIcon, ChatIcon, BuildingIcon, AlertIcon, PeopleIcon, GridIcon, DatabaseIcon, BellIcon } from "@/components/admin/icons";
+import { ShieldIcon, ChatIcon, BuildingIcon, AlertIcon, PeopleIcon, GridIcon, DatabaseIcon, BellIcon, BulbIcon } from "@/components/admin/icons";
 import { HomeIcon, TrophyIcon, HeartIcon, BookIcon, ContentIcon, SchoolIcon, NavLink, NavGroup, SidebarFrame, type NavItem } from "@/components/admin/nav-shared";
 
 // Мониторинг — только SUPER_ADMIN (гейт проверяет layout.tsx выше). Помимо
@@ -23,6 +23,12 @@ function moderationItems(): NavItem[] {
   return [
     { href: "/admin/system/moderation", label: "Обзор", icon: <GridIcon />, match: (p) => p === "/admin/system/moderation" },
     { href: "/admin/system/moderation/events", label: t.moderation.events, icon: <AlertIcon />, match: (p) => p.startsWith("/admin/system/moderation/events") },
+    {
+      href: "/admin/system/moderation/event-suggestions",
+      label: "Предложения событий",
+      icon: <BulbIcon />,
+      match: (p) => p.startsWith("/admin/system/moderation/event-suggestions"),
+    },
     { href: "/admin/system/moderation/reviews", label: t.moderation.reviews, icon: <ChatIcon />, match: (p) => p.startsWith("/admin/system/moderation/reviews") },
     { href: "/admin/system/moderation/schools", label: t.moderation.schoolClaims, icon: <BuildingIcon />, match: (p) => p.startsWith("/admin/system/moderation/schools") },
     {
