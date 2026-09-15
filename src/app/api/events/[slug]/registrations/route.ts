@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import type { EventRegistration } from "@prisma/client";
 import {
   registerForEvent,
   cancelMyRegistration,
@@ -9,7 +10,11 @@ import {
   RegistrationClosedError,
   RegistrationForbiddenError,
   RegistrationNotFoundError,
+  type RegistrationSortBy,
 } from "@/server/events/registration-service";
+
+const STATUS_VALUES: EventRegistration["status"][] = ["REGISTERED", "CONFIRMED", "WAITLIST", "CANCELLED", "REJECTED", "NO_SHOW"];
+const SORT_VALUES: RegistrationSortBy[] = ["date", "name", "paid"];
 
 // Events Engine, этап 2 — регистрация на обычное событие. НЕ путать с
 // /api/registrations/** (Competition Engine, Слой 3) — другой домен, другая
@@ -86,9 +91,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   const url = new URL(req.url);
   const page = Number(url.searchParams.get("page") ?? "1") || 1;
   const pageSize = Number(url.searchParams.get("pageSize") ?? "50") || 50;
+  const status = STATUS_VALUES.find((s) => s === url.searchParams.get("status"));
+  const paidParam = url.searchParams.get("paid");
+  const isPaid = paidParam === "yes" ? true : paidParam === "no" ? false : undefined;
+  const sortBy = SORT_VALUES.find((s) => s === url.searchParams.get("sort"));
+  const sortDir = url.searchParams.get("dir") === "desc" ? "desc" : "asc";
 
   try {
-    const result = await listEventRegistrations(event.id, user, { page, pageSize });
+    const result = await listEventRegistrations(event.id, user, {
+      page,
+      pageSize,
+      search: url.searchParams.get("q") ?? undefined,
+      status,
+      isPaid,
+      sortBy,
+      sortDir,
+    });
     return NextResponse.json(result);
   } catch (e) {
     return errorResponse(e);

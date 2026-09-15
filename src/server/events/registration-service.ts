@@ -179,24 +179,65 @@ export async function cancelMyRegistration(eventId: string, user: User): Promise
 
 export type RegistrationListPage = {
   items: (EventRegistration & { dancer: { id: string; displayName: string; avatarUrl: string | null } })[];
+  // Сколько строк подходит под ТЕКУЩИЙ фильтр — используется для пагинации
+  // ("страница X из Y найденного"), меняется вместе с search/status/isPaid.
   total: number;
+  // Сколько всего регистраций у события БЕЗ фильтра — для KPI-карточек
+  // (Stage 3, тот же принцип, что и StatCard в ParticipantsPanel Competition
+  // Engine). Специально отдельное поле от `total`: иначе при активном
+  // фильтре карточки "Оплачено"/"Не оплачено" (paidCount/waitlistCount тоже
+  // считаются по всему событию) давали бы бессмысленную арифметику вида
+  // "не оплачено: -37".
+  totalOverall: number;
   page: number;
   pageSize: number;
-  // Сводка по ВСЕМ регистрациям события (не только текущей странице) — для
-  // KPI-карточек в UI (Stage 3), тот же принцип, что и StatCard в
-  // ParticipantsPanel Competition Engine.
   paidCount: number;
   waitlistCount: number;
 };
 
+export type RegistrationSortBy = "date" | "name" | "paid";
+export type RegistrationSortDir = "asc" | "desc";
+
+// §11 ТЗ (Event CRM) — поиск/фильтры/сортировка. Один и тот же where/orderBy
+// нужен и постраничному списку (listEventRegistrations), и экспорту
+// (registration-export.ts) — вынесено сюда, чтобы не разойтись.
+export type RegistrationFilter = {
+  search?: string; // подстрока имени участника, без учёта регистра
+  status?: EventRegistration["status"];
+  isPaid?: boolean;
+  sortBy?: RegistrationSortBy;
+  sortDir?: RegistrationSortDir;
+};
+
+export function buildRegistrationWhere(eventId: string, filter: RegistrationFilter): Prisma.EventRegistrationWhereInput {
+  const search = filter.search?.trim();
+  return {
+    eventId,
+    ...(search ? { dancer: { displayName: { contains: search, mode: "insensitive" } } } : {}),
+    ...(filter.status ? { status: filter.status } : {}),
+    ...(filter.isPaid !== undefined ? { isPaid: filter.isPaid } : {}),
+  };
+}
+
+export function buildRegistrationOrderBy(
+  sortBy: RegistrationSortBy = "date",
+  sortDir: RegistrationSortDir = "asc"
+): Prisma.EventRegistrationOrderByWithRelationInput {
+  if (sortBy === "name") return { dancer: { displayName: sortDir } };
+  if (sortBy === "paid") return { isPaid: sortDir };
+  return { createdAt: sortDir };
+}
+
 // Список участников — владелец события, ADMIN или член команды события
 // (Events Engine, этап 5 — EventTeamMember, любая роль), server-side
 // пагинация с самого начала (CLAUDE.md §24 Performance — не грузить весь
-// список одним запросом).
+// список одним запросом). Поиск/фильтры/сортировка — тоже server-side (§11
+// ТЗ), а не client-side по уже загруженной странице: иначе фильтр видел бы
+// только текущие 50 строк, а не всех участников события.
 export async function listEventRegistrations(
   eventId: string,
   user: User,
-  { page = 1, pageSize = 50 }: { page?: number; pageSize?: number } = {}
+  { page = 1, pageSize = 50, ...filter }: { page?: number; pageSize?: number } & RegistrationFilter = {}
 ): Promise<RegistrationListPage> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new RegistrationNotFoundError();
@@ -204,21 +245,23 @@ export async function listEventRegistrations(
 
   const safePageSize = Math.min(Math.max(pageSize, 1), 100);
   const safePage = Math.max(page, 1);
+  const where = buildRegistrationWhere(eventId, filter);
 
-  const [items, total, paidCount, waitlistCount] = await Promise.all([
+  const [items, total, totalOverall, paidCount, waitlistCount] = await Promise.all([
     prisma.eventRegistration.findMany({
-      where: { eventId },
+      where,
       include: { dancer: { select: { id: true, displayName: true, avatarUrl: true } } },
-      orderBy: { createdAt: "asc" },
+      orderBy: buildRegistrationOrderBy(filter.sortBy, filter.sortDir),
       skip: (safePage - 1) * safePageSize,
       take: safePageSize,
     }),
+    prisma.eventRegistration.count({ where }),
     prisma.eventRegistration.count({ where: { eventId } }),
     prisma.eventRegistration.count({ where: { eventId, isPaid: true } }),
     prisma.eventRegistration.count({ where: { eventId, status: "WAITLIST" } }),
   ]);
 
-  return { items, total, page: safePage, pageSize: safePageSize, paidCount, waitlistCount };
+  return { items, total, totalOverall, page: safePage, pageSize: safePageSize, paidCount, waitlistCount };
 }
 
 // Организатор/ADMIN меняет статус и/или отметку оплаты — плейн-обновление

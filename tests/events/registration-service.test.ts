@@ -293,7 +293,15 @@ describe("listEventRegistrations() — owner-check", () => {
 
     const result = await listEventRegistrations("event1", user, { page: 1, pageSize: 50 });
 
-    expect(result).toEqual({ items: [{ id: "reg1" }], total: 1, page: 1, pageSize: 50, paidCount: 1, waitlistCount: 1 });
+    expect(result).toEqual({
+      items: [{ id: "reg1" }],
+      total: 1,
+      totalOverall: 1,
+      page: 1,
+      pageSize: 50,
+      paidCount: 1,
+      waitlistCount: 1,
+    });
   });
 
   it("ADMIN видит чужое событие", async () => {
@@ -337,6 +345,79 @@ describe("listEventRegistrations() — owner-check", () => {
       await listEventRegistrations("event1", user, { page: 3, pageSize: 50 });
 
       expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 100, take: 50 }));
+    });
+  });
+
+  // §11 ТЗ (Event CRM) — поиск/фильтры/сортировка server-side.
+  describe("search/status/isPaid/sort (§11 Event CRM)", () => {
+    beforeEach(() => {
+      eventFindUnique.mockResolvedValue({ ...registrableEvent, createdById: "user1" });
+    });
+
+    it("search — фильтрует по подстроке имени танцора, без учёта регистра", async () => {
+      await listEventRegistrations("event1", user, { search: "Иван" });
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ dancer: { displayName: { contains: "Иван", mode: "insensitive" } } }),
+        })
+      );
+      // total и totalOverall — два РАЗНЫХ count(), первый с тем же where,
+      // второй только по eventId (см. комментарий у RegistrationListPage).
+      expect(topLevelEventRegistrationCount).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ dancer: expect.anything() }) })
+      );
+      expect(topLevelEventRegistrationCount).toHaveBeenCalledWith({ where: { eventId: "event1" } });
+    });
+
+    it("пустой/пробельный search не добавляет условие в where", async () => {
+      await listEventRegistrations("event1", user, { search: "   " });
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event1" } }));
+    });
+
+    it("status — фильтрует по конкретному статусу", async () => {
+      await listEventRegistrations("event1", user, { status: "WAITLIST" });
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { eventId: "event1", status: "WAITLIST" } })
+      );
+    });
+
+    it("isPaid — фильтрует по отметке оплаты, включая false (не путается с undefined)", async () => {
+      await listEventRegistrations("event1", user, { isPaid: false });
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { eventId: "event1", isPaid: false } })
+      );
+    });
+
+    it("totalOverall/paidCount/waitlistCount игнорируют текущий фильтр (весь event)", async () => {
+      await listEventRegistrations("event1", user, { status: "REJECTED" });
+
+      // paidCount и waitlistCount всегда считаются по eventId, без status/isPaid/search
+      expect(topLevelEventRegistrationCount).toHaveBeenCalledWith({ where: { eventId: "event1", isPaid: true } });
+      expect(topLevelEventRegistrationCount).toHaveBeenCalledWith({ where: { eventId: "event1", status: "WAITLIST" } });
+    });
+
+    it("sortBy=name — сортирует по displayName связанного танцора", async () => {
+      await listEventRegistrations("event1", user, { sortBy: "name", sortDir: "desc" });
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { dancer: { displayName: "desc" } } })
+      );
+    });
+
+    it("sortBy=paid — сортирует по isPaid", async () => {
+      await listEventRegistrations("event1", user, { sortBy: "paid", sortDir: "asc" });
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { isPaid: "asc" } }));
+    });
+
+    it("без sortBy — поведение по умолчанию не изменилось (createdAt asc)", async () => {
+      await listEventRegistrations("event1", user, {});
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { createdAt: "asc" } }));
     });
   });
 });
