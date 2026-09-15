@@ -519,6 +519,7 @@ model Event {
   // СЛОЙ 2 — платный доступ к событию (см. комментарий у Pass ниже).
   passes                 Pass[]
   tickets                Ticket[]
+  promoCodes             PromoCode[]
   media                  EventMedia[]
   // Обратная связь для EventProgramItem.linkedEvent ниже — отдельное
   // "настоящее" событие (party/workshop/contest) со своей публичной
@@ -610,12 +611,8 @@ model EventPriceOption {
 // ---------------------------------------------------------------------------
 // Pass — СЛОЙ 2, предложение организатора о платном/бесплатном доступе к
 // событию (2026-09-16). Pass ≠ конкретный билет пользователя: Pass
-// описывает ПРЕДЛОЖЕНИЕ ("Full Pass, 120 BYN, 50 мест"), а будущий Ticket —
-// уже выданный/купленный конкретным человеком экземпляр. Модель — только
-// инвентарь/цена/окно продаж, без самой продажи (оплата/QR/промокоды —
-// сознательно вне рамок этой задачи, поля под них не заводятся заранее по
-// принципу "минимально необходимая модель без преждевременного усложнения",
-// добавятся вместе с реальной фичей).
+// описывает ПРЕДЛОЖЕНИЕ ("Full Pass, 120 BYN, 50 мест"), а Ticket —
+// уже выданный/купленный конкретным человеком экземпляр.
 //
 // НЕ дублирует EventPriceOption выше — та модель ЧИСТО отображаемая строка
 // ("Цена: 15 BYN" на публичной странице, без запасов/статуса/продаж) и
@@ -623,6 +620,27 @@ model EventPriceOption {
 // сущность с жизненным циклом и лимитом мест, две модели сосуществуют
 // (EventPriceOption никуда не делась, ничего в ней не меняется).
 //
+// Расширение архитектуры (2026-09-16, по прямому запросу пользователя,
+// "заложить архитектуру сразу, даже если UI первого релиза уже её не
+// использует полностью"):
+// - PassPriceTier — несколько ценовых периодов (Early Bird/Regular/Late) с
+//   собственным окном действия; Pass.price/currency остаются "базовой"
+//   ценой (используется, если ни один тир не активен на текущий момент).
+// - PassAccessGrant — к каким конкретным пунктам программы (EventProgramItem
+//   фестиваля) или сессиям мастер-класса (MasterclassSession) даёт доступ
+//   этот Pass. Пустой список = доступ ко ВСЕМУ (Full Pass не обязан
+//   перечислять каждый пункт программы вручную) — ограничение начинается
+//   только когда появляется хотя бы одна запись.
+// - PromoCode/PromoCodePass — коды скидок, привязанные к событию и
+//   опционально к конкретным Pass (пусто = применим к любому Pass события).
+//   Сама механика расчёта скидки при выдаче билета — сознательно ВНЕ рамок
+//   этой правки (прямые слова пользователя: "не обязательно делать прямо
+//   сейчас"), заведена только схема + Ticket.promoCodeId/discountAmount для
+//   аудита, когда механика появится.
+// - Pass.imageUrl/allowMultipleEntry — обложка предложения и будущее правило
+//   повторного входа (сама проверка на входе — часть будущего QR-check-in,
+//   ещё не реализована, см. исходный комментарий про "минимально
+//   необходимая модель").
 enum PassType {
   FULL_PASS
   PARTY_PASS
@@ -644,33 +662,136 @@ enum PassStatus {
 }
 
 model Pass {
-  id           String     @id @default(cuid())
-  eventId      String
-  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  name         String
-  description  String?
-  type         PassType
+  id                 String     @id @default(cuid())
+  eventId            String
+  event              Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name               String
+  description        String?
+  type               PassType
   // null — цена ещё не назначена организатором либо type = FREE_PASS.
-  price        Decimal?   @db.Decimal(10, 2)
-  currency     String? // свободный текст, как EventPriceOption.currency ("BYN", "EUR", ...)
-  quantity     Int? // null — без ограничения мест
+  price              Decimal?   @db.Decimal(10, 2)
+  currency           String? // свободный текст, как EventPriceOption.currency ("BYN", "EUR", ...)
+  quantity           Int? // null — без ограничения мест
   // Пишется только будущим Ticket-сервисом при продаже/выдаче билета —
   // сегодня ни один код это поле не меняет, стартует с 0.
-  soldQuantity Int        @default(0)
-  salesStartAt DateTime?
-  salesEndAt   DateTime?
-  validFrom    DateTime?
-  validUntil   DateTime?
-  status       PassStatus @default(DRAFT)
-  sortOrder    Int        @default(0)
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  soldQuantity       Int        @default(0)
+  salesStartAt       DateTime?
+  salesEndAt         DateTime?
+  validFrom          DateTime?
+  validUntil         DateTime?
+  status             PassStatus @default(DRAFT)
+  sortOrder          Int        @default(0)
+  isActive           Boolean    @default(true)
+  // Обложка предложения (публичная страница/попап покупки) — обычная
+  // ссылка, как Event.photoUrl, без отдельной галереи (Pass — не Event,
+  // одно изображение достаточно).
+  imageUrl           String?
+  // Будущий door check-in (Ticket пока не имеет полей check-in вообще —
+  // см. комментарий у Ticket) — Full Pass обычно можно проходить много раз
+  // за фестиваль, Party Pass на конкретный вечер — как правило один раз.
+  // Поле заведено заранее, реальная проверка появится вместе с check-in.
+  allowMultipleEntry Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
-  tickets Ticket[]
+  tickets         Ticket[]
+  priceTiers      PassPriceTier[]
+  accessGrants    PassAccessGrant[]
+  promoCodePasses PromoCodePass[]
 
   @@index([eventId])
   @@index([eventId, status])
+}
+
+// Ценовые периоды (Early Bird/Regular/Late) — Pass.price/currency остаются
+// "базовой" ценой на случай, если ни один период не активен на текущий
+// момент (например, ещё не создан ни один тир — обратная совместимость с
+// уже существующими Pass). getCurrentPassPrice() в pass-service.ts находит
+// тир, чьё [validFrom, validUntil) содержит "сейчас" (последний подходящий
+// по sortOrder, если пересеклись) — валидация непересечения окон одного
+// Pass делается в сервисе при создании/редактировании тира, не на уровне БД.
+model PassPriceTier {
+  id         String    @id @default(cuid())
+  passId     String
+  pass       Pass      @relation(fields: [passId], references: [id], onDelete: Cascade)
+  label      String // "Early Bird", "Regular", "Late"
+  price      Decimal   @db.Decimal(10, 2)
+  currency   String?
+  validFrom  DateTime? // null — действует с самого начала продаж
+  validUntil DateTime? // null — действует до конца продаж (или до начала следующего тира)
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([passId])
+}
+
+// К каким конкретным пунктам программы фестиваля/сессиям мастер-класса даёт
+// доступ этот Pass. У строки заполнено РОВНО ОДНО из двух полей (проверяется
+// в сервисе + CHECK-constraint на уровне БД, см. migration.sql — Prisma DSL
+// не поддерживает декларативный CHECK). ПУСТОЙ список грантов у Pass = без
+// ограничений (доступ ко всему) — именно так проще всего смоделировать
+// "Full Pass", не перечисляя вручную каждый текущий и будущий пункт
+// программы.
+model PassAccessGrant {
+  id                   String              @id @default(cuid())
+  passId               String
+  pass                 Pass                @relation(fields: [passId], references: [id], onDelete: Cascade)
+  programItemId        String?
+  programItem          EventProgramItem?   @relation(fields: [programItemId], references: [id], onDelete: Cascade)
+  masterclassSessionId String?
+  masterclassSession   MasterclassSession? @relation(fields: [masterclassSessionId], references: [id], onDelete: Cascade)
+  createdAt            DateTime            @default(now())
+
+  @@unique([passId, programItemId])
+  @@unique([passId, masterclassSessionId])
+  @@index([passId])
+  @@index([programItemId])
+  @@index([masterclassSessionId])
+}
+
+// Промокоды (2026-09-16) — привязаны к событию, опционально сужены до
+// конкретных Pass через PromoCodePass (пусто = применим к любому Pass этого
+// события). Сама механика применения скидки при выдаче билета сознательно
+// НЕ реализована в этой правке (прямые слова пользователя — "не обязательно
+// делать прямо сейчас"), только схема + Ticket.promoCodeId/discountAmount
+// для будущего аудита применённых скидок.
+enum PromoDiscountType {
+  PERCENT
+  FIXED_AMOUNT
+}
+
+model PromoCode {
+  id            String            @id @default(cuid())
+  eventId       String
+  event         Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  code          String
+  discountType  PromoDiscountType
+  discountValue Decimal           @db.Decimal(10, 2) // 20 (=20%) или 50 (=50 BYN), в зависимости от discountType
+  validFrom     DateTime?
+  validUntil    DateTime?
+  maxUses       Int? // null — без ограничения
+  usedCount     Int               @default(0)
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  passes  PromoCodePass[]
+  tickets Ticket[]
+
+  @@unique([eventId, code])
+  @@index([eventId])
+}
+
+model PromoCodePass {
+  id          String    @id @default(cuid())
+  promoCodeId String
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  passId      String
+  pass        Pass      @relation(fields: [passId], references: [id], onDelete: Cascade)
+
+  @@unique([promoCodeId, passId])
+  @@index([passId])
 }
 
 // ---------------------------------------------------------------------------
@@ -741,6 +862,14 @@ model Ticket {
   issuedById String?
   issuedBy   User?   @relation("TicketIssuedBy", fields: [issuedById], references: [id])
 
+  // Промокод, применённый к этому билету — только для аудита (2026-09-16),
+  // сама механика расчёта скидки ещё не реализована (см. комментарий у
+  // PromoCode). discountAmount — снимок суммы скидки на момент выдачи, той
+  // же природы, что и price/currency выше.
+  promoCodeId    String?
+  promoCode      PromoCode? @relation(fields: [promoCodeId], references: [id])
+  discountAmount Decimal?   @db.Decimal(10, 2)
+
   issuedAt    DateTime  @default(now())
   cancelledAt DateTime?
   createdAt   DateTime  @default(now())
@@ -800,6 +929,10 @@ model MasterclassSession {
   capacity             Int?
   order                Int                @default(0)
 
+  // СЛОЙ 2 — Pass может ограничивать доступ конкретно этой сессией
+  // мастер-класса (см. комментарий у PassAccessGrant).
+  passAccessGrants PassAccessGrant[]
+
   @@index([masterclassDetailsId])
   @@index([teacherId])
 }
@@ -851,6 +984,10 @@ model EventProgramItem {
   linkedEventId     String?
   linkedEvent       Event?                  @relation("ProgramItemLinkedEvent", fields: [linkedEventId], references: [id])
   order             Int                     @default(0)
+
+  // СЛОЙ 2 — Pass может ограничивать доступ конкретно этим пунктом
+  // программы (см. комментарий у PassAccessGrant).
+  passAccessGrants PassAccessGrant[]
 
   @@index([festivalDetailsId])
   @@index([teacherId])

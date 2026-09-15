@@ -1,12 +1,14 @@
-import type { Pass, PassStatus, PassType, User } from "@prisma/client";
+import type { Pass, PassAccessGrant, PassPriceTier, PassStatus, PassType, PromoCode, PromoDiscountType, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isOwnerOrAdmin } from "./access";
+import { hasEventAccess, isOwnerOrAdmin } from "./access";
 import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Ticket Engine — Pass CRUD (2026-09-16). Управлять предложениями доступа
-// (создавать/редактировать/менять статус) может только владелец события или
-// ADMIN — тот же принцип, что и в team-service.ts (цены/инвентарь — не менее
-// чувствительная зона, чем состав команды события).
+// (создавать/редактировать/менять статус/ценовые периоды/доступ/промокоды)
+// может только владелец события или ADMIN — тот же принцип, что и в
+// team-service.ts (цены/инвентарь — не менее чувствительная зона, чем состав
+// команды события). Читать список Pass может любой член команды (hasEventAccess)
+// — им это нужно, чтобы выдавать билеты (см. ticket-service.ts).
 
 export class PassValidationError extends Error {
   constructor(
@@ -30,10 +32,24 @@ async function requireOwnerOrAdminEvent(eventId: string, user: User) {
   return event;
 }
 
+async function requireEventAccessForEvent(eventId: string, user: User) {
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event) throw new RegistrationNotFoundError();
+  if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
+  return event;
+}
+
 async function requireOwnerOrAdminPass(passId: string, user: User) {
   const pass = await prisma.pass.findUnique({ where: { id: passId }, include: { event: true } });
   if (!pass) throw new RegistrationNotFoundError();
   if (!isOwnerOrAdmin(pass.event, user)) throw new RegistrationForbiddenError("forbidden");
+  return pass;
+}
+
+async function requireEventAccessForPass(passId: string, user: User) {
+  const pass = await prisma.pass.findUnique({ where: { id: passId }, include: { event: true } });
+  if (!pass) throw new RegistrationNotFoundError();
+  if (!(await hasEventAccess(pass.event, user))) throw new RegistrationForbiddenError("forbidden");
   return pass;
 }
 
@@ -49,6 +65,8 @@ export type PassInput = {
   validFrom?: Date | null;
   validUntil?: Date | null;
   sortOrder?: number;
+  imageUrl?: string | null;
+  allowMultipleEntry?: boolean;
 };
 
 function validateCommon(input: Partial<PassInput>): void {
@@ -87,6 +105,8 @@ export async function createPass(eventId: string, user: User, input: PassInput):
       validFrom: input.validFrom ?? null,
       validUntil: input.validUntil ?? null,
       sortOrder: input.sortOrder ?? 0,
+      imageUrl: input.imageUrl?.trim() || null,
+      allowMultipleEntry: input.allowMultipleEntry ?? true,
     },
   });
 }
@@ -119,6 +139,8 @@ export async function updatePass(passId: string, user: User, patch: Partial<Pass
       ...(patch.validFrom !== undefined ? { validFrom: patch.validFrom } : {}),
       ...(patch.validUntil !== undefined ? { validUntil: patch.validUntil } : {}),
       ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
+      ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl?.trim() || null } : {}),
+      ...(patch.allowMultipleEntry !== undefined ? { allowMultipleEntry: patch.allowMultipleEntry } : {}),
     },
   });
 }
@@ -165,14 +187,231 @@ function withAvailability(pass: Pass): PassWithAvailability {
 }
 
 export async function listPassesForEvent(eventId: string, user: User): Promise<PassWithAvailability[]> {
-  await requireOwnerOrAdminEvent(eventId, user);
+  await requireEventAccessForEvent(eventId, user);
   const passes = await prisma.pass.findMany({ where: { eventId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
   const synced = await Promise.all(passes.map((p) => syncPassLifecycle(p)));
   return synced.map(withAvailability);
 }
 
 export async function getPass(passId: string, user: User): Promise<PassWithAvailability> {
-  const pass = await requireOwnerOrAdminPass(passId, user);
+  const pass = await requireEventAccessForPass(passId, user);
   const synced = await syncPassLifecycle(pass);
   return withAvailability(synced);
+}
+
+// ---------------------------------------------------------------------------
+// PassPriceTier — ценовые периоды (Early Bird/Regular/Late), 2026-09-16
+// ---------------------------------------------------------------------------
+
+export type PriceTierInput = {
+  label: string;
+  price: number;
+  currency?: string | null;
+  validFrom?: Date | null;
+  validUntil?: Date | null;
+  sortOrder?: number;
+};
+
+function validateTierInput(input: Partial<PriceTierInput>): void {
+  if (input.label !== undefined && !input.label.trim()) {
+    throw new PassValidationError("tier_label_required", "Название ценового периода обязательно.");
+  }
+  if (input.price != null && input.price < 0) {
+    throw new PassValidationError("invalid_tier_price", "Цена периода не может быть отрицательной.");
+  }
+  if (input.validFrom && input.validUntil && input.validFrom > input.validUntil) {
+    throw new PassValidationError("invalid_tier_window", "Начало периода не может быть позже его окончания.");
+  }
+}
+
+function tiersOverlap(a: { validFrom: Date | null; validUntil: Date | null }, b: { validFrom: Date | null; validUntil: Date | null }): boolean {
+  const aStart = a.validFrom ?? new Date(-8640000000000000); // -∞
+  const aEnd = a.validUntil ?? new Date(8640000000000000); // +∞
+  const bStart = b.validFrom ?? new Date(-8640000000000000);
+  const bEnd = b.validUntil ?? new Date(8640000000000000);
+  return aStart < bEnd && bStart < aEnd;
+}
+
+export async function createPriceTier(passId: string, user: User, input: PriceTierInput): Promise<PassPriceTier> {
+  const pass = await requireOwnerOrAdminPass(passId, user);
+  validateTierInput(input);
+
+  const existing = await prisma.passPriceTier.findMany({ where: { passId } });
+  const window = { validFrom: input.validFrom ?? null, validUntil: input.validUntil ?? null };
+  if (existing.some((t) => tiersOverlap(t, window))) {
+    throw new PassValidationError("tier_window_overlap", "Окно этого ценового периода пересекается с уже существующим.");
+  }
+
+  return prisma.passPriceTier.create({
+    data: {
+      passId: pass.id,
+      label: input.label.trim(),
+      price: input.price,
+      currency: input.currency?.trim() || null,
+      validFrom: input.validFrom ?? null,
+      validUntil: input.validUntil ?? null,
+      sortOrder: input.sortOrder ?? 0,
+    },
+  });
+}
+
+export async function updatePriceTier(tierId: string, user: User, patch: Partial<PriceTierInput>): Promise<PassPriceTier> {
+  const tier = await prisma.passPriceTier.findUnique({ where: { id: tierId }, include: { pass: { include: { event: true } } } });
+  if (!tier) throw new RegistrationNotFoundError();
+  if (!isOwnerOrAdmin(tier.pass.event, user)) throw new RegistrationForbiddenError("forbidden");
+  validateTierInput(patch);
+
+  const merged = {
+    validFrom: patch.validFrom !== undefined ? patch.validFrom : tier.validFrom,
+    validUntil: patch.validUntil !== undefined ? patch.validUntil : tier.validUntil,
+  };
+  const others = await prisma.passPriceTier.findMany({ where: { passId: tier.passId, id: { not: tierId } } });
+  if (others.some((t) => tiersOverlap(t, merged))) {
+    throw new PassValidationError("tier_window_overlap", "Окно этого ценового периода пересекается с уже существующим.");
+  }
+
+  return prisma.passPriceTier.update({
+    where: { id: tierId },
+    data: {
+      ...(patch.label !== undefined ? { label: patch.label.trim() } : {}),
+      ...(patch.price !== undefined ? { price: patch.price } : {}),
+      ...(patch.currency !== undefined ? { currency: patch.currency?.trim() || null } : {}),
+      ...(patch.validFrom !== undefined ? { validFrom: patch.validFrom } : {}),
+      ...(patch.validUntil !== undefined ? { validUntil: patch.validUntil } : {}),
+      ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
+    },
+  });
+}
+
+export async function deletePriceTier(tierId: string, user: User): Promise<void> {
+  const tier = await prisma.passPriceTier.findUnique({ where: { id: tierId }, include: { pass: { include: { event: true } } } });
+  if (!tier) throw new RegistrationNotFoundError();
+  if (!isOwnerOrAdmin(tier.pass.event, user)) throw new RegistrationForbiddenError("forbidden");
+  await prisma.passPriceTier.delete({ where: { id: tierId } });
+}
+
+export async function listPriceTiers(passId: string, user: User): Promise<PassPriceTier[]> {
+  await requireEventAccessForPass(passId, user);
+  return prisma.passPriceTier.findMany({ where: { passId }, orderBy: { sortOrder: "asc" } });
+}
+
+// Текущая действующая цена — тир, чьё окно содержит "сейчас" (последний
+// подходящий по sortOrder, на случай если валидация выше почему-то
+// пропустила пересечение), иначе базовая Pass.price/currency. Чистая
+// функция — используется и в ticket-service.ts (issueTicket), и тестируется
+// отдельно без БД.
+export function getCurrentPassPrice(
+  pass: { price: unknown; currency: string | null },
+  tiers: PassPriceTier[],
+  now: Date = new Date()
+): { price: number | null; currency: string | null } {
+  const active = tiers
+    .filter((t) => (t.validFrom == null || t.validFrom <= now) && (t.validUntil == null || t.validUntil >= now))
+    .sort((a, b) => b.sortOrder - a.sortOrder);
+  if (active.length > 0) {
+    return { price: Number(active[0].price), currency: active[0].currency };
+  }
+  return { price: pass.price == null ? null : Number(pass.price), currency: pass.currency };
+}
+
+// ---------------------------------------------------------------------------
+// PassAccessGrant — к каким пунктам программы/сессиям даёт доступ Pass
+// ---------------------------------------------------------------------------
+
+export type AccessGrantTarget = { programItemId: string } | { masterclassSessionId: string };
+
+// Полная замена списка грантов (проще, чем diff — Pass редактируется не
+// каждую секунду, набор грантов обычно маленький). Пустой массив = Pass без
+// ограничений (доступ ко всему), см. комментарий у модели.
+export async function setAccessGrants(passId: string, user: User, targets: AccessGrantTarget[]): Promise<PassAccessGrant[]> {
+  const pass = await requireOwnerOrAdminPass(passId, user);
+
+  return prisma.$transaction(async (tx) => {
+    await tx.passAccessGrant.deleteMany({ where: { passId: pass.id } });
+    if (targets.length === 0) return [];
+    await tx.passAccessGrant.createMany({
+      data: targets.map((t) => ({
+        passId: pass.id,
+        programItemId: "programItemId" in t ? t.programItemId : null,
+        masterclassSessionId: "masterclassSessionId" in t ? t.masterclassSessionId : null,
+      })),
+    });
+    return tx.passAccessGrant.findMany({ where: { passId: pass.id } });
+  });
+}
+
+export async function listAccessGrants(passId: string, user: User): Promise<PassAccessGrant[]> {
+  await requireEventAccessForPass(passId, user);
+  return prisma.passAccessGrant.findMany({
+    where: { passId },
+    include: { programItem: { select: { id: true, title: true } }, masterclassSession: { select: { id: true, title: true } } },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PromoCode — только схема + CRUD (2026-09-16). Расчёт скидки при выдаче
+// билета сознательно не реализован — прямые слова пользователя: "не
+// обязательно делать прямо сейчас".
+// ---------------------------------------------------------------------------
+
+export type PromoCodeInput = {
+  code: string;
+  discountType: PromoDiscountType;
+  discountValue: number;
+  validFrom?: Date | null;
+  validUntil?: Date | null;
+  maxUses?: number | null;
+  passIds?: string[]; // пусто/не передано — применим к любому Pass события
+};
+
+function validatePromoCodeInput(input: Partial<PromoCodeInput>): void {
+  if (input.code !== undefined && !input.code.trim()) {
+    throw new PassValidationError("promo_code_required", "Код обязателен.");
+  }
+  if (input.discountValue != null && input.discountValue <= 0) {
+    throw new PassValidationError("invalid_discount_value", "Размер скидки должен быть положительным.");
+  }
+  if (input.discountType === "PERCENT" && input.discountValue != null && input.discountValue > 100) {
+    throw new PassValidationError("invalid_discount_percent", "Скидка в процентах не может быть больше 100.");
+  }
+  if (input.validFrom && input.validUntil && input.validFrom > input.validUntil) {
+    throw new PassValidationError("invalid_promo_window", "Начало действия кода не может быть позже окончания.");
+  }
+}
+
+export async function createPromoCode(eventId: string, user: User, input: PromoCodeInput): Promise<PromoCode> {
+  await requireOwnerOrAdminEvent(eventId, user);
+  validatePromoCodeInput(input);
+
+  try {
+    return await prisma.promoCode.create({
+      data: {
+        eventId,
+        code: input.code.trim().toUpperCase(),
+        discountType: input.discountType,
+        discountValue: input.discountValue,
+        validFrom: input.validFrom ?? null,
+        validUntil: input.validUntil ?? null,
+        maxUses: input.maxUses ?? null,
+        ...(input.passIds && input.passIds.length > 0 ? { passes: { create: input.passIds.map((passId) => ({ passId })) } } : {}),
+      },
+    });
+  } catch (err) {
+    if ((err as { code?: string })?.code === "P2002") {
+      throw new PassValidationError("duplicate_promo_code", "Такой код уже используется в этом событии.");
+    }
+    throw err;
+  }
+}
+
+export async function listPromoCodesForEvent(eventId: string, user: User): Promise<PromoCode[]> {
+  await requireOwnerOrAdminEvent(eventId, user);
+  return prisma.promoCode.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, include: { passes: true } });
+}
+
+export async function setPromoCodeActive(promoCodeId: string, user: User, isActive: boolean): Promise<PromoCode> {
+  const code = await prisma.promoCode.findUnique({ where: { id: promoCodeId }, include: { event: true } });
+  if (!code) throw new RegistrationNotFoundError();
+  if (!isOwnerOrAdmin(code.event, user)) throw new RegistrationForbiddenError("forbidden");
+  return prisma.promoCode.update({ where: { id: promoCodeId }, data: { isActive } });
 }

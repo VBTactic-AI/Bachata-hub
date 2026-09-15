@@ -2,6 +2,7 @@ import type { Prisma, Ticket, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess } from "./access";
 import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { getCurrentPassPrice } from "./pass-service";
 
 // Ticket Engine (2026-09-16) — билет доступа (с Pass или без, см. комментарий
 // у модели Ticket в schema.prisma). Управление билетами/оплатой — тот же
@@ -60,10 +61,27 @@ function assertOnSale(pass: { status: string; salesStartAt: Date | null; salesEn
 // получил деньги в момент выдачи. Бесплатный Pass (price = null/0) ВСЕГДА
 // выдаётся оплаченным, независимо от markPaid (ТЗ: "бесплатный билет не
 // создаёт ошибочный payment").
+// Танцор должен сначала обычным образом зарегистрироваться на событие
+// (EventRegistration) — и только потом ему можно продать/выдать Pass (прямое
+// решение пользователя, 2026-09-16): так "Участники" остаются полной
+// картиной — любой держатель Pass всегда виден в общем списке участников,
+// без отдельных "невидимых" покупателей.
+const REGISTERED_STATUSES_FOR_PASS_PURCHASE = ["REGISTERED", "CONFIRMED", "WAITLIST"] as const;
+
 export async function issueTicket(passId: string, dancerId: string, user: User, options: { markPaid?: boolean } = {}): Promise<Ticket> {
-  await requireAccessForPass(passId, user);
+  const pass = await requireAccessForPass(passId, user);
   const dancer = await prisma.dancer.findUnique({ where: { id: dancerId } });
   if (!dancer) throw new RegistrationNotFoundError();
+
+  const registration = await prisma.eventRegistration.findUnique({
+    where: { eventId_dancerId: { eventId: pass.eventId, dancerId } },
+  });
+  if (!registration || !REGISTERED_STATUSES_FOR_PASS_PURCHASE.includes(registration.status as (typeof REGISTERED_STATUSES_FOR_PASS_PURCHASE)[number])) {
+    throw new TicketValidationError(
+      "not_registered",
+      "Танцор должен сначала зарегистрироваться на событие — только потом можно выдать ему Pass."
+    );
+  }
 
   return prisma.$transaction(async (tx) => {
     // Advisory lock на Pass — та же защита от гонки, что и в
@@ -76,11 +94,13 @@ export async function issueTicket(passId: string, dancerId: string, user: User, 
     if (current.quantity != null && current.soldQuantity >= current.quantity) {
       throw new TicketValidationError("sold_out", "Свободных мест по этому Pass больше нет.");
     }
-    // Цена читается ВНУТРИ транзакции (current, не более раннее чтение выше)
-    // — иначе организатор мог бы поменять Pass.price между проверкой доступа
-    // и созданием Ticket, и бесплатный/платный статус определился бы по
-    // устаревшим данным.
-    const isFree = current.price == null || Number(current.price) === 0;
+    // Цена читается ВНУТРИ транзакции (current + актуальные ценовые тиры, не
+    // более раннее чтение выше) — иначе организатор мог бы поменять цену
+    // между проверкой доступа и созданием Ticket, и снимок цены/бесплатный
+    // статус определились бы по устаревшим данным.
+    const tiers = await tx.passPriceTier.findMany({ where: { passId } });
+    const effective = getCurrentPassPrice(current, tiers);
+    const isFree = effective.price == null || effective.price === 0;
 
     let ticket: Ticket;
     try {
@@ -89,8 +109,8 @@ export async function issueTicket(passId: string, dancerId: string, user: User, 
           eventId: current.eventId,
           passId,
           dancerId,
-          price: current.price,
-          currency: current.currency,
+          price: effective.price,
+          currency: effective.currency,
           isPaid: isFree || Boolean(options.markPaid),
           paidAt: isFree || options.markPaid ? new Date() : null,
           issuedById: user.id,

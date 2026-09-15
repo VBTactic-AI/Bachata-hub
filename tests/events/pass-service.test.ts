@@ -1,15 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { User } from "@prisma/client";
 
-// Ticket Engine (2026-09-16) — Pass CRUD. Управление Pass — только владелец
-// события/ADMIN (isOwnerOrAdmin, синхронная проверка, без запроса к
-// eventTeamMember) — тот же принцип, что и team-service.ts.
+// Ticket Engine (2026-09-16) — Pass CRUD. Создание/редактирование/статус —
+// только владелец события/ADMIN (isOwnerOrAdmin, синхронная проверка), тот
+// же принцип, что и team-service.ts. Чтение списка (listPassesForEvent/
+// getPass) — hasEventAccess (любой член команды, им нужно видеть Pass, чтобы
+// выдавать билеты), поэтому eventTeamMember тоже замокан.
 
 const eventFindUnique = vi.fn();
 const passFindUnique = vi.fn();
 const passFindMany = vi.fn();
 const passCreate = vi.fn();
 const passUpdate = vi.fn();
+const eventTeamMemberFindUnique = vi.fn();
+const passPriceTierFindMany = vi.fn();
+const passPriceTierCreate = vi.fn();
+const passPriceTierUpdate = vi.fn();
+const passPriceTierDelete = vi.fn();
+const passPriceTierFindUnique = vi.fn();
+const passAccessGrantFindMany = vi.fn();
+const txPassAccessGrantDeleteMany = vi.fn();
+const txPassAccessGrantCreateMany = vi.fn();
+const txPassAccessGrantFindMany = vi.fn();
+const promoCodeCreate = vi.fn();
+const promoCodeFindMany = vi.fn();
+const promoCodeFindUnique = vi.fn();
+const promoCodeUpdate = vi.fn();
+
+const fakeAccessGrantTx = {
+  passAccessGrant: { deleteMany: txPassAccessGrantDeleteMany, createMany: txPassAccessGrantCreateMany, findMany: txPassAccessGrantFindMany },
+};
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -20,11 +40,42 @@ vi.mock("@/lib/prisma", () => ({
       create: (...a: unknown[]) => passCreate(...a),
       update: (...a: unknown[]) => passUpdate(...a),
     },
+    passPriceTier: {
+      findMany: (...a: unknown[]) => passPriceTierFindMany(...a),
+      create: (...a: unknown[]) => passPriceTierCreate(...a),
+      update: (...a: unknown[]) => passPriceTierUpdate(...a),
+      delete: (...a: unknown[]) => passPriceTierDelete(...a),
+      findUnique: (...a: unknown[]) => passPriceTierFindUnique(...a),
+    },
+    passAccessGrant: { findMany: (...a: unknown[]) => passAccessGrantFindMany(...a) },
+    promoCode: {
+      create: (...a: unknown[]) => promoCodeCreate(...a),
+      findMany: (...a: unknown[]) => promoCodeFindMany(...a),
+      findUnique: (...a: unknown[]) => promoCodeFindUnique(...a),
+      update: (...a: unknown[]) => promoCodeUpdate(...a),
+    },
+    eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
+    $transaction: (fn: (tx: typeof fakeAccessGrantTx) => unknown) => fn(fakeAccessGrantTx),
   },
 }));
 
-const { createPass, updatePass, setPassStatus, archivePass, syncPassLifecycle, listPassesForEvent, getPass, PassValidationError } =
-  await import("@/server/events/pass-service");
+const {
+  createPass,
+  updatePass,
+  setPassStatus,
+  archivePass,
+  syncPassLifecycle,
+  listPassesForEvent,
+  getPass,
+  createPriceTier,
+  updatePriceTier,
+  deletePriceTier,
+  getCurrentPassPrice,
+  setAccessGrants,
+  createPromoCode,
+  setPromoCodeActive,
+  PassValidationError,
+} = await import("@/server/events/pass-service");
 const { RegistrationForbiddenError, RegistrationNotFoundError } = await import("@/server/events/registration-service");
 
 function makeUser(overrides: Partial<User> = {}): User {
@@ -63,6 +114,8 @@ const basePass = {
   status: "DRAFT" as const,
   sortOrder: 0,
   isActive: true,
+  imageUrl: null,
+  allowMultipleEntry: true,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -73,6 +126,20 @@ beforeEach(() => {
   passFindMany.mockReset().mockResolvedValue([]);
   passCreate.mockReset().mockImplementation((args) => Promise.resolve({ ...basePass, ...args.data }));
   passUpdate.mockReset().mockImplementation((args) => Promise.resolve({ ...basePass, ...args.data }));
+  eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
+  passPriceTierFindMany.mockReset().mockResolvedValue([]);
+  passPriceTierCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "tier1", ...args.data }));
+  passPriceTierUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: "tier1", ...args.data }));
+  passPriceTierDelete.mockReset().mockResolvedValue({});
+  passPriceTierFindUnique.mockReset();
+  passAccessGrantFindMany.mockReset().mockResolvedValue([]);
+  txPassAccessGrantDeleteMany.mockReset().mockResolvedValue({ count: 0 });
+  txPassAccessGrantCreateMany.mockReset().mockResolvedValue({ count: 0 });
+  txPassAccessGrantFindMany.mockReset().mockResolvedValue([]);
+  promoCodeCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "promo1", ...args.data }));
+  promoCodeFindMany.mockReset().mockResolvedValue([]);
+  promoCodeFindUnique.mockReset();
+  promoCodeUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: "promo1", ...args.data }));
 });
 
 describe("createPass()", () => {
@@ -270,5 +337,156 @@ describe("listPassesForEvent() / getPass() — availableQuantity", () => {
     passFindUnique.mockResolvedValue({ ...basePass, quantity: 5, soldQuantity: 5, event });
     const result = await getPass("pass1", owner);
     expect(result.availableQuantity).toBe(0);
+  });
+});
+
+describe("createPriceTier() / updatePriceTier() / getCurrentPassPrice() — Early Bird (2026-09-16)", () => {
+  it("пустое название периода — PassValidationError", async () => {
+    await expect(createPriceTier("pass1", owner, { label: "  ", price: 100 })).rejects.toBeInstanceOf(PassValidationError);
+  });
+
+  it("отрицательная цена периода — PassValidationError", async () => {
+    await expect(createPriceTier("pass1", owner, { label: "Early Bird", price: -10 })).rejects.toBeInstanceOf(PassValidationError);
+  });
+
+  it("окно нового периода пересекается с уже существующим — PassValidationError", async () => {
+    passPriceTierFindMany.mockResolvedValue([
+      { id: "existing", validFrom: new Date("2026-06-01"), validUntil: new Date("2026-06-10") },
+    ]);
+    await expect(
+      createPriceTier("pass1", owner, { label: "Regular", price: 150, validFrom: new Date("2026-06-05"), validUntil: new Date("2026-06-15") })
+    ).rejects.toBeInstanceOf(PassValidationError);
+    expect(passPriceTierCreate).not.toHaveBeenCalled();
+  });
+
+  it("окна не пересекаются (соседние периоды) — создаётся без ошибки", async () => {
+    passPriceTierFindMany.mockResolvedValue([{ id: "existing", validFrom: null, validUntil: new Date("2026-06-01") }]);
+    await createPriceTier("pass1", owner, { label: "Regular", price: 150, validFrom: new Date("2026-06-01"), validUntil: null });
+    expect(passPriceTierCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ passId: "pass1", label: "Regular", price: 150 }),
+    });
+  });
+
+  it("updatePriceTier() — чужое событие — RegistrationForbiddenError", async () => {
+    passPriceTierFindUnique.mockResolvedValue({
+      id: "tier1",
+      passId: "pass1",
+      validFrom: null,
+      validUntil: null,
+      pass: { event: { id: "event1", createdById: "someone-else" } },
+    });
+    await expect(updatePriceTier("tier1", owner, { price: 90 })).rejects.toBeInstanceOf(RegistrationForbiddenError);
+  });
+
+  it("deletePriceTier() — удаляет тир (чистая конфигурация, не история продаж)", async () => {
+    passPriceTierFindUnique.mockResolvedValue({
+      id: "tier1",
+      passId: "pass1",
+      pass: { event },
+    });
+    await deletePriceTier("tier1", owner);
+    expect(passPriceTierDelete).toHaveBeenCalledWith({ where: { id: "tier1" } });
+  });
+
+  it("getCurrentPassPrice() — нет тиров — базовая цена Pass", () => {
+    const result = getCurrentPassPrice({ price: 100, currency: "BYN" }, []);
+    expect(result).toEqual({ price: 100, currency: "BYN" });
+  });
+
+  it("getCurrentPassPrice() — активный тир (сейчас внутри окна) перекрывает базовую цену", () => {
+    const now = new Date("2026-06-05");
+    const tiers = [
+      { id: "t1", sortOrder: 0, price: 100 as unknown as number, currency: "BYN", validFrom: new Date("2026-06-01"), validUntil: new Date("2026-06-10") },
+    ];
+    const result = getCurrentPassPrice({ price: 150, currency: "BYN" }, tiers as never, now);
+    expect(result).toEqual({ price: 100, currency: "BYN" });
+  });
+
+  it("getCurrentPassPrice() — тир вне окна (уже закончился) — базовая цена", () => {
+    const now = new Date("2026-07-01");
+    const tiers = [{ id: "t1", sortOrder: 0, price: 100 as unknown as number, currency: "BYN", validFrom: new Date("2026-06-01"), validUntil: new Date("2026-06-10") }];
+    const result = getCurrentPassPrice({ price: 150, currency: "BYN" }, tiers as never, now);
+    expect(result).toEqual({ price: 150, currency: "BYN" });
+  });
+
+  it("getCurrentPassPrice() — несколько кандидатов (не должно быть после валидации, но на всякий случай) — берёт больший sortOrder", () => {
+    const now = new Date("2026-06-05");
+    const tiers = [
+      { id: "t1", sortOrder: 0, price: 100 as unknown as number, currency: "BYN", validFrom: null, validUntil: null },
+      { id: "t2", sortOrder: 1, price: 130 as unknown as number, currency: "BYN", validFrom: null, validUntil: null },
+    ];
+    const result = getCurrentPassPrice({ price: 150, currency: "BYN" }, tiers as never, now);
+    expect(result).toEqual({ price: 130, currency: "BYN" });
+  });
+});
+
+describe("setAccessGrants() / listAccessGrants() — доступ к пунктам программы/сессиям (2026-09-16)", () => {
+  it("чужое событие — RegistrationForbiddenError, транзакция не запускается", async () => {
+    passFindUnique.mockResolvedValue({ ...basePass, event: { id: "event1", createdById: "someone-else" } });
+    await expect(setAccessGrants("pass1", owner, [{ programItemId: "item1" }])).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    expect(txPassAccessGrantDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("пустой список — полностью снимает ограничения (Pass = доступ ко всему)", async () => {
+    const result = await setAccessGrants("pass1", owner, []);
+    expect(txPassAccessGrantDeleteMany).toHaveBeenCalledWith({ where: { passId: "pass1" } });
+    expect(txPassAccessGrantCreateMany).not.toHaveBeenCalled();
+    expect(result).toEqual([]);
+  });
+
+  it("заменяет весь список грантов — сначала удаляет старые, потом создаёт новые", async () => {
+    await setAccessGrants("pass1", owner, [{ programItemId: "item1" }, { masterclassSessionId: "session1" }]);
+    expect(txPassAccessGrantDeleteMany).toHaveBeenCalledWith({ where: { passId: "pass1" } });
+    expect(txPassAccessGrantCreateMany).toHaveBeenCalledWith({
+      data: [
+        { passId: "pass1", programItemId: "item1", masterclassSessionId: null },
+        { passId: "pass1", programItemId: null, masterclassSessionId: "session1" },
+      ],
+    });
+  });
+});
+
+describe("createPromoCode() / setPromoCodeActive() — только схема + CRUD (2026-09-16)", () => {
+  it("пустой код — PassValidationError", async () => {
+    await expect(createPromoCode("event1", owner, { code: "  ", discountType: "PERCENT", discountValue: 20 })).rejects.toBeInstanceOf(
+      PassValidationError
+    );
+  });
+
+  it("скидка <= 0 — PassValidationError", async () => {
+    await expect(createPromoCode("event1", owner, { code: "X", discountType: "PERCENT", discountValue: 0 })).rejects.toBeInstanceOf(
+      PassValidationError
+    );
+  });
+
+  it("процентная скидка больше 100 — PassValidationError", async () => {
+    await expect(createPromoCode("event1", owner, { code: "X", discountType: "PERCENT", discountValue: 150 })).rejects.toBeInstanceOf(
+      PassValidationError
+    );
+  });
+
+  it("код приводится к верхнему регистру и триммится", async () => {
+    await createPromoCode("event1", owner, { code: " bachata20 ", discountType: "PERCENT", discountValue: 20 });
+    expect(promoCodeCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ code: "BACHATA20" }) });
+  });
+
+  it("дублирующийся код в том же событии (P2002) — PassValidationError('duplicate_promo_code')", async () => {
+    promoCodeCreate.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
+    await expect(createPromoCode("event1", owner, { code: "X", discountType: "FIXED_AMOUNT", discountValue: 50 })).rejects.toMatchObject({
+      code: "duplicate_promo_code",
+    });
+  });
+
+  it("чужое событие — RegistrationForbiddenError", async () => {
+    eventFindUnique.mockResolvedValue({ id: "event1", createdById: "someone-else" });
+    await expect(createPromoCode("event1", owner, { code: "X", discountType: "PERCENT", discountValue: 10 })).rejects.toBeInstanceOf(
+      RegistrationForbiddenError
+    );
+  });
+
+  it("setPromoCodeActive() — деактивирует код", async () => {
+    promoCodeFindUnique.mockResolvedValue({ id: "promo1", event });
+    await setPromoCodeActive("promo1", owner, false);
+    expect(promoCodeUpdate).toHaveBeenCalledWith({ where: { id: "promo1" }, data: { isActive: false } });
   });
 });

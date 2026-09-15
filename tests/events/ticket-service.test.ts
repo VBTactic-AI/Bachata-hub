@@ -19,11 +19,13 @@ const txPassUpdate = vi.fn();
 const txTicketCreate = vi.fn();
 const txTicketUpdate = vi.fn();
 const txTicketFindFirst = vi.fn();
+const txPassPriceTierFindMany = vi.fn();
 
 const fakeTx = {
   $executeRaw: executeRaw,
   pass: { findUniqueOrThrow: txPassFindUniqueOrThrow, update: txPassUpdate },
   ticket: { create: txTicketCreate, update: txTicketUpdate, findFirst: txTicketFindFirst },
+  passPriceTier: { findMany: txPassPriceTierFindMany },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -93,9 +95,13 @@ beforeEach(() => {
   dancerFindUnique.mockReset().mockResolvedValue({ id: "dancer1" });
   ticketFindUnique.mockReset();
   ticketFindMany.mockReset().mockResolvedValue([]);
-  eventRegistrationFindUnique.mockReset();
+  // По умолчанию танцор уже зарегистрирован на событие (issueTicket это
+  // требует, 2026-09-16) — тесты, которым конкретно нужен другой случай,
+  // переопределяют этот мок сами.
+  eventRegistrationFindUnique.mockReset().mockResolvedValue({ id: "reg1", eventId: "event1", dancerId: "dancer1", status: "REGISTERED" });
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
   executeRaw.mockClear();
+  txPassPriceTierFindMany.mockReset().mockResolvedValue([]);
   txPassFindUniqueOrThrow.mockReset().mockResolvedValue(activePass);
   txPassUpdate.mockReset().mockImplementation((args) => Promise.resolve({ ...activePass, ...args.data }));
   txTicketCreate.mockReset().mockResolvedValue({ id: "ticket1", passId: "pass1", dancerId: "dancer1", isPaid: false });
@@ -118,6 +124,30 @@ describe("issueTicket()", () => {
   it("Dancer не найден — RegistrationNotFoundError", async () => {
     dancerFindUnique.mockResolvedValue(null);
     await expect(issueTicket("pass1", "missing", owner)).rejects.toBeInstanceOf(RegistrationNotFoundError);
+  });
+
+  it("танцор ещё не регистрировался на событие (нет EventRegistration) — TicketValidationError('not_registered')", async () => {
+    eventRegistrationFindUnique.mockResolvedValue(null);
+    await expect(issueTicket("pass1", "dancer1", owner)).rejects.toMatchObject({ code: "not_registered" });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("регистрация CANCELLED (сам отменился) — Pass выдать нельзя, TicketValidationError('not_registered')", async () => {
+    eventRegistrationFindUnique.mockResolvedValue({ id: "reg1", eventId: "event1", dancerId: "dancer1", status: "CANCELLED" });
+    await expect(issueTicket("pass1", "dancer1", owner)).rejects.toMatchObject({ code: "not_registered" });
+  });
+
+  it("регистрация REJECTED — Pass выдать нельзя", async () => {
+    eventRegistrationFindUnique.mockResolvedValue({ id: "reg1", eventId: "event1", dancerId: "dancer1", status: "REJECTED" });
+    await expect(issueTicket("pass1", "dancer1", owner)).rejects.toMatchObject({ code: "not_registered" });
+  });
+
+  it("регистрация REGISTERED/CONFIRMED/WAITLIST — Pass выдать можно", async () => {
+    for (const status of ["REGISTERED", "CONFIRMED", "WAITLIST"]) {
+      txTicketCreate.mockReset().mockResolvedValue({ id: "ticket1" });
+      eventRegistrationFindUnique.mockResolvedValue({ id: "reg1", eventId: "event1", dancerId: "dancer1", status });
+      await expect(issueTicket("pass1", "dancer1", owner)).resolves.toBeDefined();
+    }
   });
 
   it("Pass не ACTIVE (например PAUSED) — TicketValidationError('pass_not_on_sale')", async () => {
