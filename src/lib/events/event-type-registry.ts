@@ -1,4 +1,21 @@
-import type { EventFormat, EventStatus, ModerationStatus } from "@prisma/client";
+import type { EventFormat, EventRegistrationStatus, EventStatus, ModerationStatus } from "@prisma/client";
+
+// Человекочитаемые подписи EventRegistrationStatus — раньше были продублированы
+// (2026-09-15, §19 Statistics обнаружило это при добавлении 4-го места
+// использования) в EventRegistrationStatusSelect.tsx, registration-export.ts
+// и registrations/page.tsx. Единый источник, остальные три — импортируют.
+export const EVENT_REGISTRATION_STATUS_LABELS: Record<EventRegistrationStatus, string> = {
+  REGISTERED: "Зарегистрирован",
+  CONFIRMED: "Подтверждён",
+  WAITLIST: "Лист ожидания",
+  CANCELLED: "Отменил сам",
+  REJECTED: "Отклонён",
+  NO_SHOW: "Не пришёл",
+};
+
+// Тот же список значений enum'а — раньше отдельно повторялся в трёх местах
+// (валидация ?status= в page.tsx и двух API-роутах) как литеральный массив.
+export const EVENT_REGISTRATION_STATUS_VALUES = Object.keys(EVENT_REGISTRATION_STATUS_LABELS) as EventRegistrationStatus[];
 
 // Человекочитаемый статус события (черновик/на модерации/опубликовано/
 // отклонено/архив) — раньше жила только внутри EventWizard.tsx ("use client"),

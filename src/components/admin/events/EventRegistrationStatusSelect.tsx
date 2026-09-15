@@ -4,15 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EventRegistrationStatus } from "@prisma/client";
 import { Select } from "@/components/ui/field";
-
-const STATUS_LABELS: Record<EventRegistrationStatus, string> = {
-  REGISTERED: "Зарегистрирован",
-  CONFIRMED: "Подтверждён",
-  WAITLIST: "Лист ожидания",
-  CANCELLED: "Отменил сам",
-  REJECTED: "Отклонён",
-  NO_SHOW: "Не пришёл",
-};
+import { EVENT_REGISTRATION_STATUS_LABELS as STATUS_LABELS } from "@/lib/events/event-type-registry";
 
 // 2026-09-15: CANCELLED убран из выбираемых организатором значений — это
 // статус, который проставляет только сам участник (см. guard в

@@ -1,5 +1,4 @@
 import { redirect, notFound } from "next/navigation";
-import type { EventRegistration } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -15,6 +14,10 @@ import { PeopleIcon, CardIcon, AlertIcon } from "@/components/admin/icons";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 import { formatDateTime } from "@/lib/format";
+import {
+  EVENT_REGISTRATION_STATUS_LABELS as STATUS_LABELS,
+  EVENT_REGISTRATION_STATUS_VALUES as STATUS_VALUES,
+} from "@/lib/events/event-type-registry";
 
 // Events Engine, этап 3 — вкладка "Участники" для обычного события (НЕ
 // путать с ParticipantsPanel Competition Engine — другой домен, другая
@@ -34,15 +37,6 @@ import { formatDateTime } from "@/lib/format";
 // users: обычная GET-форма, без JS, полностью индексируемо/работает без
 // клиентского рантайма.
 
-const STATUS_VALUES: EventRegistration["status"][] = ["REGISTERED", "CONFIRMED", "WAITLIST", "CANCELLED", "REJECTED", "NO_SHOW"];
-const STATUS_LABELS: Record<EventRegistration["status"], string> = {
-  REGISTERED: "Зарегистрирован",
-  CONFIRMED: "Подтверждён",
-  WAITLIST: "Лист ожидания",
-  CANCELLED: "Отменил сам",
-  REJECTED: "Отклонён",
-  NO_SHOW: "Не пришёл",
-};
 const SORT_VALUES: RegistrationSortBy[] = ["date", "name", "paid"];
 
 type SearchParams = { page?: string; q?: string; status?: string; paid?: string; sort?: string; dir?: string };

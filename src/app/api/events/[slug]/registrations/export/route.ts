@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import type { EventRegistration } from "@prisma/client";
 import { exportEventRegistrationsCsv } from "@/server/events/registration-export";
 import { RegistrationForbiddenError, RegistrationNotFoundError, type RegistrationSortBy } from "@/server/events/registration-service";
+import { EVENT_REGISTRATION_STATUS_VALUES as STATUS_VALUES } from "@/lib/events/event-type-registry";
 
 // §11 ТЗ (Event CRM) — экспорт CSV. Те же search/status/paid/sort, что и
 // вкладка "Участники" (та же валидация значений, что и в page.tsx — простые
 // ручные проверки по фиксированному набору значений, тот же приём, что и в
 // остальных read-only GET-роутах проекта, см. searchEvents()/public/events
 // /calendar; Zod здесь избыточен — ничего не мутирует).
-const STATUS_VALUES: EventRegistration["status"][] = ["REGISTERED", "CONFIRMED", "WAITLIST", "CANCELLED", "REJECTED", "NO_SHOW"];
 const SORT_VALUES: RegistrationSortBy[] = ["date", "name", "paid"];
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {

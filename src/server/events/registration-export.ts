@@ -2,6 +2,7 @@ import type { EventRegistration, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess } from "./access";
 import { formatDateTime } from "@/lib/format";
+import { EVENT_REGISTRATION_STATUS_LABELS as STATUS_LABELS } from "@/lib/events/event-type-registry";
 import {
   RegistrationForbiddenError,
   RegistrationNotFoundError,
@@ -19,15 +20,6 @@ import {
 // порядки меньше; если когда-нибудь понадобится больше, это осознанный
 // повод сделать постраничный экспорт, а не тихо отдавать миллион строк.
 const MAX_EXPORT_ROWS = 5000;
-
-const STATUS_LABELS: Record<EventRegistration["status"], string> = {
-  REGISTERED: "Зарегистрирован",
-  CONFIRMED: "Подтверждён",
-  WAITLIST: "Лист ожидания",
-  CANCELLED: "Отменил сам",
-  REJECTED: "Отклонён",
-  NO_SHOW: "Не пришёл",
-};
 
 // Разделитель — ";", не запятая: Excel в русской локали (где запятая —
 // десятичный разделитель) при обычном двойном клике по .csv ждёт именно ";"

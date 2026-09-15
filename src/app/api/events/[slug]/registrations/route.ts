@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import type { EventRegistration } from "@prisma/client";
 import {
   registerForEvent,
   cancelMyRegistration,
@@ -12,8 +11,8 @@ import {
   RegistrationNotFoundError,
   type RegistrationSortBy,
 } from "@/server/events/registration-service";
+import { EVENT_REGISTRATION_STATUS_VALUES as STATUS_VALUES } from "@/lib/events/event-type-registry";
 
-const STATUS_VALUES: EventRegistration["status"][] = ["REGISTERED", "CONFIRMED", "WAITLIST", "CANCELLED", "REJECTED", "NO_SHOW"];
 const SORT_VALUES: RegistrationSortBy[] = ["date", "name", "paid"];
 
 // Events Engine, этап 2 — регистрация на обычное событие. НЕ путать с
