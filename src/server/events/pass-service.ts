@@ -39,7 +39,9 @@ async function requireEventAccessForEvent(eventId: string, user: User) {
   return event;
 }
 
-async function requireOwnerOrAdminPass(passId: string, user: User) {
+// Экспортирован — переиспользуется pass-template-service.ts ("Сохранить как
+// шаблон" делает тот же owner-check, что и редактирование Pass).
+export async function requireOwnerOrAdminPass(passId: string, user: User) {
   const pass = await prisma.pass.findUnique({ where: { id: passId }, include: { event: true } });
   if (!pass) throw new RegistrationNotFoundError();
   if (!isOwnerOrAdmin(pass.event, user)) throw new RegistrationForbiddenError("forbidden");

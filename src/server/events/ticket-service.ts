@@ -304,3 +304,18 @@ export async function listTicketsForRegistration(registrationId: string, user: U
   const byDancer = await listTicketsByDancerForEvent(registration.eventId, [registration.dancerId]);
   return byDancer.get(registration.dancerId) ?? [];
 }
+
+// Выручка по Pass-билетам события (KPI вкладки "Билеты") — сумма цены
+// оплаченных, действующих (ISSUED) билетов, привязанных к Pass. Passless
+// билеты сюда не входят — у события без Pass нет вкладки "Билеты" вообще.
+export async function getEventPassRevenue(eventId: string, user: User): Promise<number> {
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event) throw new RegistrationNotFoundError();
+  if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
+
+  const paid = await prisma.ticket.findMany({
+    where: { eventId, passId: { not: null }, isPaid: true, status: "ISSUED" },
+    select: { price: true },
+  });
+  return paid.reduce((sum, t) => sum + (t.price == null ? 0 : Number(t.price)), 0);
+}

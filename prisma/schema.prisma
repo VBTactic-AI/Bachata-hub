@@ -109,6 +109,7 @@ model User {
   eventSuggestionsReviewed    EventSuggestion[]   @relation("EventSuggestionReviewer")
   eventRegistrationsCheckedIn EventRegistration[] @relation("EventRegistrationCheckedInBy")
   ticketsIssued               Ticket[]            @relation("TicketIssuedBy")
+  passTemplatesCreated        PassTemplate[]      @relation("PassTemplateCreatedBy")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -701,6 +702,35 @@ model Pass {
 
   @@index([eventId])
   @@index([eventId, status])
+}
+
+// Шаблон Pass (2026-09-16, по прямому запросу пользователя) — "полностью
+// заведённый Pass, сохранённый как шаблон": организатор один раз настраивает
+// типовой набор полей ("Full Pass", 120 BYN, обложка, разрешён повторный
+// вход) и переиспользует его при создании Pass на РАЗНЫХ событиях — не
+// перезабивая всё заново каждый раз. НЕ копирует даты (salesStartAt/
+// salesEndAt/validFrom/validUntil) — они всегда свои у каждого события,
+// шаблон хранит только содержательные поля. НЕ копирует quantity/inventory
+// динамику (soldQuantity, status) — это состояние конкретного Pass, не
+// шаблона. Владелец — конкретный User (createdById), как и Event —
+// шаблоны организатора видны только ему самому (+ ADMIN), общих шаблонов
+// между организаторами нет (не запрошено, не усложняем).
+model PassTemplate {
+  id                 String   @id @default(cuid())
+  createdById        String
+  createdBy          User     @relation("PassTemplateCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  name               String
+  description        String?
+  type               PassType
+  price              Decimal? @db.Decimal(10, 2)
+  currency           String?
+  quantity           Int?
+  imageUrl           String?
+  allowMultipleEntry Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([createdById])
 }
 
 // Ценовые периоды (Early Bird/Regular/Late) — Pass.price/currency остаются

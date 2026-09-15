@@ -266,6 +266,11 @@ export type RegistrationSortDir = "asc" | "desc";
 export type RegistrationFilter = {
   search?: string; // подстрока имени участника, без учёта регистра
   status?: EventRegistration["status"];
+  // Drill-down с вкладки "Билеты" (?pass=<passId>, 2026-09-16) — конкретный
+  // список dancerId уже вычислен вызывающей стороной (по Ticket.passId, см.
+  // registrations/page.tsx), здесь просто обычный `in`-фильтр по dancerId,
+  // без агрегации оплаты (та по-прежнему не выражается простым where).
+  dancerIds?: string[];
   sortBy?: RegistrationSortBy;
   sortDir?: RegistrationSortDir;
 };
@@ -276,6 +281,7 @@ export function buildRegistrationWhere(eventId: string, filter: RegistrationFilt
     eventId,
     ...(search ? { dancer: { displayName: { contains: search, mode: "insensitive" } } } : {}),
     ...(filter.status ? { status: filter.status } : {}),
+    ...(filter.dancerIds ? { dancerId: { in: filter.dancerIds } } : {}),
   };
 }
 

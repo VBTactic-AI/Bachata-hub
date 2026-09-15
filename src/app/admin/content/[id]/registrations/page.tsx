@@ -47,7 +47,7 @@ import {
 
 const SORT_VALUES: RegistrationSortBy[] = ["date", "name"];
 
-type SearchParams = { page?: string; q?: string; status?: string; sort?: string; dir?: string };
+type SearchParams = { page?: string; q?: string; status?: string; sort?: string; dir?: string; pass?: string };
 
 function buildHref(basePath: string, current: Record<string, string | undefined>, overrides: Record<string, string | undefined>) {
   const qs = new URLSearchParams();
@@ -81,9 +81,22 @@ export default async function EventRegistrationsPage({
   const sortBy = SORT_VALUES.find((s) => s === sp.sort);
   const sortDir: RegistrationSortDir = sp.dir === "desc" ? "desc" : "asc";
 
+  // Drill-down с вкладки "Билеты" (?pass=<passId>) — сужаем список до тех,
+  // кто купил именно этот Pass (см. комментарий у RegistrationFilter.dancerIds).
+  let passFilterName: string | null = null;
+  let dancerIds: string[] | undefined;
+  if (sp.pass) {
+    const pass = await prisma.pass.findUnique({ where: { id: sp.pass }, select: { name: true, eventId: true } });
+    if (pass && pass.eventId === event.id) {
+      passFilterName = pass.name;
+      const holders = await prisma.ticket.findMany({ where: { passId: sp.pass, status: "ISSUED" }, select: { dancerId: true } });
+      dancerIds = holders.map((h) => h.dancerId);
+    }
+  }
+
   let result;
   try {
-    result = await listEventRegistrations(event.id, user, { page, pageSize: 50, search: sp.q, status, sortBy, sortDir });
+    result = await listEventRegistrations(event.id, user, { page, pageSize: 50, search: sp.q, status, dancerIds, sortBy, sortDir });
   } catch (e) {
     if (e instanceof RegistrationForbiddenError) redirect("/admin/content");
     throw e;
@@ -115,7 +128,7 @@ export default async function EventRegistrationsPage({
   // "Текущие" параметры фильтра — переносятся во ВСЕ остальные ссылки
   // (пагинация, сортировка, экспорт), чтобы переключение одного не сбрасывало
   // остальные.
-  const currentFilterParams = { q: sp.q, status: sp.status, sort: sp.sort, dir: sp.dir };
+  const currentFilterParams = { q: sp.q, status: sp.status, sort: sp.sort, dir: sp.dir, pass: sp.pass };
   const exportHref = buildHref("/api/events/" + event.slug + "/registrations/export", currentFilterParams, {});
 
   function sortHref(field: RegistrationSortBy) {
@@ -127,7 +140,7 @@ export default async function EventRegistrationsPage({
     return <span aria-hidden="true">{sortDir === "asc" ? " ▲" : " ▼"}</span>;
   }
 
-  const hasActiveFilter = Boolean(sp.q || sp.status);
+  const hasActiveFilter = Boolean(sp.q || sp.status || passFilterName);
 
   const waitlistActive = sp.status === "WAITLIST";
   const totalActive = !hasActiveFilter;
@@ -142,6 +155,17 @@ export default async function EventRegistrationsPage({
           только специфичное для "Участников" предупреждение. */}
       {!event.registrationEnabled && (
         <p className="m-0 text-sm text-admin-muted">Регистрация на событии сейчас выключена в настройках мастера.</p>
+      )}
+
+      {passFilterName && (
+        <div className="flex items-center gap-2 rounded-app border border-admin-primary/40 bg-admin-primary/10 px-3 py-2 text-sm text-night-text">
+          <span>
+            Показаны купившие Pass «<strong>{passFilterName}</strong>»
+          </span>
+          <a href={buildHref(basePath, currentFilterParams, { pass: undefined, page: undefined })} className="ml-auto text-admin-muted hover:text-night-text hover:underline">
+            Сбросить фильтр
+          </a>
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -124,9 +124,14 @@ export default async function AdminContentPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Контент</h1>
-        <p className="m-0 mt-1 text-sm text-admin-muted">Создание событий — вечеринки, мастер-классы, соревнования.</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Контент</h1>
+          <p className="m-0 mt-1 text-sm text-admin-muted">Создание событий — вечеринки, мастер-классы, соревнования.</p>
+        </div>
+        <a href="/admin/content/pass-templates" className="text-sm text-admin-primaryHover hover:underline">
+          Шаблоны Pass →
+        </a>
       </div>
       <EventWizard
         cities={cities}
