@@ -68,6 +68,23 @@ describe("addTeamMember() — owner-check", () => {
     await expect(addTeamMember("event1", stranger, "new@example.com", "MANAGER")).rejects.toBeInstanceOf(RegistrationForbiddenError);
   });
 
+  // QA Test Gap #9 — раньше проверялся только "посторонний без какого-либо
+  // отношения к событию", не конкретно "уже существующий член команды (не
+  // владелец) пытается управлять составом команды". Управлять составом
+  // может ТОЛЬКО владелец/ADMIN — членство в команде само по себе такого
+  // права не даёт, даже роли MANAGER (см. комментарий у EventTeamMember в
+  // schema.prisma про минимальную RBAC-модель).
+  it("реальный член команды (роль MANAGER, не владелец) не может добавить ещё одного участника", async () => {
+    const teamMember = makeUser({ id: "existing-team-member" });
+    // requireOwnerOrAdmin() проверяет только createdById/ADMIN, не
+    // EventTeamMember — поэтому даже не нужно мокать eventTeamMember.findUnique
+    // отдельным "да, он в команде": важно, что это НЕ учитывается вообще.
+    await expect(addTeamMember("event1", teamMember, "another@example.com", "MANAGER")).rejects.toBeInstanceOf(
+      RegistrationForbiddenError
+    );
+    expect(eventTeamMemberUpsert).not.toHaveBeenCalled();
+  });
+
   it("ADMIN может добавить в чужое событие", async () => {
     const admin = makeUser({ id: "admin1", role: "ADMIN" });
     userFindUnique.mockResolvedValue({ id: "target1", email: "new@example.com" });
@@ -103,6 +120,13 @@ describe("removeTeamMember() — owner-check", () => {
   it("не владелец, не ADMIN — RegistrationForbiddenError", async () => {
     const stranger = makeUser({ id: "someone-else" });
     await expect(removeTeamMember("event1", stranger, "target1")).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    expect(eventTeamMemberDeleteMany).not.toHaveBeenCalled();
+  });
+
+  // QA Test Gap #9 (removeTeamMember)
+  it("реальный член команды (не владелец) не может убрать другого участника", async () => {
+    const teamMember = makeUser({ id: "existing-team-member" });
+    await expect(removeTeamMember("event1", teamMember, "target1")).rejects.toBeInstanceOf(RegistrationForbiddenError);
     expect(eventTeamMemberDeleteMany).not.toHaveBeenCalled();
   });
 

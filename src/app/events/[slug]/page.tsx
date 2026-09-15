@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { isEventDirectlyVisible } from "@/lib/events";
 import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n/dictionary";
 import { formatDateTime, formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
@@ -144,7 +145,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   // примитивный предпросмотр), до публикации/прохождения модерации. Все
   // остальные — только опубликованное и одобренное, как и раньше.
   const isOwnerOrAdmin = !!user && (user.id === event?.createdById || user.role === "ADMIN");
-  if (!event || (!(event.status === "PUBLISHED" && event.moderationStatus === "APPROVED") && !isOwnerOrAdmin)) {
+  if (!event || (!isEventDirectlyVisible(event) && !isOwnerOrAdmin)) {
     notFound();
   }
   const attendance = user
@@ -261,16 +262,14 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   // мастер-класса выше, только источник — EventProgramItem.
   //
   // QA BUG-007 — linkedEvent обнуляется здесь, если он сам не публично виден
-  // (тот же инвариант, что и гейт этой страницы выше: status=PUBLISHED И
-  // moderationStatus=APPROVED). Prisma не умеет фильтровать to-one реляцию
-  // прямо в include/select, поэтому проверка — здесь, до любого рендера, а
-  // не "на месте" в JSX (иначе легко забыть при следующей правке).
+  // (isEventDirectlyVisible — тот же гейт, что и у этой страницы выше, вынесен
+  // в src/lib/events.ts, чтобы не размножать один инвариант и чтобы его можно
+  // было протестировать без Prisma). Prisma не умеет фильтровать to-one
+  // реляцию прямо в include/select, поэтому проверка — здесь, до любого
+  // рендера, а не "на месте" в JSX (иначе легко забыть при следующей правке).
   const programItems = (event.festivalDetails?.programItems ?? []).map((p) => ({
     ...p,
-    linkedEvent:
-      p.linkedEvent && p.linkedEvent.status === "PUBLISHED" && p.linkedEvent.moderationStatus === "APPROVED"
-        ? p.linkedEvent
-        : null,
+    linkedEvent: p.linkedEvent && isEventDirectlyVisible(p.linkedEvent) ? p.linkedEvent : null,
   }));
   const programDays: [string, typeof programItems][] =
     programItems.length > 0
@@ -304,7 +303,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }}
       />
 
-      {isOwnerOrAdmin && !(event.status === "PUBLISHED" && event.moderationStatus === "APPROVED") && (
+      {isOwnerOrAdmin && !isEventDirectlyVisible(event) && (
         <div className="rounded-app border border-night-primary/40 bg-night-primary/10 px-4 py-2.5 text-sm text-night-text">
           {event.status === "DRAFT"
             ? "Черновик — видно только вам. Ещё не опубликовано."

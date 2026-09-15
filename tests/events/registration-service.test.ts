@@ -283,6 +283,43 @@ describe("listEventRegistrations() — owner-check", () => {
 
     await expect(listEventRegistrations("event1", admin)).resolves.toBeDefined();
   });
+
+  // QA Test Gap #15 — граница клэмпа pageSize на 100 не была проверена
+  describe("пагинация — клэмп pageSize (QA Test Gap #15)", () => {
+    it("pageSize > 100 обрезается до 100", async () => {
+      eventFindUnique.mockResolvedValue({ ...registrableEvent, createdById: "user1" });
+
+      const result = await listEventRegistrations("event1", user, { page: 1, pageSize: 500 });
+
+      expect(result.pageSize).toBe(100);
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 100, skip: 0 }));
+    });
+
+    it("pageSize <= 0 поднимается до 1", async () => {
+      eventFindUnique.mockResolvedValue({ ...registrableEvent, createdById: "user1" });
+
+      const result = await listEventRegistrations("event1", user, { page: 1, pageSize: 0 });
+
+      expect(result.pageSize).toBe(1);
+    });
+
+    it("page <= 0 поднимается до 1 (skip не уходит в отрицательные значения)", async () => {
+      eventFindUnique.mockResolvedValue({ ...registrableEvent, createdById: "user1" });
+
+      const result = await listEventRegistrations("event1", user, { page: -3, pageSize: 50 });
+
+      expect(result.page).toBe(1);
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0 }));
+    });
+
+    it("page=3, pageSize=50 — skip считается корректно (100)", async () => {
+      eventFindUnique.mockResolvedValue({ ...registrableEvent, createdById: "user1" });
+
+      await listEventRegistrations("event1", user, { page: 3, pageSize: 50 });
+
+      expect(eventRegistrationFindMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 100, take: 50 }));
+    });
+  });
 });
 
 describe("updateEventRegistration() — owner-check", () => {
@@ -294,6 +331,24 @@ describe("updateEventRegistration() — owner-check", () => {
     });
 
     await expect(updateEventRegistration("reg1", user, { isPaid: true })).rejects.toBeInstanceOf(RegistrationForbiddenError);
+  });
+
+  // QA Test Gap #10 — раньше проверялось только "чужой организатор", не
+  // конкретно "сам участник пытается выставить isPaid=true себе". Механика
+  // та же (hasEventAccess не пропускает никого, кроме владельца/ADMIN/team),
+  // но это отдельное, явно названное свойство безопасности — участник не
+  // может сам себя отметить оплаченным, минуя организатора.
+  it("сам участник (владелец регистрации, не события) не может выставить себе isPaid=true", async () => {
+    const participant = makeUser({ id: "participant1" });
+    topLevelEventRegistrationFindUnique.mockResolvedValue({
+      id: "reg1",
+      eventId: "event1",
+      dancerId: "dancer-of-participant1",
+      event: { ...registrableEvent, createdById: "organizer1" },
+    });
+
+    await expect(updateEventRegistration("reg1", participant, { isPaid: true })).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    expect(txEventRegistrationUpdate).not.toHaveBeenCalled();
   });
 
   it("владелец — переключает isPaid, ставит paidAt", async () => {

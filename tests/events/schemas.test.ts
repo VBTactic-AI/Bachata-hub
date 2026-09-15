@@ -71,3 +71,38 @@ describe("eventDraftSchema — endsAt > startsAt", () => {
     expect(result.success).toBe(true);
   });
 });
+
+// QA Test Gap #11 (остаток) — capacity/огромные строки уже были ограничены в
+// схеме (.positive()/.max()), но сама эта граница не была явно
+// протестирована — легко случайно ослабить при будущей правке незаметно.
+describe("eventDraftSchema — границы полей", () => {
+  const base = { status: "DRAFT" as const, format: "PARTY" as const };
+
+  it("отклоняет отрицательную вместимость", () => {
+    expect(eventDraftSchema.safeParse({ ...base, capacity: -5 }).success).toBe(false);
+  });
+
+  it("отклоняет нулевую вместимость (0 мест не имеет смысла)", () => {
+    expect(eventDraftSchema.safeParse({ ...base, capacity: 0 }).success).toBe(false);
+  });
+
+  it("принимает положительную вместимость", () => {
+    expect(eventDraftSchema.safeParse({ ...base, capacity: 50 }).success).toBe(true);
+  });
+
+  it("отклоняет title длиннее 160 символов", () => {
+    expect(eventDraftSchema.safeParse({ ...base, title: "a".repeat(161) }).success).toBe(false);
+  });
+
+  it("принимает title ровно 160 символов (граница)", () => {
+    expect(eventDraftSchema.safeParse({ ...base, title: "a".repeat(160) }).success).toBe(true);
+  });
+
+  it("отклоняет description длиннее 4000 символов", () => {
+    expect(eventDraftSchema.safeParse({ ...base, description: "a".repeat(4001) }).success).toBe(false);
+  });
+
+  it("отклоняет externalLinkUrl, не являющийся валидным URL", () => {
+    expect(eventDraftSchema.safeParse({ ...base, externalLinkUrl: "не url вообще" }).success).toBe(false);
+  });
+});

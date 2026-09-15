@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import type { Prisma, EventFormat, DanceLevel } from "@prisma/client";
+import type { Prisma, EventFormat, DanceLevel, EventStatus, ModerationStatus } from "@prisma/client";
 
 // formatEventCardPrice — в src/lib/event-price.ts, НЕ здесь: этот файл
 // импортирует Prisma (server-only), а цену форматирует и клиентский
@@ -36,6 +36,18 @@ export const activeEventFilter = (): Prisma.EventWhereInput => ({
   moderationStatus: "APPROVED",
   isArchived: false,
 });
+
+// QA Test Gap #13/BUG-007 (2026-09-15) — тот же гейт "можно открыть по прямому
+// URL", что и на /events/[slug] (там isOwnerOrAdmin допускает владельца/ADMIN
+// к ещё не одобренному, здесь — только сам факт видимости для третьих лиц,
+// БЕЗ isArchived: "просроченное" событие по прямой ссылке всё ещё открывается,
+// activeEventFilter() выше — для ЛЕНТ/календаря, это разные вопросы). Вынесено
+// в отдельную функцию, чтобы не размножать один и тот же булев инвариант по
+// файлу (был продублирован трижды в events/[slug]/page.tsx) и чтобы его
+// можно было протестировать без обращения к Prisma/БД.
+export function isEventDirectlyVisible(event: { status: EventStatus; moderationStatus: ModerationStatus }): boolean {
+  return event.status === "PUBLISHED" && event.moderationStatus === "APPROVED";
+}
 
 // month: 1-12 (человеческий номер месяца, не JS-индекс с нуля) — так его
 // удобнее передавать в URL/query-параметрах API и меньше риска ошибиться на
