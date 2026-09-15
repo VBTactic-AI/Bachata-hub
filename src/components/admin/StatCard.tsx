@@ -82,9 +82,11 @@ export function StatCard({
       return (
         <Link
           href={href}
+          aria-pressed={active}
           className={cn(
             cardVariants(),
-            "block w-full border-admin-border bg-admin-card no-underline transition-colors hover:border-admin-primary/60 hover:no-underline"
+            "block w-full border-admin-border bg-admin-card no-underline transition-colors hover:border-admin-primary/60 hover:no-underline",
+            active && "border-admin-primary ring-1 ring-admin-primary/40"
           )}
         >
           {body}

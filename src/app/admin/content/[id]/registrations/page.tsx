@@ -109,6 +109,23 @@ export default async function EventRegistrationsPage({
 
   const hasActiveFilter = Boolean(sp.q || sp.status || sp.paid);
 
+  // §11 ТЗ, продолжение (2026-09-15, по прямому запросу пользователя) — сами
+  // KPI-карточки одновременно и быстрый фильтр, тот же принцип, что и
+  // StatCard в ParticipantsPanel Competition Engine (клик по "Оплачено"/"Не
+  // оплачено" переключает фильтр). Здесь — серверная страница, поэтому не
+  // onClick, а обычная ссылка (`href` у StatCard уже поддерживает это, см.
+  // комментарий там про "проваливание по клику"); повторный клик по уже
+  // активной карточке снимает фильтр (тот же toggle, что и в ParticipantsPanel).
+  const paidActive = sp.paid === "yes";
+  const notPaidActive = sp.paid === "no";
+  const waitlistActive = sp.status === "WAITLIST";
+  const totalActive = !hasActiveFilter;
+
+  const totalHref = basePath;
+  const paidHref = buildHref(basePath, currentFilterParams, { paid: paidActive ? undefined : "yes", page: undefined });
+  const notPaidHref = buildHref(basePath, currentFilterParams, { paid: notPaidActive ? undefined : "no", page: undefined });
+  const waitlistHref = buildHref(basePath, currentFilterParams, { status: waitlistActive ? undefined : "WAITLIST", page: undefined });
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -122,16 +139,34 @@ export default async function EventRegistrationsPage({
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Всего регистраций" value={result.totalOverall} icon={<PeopleIcon />} tone="primary" />
-        <StatCard label="Оплачено" value={result.paidCount} icon={<CardIcon />} tone="success" percent={pctOverall(result.paidCount)} />
+        <StatCard label="Всего регистраций" value={result.totalOverall} icon={<PeopleIcon />} tone="primary" href={totalHref} active={totalActive} />
+        <StatCard
+          label="Оплачено"
+          value={result.paidCount}
+          icon={<CardIcon />}
+          tone="success"
+          percent={pctOverall(result.paidCount)}
+          href={paidHref}
+          active={paidActive}
+        />
         <StatCard
           label="Не оплачено"
           value={result.totalOverall - result.paidCount}
           icon={<AlertIcon />}
           tone="danger"
           percent={pctOverall(result.totalOverall - result.paidCount)}
+          href={notPaidHref}
+          active={notPaidActive}
         />
-        <StatCard label="Лист ожидания" value={result.waitlistCount} icon={<PeopleIcon />} tone="primary" percent={pctOverall(result.waitlistCount)} />
+        <StatCard
+          label="Лист ожидания"
+          value={result.waitlistCount}
+          icon={<PeopleIcon />}
+          tone="primary"
+          percent={pctOverall(result.waitlistCount)}
+          href={waitlistHref}
+          active={waitlistActive}
+        />
       </div>
 
       <form method="get" className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
