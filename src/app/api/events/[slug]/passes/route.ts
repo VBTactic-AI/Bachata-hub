@@ -22,6 +22,8 @@ const createSchema = z.object({
   validFrom: z.coerce.date().optional().nullable(),
   validUntil: z.coerce.date().optional().nullable(),
   sortOrder: z.number().int().optional(),
+  imageUrl: z.string().optional().nullable(),
+  allowMultipleEntry: z.boolean().optional(),
 });
 
 async function getEventBySlug(slug: string) {

@@ -155,10 +155,37 @@ export async function setPassStatus(passId: string, user: User, status: PassStat
   return prisma.pass.update({ where: { id: passId }, data: { status } });
 }
 
-// "Удаление" Pass из UI — архивация, а не физическое удаление строки:
-// история проданных Ticket не должна потерять смысл (CLAUDE.md §18).
+// "Удаление" Pass из UI по умолчанию — архивация, а не физическое удаление
+// строки: история проданных Ticket не должна потерять смысл (CLAUDE.md §18).
 export async function archivePass(passId: string, user: User): Promise<Pass> {
   return setPassStatus(passId, user, "ARCHIVED");
+}
+
+// Настоящее физическое удаление (2026-09-16, по прямому запросу
+// пользователя — "можно удалить pass к конкретному событию") — разрешено
+// ТОЛЬКО если по этому Pass ещё никогда никому не выдавался билет. Это не
+// нарушает CLAUDE.md §18: удаляется черновик/неиспользованное предложение, а
+// не история продаж — если хоть один Ticket уже существует, FK
+// "Ticket.passId -> Pass" (без onDelete) в любом случае физически не даст
+// удалить строку на уровне БД, здесь только явная, понятная проверка ДО
+// похода в БД (человекочитаемая ошибка вместо голого P2003).
+//
+// ВАЖНО: проверяем именно наличие строк Ticket, а не pass.soldQuantity —
+// soldQuantity уменьшается обратно при cancelTicket/refundTicket (см.
+// ticket-service.ts), но сам Ticket не удаляется (аудит), поэтому Pass с
+// soldQuantity === 0, но с отменённым в прошлом билетом, всё равно не
+// проходит FK и должен быть отклонён этой проверкой, а не падать 500
+// (найдено вживую при QA-очистке, 2026-09-16).
+export async function deletePass(passId: string, user: User): Promise<void> {
+  const pass = await requireOwnerOrAdminPass(passId, user);
+  const ticketCount = await prisma.ticket.count({ where: { passId } });
+  if (ticketCount > 0) {
+    throw new PassValidationError(
+      "pass_has_sales",
+      "Нельзя удалить Pass, по которому уже выдавались билеты — используйте «Закрыть» (архивация)."
+    );
+  }
+  await prisma.pass.delete({ where: { id: passId } });
 }
 
 // Лениво (тот же принцип, что syncNoShowForEvent) синхронизирует SOLD_OUT/

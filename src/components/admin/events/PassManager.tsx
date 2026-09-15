@@ -85,6 +85,25 @@ export function PassManager({
     router.refresh();
   }
 
+  // Настоящее удаление (2026-09-16, по прямому запросу пользователя) —
+  // только для Pass, по которому ещё никто не покупал билет (soldQuantity
+  // === 0, см. deletePass в pass-service.ts). Для уже проданных — только
+  // "Закрыть" (архивация), сервер это и так отклонит понятной ошибкой, но
+  // кнопка здесь просто не показывается, чтобы не провоцировать.
+  async function deletePassPermanently(passId: string, name: string) {
+    if (!window.confirm(`Удалить Pass «${name}» безвозвратно? Это действие нельзя отменить.`)) return;
+    setLoadingId(passId);
+    setError(null);
+    const res = await fetch(`/api/events/${eventSlug}/passes/${passId}`, { method: "DELETE" });
+    setLoadingId(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.message || data.error || "Не удалось удалить Pass.");
+      return;
+    }
+    router.refresh();
+  }
+
   const ACTION_CLASS = "text-xs text-admin-muted hover:text-night-text hover:underline disabled:cursor-not-allowed disabled:opacity-50";
 
   // SOLD_OUT/ENDED — только сервер (см. pass-service.ts::syncPassLifecycle),
@@ -164,6 +183,16 @@ export function PassManager({
                           onClick={() => setStatus(pass.id, "ARCHIVED")}
                         >
                           Закрыть
+                        </button>
+                      )}
+                      {pass.soldQuantity === 0 && (
+                        <button
+                          type="button"
+                          disabled={loadingId === pass.id}
+                          className={`${ACTION_CLASS} hover:text-red-400`}
+                          onClick={() => deletePassPermanently(pass.id, pass.name)}
+                        >
+                          Удалить
                         </button>
                       )}
                     </div>

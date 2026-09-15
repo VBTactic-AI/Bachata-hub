@@ -12,6 +12,8 @@ const passFindUnique = vi.fn();
 const passFindMany = vi.fn();
 const passCreate = vi.fn();
 const passUpdate = vi.fn();
+const passDelete = vi.fn();
+const ticketCount = vi.fn();
 const eventTeamMemberFindUnique = vi.fn();
 const passPriceTierFindMany = vi.fn();
 const passPriceTierCreate = vi.fn();
@@ -39,6 +41,7 @@ vi.mock("@/lib/prisma", () => ({
       findMany: (...a: unknown[]) => passFindMany(...a),
       create: (...a: unknown[]) => passCreate(...a),
       update: (...a: unknown[]) => passUpdate(...a),
+      delete: (...a: unknown[]) => passDelete(...a),
     },
     passPriceTier: {
       findMany: (...a: unknown[]) => passPriceTierFindMany(...a),
@@ -48,6 +51,7 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: (...a: unknown[]) => passPriceTierFindUnique(...a),
     },
     passAccessGrant: { findMany: (...a: unknown[]) => passAccessGrantFindMany(...a) },
+    ticket: { count: (...a: unknown[]) => ticketCount(...a) },
     promoCode: {
       create: (...a: unknown[]) => promoCodeCreate(...a),
       findMany: (...a: unknown[]) => promoCodeFindMany(...a),
@@ -70,6 +74,7 @@ const {
   createPriceTier,
   updatePriceTier,
   deletePriceTier,
+  deletePass,
   getCurrentPassPrice,
   setAccessGrants,
   createPromoCode,
@@ -126,6 +131,8 @@ beforeEach(() => {
   passFindMany.mockReset().mockResolvedValue([]);
   passCreate.mockReset().mockImplementation((args) => Promise.resolve({ ...basePass, ...args.data }));
   passUpdate.mockReset().mockImplementation((args) => Promise.resolve({ ...basePass, ...args.data }));
+  passDelete.mockReset().mockResolvedValue({});
+  ticketCount.mockReset().mockResolvedValue(0);
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
   passPriceTierFindMany.mockReset().mockResolvedValue([]);
   passPriceTierCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "tier1", ...args.data }));
@@ -488,5 +495,43 @@ describe("createPromoCode() / setPromoCodeActive() — только схема +
     promoCodeFindUnique.mockResolvedValue({ id: "promo1", event });
     await setPromoCodeActive("promo1", owner, false);
     expect(promoCodeUpdate).toHaveBeenCalledWith({ where: { id: "promo1" }, data: { isActive: false } });
+  });
+});
+
+describe("deletePass() — настоящее удаление (2026-09-16, по прямому запросу пользователя)", () => {
+  it("ни одного Ticket не выдавалось — удаляет физически", async () => {
+    passFindUnique.mockResolvedValue({ ...basePass, soldQuantity: 0, event });
+    ticketCount.mockResolvedValue(0);
+    await deletePass("pass1", owner);
+    expect(ticketCount).toHaveBeenCalledWith({ where: { passId: "pass1" } });
+    expect(passDelete).toHaveBeenCalledWith({ where: { id: "pass1" } });
+  });
+
+  it("есть выданные билеты — PassValidationError('pass_has_sales'), delete не вызывается", async () => {
+    passFindUnique.mockResolvedValue({ ...basePass, soldQuantity: 3, event });
+    ticketCount.mockResolvedValue(3);
+    await expect(deletePass("pass1", owner)).rejects.toMatchObject({ code: "pass_has_sales" });
+    expect(passDelete).not.toHaveBeenCalled();
+  });
+
+  it("soldQuantity === 0, но есть отменённый в прошлом Ticket (аудит) — всё равно блокируется, не падает 500", async () => {
+    // Регрессия: cancelTicket/refundTicket уменьшают soldQuantity обратно,
+    // но сам Ticket не удаляется — проверка обязана смотреть на реальное
+    // наличие строк Ticket, а не на soldQuantity (найдено вживую при QA).
+    passFindUnique.mockResolvedValue({ ...basePass, soldQuantity: 0, event });
+    ticketCount.mockResolvedValue(1);
+    await expect(deletePass("pass1", owner)).rejects.toMatchObject({ code: "pass_has_sales" });
+    expect(passDelete).not.toHaveBeenCalled();
+  });
+
+  it("чужой Pass — RegistrationForbiddenError", async () => {
+    passFindUnique.mockResolvedValue({ ...basePass, soldQuantity: 0, event: { id: "event1", createdById: "someone-else" } });
+    await expect(deletePass("pass1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    expect(passDelete).not.toHaveBeenCalled();
+  });
+
+  it("Pass не найден — RegistrationNotFoundError", async () => {
+    passFindUnique.mockResolvedValue(null);
+    await expect(deletePass("missing", owner)).rejects.toBeInstanceOf(RegistrationNotFoundError);
   });
 });

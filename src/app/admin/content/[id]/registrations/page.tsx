@@ -104,8 +104,12 @@ export default async function EventRegistrationsPage({
 
   // Билеты/оплата (Ticket Engine) — hasPassCatalog решает, показывать ли
   // названия Pass в колонке или просто простой тумблер "Оплата", как раньше.
-  const [passCount, ticketsByDancer, paymentCounts] = await Promise.all([
+  // activePasses — те, которые вообще можно выдать танцору прямо отсюда
+  // (2026-09-16: без этого Pass.soldQuantity никогда не менялось бы —
+  // единственный способ создать Pass-привязанный Ticket отсюда).
+  const [passCount, activePasses, ticketsByDancer, paymentCounts] = await Promise.all([
     prisma.pass.count({ where: { eventId: event.id } }),
+    prisma.pass.findMany({ where: { eventId: event.id, status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
     listTicketsByDancerForEvent(
       event.id,
       result.items.map((r) => r.dancerId)
@@ -120,6 +124,10 @@ export default async function EventRegistrationsPage({
     ),
   ]);
   const hasPassCatalog = passCount > 0;
+  // issueTicket() требует активную регистрацию (REGISTERED/CONFIRMED/
+  // WAITLIST) — тем, кто сам отменился/отклонён/не пришёл, Pass выдать
+  // нельзя (см. ticket-service.ts), поэтому им picker не показываем вовсе.
+  const ELIGIBLE_FOR_PASS = new Set(["REGISTERED", "CONFIRMED", "WAITLIST"]);
 
   const totalPages = Math.max(Math.ceil(result.total / result.pageSize), 1);
   const pctOverall = (count: number) => (result.totalOverall === 0 ? 0 : Math.round((count / result.totalOverall) * 100));
@@ -283,8 +291,10 @@ export default async function EventRegistrationsPage({
                       <TicketPaymentCell
                         eventSlug={event.slug}
                         registrationId={r.id}
+                        dancerId={r.dancerId}
                         hasPassCatalog={hasPassCatalog}
                         initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
+                        assignablePasses={ELIGIBLE_FOR_PASS.has(r.status) ? activePasses : []}
                       />
                     </td>
                     <td className="px-3 py-2 align-top">
@@ -305,8 +315,10 @@ export default async function EventRegistrationsPage({
                   <TicketPaymentCell
                     eventSlug={event.slug}
                     registrationId={r.id}
+                    dancerId={r.dancerId}
                     hasPassCatalog={hasPassCatalog}
                     initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
+                    assignablePasses={ELIGIBLE_FOR_PASS.has(r.status) ? activePasses : []}
                   />
                 </div>
                 <p className="m-0 mt-1 text-xs text-admin-muted">{formatDateTime(r.createdAt)}</p>
