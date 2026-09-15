@@ -621,11 +621,6 @@ model EventPriceOption {
 // сущность с жизненным циклом и лимитом мест, две модели сосуществуют
 // (EventPriceOption никуда не делась, ничего в ней не меняется).
 //
-// Pass → Ticket ещё не создан: следующий шаг заведёт модель Ticket с полем
-// passId (обратная связь появится здесь как `tickets Ticket[]`). Заводить
-// её уже сейчас — преждевременно (нет ни оплаты, ни выдачи билетов), но
-// eventId/quantity/soldQuantity/salesWindow здесь уже рассчитаны на то, что
-// Ticket будет ссылаться именно на конкретный Pass, а не на Event напрямую.
 enum PassType {
   FULL_PASS
   PARTY_PASS
@@ -670,8 +665,59 @@ model Pass {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  tickets Ticket[]
+
   @@index([eventId])
   @@index([eventId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Ticket — конкретный экземпляр доступа, выданный/купленный ОДНИМ танцором
+// на ОДИН Pass (2026-09-16). Ticket ≠ EventRegistration: EventRegistration
+// (см. ниже) остаётся единственным источником истины "иду ли я на это
+// событие" + door check-in, ничего в ней не меняется и не дублируется —
+// Ticket отвечает только на вопрос "какой именно Pass купил этот танцор".
+//
+// Ключевое бизнес-правило (прямое указание пользователя, 2026-09-16): один
+// танцор НЕ может купить один и тот же Pass дважды (`@@unique([dancerId,
+// passId])`), но МОЖЕТ иметь несколько Ticket на одно и то же мероприятие,
+// если купил несколько РАЗНЫХ Pass этого события (например Party Pass на
+// пятницу + отдельно Party Pass на субботу, или Workshop Pass вдобавок к
+// Full Pass) — поэтому уникальность именно по (dancerId, passId), а НЕ по
+// (dancerId, eventId) как у EventRegistration.
+//
+// Только схема (по прямому указанию пользователя, тот же принцип, что и у
+// Pass) — сервис выдачи билета, инкремент Pass.soldQuantity, оплата, QR-код
+// на входе, привязка к EventRegistration/check-in — сознательно вне рамок
+// этой задачи, добавятся вместе с реальной фичей продажи.
+enum TicketStatus {
+  ISSUED // выдан/куплен, действителен
+  CANCELLED // отменён (танцором или организатором) — история не удаляется
+  REFUNDED // оформлен возврат — сама механика возврата ещё не реализована, статус фиксируем заранее
+}
+
+model Ticket {
+  id       String @id @default(cuid())
+  passId   String
+  pass     Pass   @relation(fields: [passId], references: [id])
+  dancerId String
+  dancer   Dancer @relation(fields: [dancerId], references: [id])
+
+  status   TicketStatus @default(ISSUED)
+  // Снимок цены/валюты НА МОМЕНТ выдачи — не пересчитывается задним числом
+  // при изменении Pass.price (тот же принцип неизменности исторических
+  // данных, что и у Result/Points в Competition Engine, CLAUDE.md §39/§51).
+  price    Decimal?     @db.Decimal(10, 2)
+  currency String?
+
+  issuedAt    DateTime  @default(now())
+  cancelledAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([dancerId, passId])
+  @@index([passId])
+  @@index([dancerId])
 }
 
 // 1:1 к Event — заполняется только когда Event.format = PARTY.
@@ -838,6 +884,8 @@ model Dancer {
   achievements       Achievement[]
   registrations      Registration[] // СЛОЙ 3: регистрации на соревнования Jack & Jill
   eventRegistrations EventRegistration[] // Events Engine: регистрации на обычные события (НЕ путать с Registration выше — другой домен, см. комментарий у модели)
+  // СЛОЙ 2 — купленные/выданные Pass (см. комментарий у модели Ticket).
+  tickets            Ticket[]
 
   @@index([cityId])
 }
