@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, canCreateEvents } from "@/lib/auth";
+import { getDancerByUserId } from "@/lib/dancer";
 import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
@@ -22,7 +23,7 @@ export default async function AdminContentPage({
 
   const { draft: draftId } = await searchParams;
 
-  const [cities, ownedSchoolsRaw, teachers, actor, drafts] = await Promise.all([
+  const [cities, ownedSchoolsRaw, teachers, actor, drafts, dancer] = await Promise.all([
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     user.role === "SCHOOL_REP"
       ? prisma.school.findMany({ where: { ownerUserId: user.id }, orderBy: { name: "asc" } })
@@ -37,12 +38,23 @@ export default async function AdminContentPage({
       orderBy: { updatedAt: "desc" },
       select: { id: true, slug: true, title: true, format: true, status: true, moderationStatus: true },
     }),
+    getDancerByUserId(user.id),
   ]);
 
   const ownedSchools = ownedSchoolsRaw.map((s) => ({ id: s.id, name: s.name, verificationStatus: s.verificationStatus }));
   const canCreateCompetition = can(actor, "competition:create");
 
-  let initialDraft: WizardDraft = emptyWizardDraft(cities[0]?.id ?? "");
+  // Редизайн мастера (2026-09-16, по прямому запросу пользователя) —
+  // "Организатор" больше не редактируется в самом мастере (см. StepBasic.tsx
+  // — поле убрано), а подтягивается автоматически: своя школа, если она
+  // есть (первая, если их несколько — выбор конкретной школы из нескольких
+  // сознательно не поддержан в этой версии, тот же принцип упрощения, что и
+  // просил пользователь), иначе — отображаемое имя танцора из профиля.
+  let initialDraft: WizardDraft = {
+    ...emptyWizardDraft(cities[0]?.id ?? ""),
+    schoolId: ownedSchools[0]?.id ?? "",
+    organizerName: ownedSchools.length === 0 ? (dancer?.displayName ?? "") : "",
+  };
   if (draftId) {
     // Ссылка на черновик могла устареть (черновик удалён/архивирован после
     // QA-очистки, или скопирована из чужого аккаунта) — раньше

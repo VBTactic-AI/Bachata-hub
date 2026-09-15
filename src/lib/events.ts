@@ -3,8 +3,8 @@ import type { Prisma, EventFormat, DanceLevel, EventStatus, ModerationStatus } f
 
 // formatEventCardPrice — в src/lib/event-price.ts, НЕ здесь: этот файл
 // импортирует Prisma (server-only), а цену форматирует и клиентский
-// предпросмотр в мастере (StepPreview.tsx) — импорт оттуда тянул бы весь
-// Prisma-клиент в браузерный бандл (найдено на next build).
+// предпросмотр в мастере (EventPreviewSidebar.tsx) — импорт оттуда тянул бы
+// весь Prisma-клиент в браузерный бандл (найдено на next build).
 
 // Простая работа с датами без внешних библиотек: сервер трактует "сегодня" и
 // "эта неделя" в своей локальной таймзоне. Для MVP это приемлемое упрощение —

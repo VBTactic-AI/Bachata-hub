@@ -9,6 +9,12 @@ const checkboxClass = "h-4 w-4 rounded border-admin-border bg-admin-card accent-
 
 // STEP "Party Details" — специфичные для PARTY поля (задача, раздел
 // "PARTY / MASTERCLASS / JNJ CONFIGURATION ENGINE").
+//
+// Сокращено до 5 полей (2026-09-16, по прямому запросу пользователя) —
+// Музыкальные стили/Танцполы/Артисты/Еда и напитки убраны из UI. Сами поля в
+// WizardDraft.party/schema.prisma/toApiPayload НЕ удалены (уже опубликованные
+// события, где они были заполнены, ничего не теряют) — просто больше не
+// редактируются в мастере.
 export function StepPartyDetails({ draft, onChange }: { draft: WizardDraft; onChange: (patch: Partial<WizardDraft["party"]>) => void }) {
   const p = draft.party;
   return (
@@ -16,20 +22,8 @@ export function StepPartyDetails({ draft, onChange }: { draft: WizardDraft; onCh
       <h2 className="m-0 font-night text-lg font-bold text-night-text">О вечеринке</h2>
 
       <Label className="text-admin-muted">
-        Музыкальные стили (через запятую)
-        <Input value={p.musicStyles} onChange={(e) => onChange({ musicStyles: e.target.value })} className={fieldClass} />
-      </Label>
-      <Label className="text-admin-muted">
         Диджеи (через запятую)
         <Input value={p.djs} onChange={(e) => onChange({ djs: e.target.value })} className={fieldClass} />
-      </Label>
-      <Label className="text-admin-muted">
-        Танцполы (через запятую)
-        <Input value={p.danceFloors} onChange={(e) => onChange({ danceFloors: e.target.value })} className={fieldClass} />
-      </Label>
-      <Label className="text-admin-muted">
-        Артисты (через запятую)
-        <Input value={p.artists} onChange={(e) => onChange({ artists: e.target.value })} className={fieldClass} />
       </Label>
       <Label className="text-admin-muted">
         Дресс-код
@@ -38,10 +32,6 @@ export function StepPartyDetails({ draft, onChange }: { draft: WizardDraft; onCh
       <Label className="text-admin-muted">
         Фотограф
         <Input value={p.photographer} onChange={(e) => onChange({ photographer: e.target.value })} className={fieldClass} />
-      </Label>
-      <Label className="text-admin-muted">
-        Еда и напитки
-        <Input value={p.foodAndDrinks} onChange={(e) => onChange({ foodAndDrinks: e.target.value })} className={fieldClass} />
       </Label>
 
       <label className="flex items-center gap-2 text-sm text-admin-muted">

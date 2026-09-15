@@ -42,17 +42,21 @@ export function myEventStatusLabel(status: EventStatus, moderationStatus: Modera
 // которых есть карточка выбора в мастере; FESTIVAL/INTENSIVE переиспользуют
 // generic-конфигурацию (см. ниже) — существующая возможность их создать не
 // теряется, просто без отдельной карточки на первом экране мастера.
+// Редизайн мастера (2026-09-16, по прямому запросу пользователя, макет
+// согласован заранее): "type"/"location"/"preview" перестали быть
+// ОТДЕЛЬНЫМИ шагами. Выбор типа события и место проведения переехали внутрь
+// "basic" (один экран "Тип и основное" — три колонки: тип / форма /
+// живой предпросмотр), сам предпросмотр стал ПОСТОЯННО видимой боковой
+// панелью на каждом шаге (см. EventPreviewSidebar.tsx), а не отдельным
+// шагом в конце.
 export type EventStepId =
-  | "type"
   | "basic"
-  | "location"
   | "datetime"
   | "partyDetails"
   | "sessions"
   | "details"
   | "festivalProgram"
   | "tickets"
-  | "preview"
   | "publish";
 
 export type EventTypeConfig = {
@@ -73,7 +77,7 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     label: "Вечеринка",
     description: "Тусовки и вечеринки",
     icon: "🪩",
-    steps: ["type", "basic", "location", "datetime", "partyDetails", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "partyDetails", "tickets", "publish"],
   },
   MASTERCLASS: {
     format: "MASTERCLASS",
@@ -83,7 +87,7 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     // "Teacher" из ТЗ не выделен отдельным пустым шагом — преподаватель
     // выбирается прямо у каждой сессии (у мастер-класса может быть несколько
     // занятий с разными преподавателями, как в примере ТЗ), см. StepSessions.
-    steps: ["type", "basic", "location", "datetime", "sessions", "details", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "sessions", "details", "tickets", "publish"],
   },
   CONTEST: {
     format: "CONTEST",
@@ -95,7 +99,7 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     // Judges/Scoring/Final/Rematch/Registration — уже существующий,
     // отдельный, глубоко реализованный Competition Engine
     // (/admin/competitions/[id]), не дублируется здесь.
-    steps: ["type", "basic", "location", "datetime", "preview", "publish"],
+    steps: ["basic", "datetime", "publish"],
   },
   // Events Engine, этап 6 — программа фестиваля (FestivalDetails +
   // EventProgramItem, см. schema.prisma). Раньше FESTIVAL был
@@ -106,14 +110,14 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     label: "Фестиваль",
     description: "Многодневный танцевальный фестиваль",
     icon: "🎪",
-    steps: ["type", "basic", "location", "datetime", "festivalProgram", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "festivalProgram", "tickets", "publish"],
   },
   INTENSIVE: {
     format: "INTENSIVE",
     label: "Воркшоп-интенсив",
     description: "Блок из нескольких занятий",
     icon: "🔥",
-    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "tickets", "publish"],
   },
   // Events Engine (2026-09-15) — добавлены аддитивно к enum EventFormat
   // (см. комментарий у enum в schema.prisma), тоже generic-конфигурация: без
@@ -123,28 +127,28 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     label: "Соушл",
     description: "Свободные танцы без концепции вечеринки",
     icon: "💃",
-    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "tickets", "publish"],
   },
   OPEN_AIR: {
     format: "OPEN_AIR",
     label: "Open Air",
     description: "Танцы на открытом воздухе",
     icon: "🌤️",
-    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "tickets", "publish"],
   },
   PRACTICE: {
     format: "PRACTICE",
     label: "Практика",
     description: "Практика/тренировка без преподавателя",
     icon: "🕺",
-    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "tickets", "publish"],
   },
   OTHER: {
     format: "OTHER",
     label: "Другое",
     description: "Формат, не покрытый остальными категориями",
     icon: "✨",
-    steps: ["type", "basic", "location", "datetime", "tickets", "preview", "publish"],
+    steps: ["basic", "datetime", "tickets", "publish"],
   },
 };
 

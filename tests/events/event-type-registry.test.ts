@@ -13,7 +13,11 @@ describe("EVENT_TYPE_REGISTRY", () => {
       const config = getEventTypeConfig(format);
       expect(config.format).toBe(format);
       expect(config.steps.length).toBeGreaterThan(0);
-      expect(config.steps[0]).toBe("type");
+      // Редизайн 2026-09-16 — "type"/"location"/"preview" больше не
+      // отдельные шаги (см. комментарий у EventStepId): выбор типа и место
+      // проведения теперь внутри "basic", предпросмотр — постоянная боковая
+      // панель на каждом шаге, а не отдельный шаг в конце.
+      expect(config.steps[0]).toBe("basic");
       expect(config.steps[config.steps.length - 1]).toBe("publish");
     }
   });

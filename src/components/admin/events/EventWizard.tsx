@@ -12,16 +12,15 @@ import {
   type EventStepId,
 } from "@/lib/events/event-type-registry";
 import { WizardNav } from "./WizardNav";
-import { StepType } from "./steps/StepType";
+import { EventTypeSelector } from "./EventTypeSelector";
+import { EventPreviewSidebar } from "./EventPreviewSidebar";
 import { StepBasic } from "./steps/StepBasic";
-import { StepLocation } from "./steps/StepLocation";
 import { StepDateTime } from "./steps/StepDateTime";
 import { StepPartyDetails } from "./steps/StepPartyDetails";
 import { StepSessions } from "./steps/StepSessions";
 import { StepFestivalProgram } from "./steps/StepFestivalProgram";
 import { StepMasterclassDetails } from "./steps/StepMasterclassDetails";
 import { StepTickets } from "./steps/StepTickets";
-import { StepPreview } from "./steps/StepPreview";
 import { StepPublish } from "./steps/StepPublish";
 import { toApiPayload, type WizardDraft } from "./wizard-types";
 
@@ -39,6 +38,13 @@ export type MyEventListItem = {
 // набор шагов приходит из EVENT_TYPE_REGISTRY (src/lib/events/
 // event-type-registry.ts) по текущему draft.format — никаких if(type===...)
 // в отдельных шагах, только ОДНА диспетчеризация step-id -> компонент, здесь.
+//
+// Редизайн (2026-09-16, по прямому запросу пользователя, макет согласован
+// заранее в артефакте): "Тип" и "Место" больше не отдельные шаги — выбор
+// типа события (EventTypeSelector) и живой предпросмотр (EventPreviewSidebar)
+// теперь ПОСТОЯННЫЕ боковые колонки, видны на каждом шаге (не только на
+// первом), а не собственные полноэкранные шаги. На шаге "basic" колонок три
+// (тип / форма / предпросмотр), на остальных — две (форма / предпросмотр).
 export function EventWizard({
   cities,
   ownedSchools,
@@ -91,15 +97,12 @@ export function EventWizard({
   const canSaveDraft = !!(checklistById.title && checklistById.city && checklistById.venue && checklistById.startsAt);
 
   const doneMap: Record<string, boolean> = {
-    type: true,
-    basic: !!checklistById.title,
-    location: !!(checklistById.city && checklistById.venue),
+    basic: !!(checklistById.title && checklistById.city && checklistById.venue),
     datetime: !!checklistById.startsAt,
     sessions: !!(checklistById.sessions && checklistById.instructor),
     partyDetails: true,
     details: true,
     tickets: true,
-    preview: true,
     publish: complete,
   };
 
@@ -168,18 +171,8 @@ export function EventWizard({
 
   function renderStep(step: EventStepId) {
     switch (step) {
-      case "type":
-        return (
-          <StepType
-            value={draft.format}
-            onChange={(format) => patch({ format })}
-            canCreateCompetition={canCreateCompetition}
-          />
-        );
       case "basic":
-        return <StepBasic draft={draft} onChange={patch} />;
-      case "location":
-        return <StepLocation draft={draft} onChange={patch} cities={cities} ownedSchools={ownedSchools} />;
+        return <StepBasic draft={draft} onChange={patch} cities={cities} />;
       case "datetime":
         return <StepDateTime draft={draft} onChange={patch} />;
       case "partyDetails":
@@ -204,15 +197,6 @@ export function EventWizard({
         );
       case "tickets":
         return <StepTickets draft={draft} onChange={patch} />;
-      case "preview":
-        return (
-          <StepPreview
-            draft={draft}
-            cityName={cityName}
-            organizerLabel={organizerLabel}
-            slug={draft.slug ?? null}
-          />
-        );
       case "publish":
         return (
           <StepPublish
@@ -227,6 +211,8 @@ export function EventWizard({
         );
     }
   }
+
+  const previewSidebar = <EventPreviewSidebar draft={draft} cityName={cityName} organizerLabel={organizerLabel} slug={draft.slug ?? null} />;
 
   return (
     <div className="flex flex-col gap-4">
@@ -268,9 +254,21 @@ export function EventWizard({
           </Button>
         </div>
 
-        <div className="flex flex-col gap-5 p-5 sm:flex-row">
+        <div className="p-5">
           <WizardNav steps={steps} currentIndex={stepIndex} doneMap={doneMap} onSelect={setStepIndex} />
-          <div className="min-w-0 flex-1">{renderStep(currentStep)}</div>
+
+          {currentStep === "basic" ? (
+            <div className="mt-4 grid gap-4 lg:grid-cols-[220px_1fr_280px]">
+              <EventTypeSelector value={draft.format} onChange={(format) => patch({ format })} canCreateCompetition={canCreateCompetition} />
+              <div className="min-w-0">{renderStep(currentStep)}</div>
+              <div className="lg:order-none">{previewSidebar}</div>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_280px]">
+              <div className="min-w-0">{renderStep(currentStep)}</div>
+              {previewSidebar}
+            </div>
+          )}
         </div>
 
         {successMessage && (
