@@ -456,17 +456,26 @@ enum EventCertainty {
   CONFIRMED
 }
 
+// "Способ доступа" — см. комментарий у Event.ticketingMode.
+enum EventTicketingMode {
+  UNSET
+  FREE
+  TICKETS
+  PASSES
+  TICKETS_AND_PASSES
+}
+
 model Event {
-  id                  String           @id @default(cuid())
-  slug                String           @unique
+  id                  String             @id @default(cuid())
+  slug                String             @unique
   title               String
   cityId              String
-  city                City             @relation(fields: [cityId], references: [id])
+  city                City               @relation(fields: [cityId], references: [id])
   schoolId            String? // организатор — школа...
-  school              School?          @relation(fields: [schoolId], references: [id])
+  school              School?            @relation(fields: [schoolId], references: [id])
   organizerName       String? // ...или свободный текст, если организатор без школы
   format              EventFormat
-  eventType           EventType        @default(REGULAR) // СЛОЙ 3: точка расширения, см. комментарий выше
+  eventType           EventType          @default(REGULAR) // СЛОЙ 3: точка расширения, см. комментарий выше
   level               DanceLevel
   startsAt            DateTime
   endsAt              DateTime?
@@ -475,7 +484,7 @@ model Event {
   latitude            Float? // Event Engine: необязательная геометка места проведения
   longitude           Float?
   capacity            Int? // Event Engine: вместимость площадки/события, необязательно
-  registrationEnabled Boolean          @default(false) // Event Engine: показывать ли блок регистрации на публичной странице (сама регистрация по-прежнему может быть внешней ссылкой — externalLinkUrl, слой 2 ещё не подключен)
+  registrationEnabled Boolean            @default(false) // Event Engine: показывать ли блок регистрации на публичной странице (сама регистрация по-прежнему может быть внешней ссылкой — externalLinkUrl, слой 2 ещё не подключен)
   description         String?
   // Обложка/афиша — с этой задачи ("загрузка афиши") ЭТО ПОЛЕ БОЛЬШЕ НЕ
   // ЗАПОЛНЯЕТСЯ ВРУЧНУЮ через Event Wizard: оно денормализованный кэш URL
@@ -490,18 +499,26 @@ model Event {
   photoUrl            String?
   priceText           String? // цена текстом ("15 BYN", "бесплатно", "по договорённости")
   externalLinkUrl     String? // ссылка на внешнюю регистрацию/билет — в слое 1 сайт сам не продаёт
+  // "Способ доступа" (2026-09-16, Ticket Engine v2) — выбирается организатором
+  // в мастере создания события, определяет, какие вкладки/шаги показывать
+  // (Билеты/Pass/оба). ЧИСТО UI-подсказка, не хардограничение на уровне
+  // сервера — организатор технически может завести и TicketType, и Pass
+  // независимо от выбранного режима, ничего не блокируется искусственно.
+  // UNSET — значение для всех событий, созданных ДО этой задачи (они не
+  // делали этот выбор явно).
+  ticketingMode       EventTicketingMode @default(UNSET)
   tags                String[]
-  status              EventStatus      @default(PUBLISHED) // Event Engine: черновик мастера создания, см. комментарий у enum
-  certainty           EventCertainty   @default(CONFIRMED) // Events Engine: см. комментарий у enum — независимая ось от status/moderationStatus
-  moderationStatus    ModerationStatus @default(PENDING)
+  status              EventStatus        @default(PUBLISHED) // Event Engine: черновик мастера создания, см. комментарий у enum
+  certainty           EventCertainty     @default(CONFIRMED) // Events Engine: см. комментарий у enum — независимая ось от status/moderationStatus
+  moderationStatus    ModerationStatus   @default(PENDING)
   createdById         String
-  createdBy           User             @relation("EventCreator", fields: [createdById], references: [id])
+  createdBy           User               @relation("EventCreator", fields: [createdById], references: [id])
   moderatedById       String?
-  moderatedBy         User?            @relation("EventModerator", fields: [moderatedById], references: [id])
+  moderatedBy         User?              @relation("EventModerator", fields: [moderatedById], references: [id])
   moderatedAt         DateTime?
-  isArchived          Boolean          @default(false) // просроченные события уходят из ленты, но не удаляются
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  isArchived          Boolean            @default(false) // просроченные события уходят из ленты, но не удаляются
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   attendances   Attendance[]
   achievements  Achievement[]
@@ -517,6 +534,10 @@ model Event {
   masterclassDetails     MasterclassDetails?
   festivalDetails        FestivalDetails? // Events Engine, этап 6 — заполняется только когда format = FESTIVAL
   priceOptions           EventPriceOption[]
+  // Простые билеты на само это событие (2026-09-16) — см. комментарий у
+  // TicketType. Независимо от passes ниже — событие может продавать и то, и
+  // другое одновременно (см. Event.ticketingMode).
+  ticketTypes            TicketType[]
   // СЛОЙ 2 — платный доступ к событию (см. комментарий у Pass ниже).
   passes                 Pass[]
   tickets                Ticket[]
@@ -596,6 +617,16 @@ model EventMedia {
 // Варианты цены/билета — общие для PARTY (Early Bird/Regular/At Door) и
 // MASTERCLASS (Solo/Couple/Masterclass+Party), поэтому одна таблица на
 // Event, а не отдельная под каждый тип (не дублируем структуру ради имени).
+//
+// LEGACY (2026-09-16, Ticket Engine v2): с появлением TicketType ниже эта
+// модель больше НЕ пишется из мастера создания события для новых событий —
+// оставлена как есть только чтобы старые события (созданные до этой задачи)
+// продолжали отображать уже сохранённые варианты без миграции данных.
+// Разница с TicketType принципиальная, не косметическая: EventPriceOption —
+// чисто отображаемая строка ("Цена: 15 BYN" на публичной странице, без
+// запасов/статуса/реальных продаж), TicketType — настоящий продаваемый
+// продукт с инвентарём и историей выданных Ticket (см. комментарий у
+// TicketType).
 model EventPriceOption {
   id        String   @id @default(cuid())
   eventId   String
@@ -607,6 +638,49 @@ model EventPriceOption {
   createdAt DateTime @default(now())
 
   @@index([eventId])
+}
+
+// ---------------------------------------------------------------------------
+// TicketType — простой билет на ОДНО конкретное событие (2026-09-16, по
+// прямому запросу пользователя после разбора модели Ticket/Pass). Пример:
+// "Bachata Friday Party" с вариантами Teacher/Dancer/School Partner/Early
+// Bird — это четыре TicketType, НЕ Pass (Pass — отдельная сущность для
+// доступа к НЕСКОЛЬКИМ событиям, см. комментарий у модели Pass ниже, она НЕ
+// переименована и НЕ сужена этой задачей — TicketType существует РЯДОМ с
+// ней, а не вместо).
+//
+// Осознанно проще Pass: без ценовых периодов (Early Bird — просто отдельный
+// TicketType, не тир), без грантов доступа к программе (у одного события нет
+// внутренней подпрограммы) и без шаблонов — если что-то из этого
+// понадобится, это отдельная, осознанная доработка, а не то, что нужно
+// "на всякий случай" сегодня (CLAUDE.md §14/§20 — не усложняй
+// преждевременно).
+model TicketType {
+  id           String     @id @default(cuid())
+  eventId      String
+  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  // null — бесплатный билет.
+  price        Decimal?   @db.Decimal(10, 2)
+  currency     String?
+  quantity     Int? // null — без ограничения мест
+  soldQuantity Int        @default(0)
+  salesStartAt DateTime?
+  salesEndAt   DateTime?
+  // Переиспользуем PassStatus — тот же жизненный цикл (DRAFT/ACTIVE/PAUSED/
+  // SOLD_OUT/ENDED/ARCHIVED), тот же принцип "SOLD_OUT/ENDED — только
+  // сервер", заводить копию enum ради другого имени модели избыточно.
+  status       PassStatus @default(DRAFT)
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tickets Ticket[]
+
+  @@index([eventId])
+  @@index([eventId, status])
 }
 
 // ---------------------------------------------------------------------------
@@ -841,9 +915,31 @@ model PromoCodePass {
 //   держать несколько Ticket на одно событие, если купил несколько РАЗНЫХ
 //   Pass — см. @@unique([dancerId, passId]) ниже, работает только когда
 //   passId not null, потому что PostgreSQL не считает два NULL равными).
-//   Уникальность "один passless Ticket на танцора на событие" обеспечена
-//   частичным индексом Ticket_dancerId_eventId_no_pass_key (WHERE passId IS
-//   NULL, см. migration.sql) + advisory-lock в ticket-service.ts.
+// - Событие С TicketType (2026-09-16, Ticket Engine v2, см. комментарий у
+//   TicketType) — ровно та же схема, что у Pass выше, но для простого
+//   единичного билета: один Ticket на каждый купленный TicketType
+//   (@@unique([dancerId, ticketTypeId]), та же логика NULL-исключения).
+//   Ticket.passId и Ticket.ticketTypeId ВЗАИМОИСКЛЮЧАЮЩИ (проверяется и в
+//   ticket-service.ts, и CHECK-constraint'ом на уровне БД, см.
+//   migration.sql) — билет либо про Pass, либо про TicketType, либо ни про
+//   что (passless/typeless fallback для события без обоих каталогов).
+//   Уникальность "один полностью пустой (без Pass и без TicketType) Ticket
+//   на танцора на событие" обеспечена частичным индексом
+//   Ticket_dancerId_eventId_no_product_key (WHERE passId IS NULL AND
+//   ticketTypeId IS NULL, см. migration.sql) + advisory-lock в
+//   ticket-service.ts.
+// - Событие С Pass, но БЕЗ собственного билета (2026-09-16, этап 3
+//   "межсобытийный Pass фестиваля") — если это событие является дочерним
+//   (EventProgramItem.linkedEvent) для фестиваля, на котором танцор держит
+//   действующий Pass с доступом к этому пункту программы, вход
+//   материализуется отдельным "производным" Ticket с eventId = ЭТО дочернее
+//   событие, passId = Pass фестиваля, price = null (деньги уже получены при
+//   покупке Pass на событии фестиваля, повторно не списываются — так
+//   Revenue не задваивается, см. resolveFestivalPassEntry() в
+//   ticket-service.ts). Второй, обычный Ticket фестиваля-родителя со своей
+//   ненулевой ценой остаётся как есть — Attendance (сколько раз Pass
+//   реально использовали) и Revenue (сколько денег реально получено за сам
+//   Pass) в итоге считаются раздельно, просто фильтром по price IS NOT NULL.
 //
 // EventRegistration.status (сама явка/лист ожидания/check-in) НЕ затронута —
 // это отдельная, независимая ось, которая осталась как была.
@@ -864,13 +960,17 @@ enum TicketStatus {
 }
 
 model Ticket {
-  id       String  @id @default(cuid())
-  eventId  String
-  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  passId   String? // null — билет без тиров доступа (см. комментарий у модели выше)
-  pass     Pass?   @relation(fields: [passId], references: [id])
-  dancerId String
-  dancer   Dancer  @relation(fields: [dancerId], references: [id])
+  id           String      @id @default(cuid())
+  eventId      String
+  event        Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  passId       String? // null — билет без Pass (см. комментарий у модели выше)
+  pass         Pass?       @relation(fields: [passId], references: [id])
+  // Простой билет одного события (2026-09-16) — взаимоисключающе с passId,
+  // см. комментарий у модели выше.
+  ticketTypeId String?
+  ticketType   TicketType? @relation(fields: [ticketTypeId], references: [id])
+  dancerId     String
+  dancer       Dancer      @relation(fields: [dancerId], references: [id])
 
   status   TicketStatus @default(ISSUED)
   // Снимок цены/валюты НА МОМЕНТ выдачи — не пересчитывается задним числом
@@ -905,16 +1005,31 @@ model Ticket {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  // Работает только для passId NOT NULL (PostgreSQL не считает два NULL
-  // равными — уникальность passless-билета обеспечена ОТДЕЛЬНЫМ частичным
-  // индексом Ticket_dancerId_eventId_no_pass_key, см. migration.sql, его
-  // здесь нет — Prisma DSL не поддерживает partial unique index).
-  @@unique([dancerId, passId])
+  // ВАЖНО: уникальность Pass включает eventId, а не только (dancerId,
+  // passId) — с появлением межсобытийного Pass фестиваля (этап 3, см.
+  // комментарий про "производный" Ticket выше) один и тот же Pass законно
+  // порождает НЕСКОЛЬКО Ticket у одного танцора: один на событии самого
+  // фестиваля (реальная покупка) и по одному на каждом дочернем событии, где
+  // Pass был предъявлен (производные, price = null). Без eventId в ключе
+  // второй INSERT падал бы как "дубликат" из-за этого же уникального
+  // индекса. TicketType, в отличие от Pass, всегда однособытийный — там
+  // eventId в ключе не нужен, (dancerId, ticketTypeId) достаточно.
+  //
+  // Работает только для passId/ticketTypeId NOT NULL (PostgreSQL не считает
+  // два NULL равными — уникальность полностью пустого (без Pass и без
+  // TicketType) билета обеспечена ОТДЕЛЬНЫМ частичным индексом
+  // Ticket_dancerId_eventId_no_product_key, см. migration.sql, его здесь нет
+  // — Prisma DSL не поддерживает partial unique index. CHECK-constraint
+  // "не оба одновременно" — тоже только в migration.sql, той же причине.)
+  @@unique([dancerId, passId, eventId])
+  @@unique([dancerId, ticketTypeId])
   @@index([eventId])
   @@index([eventId, dancerId])
   @@index([passId])
+  @@index([ticketTypeId])
   @@index([dancerId])
   @@index([passId, status])
+  @@index([ticketTypeId, status])
 }
 
 // 1:1 к Event — заполняется только когда Event.format = PARTY.

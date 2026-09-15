@@ -122,6 +122,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       longitude: input.longitude ?? null,
       capacity: input.capacity ?? null,
       registrationEnabled: input.registrationEnabled ?? false,
+      ticketingMode: input.ticketingMode ?? "UNSET",
       description: input.description || null,
       // photoUrl НЕ пишется здесь намеренно — денормализованный кэш главной
       // афиши, единственный писатель — src/server/events/event-media-service.ts

@@ -5,44 +5,65 @@ import { useRouter } from "next/navigation";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/admin/StatusBadge";
 import { Button } from "@/components/ui/button";
 
-export type TicketPaymentInfo = { id: string; passId: string | null; passName: string | null; isPaid: boolean };
+export type TicketPaymentInfo = {
+  id: string;
+  passId: string | null;
+  passName: string | null;
+  ticketTypeId: string | null;
+  ticketTypeName: string | null;
+  isPaid: boolean;
+};
 export type AssignablePassOption = { id: string; name: string };
+export type AssignableTicketTypeOption = { id: string; name: string };
+export type FestivalPassMatch = { passId: string; passName: string };
 
-// Оплата билетов участника (2026-09-16, Ticket Engine) — заменяет старый
+// Оплата билетов участника (2026-09-16, Ticket Engine v2) — заменяет старый
 // EventRegistrationPaymentToggle: оплата больше не поле EventRegistration,
 // а живёт в Ticket (см. ticket-service.ts, комментарий у модели Ticket в
 // schema.prisma). Три ветки отображения ТЕКУЩИХ билетов:
-// - у события вообще нет Pass — простой тумблер, как раньше, но через
-//   passless Ticket (заводится лениво при первом клике "Оплачено").
-// - ровно один билет (с Pass или без) — тот же простой тумблер, но по
-//   конкретному Ticket.id.
-// - несколько билетов (танцор купил несколько разных Pass) — агрегат
-//   (Оплачено/Частично оплачено/Не оплачено) + попап со списком билетов и
-//   отдельным тумблером на каждый.
-// Независимо от того, в какую из трёх веток попал танцор, ДОПОЛНИТЕЛЬНО
-// рендерится пикер "Выдать Pass" (см. issuePicker ниже), если есть хотя бы
-// один Pass, который он ещё не получал — раньше пикер показывался ТОЛЬКО при
-// полном отсутствии билетов, из-за чего танцор с уже существующим passless-
-// билетом (заведённым до появления Pass на событии) навсегда терял
-// возможность получить Pass через этот экран (найдено вживую пользователем
-// 2026-09-16: "есть Pass, но в участниках я его не вижу").
+// - у события вообще нет ни Pass, ни TicketType — простой тумблер, как
+//   раньше, но через passless/typeless Ticket (заводится лениво при первом
+//   клике "Оплачено").
+// - ровно один билет (с Pass/TicketType или без) — тот же простой тумблер,
+//   но по конкретному Ticket.id.
+// - несколько билетов (танцор купил несколько разных Pass/TicketType) —
+//   агрегат (Оплачено/Частично оплачено/Не оплачено) + попап со списком
+//   билетов и отдельным тумблером на каждый.
+// Независимо от ветки, ДОПОЛНИТЕЛЬНО рендерятся пикеры "Выдать Pass"/"Выдать
+// билет" (см. issuePicker/issueTicketTypePicker ниже), если есть хотя бы
+// один вариант, который танцор ещё не получал — раньше пикер показывался
+// ТОЛЬКО при полном отсутствии билетов, из-за чего танцор с уже
+// существующим passless-билетом (заведённым до появления каталога на
+// событии) навсегда терял возможность получить Pass через этот экран
+// (найдено вживую пользователем 2026-09-16: "есть Pass, но в участниках я
+// его не вижу").
 export function TicketPaymentCell({
   eventSlug,
   registrationId,
   dancerId,
   hasPassCatalog,
+  hasTicketTypeCatalog,
   initialTickets,
   assignablePasses,
+  assignableTicketTypes,
+  festivalPassMatch,
 }: {
   eventSlug: string;
   registrationId: string;
   dancerId: string;
   hasPassCatalog: boolean;
+  hasTicketTypeCatalog: boolean;
   initialTickets: TicketPaymentInfo[];
-  // Активные Pass события (см. availableToIssue ниже — фильтруется до уже
-  // купленных этим танцором) — пусто, если у события нет Pass или ни один
-  // сейчас не в продаже.
+  // Активные Pass/TicketType события (см. availableToIssue ниже —
+  // фильтруется до уже купленных этим танцором) — пусто, если у события нет
+  // соответствующего каталога или ни один сейчас не в продаже.
   assignablePasses: AssignablePassOption[];
+  assignableTicketTypes: AssignableTicketTypeOption[];
+  // Этап 3 — действующий Pass фестиваля (см. findFestivalPassForEvent в
+  // ticket-service.ts), дающий доступ ИМЕННО к этому (дочернему) событию,
+  // если это событие вообще является пунктом программы какого-то фестиваля
+  // и танцор такой Pass держит. null/undefined — не применимо.
+  festivalPassMatch?: FestivalPassMatch | null;
 }) {
   const router = useRouter();
   // ВАЖНО: НЕ копировать initialTickets в useState — при повторном рендере
@@ -56,21 +77,23 @@ export function TicketPaymentCell({
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [selectedPassId, setSelectedPassId] = useState("");
+  const [selectedTicketTypeId, setSelectedTicketTypeId] = useState("");
 
-  // Pass, которые этот танцор ещё не получал — сравниваем с уже имеющимися
-  // билетами (2026-09-16, найдено вживую пользователем: у танцора уже был
-  // billet БЕЗ Pass, заведённый простым тумблером ДО того, как на событии
-  // вообще появился Pass, и пикер выдачи после этого никогда не показывался,
-  // потому что раньше он рисовался только при tickets.length === 0). Танцор
-  // может получить Pass в любой момент, независимо от того, сколько у него
-  // уже других билетов — фильтруем только те Pass, что он уже купил.
+  // Pass/TicketType, которые этот танцор ещё не получал — сравниваем с уже
+  // имеющимися билетами (см. комментарий у функции выше про регрессию).
   const ownedPassIds = new Set(tickets.map((t) => t.passId).filter((id): id is string => id != null));
+  const ownedTicketTypeIds = new Set(tickets.map((t) => t.ticketTypeId).filter((id): id is string => id != null));
   const availableToIssue = assignablePasses.filter((p) => !ownedPassIds.has(p.id));
-  // НЕ полагаться на selectedPassId как на единственный источник истины (тот
-  // же класс бага, что и с initialTickets/useState выше) — если сохранённый
-  // выбор больше не входит в актуальный список (например, событие только что
-  // обновилось), тихо откатываемся на первый доступный вариант.
+  const availableTicketTypesToIssue = assignableTicketTypes.filter((t) => !ownedTicketTypeIds.has(t.id));
+  // НЕ полагаться на selected*Id как на единственный источник истины (тот же
+  // класс бага, что и с initialTickets/useState выше) — если сохранённый
+  // выбор больше не входит в актуальный список, тихо откатываемся на первый
+  // доступный вариант.
   const effectivePassId = availableToIssue.some((p) => p.id === selectedPassId) ? selectedPassId : (availableToIssue[0]?.id ?? "");
+  const effectiveTicketTypeId = availableTicketTypesToIssue.some((t) => t.id === selectedTicketTypeId)
+    ? selectedTicketTypeId
+    : (availableTicketTypesToIssue[0]?.id ?? "");
+  const hasFestivalPassEntry = festivalPassMatch != null && tickets.some((t) => t.passId === festivalPassMatch.passId);
 
   // Выдать танцору конкретный Pass (2026-09-16, по прямому запросу
   // пользователя — иначе на событии с Pass в принципе не появлялось ни
@@ -97,9 +120,44 @@ export function TicketPaymentCell({
     router.refresh();
   }
 
+  // Выдать TicketType — зеркалит issuePass() выше, для простого билета.
+  async function issueTicketType() {
+    if (!effectiveTicketTypeId) return;
+    setLoading(true);
+    setError(null);
+    const res = await fetch(`/api/events/${eventSlug}/ticket-types/${effectiveTicketTypeId}/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dancerId, markPaid: true }),
+    });
+    setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.message || data.error || "Не удалось выдать билет.");
+      return;
+    }
+    router.refresh();
+  }
+
+  // Этап 3 — материализовать вход по Pass фестиваля (см. комментарий у
+  // findFestivalPassForEvent в ticket-service.ts). Ничего не платится
+  // повторно — Pass уже оплачен на событии фестиваля.
+  async function useFestivalPass() {
+    setLoading(true);
+    setError(null);
+    const res = await fetch(`/api/events/${eventSlug}/registrations/${registrationId}/festival-pass`, { method: "POST" });
+    setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.message || data.error || "Не удалось применить Pass фестиваля.");
+      return;
+    }
+    router.refresh();
+  }
+
   // "Простой" случай (0 или 1 билет) — если билета ещё нет, бьём в
-  // registration-эндпоинт (лениво заводит passless Ticket); если есть —
-  // сразу в ticket-эндпоинт по его id.
+  // registration-эндпоинт (лениво заводит passless/typeless Ticket); если
+  // есть — сразу в ticket-эндпоинт по его id.
   async function toggleSimple(existing: TicketPaymentInfo | undefined, nextPaid: boolean) {
     setLoading(true);
     setError(null);
@@ -133,10 +191,28 @@ export function TicketPaymentCell({
     router.refresh();
   }
 
-  if (!hasPassCatalog) {
+  function ticketLabel(t: TicketPaymentInfo): string {
+    return t.passName ?? t.ticketTypeName ?? "Входной билет";
+  }
+
+  // Пикер "Использовать Pass фестиваля" — отдельная кнопка, не смешивается с
+  // обычным пикером Pass этого события (это ЧУЖОЙ Pass, купленный на
+  // фестивале, не Pass самого этого события).
+  const festivalPassButton = festivalPassMatch && !hasFestivalPassEntry && (
+    <button
+      type="button"
+      disabled={loading}
+      onClick={useFestivalPass}
+      className="text-xs text-admin-primaryHover hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      Использовать Pass фестиваля «{festivalPassMatch.passName}»
+    </button>
+  );
+
+  if (!hasPassCatalog && !hasTicketTypeCatalog) {
     const isPaid = tickets[0]?.isPaid ?? false;
     return (
-      <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex flex-col items-start gap-1">
         <button
           type="button"
           disabled={loading}
@@ -145,14 +221,12 @@ export function TicketPaymentCell({
         >
           <StatusBadge label={isPaid ? "Оплачено" : "Не оплачено"} variant={isPaid ? "success" : "danger"} />
         </button>
+        {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
     );
   }
 
-  // Пикер "Выдать Pass" — рендерится вместе с текущими билетами танцора, а
-  // не вместо них, и виден, только если есть хотя бы один Pass, который он
-  // ещё не получал.
   const issuePicker = availableToIssue.length > 0 && (
     <span className="inline-flex flex-col items-start gap-1">
       <select
@@ -178,10 +252,36 @@ export function TicketPaymentCell({
     </span>
   );
 
+  const issueTicketTypePicker = availableTicketTypesToIssue.length > 0 && (
+    <span className="inline-flex flex-col items-start gap-1">
+      <select
+        value={effectiveTicketTypeId}
+        onChange={(e) => setSelectedTicketTypeId(e.target.value)}
+        disabled={loading}
+        className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
+      >
+        {availableTicketTypesToIssue.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={loading}
+        onClick={issueTicketType}
+        className="text-xs text-admin-primaryHover hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Выдать билет
+      </button>
+    </span>
+  );
+
   if (tickets.length === 0) {
     return (
       <span className="inline-flex flex-col items-start gap-1">
-        {issuePicker || <span className="text-sm text-admin-muted">—</span>}
+        {issuePicker || issueTicketTypePicker || <span className="text-sm text-admin-muted">—</span>}
+        {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
     );
@@ -191,7 +291,7 @@ export function TicketPaymentCell({
     const t = tickets[0];
     return (
       <span className="inline-flex flex-col items-start gap-1">
-        <span className="text-xs text-admin-muted">{t.passName ?? "Входной билет"}</span>
+        <span className="text-xs text-admin-muted">{ticketLabel(t)}</span>
         <button
           type="button"
           disabled={loading}
@@ -201,6 +301,8 @@ export function TicketPaymentCell({
           <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
         </button>
         {issuePicker}
+        {issueTicketTypePicker}
+        {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
     );
@@ -214,7 +316,7 @@ export function TicketPaymentCell({
     <>
       <button type="button" onClick={() => setOpen(true)} className="rounded-app-sm px-1 py-0.5 text-left transition-colors hover:bg-admin-card2">
         <span className="flex flex-col items-start gap-1">
-          <span className="max-w-[220px] truncate text-xs text-admin-muted">{tickets.map((t) => t.passName ?? "Входной билет").join(", ")}</span>
+          <span className="max-w-[220px] truncate text-xs text-admin-muted">{tickets.map(ticketLabel).join(", ")}</span>
           <StatusBadge label={summaryLabel} variant={summaryVariant} />
         </span>
       </button>
@@ -236,7 +338,7 @@ export function TicketPaymentCell({
             <div className="flex-1 overflow-y-auto py-1.5">
               {tickets.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-admin-card2">
-                  <span className="truncate text-sm font-semibold text-night-text">{t.passName ?? "Входной билет"}</span>
+                  <span className="truncate text-sm font-semibold text-night-text">{ticketLabel(t)}</span>
                   <button
                     type="button"
                     disabled={loading}
@@ -248,7 +350,13 @@ export function TicketPaymentCell({
                 </div>
               ))}
             </div>
-            {issuePicker && <div className="border-t border-admin-border px-5 py-3">{issuePicker}</div>}
+            {(issuePicker || issueTicketTypePicker || festivalPassButton) && (
+              <div className="flex flex-col gap-2 border-t border-admin-border px-5 py-3">
+                {issuePicker}
+                {issueTicketTypePicker}
+                {festivalPassButton}
+              </div>
+            )}
             {error && <p className="m-0 px-5 py-2 text-xs text-red-400">{error}</p>}
             <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
               <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>

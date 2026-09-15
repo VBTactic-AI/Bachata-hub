@@ -85,6 +85,9 @@ const eventDraftObjectSchema = z.object({
   endsAt: z.string().optional(),
   capacity: z.coerce.number().int().positive().optional(),
   registrationEnabled: z.boolean().optional(),
+  // "Способ доступа" (2026-09-16) — чисто UI-подсказка (см. комментарий у
+  // Event.ticketingMode в schema.prisma), не влияет на бизнес-валидацию.
+  ticketingMode: z.enum(["UNSET", "FREE", "TICKETS", "PASSES", "TICKETS_AND_PASSES"]).optional(),
   priceText: z.string().max(120).optional(),
   externalLinkUrl: z.string().url().optional().or(z.literal("")),
   tags: z.array(z.string()).optional(),

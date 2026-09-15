@@ -7,9 +7,9 @@ import {
   type RegistrationSortBy,
   type RegistrationSortDir,
 } from "@/server/events/registration-service";
-import { listTicketsByDancerForEvent, getEventPaymentSummaryCounts } from "@/server/events/ticket-service";
+import { listTicketsByDancerForEvent, getEventPaymentSummaryCounts, findFestivalPassForEvent } from "@/server/events/ticket-service";
 import { EventRegistrationStatusSelect } from "@/components/admin/events/EventRegistrationStatusSelect";
-import { TicketPaymentCell } from "@/components/admin/events/TicketPaymentCell";
+import { TicketPaymentCell, type FestivalPassMatch } from "@/components/admin/events/TicketPaymentCell";
 import { EventRegistrationCheckInToggle } from "@/components/admin/events/EventRegistrationCheckInToggle";
 import { StatCard } from "@/components/admin/StatCard";
 import { PeopleIcon, CardIcon, AlertIcon } from "@/components/admin/icons";
@@ -102,14 +102,17 @@ export default async function EventRegistrationsPage({
     throw e;
   }
 
-  // Билеты/оплата (Ticket Engine) — hasPassCatalog решает, показывать ли
-  // названия Pass в колонке или просто простой тумблер "Оплата", как раньше.
-  // activePasses — те, которые вообще можно выдать танцору прямо отсюда
-  // (2026-09-16: без этого Pass.soldQuantity никогда не менялось бы —
-  // единственный способ создать Pass-привязанный Ticket отсюда).
-  const [passCount, activePasses, ticketsByDancer, paymentCounts] = await Promise.all([
+  // Билеты/оплата (Ticket Engine v2) — hasPassCatalog/hasTicketTypeCatalog
+  // решают, показывать ли названия Pass/билета в колонке или просто простой
+  // тумблер "Оплата", как раньше. activePasses/activeTicketTypes — те,
+  // которые вообще можно выдать танцору прямо отсюда (2026-09-16: без этого
+  // soldQuantity никогда не менялось бы — единственный способ создать
+  // привязанный Ticket отсюда).
+  const [passCount, activePasses, ticketTypeCount, activeTicketTypes, ticketsByDancer, paymentCounts, festivalProgramItem] = await Promise.all([
     prisma.pass.count({ where: { eventId: event.id } }),
     prisma.pass.findMany({ where: { eventId: event.id, status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
+    prisma.ticketType.count({ where: { eventId: event.id } }),
+    prisma.ticketType.findMany({ where: { eventId: event.id, status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
     listTicketsByDancerForEvent(
       event.id,
       result.items.map((r) => r.dancerId)
@@ -122,12 +125,35 @@ export default async function EventRegistrationsPage({
         await prisma.eventRegistration.findMany({ where: { eventId: event.id }, select: { dancerId: true } })
       ).map((r) => r.dancerId)
     ),
+    // Этап 3 — дешёвая проверка "является ли это событие пунктом программы
+    // какого-то фестиваля" ДО того, как гонять findFestivalPassForEvent по
+    // каждому танцору страницы (для подавляющего большинства обычных
+    // событий этот запрос вернёт null, и вся festival-pass-логика ниже
+    // просто пропускается).
+    prisma.eventProgramItem.findFirst({ where: { linkedEventId: event.id }, select: { id: true } }),
   ]);
   const hasPassCatalog = passCount > 0;
-  // issueTicket() требует активную регистрацию (REGISTERED/CONFIRMED/
-  // WAITLIST) — тем, кто сам отменился/отклонён/не пришёл, Pass выдать
-  // нельзя (см. ticket-service.ts), поэтому им picker не показываем вовсе.
+  const hasTicketTypeCatalog = ticketTypeCount > 0;
+  // issueTicket()/issueTicketForType() требуют активную регистрацию
+  // (REGISTERED/CONFIRMED/WAITLIST) — тем, кто сам отменился/отклонён/не
+  // пришёл, Pass/билет выдать нельзя (см. ticket-service.ts), поэтому им
+  // picker не показываем вовсе.
   const ELIGIBLE_FOR_PASS = new Set(["REGISTERED", "CONFIRMED", "WAITLIST"]);
+
+  // Этап 3 — Pass фестиваля на каждого подходящего танцора текущей
+  // страницы (только если событие вообще является дочерним, см. проверку
+  // выше — иначе пропускаем полностью, без лишних запросов).
+  const festivalPassByDancer = new Map<string, FestivalPassMatch>();
+  if (festivalProgramItem) {
+    await Promise.all(
+      result.items
+        .filter((r) => ELIGIBLE_FOR_PASS.has(r.status))
+        .map(async (r) => {
+          const match = await findFestivalPassForEvent(event.id, r.dancerId);
+          if (match) festivalPassByDancer.set(r.dancerId, { passId: match.passId, passName: match.passName });
+        })
+    );
+  }
 
   const totalPages = Math.max(Math.ceil(result.total / result.pageSize), 1);
   const pctOverall = (count: number) => (result.totalOverall === 0 ? 0 : Math.round((count / result.totalOverall) * 100));
@@ -275,7 +301,7 @@ export default async function EventRegistrationsPage({
                     </a>
                   </th>
                   <th className="px-3 py-2 font-semibold">Статус</th>
-                  <th className="px-3 py-2 font-semibold">{hasPassCatalog ? "Билеты" : "Оплата"}</th>
+                  <th className="px-3 py-2 font-semibold">{hasPassCatalog || hasTicketTypeCatalog ? "Билеты" : "Оплата"}</th>
                   <th className="px-3 py-2 font-semibold">Check-in</th>
                 </tr>
               </thead>
@@ -293,8 +319,11 @@ export default async function EventRegistrationsPage({
                         registrationId={r.id}
                         dancerId={r.dancerId}
                         hasPassCatalog={hasPassCatalog}
+                        hasTicketTypeCatalog={hasTicketTypeCatalog}
                         initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
                         assignablePasses={ELIGIBLE_FOR_PASS.has(r.status) ? activePasses : []}
+                        assignableTicketTypes={ELIGIBLE_FOR_PASS.has(r.status) ? activeTicketTypes : []}
+                        festivalPassMatch={festivalPassByDancer.get(r.dancerId) ?? null}
                       />
                     </td>
                     <td className="px-3 py-2 align-top">
@@ -317,8 +346,11 @@ export default async function EventRegistrationsPage({
                     registrationId={r.id}
                     dancerId={r.dancerId}
                     hasPassCatalog={hasPassCatalog}
+                    hasTicketTypeCatalog={hasTicketTypeCatalog}
                     initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
                     assignablePasses={ELIGIBLE_FOR_PASS.has(r.status) ? activePasses : []}
+                    assignableTicketTypes={ELIGIBLE_FOR_PASS.has(r.status) ? activeTicketTypes : []}
+                    festivalPassMatch={festivalPassByDancer.get(r.dancerId) ?? null}
                   />
                 </div>
                 <p className="m-0 mt-1 text-xs text-admin-muted">{formatDateTime(r.createdAt)}</p>

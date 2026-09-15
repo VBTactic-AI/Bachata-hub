@@ -7,15 +7,22 @@ import type { User } from "@prisma/client";
 
 const eventFindUnique = vi.fn();
 const passFindUnique = vi.fn();
+const ticketTypeFindUnique = vi.fn(); // requireAccessForTicketType
 const dancerFindUnique = vi.fn();
-const ticketFindUnique = vi.fn(); // requireAccessForTicket
+const ticketFindUnique = vi.fn(); // requireAccessForTicket / issueFestivalPassEntry existing lookup
 const ticketFindMany = vi.fn();
+const ticketFindFirst = vi.fn(); // findFestivalPassForEvent
+const ticketCreate = vi.fn(); // issueFestivalPassEntry (вне транзакции)
+const ticketCount = vi.fn(); // getEventPassAttendanceCount
+const eventProgramItemFindFirst = vi.fn(); // findFestivalPassForEvent
 const eventRegistrationFindUnique = vi.fn(); // markRegistrationPayment/listTicketsForRegistration
 const eventTeamMemberFindUnique = vi.fn(); // hasEventAccess
 
 const executeRaw = vi.fn().mockResolvedValue(0);
 const txPassFindUniqueOrThrow = vi.fn();
 const txPassUpdate = vi.fn();
+const txTicketTypeFindUniqueOrThrow = vi.fn();
+const txTicketTypeUpdate = vi.fn();
 const txTicketCreate = vi.fn();
 const txTicketUpdate = vi.fn();
 const txTicketFindFirst = vi.fn();
@@ -24,6 +31,7 @@ const txPassPriceTierFindMany = vi.fn();
 const fakeTx = {
   $executeRaw: executeRaw,
   pass: { findUniqueOrThrow: txPassFindUniqueOrThrow, update: txPassUpdate },
+  ticketType: { findUniqueOrThrow: txTicketTypeFindUniqueOrThrow, update: txTicketTypeUpdate },
   ticket: { create: txTicketCreate, update: txTicketUpdate, findFirst: txTicketFindFirst },
   passPriceTier: { findMany: txPassPriceTierFindMany },
 };
@@ -32,11 +40,16 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     event: { findUnique: (...a: unknown[]) => eventFindUnique(...a) },
     pass: { findUnique: (...a: unknown[]) => passFindUnique(...a) },
+    ticketType: { findUnique: (...a: unknown[]) => ticketTypeFindUnique(...a) },
     dancer: { findUnique: (...a: unknown[]) => dancerFindUnique(...a) },
     ticket: {
       findUnique: (...a: unknown[]) => ticketFindUnique(...a),
       findMany: (...a: unknown[]) => ticketFindMany(...a),
+      findFirst: (...a: unknown[]) => ticketFindFirst(...a),
+      create: (...a: unknown[]) => ticketCreate(...a),
+      count: (...a: unknown[]) => ticketCount(...a),
     },
+    eventProgramItem: { findFirst: (...a: unknown[]) => eventProgramItemFindFirst(...a) },
     eventRegistration: { findUnique: (...a: unknown[]) => eventRegistrationFindUnique(...a) },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
@@ -45,6 +58,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const {
   issueTicket,
+  issueTicketForType,
   updateTicketPayment,
   cancelTicket,
   refundTicket,
@@ -53,6 +67,10 @@ const {
   getEventPaymentSummaryCounts,
   markRegistrationPayment,
   listTicketsForRegistration,
+  getEventTicketTypeRevenue,
+  findFestivalPassForEvent,
+  issueFestivalPassEntry,
+  getEventPassAttendanceCount,
   TicketValidationError,
   DuplicateTicketError,
 } = await import("@/server/events/ticket-service");
@@ -88,13 +106,29 @@ const activePass = {
   salesStartAt: null as Date | null,
   salesEndAt: null as Date | null,
 };
+const activeTicketType = {
+  id: "tt1",
+  eventId: "event1",
+  status: "ACTIVE" as const,
+  price: 15,
+  currency: "BYN",
+  quantity: 10,
+  soldQuantity: 0,
+  salesStartAt: null as Date | null,
+  salesEndAt: null as Date | null,
+};
 
 beforeEach(() => {
   eventFindUnique.mockReset().mockResolvedValue(event);
   passFindUnique.mockReset().mockResolvedValue({ ...activePass, event });
+  ticketTypeFindUnique.mockReset().mockResolvedValue({ ...activeTicketType, event });
   dancerFindUnique.mockReset().mockResolvedValue({ id: "dancer1" });
   ticketFindUnique.mockReset();
   ticketFindMany.mockReset().mockResolvedValue([]);
+  ticketFindFirst.mockReset().mockResolvedValue(null);
+  ticketCreate.mockReset().mockResolvedValue({ id: "derived-ticket" });
+  ticketCount.mockReset().mockResolvedValue(0);
+  eventProgramItemFindFirst.mockReset().mockResolvedValue(null);
   // По умолчанию танцор уже зарегистрирован на событие (issueTicket это
   // требует, 2026-09-16) — тесты, которым конкретно нужен другой случай,
   // переопределяют этот мок сами.
@@ -104,6 +138,8 @@ beforeEach(() => {
   txPassPriceTierFindMany.mockReset().mockResolvedValue([]);
   txPassFindUniqueOrThrow.mockReset().mockResolvedValue(activePass);
   txPassUpdate.mockReset().mockImplementation((args) => Promise.resolve({ ...activePass, ...args.data }));
+  txTicketTypeFindUniqueOrThrow.mockReset().mockResolvedValue(activeTicketType);
+  txTicketTypeUpdate.mockReset().mockImplementation((args) => Promise.resolve({ ...activeTicketType, ...args.data }));
   txTicketCreate.mockReset().mockResolvedValue({ id: "ticket1", passId: "pass1", dancerId: "dancer1", isPaid: false });
   txTicketUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: "ticket1", ...args.data }));
   txTicketFindFirst.mockReset().mockResolvedValue(null);
@@ -314,9 +350,9 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
 
   it("группирует билеты по dancerId, только ISSUED", async () => {
     ticketFindMany.mockResolvedValue([
-      { id: "t1", dancerId: "d1", passId: "p1", isPaid: true, pass: { name: "Full Pass" } },
-      { id: "t2", dancerId: "d1", passId: "p2", isPaid: false, pass: { name: "VIP Pass" } },
-      { id: "t3", dancerId: "d2", passId: null, isPaid: true, pass: null },
+      { id: "t1", dancerId: "d1", passId: "p1", ticketTypeId: null, isPaid: true, pass: { name: "Full Pass" } },
+      { id: "t2", dancerId: "d1", passId: "p2", ticketTypeId: null, isPaid: false, pass: { name: "VIP Pass" } },
+      { id: "t3", dancerId: "d2", passId: null, ticketTypeId: null, isPaid: true, pass: null },
     ]);
 
     const result = await listTicketsByDancerForEvent("event1", ["d1", "d2"]);
@@ -325,10 +361,24 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
       expect.objectContaining({ where: { eventId: "event1", dancerId: { in: ["d1", "d2"] }, status: "ISSUED" } })
     );
     expect(result.get("d1")).toEqual([
-      { id: "t1", passId: "p1", passName: "Full Pass", isPaid: true },
-      { id: "t2", passId: "p2", passName: "VIP Pass", isPaid: false },
+      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true },
+      { id: "t2", passId: "p2", passName: "VIP Pass", ticketTypeId: null, ticketTypeName: null, isPaid: false },
     ]);
-    expect(result.get("d2")).toEqual([{ id: "t3", passId: null, passName: null, isPaid: true }]);
+    expect(result.get("d2")).toEqual([
+      { id: "t3", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true },
+    ]);
+  });
+
+  it("группирует билеты с TicketType наравне с Pass", async () => {
+    ticketFindMany.mockResolvedValue([
+      { id: "t1", dancerId: "d1", passId: null, ticketTypeId: "tt1", isPaid: true, pass: null, ticketType: { name: "Dancer" } },
+    ]);
+
+    const result = await listTicketsByDancerForEvent("event1", ["d1"]);
+
+    expect(result.get("d1")).toEqual([
+      { id: "t1", passId: null, passName: null, ticketTypeId: "tt1", ticketTypeName: "Dancer", isPaid: true },
+    ]);
   });
 
   it("summarizePayment: нет билетов — UNPAID", () => {
@@ -337,20 +387,20 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
   });
 
   it("summarizePayment: все оплачены — PAID", () => {
-    expect(summarizePayment([{ id: "1", passId: null, passName: null, isPaid: true }])).toBe("PAID");
+    expect(summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true }])).toBe("PAID");
   });
 
   it("summarizePayment: часть оплачена — PARTIAL", () => {
     expect(
       summarizePayment([
-        { id: "1", passId: null, passName: null, isPaid: true },
-        { id: "2", passId: null, passName: null, isPaid: false },
+        { id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true },
+        { id: "2", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false },
       ])
     ).toBe("PARTIAL");
   });
 
   it("summarizePayment: ничего не оплачено — UNPAID", () => {
-    expect(summarizePayment([{ id: "1", passId: null, passName: null, isPaid: false }])).toBe("UNPAID");
+    expect(summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false }])).toBe("UNPAID");
   });
 });
 
@@ -400,6 +450,7 @@ describe("markRegistrationPayment() — событие без Pass (passless Tic
         eventId: "event1",
         dancerId: "dancer1",
         passId: null,
+        ticketTypeId: null,
         status: "ISSUED",
         isPaid: true,
         paidAt: expect.any(Date),
@@ -427,10 +478,224 @@ describe("listTicketsForRegistration()", () => {
 
   it("возвращает билеты этого танцора по событию", async () => {
     eventRegistrationFindUnique.mockResolvedValue({ id: "reg1", eventId: "event1", dancerId: "dancer1", event });
-    ticketFindMany.mockResolvedValue([{ id: "t1", dancerId: "dancer1", passId: "p1", isPaid: true, pass: { name: "Full Pass" } }]);
+    ticketFindMany.mockResolvedValue([{ id: "t1", dancerId: "dancer1", passId: "p1", ticketTypeId: null, isPaid: true, pass: { name: "Full Pass" } }]);
 
     const result = await listTicketsForRegistration("reg1", owner);
 
-    expect(result).toEqual([{ id: "t1", passId: "p1", passName: "Full Pass", isPaid: true }]);
+    expect(result).toEqual([{ id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true }]);
+  });
+});
+
+describe("issueTicketForType() — Ticket Engine v2 (2026-09-16)", () => {
+  it("чужое событие — RegistrationForbiddenError", async () => {
+    ticketTypeFindUnique.mockResolvedValue({ ...activeTicketType, event: { id: "event1", createdById: "someone-else" } });
+    await expect(issueTicketForType("tt1", "dancer1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("TicketType не найден — RegistrationNotFoundError", async () => {
+    ticketTypeFindUnique.mockResolvedValue(null);
+    await expect(issueTicketForType("missing", "dancer1", owner)).rejects.toBeInstanceOf(RegistrationNotFoundError);
+  });
+
+  it("танцор не зарегистрирован — TicketValidationError('not_registered')", async () => {
+    eventRegistrationFindUnique.mockResolvedValue(null);
+    await expect(issueTicketForType("tt1", "dancer1", owner)).rejects.toMatchObject({ code: "not_registered" });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("TicketType не ACTIVE — TicketValidationError('pass_not_on_sale')", async () => {
+    txTicketTypeFindUniqueOrThrow.mockResolvedValue({ ...activeTicketType, status: "PAUSED" });
+    await expect(issueTicketForType("tt1", "dancer1", owner)).rejects.toMatchObject({ code: "pass_not_on_sale" });
+  });
+
+  it("мест больше нет — TicketValidationError('sold_out')", async () => {
+    txTicketTypeFindUniqueOrThrow.mockResolvedValue({ ...activeTicketType, quantity: 5, soldQuantity: 5 });
+    await expect(issueTicketForType("tt1", "dancer1", owner)).rejects.toMatchObject({ code: "sold_out" });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("повторная покупка (P2002) — DuplicateTicketError", async () => {
+    txTicketCreate.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
+    await expect(issueTicketForType("tt1", "dancer1", owner)).rejects.toBeInstanceOf(DuplicateTicketError);
+  });
+
+  it("бесплатный TicketType (price=null) — выдаётся сразу оплаченным", async () => {
+    txTicketTypeFindUniqueOrThrow.mockResolvedValue({ ...activeTicketType, price: null });
+    await issueTicketForType("tt1", "dancer1", owner, { markPaid: false });
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ isPaid: true, paidAt: expect.any(Date) }) });
+  });
+
+  it("платный TicketType, markPaid не передан — isPaid=false", async () => {
+    await issueTicketForType("tt1", "dancer1", owner);
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ isPaid: false, paidAt: null }) });
+  });
+
+  it("снимок цены/валюты + issuedById, без passId", async () => {
+    await issueTicketForType("tt1", "dancer1", owner, { markPaid: true });
+    expect(txTicketCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventId: "event1",
+        ticketTypeId: "tt1",
+        dancerId: "dancer1",
+        price: 15,
+        currency: "BYN",
+        issuedById: "owner1",
+      }),
+    });
+  });
+
+  it("успешная выдача — инкрементирует TicketType.soldQuantity", async () => {
+    await issueTicketForType("tt1", "dancer1", owner);
+    expect(txTicketTypeUpdate).toHaveBeenCalledWith({ where: { id: "tt1" }, data: { soldQuantity: { increment: 1 } } });
+  });
+
+  it("после выдачи последнего места — переключается в SOLD_OUT", async () => {
+    txTicketTypeFindUniqueOrThrow.mockResolvedValue({ ...activeTicketType, quantity: 5, soldQuantity: 4 });
+    txTicketTypeUpdate.mockResolvedValueOnce({ ...activeTicketType, quantity: 5, soldQuantity: 5, status: "ACTIVE" });
+
+    await issueTicketForType("tt1", "dancer1", owner);
+
+    expect(txTicketTypeUpdate).toHaveBeenCalledWith({ where: { id: "tt1" }, data: { status: "SOLD_OUT" } });
+  });
+});
+
+describe("cancelTicket() / refundTicket() — билет по TicketType", () => {
+  it("cancelTicket — ISSUED с TicketType — освобождает место через ticketType, не через pass", async () => {
+    ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", passId: null, ticketTypeId: "tt1", event });
+    txTicketUpdate.mockResolvedValue({ id: "ticket1", status: "CANCELLED" });
+
+    await cancelTicket("ticket1", owner);
+
+    expect(txTicketTypeUpdate).toHaveBeenCalledWith({ where: { id: "tt1" }, data: { soldQuantity: { decrement: 1 } } });
+    expect(txPassUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refundTicket — оплаченный ISSUED с TicketType — освобождает место через ticketType", async () => {
+    ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", isPaid: true, passId: null, ticketTypeId: "tt1", event });
+    txTicketUpdate.mockResolvedValue({ id: "ticket1", status: "REFUNDED" });
+
+    await refundTicket("ticket1", owner);
+
+    expect(txTicketTypeUpdate).toHaveBeenCalledWith({ where: { id: "tt1" }, data: { soldQuantity: { decrement: 1 } } });
+  });
+});
+
+describe("getEventTicketTypeRevenue()", () => {
+  it("суммирует price только оплаченных ISSUED билетов с ticketTypeId", async () => {
+    ticketFindMany.mockResolvedValue([{ price: "15" }, { price: "10" }]);
+    const result = await getEventTicketTypeRevenue("event1", owner);
+    expect(result).toBe(25);
+    expect(ticketFindMany).toHaveBeenCalledWith({
+      where: { eventId: "event1", ticketTypeId: { not: null }, isPaid: true, status: "ISSUED" },
+      select: { price: true },
+    });
+  });
+
+  it("чужое событие — RegistrationForbiddenError", async () => {
+    eventFindUnique.mockResolvedValue({ id: "event1", createdById: "someone-else" });
+    await expect(getEventTicketTypeRevenue("event1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+  });
+});
+
+describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсобытийный Pass фестиваля (этап 3)", () => {
+  it("событие не является дочерним ни для одного фестиваля — null", async () => {
+    eventProgramItemFindFirst.mockResolvedValue(null);
+    const result = await findFestivalPassForEvent("child-event", "dancer1");
+    expect(result).toBeNull();
+  });
+
+  it("дочернее событие фестиваля, но у танцора нет Pass фестиваля — null", async () => {
+    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    ticketFindFirst.mockResolvedValue(null);
+    const result = await findFestivalPassForEvent("child-event", "dancer1");
+    expect(result).toBeNull();
+  });
+
+  it("у Pass пустые accessGrants — доступ ко всей программе фестиваля", async () => {
+    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
+
+    const result = await findFestivalPassForEvent("child-event", "dancer1");
+
+    expect(result).toEqual({ passId: "pass1", passName: "Full Pass", festivalEventId: "festival1" });
+  });
+
+  it("у Pass есть accessGrants, но не на этот пункт программы — null", async () => {
+    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Party Pass", accessGrants: [{ programItemId: "other-item" }] } });
+
+    const result = await findFestivalPassForEvent("child-event", "dancer1");
+
+    expect(result).toBeNull();
+  });
+
+  it("accessGrants включают именно этот пункт программы — доступ разрешён", async () => {
+    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Party Pass", accessGrants: [{ programItemId: "item1" }] } });
+
+    const result = await findFestivalPassForEvent("child-event", "dancer1");
+
+    expect(result).toEqual({ passId: "pass1", passName: "Party Pass", festivalEventId: "festival1" });
+  });
+
+  it("issueFestivalPassEntry — нет действующего Pass — TicketValidationError('no_festival_pass')", async () => {
+    eventProgramItemFindFirst.mockResolvedValue(null);
+    await expect(issueFestivalPassEntry("child-event", "dancer1", owner)).rejects.toMatchObject({ code: "no_festival_pass" });
+    expect(ticketCreate).not.toHaveBeenCalled();
+  });
+
+  it("issueFestivalPassEntry — уже материализован (идемпотентно) — возвращает существующий, не создаёт новый", async () => {
+    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
+    ticketFindUnique.mockResolvedValue({ id: "existing-derived", eventId: "child-event", passId: "pass1", dancerId: "dancer1" });
+
+    const result = await issueFestivalPassEntry("child-event", "dancer1", owner);
+
+    expect(result).toEqual({ id: "existing-derived", eventId: "child-event", passId: "pass1", dancerId: "dancer1" });
+    expect(ticketCreate).not.toHaveBeenCalled();
+  });
+
+  it("issueFestivalPassEntry — создаёт производный Ticket с price=null, isPaid=true", async () => {
+    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
+    ticketFindUnique.mockResolvedValue(null);
+
+    await issueFestivalPassEntry("child-event", "dancer1", owner);
+
+    expect(ticketCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventId: "child-event",
+        passId: "pass1",
+        dancerId: "dancer1",
+        price: null,
+        currency: null,
+        isPaid: true,
+        issuedById: "owner1",
+      }),
+    });
+  });
+
+  it("issueFestivalPassEntry — чужое событие — RegistrationForbiddenError", async () => {
+    eventFindUnique.mockResolvedValue({ id: "child-event", createdById: "someone-else" });
+    await expect(issueFestivalPassEntry("child-event", "dancer1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+  });
+});
+
+describe("getEventPassAttendanceCount()", () => {
+  it("считает только производные входы — Pass которых принадлежит ДРУГОМУ событию", async () => {
+    ticketCount.mockResolvedValue(3);
+
+    const result = await getEventPassAttendanceCount("event1", owner);
+
+    expect(result).toBe(3);
+    expect(ticketCount).toHaveBeenCalledWith({
+      where: { eventId: "event1", passId: { not: null }, status: "ISSUED", pass: { eventId: { not: "event1" } } },
+    });
+  });
+
+  it("чужое событие — RegistrationForbiddenError", async () => {
+    eventFindUnique.mockResolvedValue({ id: "event1", createdById: "someone-else" });
+    await expect(getEventPassAttendanceCount("event1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
   });
 });

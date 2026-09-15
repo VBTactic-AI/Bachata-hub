@@ -1,4 +1,4 @@
-import type { EventFormat, DanceLevel, EventStatus, EventCertainty } from "@prisma/client";
+import type { EventFormat, DanceLevel, EventStatus, EventCertainty, EventTicketingMode } from "@prisma/client";
 
 // Event Engine — форма черновика в состоянии React (клиент). Отдельно от
 // EventDraftInput (server/events/schemas.ts, zod) намеренно: инпуты формы
@@ -64,6 +64,8 @@ export type WizardDraft = {
   endsAt: string;
   capacity: string;
   registrationEnabled: boolean;
+  // "Способ доступа" — см. комментарий у Event.ticketingMode в schema.prisma.
+  ticketingMode: EventTicketingMode;
   priceText: string;
   externalLinkUrl: string;
   tags: string;
@@ -111,6 +113,7 @@ export function emptyWizardDraft(defaultCityId: string): WizardDraft {
     endsAt: "",
     capacity: "",
     registrationEnabled: false,
+    ticketingMode: "UNSET",
     priceText: "",
     externalLinkUrl: "",
     tags: "",
@@ -169,6 +172,7 @@ export function toApiPayload(d: WizardDraft, status: "DRAFT" | "PUBLISHED") {
     endsAt: d.endsAt || undefined,
     capacity: d.capacity ? Number(d.capacity) : undefined,
     registrationEnabled: d.registrationEnabled,
+    ticketingMode: d.ticketingMode,
     priceText: d.priceText || undefined,
     externalLinkUrl: d.externalLinkUrl || undefined,
     tags: csvToArray(d.tags),

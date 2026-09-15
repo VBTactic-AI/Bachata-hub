@@ -86,6 +86,7 @@ export default async function AdminContentPage({
       endsAt: event.endsAt ? dateToLocalInputValue(event.endsAt) : "",
       capacity: event.capacity != null ? String(event.capacity) : "",
       registrationEnabled: event.registrationEnabled,
+      ticketingMode: event.ticketingMode,
       priceText: event.priceText ?? "",
       externalLinkUrl: event.externalLinkUrl ?? "",
       tags: event.tags.join(", "),
