@@ -3,13 +3,17 @@ import { getCurrentUser } from "@/lib/auth";
 import { getDancerByUserId } from "@/lib/dancer";
 import { prisma } from "@/lib/prisma";
 import { getMyAccessRequests } from "@/server/access-requests/queries";
-import { BecomeOrganizerWizard } from "@/components/become-organizer/BecomeOrganizerWizard";
-import { AccessRequestStatusList } from "@/components/become-organizer/AccessRequestStatusList";
+import { BecomeOrganizerWizard, type RequestStatusByType } from "@/components/become-organizer/BecomeOrganizerWizard";
 
 // Единая публичная точка входа для заявки на проверенный доступ (организатор
 // событий/фестиваля, руководитель школы, организатор соревнований) — заменяет
 // прежний свободный выбор роли при регистрации (docs/00_DECISIONS.md,
 // 2026-09-14). Доступ выдаёт только супер-админ, по заявке и модерации.
+//
+// Редизайн (2026-09-16, по прямому запросу пользователя) — отдельный список
+// "Мои заявки на доступ" (AccessRequestStatusList) убран с этой страницы:
+// статус каждого типа теперь виден прямо на карточке роли в самом визарде
+// (подсветка цветом + подсказка по наведению, см. BecomeOrganizerWizard.tsx).
 export default async function BecomeOrganizerPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/become-organizer");
@@ -20,21 +24,30 @@ export default async function BecomeOrganizerPage() {
     getMyAccessRequests(user.id),
   ]);
 
-  // Уже есть активная (не отклонённая/не отозванная) заявка на каждый из 4
-  // типов — не даём подать повторную заявку того же типа, пока она в работе;
-  // остальные типы всё ещё можно запросить отдельно.
-  const activeTypes = new Set(
-    myRequests.filter((r) => r.status === "PENDING" || r.status === "NEEDS_INFO" || r.status === "APPROVED").map((r) => r.type)
-  );
-  const allFourRequested = activeTypes.size >= 4;
+  // Самая свежая заявка по каждому типу (myRequests уже отсортирован по
+  // createdAt desc в getMyAccessRequests — первая встреченная запись на тип
+  // и есть самая свежая). Если человек подавал заявку одного типа несколько
+  // раз (например, отклонили — подал заново), в карточке роли отражается
+  // именно последнее решение, а не история целиком.
+  const latestByType: RequestStatusByType = {};
+  for (const r of myRequests) {
+    if (!latestByType[r.type]) latestByType[r.type] = { status: r.status, reviewComment: r.reviewComment };
+  }
+
+  // PENDING/APPROVED — по прямому решению пользователя — блокируют повторную
+  // заявку по этому типу (одна уже одобрена или уже рассматривается);
+  // NEEDS_INFO/REJECTED/REVOKED осознанно НЕ блокируют — можно подать заново
+  // сразу же, без ожидания. "Нечего больше запросить" — когда все 4 типа
+  // заблокированы одновременно.
+  const blockedCount = Object.values(latestByType).filter((r) => r.status === "PENDING" || r.status === "APPROVED").length;
+  const allBlocked = blockedCount >= 4;
 
   return (
     <div className="flex flex-col gap-5 pb-4">
-      {/* Заголовок/подзаголовок теперь часть OrganizerHeroPanel внутри
-          визарда (редизайн 2026-09-16) — здесь нужен только когда сам
-          визард не показан (все 4 типа уже запрошены), иначе получилось бы
-          два одинаковых "Стать организатором" подряд. */}
-      {allFourRequested && (
+      {/* Заголовок/подзаголовок — часть OrganizerHeroPanel внутри визарда;
+          здесь нужен только когда сам визард не показан (нечего больше
+          запросить), иначе получилось бы два одинаковых заголовка подряд. */}
+      {allBlocked && (
         <div>
           <h1 className="m-0 font-night text-2xl font-extrabold tracking-tight text-night-text">Стать организатором</h1>
           <p className="m-0 mt-1 text-sm text-night-muted">
@@ -43,12 +56,10 @@ export default async function BecomeOrganizerPage() {
         </div>
       )}
 
-      {myRequests.length > 0 && <AccessRequestStatusList requests={myRequests} />}
-
-      {allFourRequested ? (
-        <p className="text-sm text-night-muted">По всем видам доступа уже есть активная заявка — новую подавать не нужно.</p>
+      {allBlocked ? (
+        <p className="text-sm text-night-muted">По всем видам доступа уже есть одобренная или рассматриваемая заявка — новую подавать не нужно.</p>
       ) : (
-        <BecomeOrganizerWizard cities={cities} initialCityId={dancer?.cityId ?? null} />
+        <BecomeOrganizerWizard cities={cities} initialCityId={dancer?.cityId ?? null} requestStatusByType={latestByType} />
       )}
     </div>
   );

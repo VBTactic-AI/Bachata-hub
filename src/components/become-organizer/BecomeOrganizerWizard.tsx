@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { AccessRequestStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/field";
 import { Card } from "@/components/ui/card";
@@ -22,6 +23,24 @@ import { OrganizerHeroPanel } from "./OrganizerHeroPanel";
 
 type AccessType = "EVENT_ORGANIZER" | "FESTIVAL_ORGANIZER" | "SCHOOL_HEAD" | "COMPETITION_ORGANIZER";
 type LinkType = "INSTAGRAM" | "FACEBOOK" | "WEBSITE" | "TELEGRAM" | "OTHER";
+
+// Статус последней заявки по каждому типу (2026-09-16, по прямому запросу
+// пользователя) — отображается прямо на карточке роли ниже (цвет + подсказка
+// по наведению), отдельный список "Мои заявки на доступ" на этой странице
+// больше не показывается.
+export type RequestStatusByType = Partial<Record<AccessType, { status: AccessRequestStatus; reviewComment: string | null }>>;
+
+// PENDING/APPROVED блокируют повторную заявку по этому типу (одна уже
+// одобрена, или уже рассматривается — дублировать нет смысла). NEEDS_INFO/
+// REJECTED/REVOKED — прямое решение пользователя: НЕ блокируют, можно сразу
+// подать заново с уточнениями, просто подсвечены другим цветом.
+const REQUEST_STATUS_META: Record<AccessRequestStatus, { label: string; dot: string; border: string; bg: string; blocked: boolean }> = {
+  PENDING: { label: "Заявка на проверке", dot: "bg-amber-400", border: "border-amber-400/50", bg: "bg-amber-400/10", blocked: true },
+  NEEDS_INFO: { label: "Нужна информация", dot: "bg-orange-400", border: "border-orange-400/50", bg: "bg-orange-400/10", blocked: false },
+  APPROVED: { label: "Доступ одобрен", dot: "bg-night-success", border: "border-night-success/50", bg: "bg-night-success/10", blocked: true },
+  REJECTED: { label: "Заявка отклонена", dot: "bg-red-400", border: "border-red-400/50", bg: "bg-red-400/10", blocked: false },
+  REVOKED: { label: "Доступ отозван", dot: "bg-night-disabled", border: "border-night-disabled/50", bg: "bg-night-disabled/10", blocked: false },
+};
 
 function EventIcon() {
   return (
@@ -176,7 +195,15 @@ const ctaClass = "w-full rounded-full border-none bg-gradient-night-cta py-3.5 t
 
 type City = { id: string; nameRu: string; countryId: string };
 
-export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[]; initialCityId: string | null }) {
+export function BecomeOrganizerWizard({
+  cities,
+  initialCityId,
+  requestStatusByType = {},
+}: {
+  cities: City[];
+  initialCityId: string | null;
+  requestStatusByType?: RequestStatusByType;
+}) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [types, setTypes] = useState<AccessType[]>([]);
@@ -350,33 +377,61 @@ export function BecomeOrganizerWizard({ cities, initialCityId }: { cities: City[
                 <div className="flex flex-col gap-2.5">
                   {TYPE_CARDS.map((c) => {
                     const checked = types.includes(c.type);
+                    const request = requestStatusByType[c.type];
+                    const meta = request ? REQUEST_STATUS_META[request.status] : null;
+                    const blocked = meta?.blocked ?? false;
+                    const cardColorClass = blocked
+                      ? `cursor-not-allowed opacity-80 ${meta!.border} ${meta!.bg}`
+                      : checked
+                        ? "border-night-primary bg-night-primary/10"
+                        : meta
+                          ? `${meta.border} ${meta.bg} hover:border-night-primary/40`
+                          : "border-night-border bg-night-card2 hover:border-night-primary/40";
                     return (
-                      <button
-                        key={c.type}
-                        type="button"
-                        onClick={() => setTypes((prev) => toggle(prev, c.type))}
-                        className={`flex items-center gap-3.5 rounded-2xl border p-4 text-left transition-colors ${
-                          checked ? "border-night-primary bg-night-primary/10" : "border-night-border bg-night-card2 hover:border-night-primary/40"
-                        }`}
-                      >
-                        <span
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-night-border text-night-pink"
-                          style={{ background: "linear-gradient(135deg, rgba(255,45,138,0.22), rgba(108,43,255,0.18))" }}
+                      <div key={c.type} className="group relative">
+                        <button
+                          type="button"
+                          disabled={blocked}
+                          onClick={() => !blocked && setTypes((prev) => toggle(prev, c.type))}
+                          className={`flex w-full items-center gap-3.5 rounded-2xl border p-4 text-left transition-colors ${cardColorClass}`}
                         >
-                          {c.icon}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <strong className="block text-[15px] font-bold text-night-text">{c.title}</strong>
-                          <span className="mt-0.5 block text-xs leading-snug text-night-muted">{c.description}</span>
-                        </span>
-                        <span
-                          className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
-                            checked ? "border-night-primary bg-night-primary" : "border-night-disabled"
-                          }`}
-                        >
-                          {checked && <CheckIcon />}
-                        </span>
-                      </button>
+                          <span
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-night-border text-night-pink"
+                            style={{ background: "linear-gradient(135deg, rgba(255,45,138,0.22), rgba(108,43,255,0.18))" }}
+                          >
+                            {c.icon}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <strong className="block text-[15px] font-bold text-night-text">{c.title}</strong>
+                            <span className="mt-0.5 block text-xs leading-snug text-night-muted">{c.description}</span>
+                          </span>
+                          {meta && !checked ? (
+                            <span className={`h-[10px] w-[10px] shrink-0 rounded-full ${meta.dot}`} aria-hidden="true" />
+                          ) : (
+                            <span
+                              className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
+                                checked ? "border-night-primary bg-night-primary" : "border-night-disabled"
+                              }`}
+                            >
+                              {checked && <CheckIcon />}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Подсказка по наведению (2026-09-16, по прямому запросу
+                            пользователя) — что с заявкой и причина, если есть.
+                            Чисто CSS (group-hover), без лишнего JS-состояния. */}
+                        {meta && (
+                          <div className="pointer-events-none absolute left-3 top-full z-10 mt-1.5 w-64 max-w-[calc(100%-1.5rem)] rounded-app-sm border border-night-border bg-night-card2 p-3 text-xs opacity-0 shadow-2xl transition-opacity duration-150 group-hover:opacity-100">
+                            <p className="m-0 flex items-center gap-1.5 font-semibold text-night-text">
+                              <span className={`h-[8px] w-[8px] shrink-0 rounded-full ${meta.dot}`} aria-hidden="true" />
+                              {meta.label}
+                            </p>
+                            {request?.reviewComment && <p className="m-0 mt-1.5 text-night-muted">Причина: {request.reviewComment}</p>}
+                            {blocked && <p className="m-0 mt-1.5 text-night-disabled">Повторная заявка по этой роли недоступна.</p>}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
