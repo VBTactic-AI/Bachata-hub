@@ -11,7 +11,12 @@ import { EVENT_REGISTRATION_STATUS_LABELS as STATUS_LABELS } from "@/lib/events/
 // registration-service.ts::updateEventRegistration). Оставлять его в
 // выпадающем списке означало бы предлагать организатору действие, которое
 // сервер всё равно отклонит.
-const ORGANIZER_ASSIGNABLE_STATUSES: EventRegistrationStatus[] = ["REGISTERED", "CONFIRMED", "WAITLIST", "REJECTED", "NO_SHOW"];
+//
+// 2026-09-16 (Door check-in): NO_SHOW тоже убран отсюда — по прямому решению
+// пользователя он больше не выбирается вручную, а проставляется автоматически
+// (см. registration-service.ts::syncNoShowForEvent) на основе кнопки-тумблера
+// check-in (EventRegistrationCheckInToggle), не через этот select.
+const ORGANIZER_ASSIGNABLE_STATUSES: EventRegistrationStatus[] = ["REGISTERED", "CONFIRMED", "WAITLIST", "REJECTED"];
 
 const FIELD_CLASS = "max-w-[180px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
@@ -50,8 +55,14 @@ export function EventRegistrationStatusSelect({
   // Участник отменил сам — организатор больше не может это изменить (сервер
   // отклонит любую попытку, см. registration-service.ts), поэтому вместо
   // выпадающего списка показываем статичную надпись.
-  if (status === "CANCELLED") {
-    return <span className="text-sm text-admin-muted">{STATUS_LABELS.CANCELLED}</span>;
+  //
+  // NO_SHOW — тоже статичная надпись (2026-09-16): значение убрано из
+  // ORGANIZER_ASSIGNABLE_STATUSES выше, поэтому если оставить <select>, его
+  // value=NO_SHOW не совпал бы ни с одним <option> — вместо этого показываем
+  // текст; отменить NO_SHOW можно только тумблером check-in (см.
+  // EventRegistrationCheckInToggle), не отсюда.
+  if (status === "CANCELLED" || status === "NO_SHOW") {
+    return <span className="text-sm text-admin-muted">{STATUS_LABELS[status]}</span>;
   }
 
   return (

@@ -8,12 +8,16 @@ import type { User } from "@prisma/client";
 
 const eventFindUnique = vi.fn();
 const eventRegistrationFindMany = vi.fn();
+const eventRegistrationUpdateMany = vi.fn(); // syncNoShowForEvent, вызывается перед выборкой
 const eventTeamMemberFindUnique = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     event: { findUnique: (...a: unknown[]) => eventFindUnique(...a) },
-    eventRegistration: { findMany: (...a: unknown[]) => eventRegistrationFindMany(...a) },
+    eventRegistration: {
+      findMany: (...a: unknown[]) => eventRegistrationFindMany(...a),
+      updateMany: (...a: unknown[]) => eventRegistrationUpdateMany(...a),
+    },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
   },
 }));
@@ -38,12 +42,15 @@ function makeUser(overrides: Partial<User> = {}): User {
   };
 }
 
-const registrableEvent = { id: "event1", createdById: "user1" };
+// startsAt в будущем — событие ещё не прошло, syncNoShowForEvent() молча
+// выходит без вызова updateMany (своя проверка — в registration-service.test.ts).
+const registrableEvent = { id: "event1", createdById: "user1", startsAt: new Date(Date.now() + 86_400_000), endsAt: null as Date | null };
 const user = makeUser();
 
 beforeEach(() => {
   eventFindUnique.mockReset().mockResolvedValue(registrableEvent);
   eventRegistrationFindMany.mockReset().mockResolvedValue([]);
+  eventRegistrationUpdateMany.mockReset().mockResolvedValue({ count: 0 });
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
 });
 

@@ -15,7 +15,7 @@ import { getMyAccessRequests } from "@/server/access-requests/queries";
 import { getMyEventSuggestions } from "@/server/event-suggestions/queries";
 import { getActor } from "@/server/rbac/actor";
 import { getAdminSectionAccess, hasAnyAdminAccess } from "@/lib/admin-access";
-import { isAdmin } from "@/lib/auth";
+import { isAdmin, canCreateEvents } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import {
   COMPETITION_STATUS_LABELS,
@@ -72,9 +72,12 @@ export default async function ProfilePage() {
   );
 
   // §7 ТЗ (Event Suggestions) — вход в /suggest-event, тот же принцип, что и
-  // ссылка выше: текст меняется, если уже что-то предлагали. Видна и
-  // ADMIN — предложить событие может кто угодно, это не про права доступа.
-  const suggestEventBlock = (
+  // ссылка выше: текст меняется, если уже что-то предлагали. Скрыта для
+  // ADMIN и для любого, кто уже может создавать события сам (canCreateEvents
+  // — SCHOOL_REP/ORGANIZER/MODERATOR/ADMIN/isVerifiedEventOrganizer): им
+  // предлагать некому, они и так создают события напрямую (по прямому
+  // запросу пользователя, 2026-09-16).
+  const suggestEventBlock = canCreateEvents(user) ? null : (
     <Link
       href="/suggest-event"
       className="self-start rounded-app-sm border border-night-border bg-night-card px-3 py-2 text-sm text-night-text no-underline hover:border-night-primary"

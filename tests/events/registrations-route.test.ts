@@ -15,6 +15,7 @@ vi.mock("@/lib/auth", () => ({ getCurrentUser: () => getCurrentUserMock() }));
 const eventFindUnique = vi.fn();
 const eventRegistrationFindMany = vi.fn();
 const eventRegistrationCount = vi.fn();
+const eventRegistrationUpdateMany = vi.fn(); // syncNoShowForEvent, вызывается внутри listEventRegistrations
 const eventTeamMemberFindUnique = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -23,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
     eventRegistration: {
       findMany: (...a: unknown[]) => eventRegistrationFindMany(...a),
       count: (...a: unknown[]) => eventRegistrationCount(...a),
+      updateMany: (...a: unknown[]) => eventRegistrationUpdateMany(...a),
     },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
   },
@@ -56,6 +58,10 @@ const eventOwnedByOrganizerA = {
   slug: "party-a",
   createdById: "organizerA",
   capacity: null,
+  // Будущая дата — событие ещё не прошло, syncNoShowForEvent() (вызывается
+  // внутри listEventRegistrations) молча выходит без вызова updateMany.
+  startsAt: new Date(Date.now() + 86_400_000),
+  endsAt: null as Date | null,
 };
 
 beforeEach(() => {
@@ -63,6 +69,7 @@ beforeEach(() => {
   eventFindUnique.mockReset().mockResolvedValue(eventOwnedByOrganizerA);
   eventRegistrationFindMany.mockReset().mockResolvedValue([]);
   eventRegistrationCount.mockReset().mockResolvedValue(0);
+  eventRegistrationUpdateMany.mockReset().mockResolvedValue({ count: 0 });
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
 });
 

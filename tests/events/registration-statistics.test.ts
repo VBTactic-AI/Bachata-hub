@@ -9,6 +9,7 @@ const eventFindUnique = vi.fn();
 const eventRegistrationGroupBy = vi.fn();
 const eventRegistrationCount = vi.fn();
 const eventRegistrationFindMany = vi.fn();
+const eventRegistrationUpdateMany = vi.fn(); // syncNoShowForEvent, вызывается перед подсчётами
 const eventTeamMemberFindUnique = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -18,6 +19,7 @@ vi.mock("@/lib/prisma", () => ({
       groupBy: (...a: unknown[]) => eventRegistrationGroupBy(...a),
       count: (...a: unknown[]) => eventRegistrationCount(...a),
       findMany: (...a: unknown[]) => eventRegistrationFindMany(...a),
+      updateMany: (...a: unknown[]) => eventRegistrationUpdateMany(...a),
     },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
   },
@@ -43,7 +45,10 @@ function makeUser(overrides: Partial<User> = {}): User {
   };
 }
 
-const registrableEvent = { id: "event1", createdById: "user1" };
+// startsAt в будущем — событие ещё не прошло, syncNoShowForEvent() молча
+// выходит без вызова updateMany (не тема этого файла — своя проверка есть в
+// registration-service.test.ts).
+const registrableEvent = { id: "event1", createdById: "user1", startsAt: new Date(Date.now() + 86_400_000), endsAt: null as Date | null };
 const user = makeUser();
 
 beforeEach(() => {
@@ -51,6 +56,7 @@ beforeEach(() => {
   eventRegistrationGroupBy.mockReset().mockResolvedValue([]);
   eventRegistrationCount.mockReset().mockResolvedValue(0);
   eventRegistrationFindMany.mockReset().mockResolvedValue([]);
+  eventRegistrationUpdateMany.mockReset().mockResolvedValue({ count: 0 });
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
 });
 

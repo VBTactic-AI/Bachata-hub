@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input, Select, Textarea, Label } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/ui/DateField";
 
 const FIELD_CLASS = "border-night-border bg-night-card text-night-text focus:border-night-primary focus:ring-night-primary/20";
 
@@ -105,7 +106,7 @@ export function SuggestEventForm({ cities }: { cities: { id: string; nameRu: str
       </Label>
       <Label className="text-night-text">
         Предполагаемая дата (если известна)
-        <Input type="date" value={proposedDate} onChange={(e) => setProposedDate(e.target.value)} className={FIELD_CLASS} />
+        <DateField value={proposedDate} onChange={setProposedDate} theme="night" className={FIELD_CLASS} placeholder="Не указана" />
       </Label>
       <Label className="text-night-text">
         Ссылка на анонс (пост в соцсети, сайт — необязательно)

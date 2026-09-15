@@ -8,6 +8,7 @@ import {
   RegistrationNotFoundError,
   buildRegistrationOrderBy,
   buildRegistrationWhere,
+  syncNoShowForEvent,
   type RegistrationFilter,
 } from "./registration-service";
 
@@ -66,6 +67,7 @@ export async function exportEventRegistrationsCsv(eventId: string, user: User, f
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
+  await syncNoShowForEvent(event);
 
   const rows = await prisma.eventRegistration.findMany({
     where: buildRegistrationWhere(eventId, filter),

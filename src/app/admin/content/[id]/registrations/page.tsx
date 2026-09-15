@@ -9,6 +9,7 @@ import {
 } from "@/server/events/registration-service";
 import { EventRegistrationStatusSelect } from "@/components/admin/events/EventRegistrationStatusSelect";
 import { EventRegistrationPaymentToggle } from "@/components/admin/events/EventRegistrationPaymentToggle";
+import { EventRegistrationCheckInToggle } from "@/components/admin/events/EventRegistrationCheckInToggle";
 import { StatCard } from "@/components/admin/StatCard";
 import { PeopleIcon, CardIcon, AlertIcon } from "@/components/admin/icons";
 import { Button } from "@/components/ui/button";
@@ -247,6 +248,7 @@ export default async function EventRegistrationsPage({
                       {sortIndicator("paid")}
                     </a>
                   </th>
+                  <th className="px-3 py-2 font-semibold">Check-in</th>
                 </tr>
               </thead>
               <tbody>
@@ -259,6 +261,9 @@ export default async function EventRegistrationsPage({
                     </td>
                     <td className="px-3 py-2 align-top">
                       <EventRegistrationPaymentToggle eventSlug={event.slug} registrationId={r.id} isPaid={r.isPaid} />
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <EventRegistrationCheckInToggle eventSlug={event.slug} registrationId={r.id} checkedIn={r.checkedInAt != null} />
                     </td>
                   </tr>
                 ))}
@@ -275,8 +280,9 @@ export default async function EventRegistrationsPage({
                   <EventRegistrationPaymentToggle eventSlug={event.slug} registrationId={r.id} isPaid={r.isPaid} />
                 </div>
                 <p className="m-0 mt-1 text-xs text-admin-muted">{formatDateTime(r.createdAt)}</p>
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   <EventRegistrationStatusSelect eventSlug={event.slug} registrationId={r.id} status={r.status} />
+                  <EventRegistrationCheckInToggle eventSlug={event.slug} registrationId={r.id} checkedIn={r.checkedInAt != null} />
                 </div>
               </div>
             ))}

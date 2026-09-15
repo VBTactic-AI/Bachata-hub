@@ -10,6 +10,8 @@ const eventFindUnique = vi.fn(); // prisma.event.findUnique — вне тран�
 const topLevelEventRegistrationFindUnique = vi.fn(); // prisma.eventRegistration.findUnique — access-check в updateEventRegistration
 const eventRegistrationFindMany = vi.fn(); // listEventRegistrations
 const topLevelEventRegistrationCount = vi.fn(); // listEventRegistrations — сводные счётчики
+const topLevelEventRegistrationUpdateMany = vi.fn(); // syncNoShowForEvent
+const topLevelEventRegistrationUpdate = vi.fn(); // toggleEventRegistrationCheckIn — вне транзакции
 const executeRaw = vi.fn().mockResolvedValue(0);
 // Events Engine, этап 5 — hasEventAccess (src/server/events/access.ts) query
 // команды события; в тестах владелец/ADMIN всегда short-circuit'ят раньше
@@ -58,6 +60,8 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: (...a: unknown[]) => topLevelEventRegistrationFindUnique(...a),
       findMany: (...a: unknown[]) => eventRegistrationFindMany(...a),
       count: (...a: unknown[]) => topLevelEventRegistrationCount(...a),
+      updateMany: (...a: unknown[]) => topLevelEventRegistrationUpdateMany(...a),
+      update: (...a: unknown[]) => topLevelEventRegistrationUpdate(...a),
     },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
@@ -69,6 +73,8 @@ const {
   cancelMyRegistration,
   listEventRegistrations,
   updateEventRegistration,
+  syncNoShowForEvent,
+  toggleEventRegistrationCheckIn,
   NoDancerProfileError,
   RegistrationClosedError,
   RegistrationForbiddenError,
@@ -95,11 +101,18 @@ function makeUser(overrides: Partial<User> = {}): User {
 
 const registrableEvent = {
   id: "event1",
+  slug: "event1-slug",
+  title: "Event One",
   createdById: "organizer1",
   registrationEnabled: true,
   status: "PUBLISHED",
   moderationStatus: "APPROVED",
   capacity: null as number | null,
+  // Будущая дата по умолчанию — событие ещё не прошло, syncNoShowForEvent()
+  // (вызывается из listEventRegistrations) должен молча выйти, не трогая
+  // updateMany; тесты именно на syncNoShowForEvent — отдельно, ниже.
+  startsAt: new Date(Date.now() + 86_400_000),
+  endsAt: null as Date | null,
 };
 
 const dancer = { id: "dancer1", userId: "user1" };
@@ -112,6 +125,8 @@ beforeEach(() => {
   topLevelEventRegistrationFindUnique.mockReset().mockResolvedValue(null);
   eventRegistrationFindMany.mockReset().mockResolvedValue([]);
   topLevelEventRegistrationCount.mockReset().mockResolvedValue(0);
+  topLevelEventRegistrationUpdateMany.mockReset().mockResolvedValue({ count: 0 });
+  topLevelEventRegistrationUpdate.mockReset().mockResolvedValue({ id: "reg1" });
   executeRaw.mockClear();
   emitDomainEventMock.mockReset();
 
@@ -666,6 +681,140 @@ describe("updateEventRegistration() — owner-check", () => {
       await updateEventRegistration("reg1", user, { isPaid: true });
 
       expect(txEventRegistrationFindFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  // Door check-in ТЗ (2026-09-16, по прямому решению пользователя) — NO_SHOW
+  // больше нельзя назначить вручную через общий PATCH status.
+  describe("NO_SHOW зарезервирован за check-in (Door check-in, 2026-09-16)", () => {
+    it("организатор пытается назначить NO_SHOW напрямую — RegistrationForbiddenError, update не вызывается", async () => {
+      topLevelEventRegistrationFindUnique.mockResolvedValue({
+        id: "reg1",
+        eventId: "event1",
+        status: "REGISTERED",
+        event: { ...registrableEvent, createdById: "user1" },
+        dancer: { userId: "participant1" },
+      });
+
+      await expect(updateEventRegistration("reg1", user, { status: "NO_SHOW" })).rejects.toBeInstanceOf(RegistrationForbiddenError);
+      expect(txEventRegistrationUpdate).not.toHaveBeenCalled();
+    });
+
+    it("в отличие от CANCELLED — уже NO_SHOW регистрацию можно менять дальше (не заморожена)", async () => {
+      topLevelEventRegistrationFindUnique.mockResolvedValue({
+        id: "reg1",
+        eventId: "event1",
+        status: "NO_SHOW",
+        event: { ...registrableEvent, createdById: "user1", capacity: null },
+        dancer: { userId: "participant1" },
+      });
+      txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "NO_SHOW" });
+
+      await updateEventRegistration("reg1", user, { status: "CONFIRMED" });
+
+      expect(txEventRegistrationUpdate).toHaveBeenCalledWith({ where: { id: "reg1" }, data: { status: "CONFIRMED" } });
+    });
+  });
+});
+
+describe("syncNoShowForEvent()", () => {
+  it("событие ещё не прошло (startsAt в будущем, endsAt нет) — updateMany не вызывается", async () => {
+    await syncNoShowForEvent({ id: "event1", startsAt: new Date(Date.now() + 86_400_000), endsAt: null });
+    expect(topLevelEventRegistrationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("endsAt в будущем важнее startsAt в прошлом — событие ещё идёт, updateMany не вызывается", async () => {
+    await syncNoShowForEvent({
+      id: "event1",
+      startsAt: new Date(Date.now() - 3_600_000),
+      endsAt: new Date(Date.now() + 3_600_000),
+    });
+    expect(topLevelEventRegistrationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("событие уже прошло (endsAt в прошлом) — REGISTERED/CONFIRMED без check-in переводятся в NO_SHOW", async () => {
+    await syncNoShowForEvent({ id: "event1", startsAt: new Date(Date.now() - 7_200_000), endsAt: new Date(Date.now() - 3_600_000) });
+
+    expect(topLevelEventRegistrationUpdateMany).toHaveBeenCalledWith({
+      where: { eventId: "event1", status: { in: ["REGISTERED", "CONFIRMED"] }, checkedInAt: null },
+      data: { status: "NO_SHOW" },
+    });
+  });
+
+  it("нет endsAt, startsAt в прошлом — тоже считается прошедшим", async () => {
+    await syncNoShowForEvent({ id: "event1", startsAt: new Date(Date.now() - 3_600_000), endsAt: null });
+    expect(topLevelEventRegistrationUpdateMany).toHaveBeenCalled();
+  });
+});
+
+describe("toggleEventRegistrationCheckIn()", () => {
+  it("регистрация не найдена — RegistrationNotFoundError", async () => {
+    topLevelEventRegistrationFindUnique.mockResolvedValue(null);
+    await expect(toggleEventRegistrationCheckIn("missing", user, true)).rejects.toBeInstanceOf(RegistrationNotFoundError);
+  });
+
+  it("чужое событие, не ADMIN — RegistrationForbiddenError", async () => {
+    topLevelEventRegistrationFindUnique.mockResolvedValue({
+      id: "reg1",
+      status: "REGISTERED",
+      event: { ...registrableEvent, createdById: "someone-else" },
+    });
+    await expect(toggleEventRegistrationCheckIn("reg1", user, true)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    expect(topLevelEventRegistrationUpdate).not.toHaveBeenCalled();
+  });
+
+  it("CANCELLED (самоотмена участника) — заморожена, RegistrationForbiddenError", async () => {
+    topLevelEventRegistrationFindUnique.mockResolvedValue({
+      id: "reg1",
+      status: "CANCELLED",
+      event: { ...registrableEvent, createdById: "user1" },
+    });
+    await expect(toggleEventRegistrationCheckIn("reg1", user, true)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+    expect(topLevelEventRegistrationUpdate).not.toHaveBeenCalled();
+  });
+
+  it("включение check-in — ставит checkedInAt/checkedInById", async () => {
+    topLevelEventRegistrationFindUnique.mockResolvedValue({
+      id: "reg1",
+      status: "REGISTERED",
+      event: { ...registrableEvent, createdById: "user1" },
+    });
+
+    await toggleEventRegistrationCheckIn("reg1", user, true);
+
+    expect(topLevelEventRegistrationUpdate).toHaveBeenCalledWith({
+      where: { id: "reg1" },
+      data: { checkedInAt: expect.any(Date), checkedInById: "user1" },
+    });
+  });
+
+  it("включение check-in у NO_SHOW — отменяет NO_SHOW, возвращает REGISTERED", async () => {
+    topLevelEventRegistrationFindUnique.mockResolvedValue({
+      id: "reg1",
+      status: "NO_SHOW",
+      event: { ...registrableEvent, createdById: "user1" },
+    });
+
+    await toggleEventRegistrationCheckIn("reg1", user, true);
+
+    expect(topLevelEventRegistrationUpdate).toHaveBeenCalledWith({
+      where: { id: "reg1" },
+      data: { checkedInAt: expect.any(Date), checkedInById: "user1", status: "REGISTERED" },
+    });
+  });
+
+  it("выключение check-in — очищает checkedInAt/checkedInById, статус не трогает", async () => {
+    topLevelEventRegistrationFindUnique.mockResolvedValue({
+      id: "reg1",
+      status: "REGISTERED",
+      event: { ...registrableEvent, createdById: "user1" },
+    });
+
+    await toggleEventRegistrationCheckIn("reg1", user, false);
+
+    expect(topLevelEventRegistrationUpdate).toHaveBeenCalledWith({
+      where: { id: "reg1" },
+      data: { checkedInAt: null, checkedInById: null },
     });
   });
 });

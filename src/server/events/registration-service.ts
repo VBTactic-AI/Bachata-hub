@@ -62,6 +62,63 @@ async function promoteNextWaitlisted(
   });
 }
 
+// §"Door check-in" ТЗ (2026-09-16, по прямому решению пользователя) — NO_SHOW
+// остаётся реальным хранимым статусом (не вычисляется на лету, как в JNJ),
+// но организатор больше не выбирает его вручную (см.
+// EventRegistrationStatusSelect.tsx — убран из списка). Вместо этого он
+// проставляется автоматически, когда событие уже прошло (event.endsAt, а
+// если не указано — event.startsAt), а check-in так и не случился. Вызывается
+// из всех read-путей (listEventRegistrations/getEventRegistrationStatistics/
+// exportEventRegistrationsCsv) — eventually-consistent обновление при
+// следующем просмотре события, без отдельной cron-инфраструктуры (сравните с
+// Notification Engine, где гарантия доставки реально нужна — здесь
+// достаточно "поправится при следующем открытии вкладки организатором").
+export async function syncNoShowForEvent(event: { id: string; startsAt: Date; endsAt: Date | null }): Promise<void> {
+  const eventEndedAt = event.endsAt ?? event.startsAt;
+  if (eventEndedAt > new Date()) return;
+
+  await prisma.eventRegistration.updateMany({
+    where: { eventId: event.id, status: { in: ACTIVE_STATUSES }, checkedInAt: null },
+    data: { status: "NO_SHOW" },
+  });
+}
+
+// Door check-in — кнопка-тумблер в "Участники" (по образцу CheckInToggle
+// Competition Engine, но без отдельной таблицы, см. комментарий у поля в
+// schema.prisma). Не через updateEventRegistration() — это независимая ось
+// от status/isPaid, со своим единственным особым случаем: включение check-in
+// у человека, которого уже автоматически перевели в NO_SHOW, отменяет это
+// решение (он всё-таки пришёл) и возвращает его в REGISTERED.
+export async function toggleEventRegistrationCheckIn(
+  registrationId: string,
+  user: User,
+  checkedIn: boolean
+): Promise<EventRegistration> {
+  const registration = await prisma.eventRegistration.findUnique({
+    where: { id: registrationId },
+    include: { event: true },
+  });
+  if (!registration) throw new RegistrationNotFoundError();
+  if (!(await hasEventAccess(registration.event, user))) throw new RegistrationForbiddenError("forbidden");
+
+  // Симметрично остальным полям — самоотменённая регистрация заморожена для
+  // организатора целиком (см. updateEventRegistration), check-in не исключение.
+  if (registration.status === "CANCELLED") {
+    throw new RegistrationForbiddenError("registration_cancelled_by_participant");
+  }
+
+  return prisma.eventRegistration.update({
+    where: { id: registrationId },
+    data: checkedIn
+      ? {
+          checkedInAt: new Date(),
+          checkedInById: user.id,
+          ...(registration.status === "NO_SHOW" ? { status: "REGISTERED" as const } : {}),
+        }
+      : { checkedInAt: null, checkedInById: null },
+  });
+}
+
 async function requireDancer(userId: string) {
   const dancer = await prisma.dancer.findUnique({ where: { userId } });
   if (!dancer) throw new NoDancerProfileError();
@@ -242,6 +299,7 @@ export async function listEventRegistrations(
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
+  await syncNoShowForEvent(event);
 
   const safePageSize = Math.min(Math.max(pageSize, 1), 100);
   const safePage = Math.max(page, 1);
@@ -298,6 +356,16 @@ export async function updateEventRegistration(
   }
   if (patch.status !== undefined && registration.status === "CANCELLED") {
     throw new RegistrationForbiddenError("registration_cancelled_by_participant");
+  }
+  // 2026-09-16, по прямому решению пользователя (Door check-in): NO_SHOW
+  // больше нельзя назначить вручную — только автоматически, через
+  // syncNoShowForEvent()/toggleEventRegistrationCheckIn(). В отличие от
+  // CANCELLED, регистрация НЕ замораживается целиком — организатор может
+  // переключить УЖЕ NO_SHOW обратно в любой другой статус (или просто
+  // отметить check-in — см. toggleEventRegistrationCheckIn), только не
+  // назначить NO_SHOW заново тем же способом.
+  if (patch.status === "NO_SHOW") {
+    throw new RegistrationForbiddenError("no_show_status_reserved_for_checkin");
   }
 
   return prisma.$transaction(async (tx) => {

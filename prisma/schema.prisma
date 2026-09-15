@@ -107,6 +107,7 @@ model User {
   eventTeamInvitesSent    EventTeamMember[] @relation("EventTeamMemberInvitedBy")
   eventSuggestionsSubmitted EventSuggestion[] @relation("EventSuggestionSubmitter")
   eventSuggestionsReviewed  EventSuggestion[] @relation("EventSuggestionReviewer")
+  eventRegistrationsCheckedIn EventRegistration[] @relation("EventRegistrationCheckedInBy")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -806,6 +807,17 @@ model EventRegistration {
   isPaid      Boolean                 @default(false)
   paidAt      DateTime?
   cancelledAt DateTime?
+  // Door check-in (2026-09-16, по образцу CheckIn Competition Engine, но без
+  // отдельной таблицы — здесь не нужны бирки/заезды, только факт+время+кто
+  // отметил). НЕ выбирается вручную из статуса — отдельная кнопка-тумблер
+  // в вкладке "Участники" (см. registration-service.ts::toggleCheckIn).
+  // Организатор больше не может выбрать NO_SHOW из выпадающего списка сам
+  // (см. EventRegistrationStatusSelect.tsx) — вместо этого статус
+  // проставляется автоматически: если событие уже прошло, а check-in нет,
+  // syncNoShowForEvent() сам переводит REGISTERED/CONFIRMED в NO_SHOW.
+  checkedInAt   DateTime?
+  checkedInById String?
+  checkedInBy   User?    @relation("EventRegistrationCheckedInBy", fields: [checkedInById], references: [id])
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt
 

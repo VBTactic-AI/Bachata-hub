@@ -1,7 +1,7 @@
 import type { EventRegistrationStatus, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { RegistrationForbiddenError, RegistrationNotFoundError, syncNoShowForEvent } from "./registration-service";
 import { EVENT_REGISTRATION_STATUS_VALUES } from "@/lib/events/event-type-registry";
 
 // §19 ТЗ (Event Statistics) — полноценное представление вместо 4 инлайн-
@@ -29,6 +29,7 @@ export async function getEventRegistrationStatistics(eventId: string, user: User
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
+  await syncNoShowForEvent(event);
 
   const [grouped, paidCount, createdAtRows] = await Promise.all([
     prisma.eventRegistration.groupBy({ by: ["status"], where: { eventId }, _count: { _all: true } }),
