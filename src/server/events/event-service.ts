@@ -34,6 +34,9 @@ export class EventNotFoundError extends Error {}
 // (/api/events, /api/event-drafts/[id]), не дублируется в каждом.
 export const EVENT_FORBIDDEN_MESSAGES: Record<string, string> = {
   event_archived: "Событие в архиве — редактирование недоступно.",
+  forbidden: "У вашего аккаунта нет прав на создание или редактирование событий.",
+  forbidden_school: "Вы не можете создавать события от имени этой школы.",
+  forbidden_competition_create: "У вашего аккаунта нет прав на создание соревнований.",
 };
 
 const BASELINE_IDS = new Set(["title", "city", "venue", "startsAt"]);

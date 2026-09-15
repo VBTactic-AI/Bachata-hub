@@ -3,7 +3,7 @@ import { getCurrentUser, canCreateEvents } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
-import { getEventDraftForEdit } from "@/server/events/event-service";
+import { getEventDraftForEdit, EventNotFoundError, EventForbiddenError } from "@/server/events/event-service";
 import { EventWizard } from "@/components/admin/events/EventWizard";
 import { emptyWizardDraft, dateToLocalInputValue, type WizardDraft } from "@/components/admin/events/wizard-types";
 
@@ -44,8 +44,20 @@ export default async function AdminContentPage({
 
   let initialDraft: WizardDraft = emptyWizardDraft(cities[0]?.id ?? "");
   if (draftId) {
-    const event = await getEventDraftForEdit(draftId, user);
-    initialDraft = {
+    // Ссылка на черновик могла устареть (черновик удалён/архивирован после
+    // QA-очистки, или скопирована из чужого аккаунта) — раньше
+    // EventNotFoundError/EventForbiddenError вылетали из Server Component
+    // необработанными и роняли всю страницу в "Application error" (белый
+    // экран без единой подсказки, найдено вживую). Невалидный draft
+    // безопасно игнорируем — мастер просто открывается с чистого листа,
+    // ничего не удаляется и не перезаписывается.
+    let event: Awaited<ReturnType<typeof getEventDraftForEdit>> | null = null;
+    try {
+      event = await getEventDraftForEdit(draftId, user);
+    } catch (err) {
+      if (!(err instanceof EventNotFoundError) && !(err instanceof EventForbiddenError)) throw err;
+    }
+    if (event) initialDraft = {
       id: event.id,
       slug: event.slug,
       status: event.status,

@@ -11,7 +11,7 @@ export type AssignablePassOption = { id: string; name: string };
 // Оплата билетов участника (2026-09-16, Ticket Engine) — заменяет старый
 // EventRegistrationPaymentToggle: оплата больше не поле EventRegistration,
 // а живёт в Ticket (см. ticket-service.ts, комментарий у модели Ticket в
-// schema.prisma). Три ветки:
+// schema.prisma). Три ветки отображения ТЕКУЩИХ билетов:
 // - у события вообще нет Pass — простой тумблер, как раньше, но через
 //   passless Ticket (заводится лениво при первом клике "Оплачено").
 // - ровно один билет (с Pass или без) — тот же простой тумблер, но по
@@ -19,6 +19,13 @@ export type AssignablePassOption = { id: string; name: string };
 // - несколько билетов (танцор купил несколько разных Pass) — агрегат
 //   (Оплачено/Частично оплачено/Не оплачено) + попап со списком билетов и
 //   отдельным тумблером на каждый.
+// Независимо от того, в какую из трёх веток попал танцор, ДОПОЛНИТЕЛЬНО
+// рендерится пикер "Выдать Pass" (см. issuePicker ниже), если есть хотя бы
+// один Pass, который он ещё не получал — раньше пикер показывался ТОЛЬКО при
+// полном отсутствии билетов, из-за чего танцор с уже существующим passless-
+// билетом (заведённым до появления Pass на событии) навсегда терял
+// возможность получить Pass через этот экран (найдено вживую пользователем
+// 2026-09-16: "есть Pass, но в участниках я его не вижу").
 export function TicketPaymentCell({
   eventSlug,
   registrationId,
@@ -32,9 +39,9 @@ export function TicketPaymentCell({
   dancerId: string;
   hasPassCatalog: boolean;
   initialTickets: TicketPaymentInfo[];
-  // Активные Pass, которые можно выдать этому танцору (см. комментарий у
-  // ветки tickets.length === 0 ниже) — пусто, если у события нет Pass или
-  // ни один сейчас не в продаже.
+  // Активные Pass события (см. availableToIssue ниже — фильтруется до уже
+  // купленных этим танцором) — пусто, если у события нет Pass или ни один
+  // сейчас не в продаже.
   assignablePasses: AssignablePassOption[];
 }) {
   const router = useRouter();
@@ -48,7 +55,22 @@ export function TicketPaymentCell({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [selectedPassId, setSelectedPassId] = useState(assignablePasses[0]?.id ?? "");
+  const [selectedPassId, setSelectedPassId] = useState("");
+
+  // Pass, которые этот танцор ещё не получал — сравниваем с уже имеющимися
+  // билетами (2026-09-16, найдено вживую пользователем: у танцора уже был
+  // billet БЕЗ Pass, заведённый простым тумблером ДО того, как на событии
+  // вообще появился Pass, и пикер выдачи после этого никогда не показывался,
+  // потому что раньше он рисовался только при tickets.length === 0). Танцор
+  // может получить Pass в любой момент, независимо от того, сколько у него
+  // уже других билетов — фильтруем только те Pass, что он уже купил.
+  const ownedPassIds = new Set(tickets.map((t) => t.passId).filter((id): id is string => id != null));
+  const availableToIssue = assignablePasses.filter((p) => !ownedPassIds.has(p.id));
+  // НЕ полагаться на selectedPassId как на единственный источник истины (тот
+  // же класс бага, что и с initialTickets/useState выше) — если сохранённый
+  // выбор больше не входит в актуальный список (например, событие только что
+  // обновилось), тихо откатываемся на первый доступный вариант.
+  const effectivePassId = availableToIssue.some((p) => p.id === selectedPassId) ? selectedPassId : (availableToIssue[0]?.id ?? "");
 
   // Выдать танцору конкретный Pass (2026-09-16, по прямому запросу
   // пользователя — иначе на событии с Pass в принципе не появлялось ни
@@ -58,10 +80,10 @@ export function TicketPaymentCell({
   // деньги в момент выдачи"); если это не так, оплату можно снять сразу
   // после через обычный тумблер этой же ячейки.
   async function issuePass() {
-    if (!selectedPassId) return;
+    if (!effectivePassId) return;
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/events/${eventSlug}/passes/${selectedPassId}/tickets`, {
+    const res = await fetch(`/api/events/${eventSlug}/passes/${effectivePassId}/tickets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dancerId, markPaid: true }),
@@ -128,32 +150,38 @@ export function TicketPaymentCell({
     );
   }
 
+  // Пикер "Выдать Pass" — рендерится вместе с текущими билетами танцора, а
+  // не вместо них, и виден, только если есть хотя бы один Pass, который он
+  // ещё не получал.
+  const issuePicker = availableToIssue.length > 0 && (
+    <span className="inline-flex flex-col items-start gap-1">
+      <select
+        value={effectivePassId}
+        onChange={(e) => setSelectedPassId(e.target.value)}
+        disabled={loading}
+        className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
+      >
+        {availableToIssue.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={loading}
+        onClick={issuePass}
+        className="text-xs text-admin-primaryHover hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Выдать Pass
+      </button>
+    </span>
+  );
+
   if (tickets.length === 0) {
-    if (assignablePasses.length === 0) {
-      return <span className="text-sm text-admin-muted">—</span>;
-    }
     return (
       <span className="inline-flex flex-col items-start gap-1">
-        <select
-          value={selectedPassId}
-          onChange={(e) => setSelectedPassId(e.target.value)}
-          disabled={loading}
-          className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
-        >
-          {assignablePasses.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={issuePass}
-          className="text-xs text-admin-primaryHover hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Выдать Pass
-        </button>
+        {issuePicker || <span className="text-sm text-admin-muted">—</span>}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
     );
@@ -172,6 +200,7 @@ export function TicketPaymentCell({
         >
           <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
         </button>
+        {issuePicker}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
     );
@@ -219,6 +248,7 @@ export function TicketPaymentCell({
                 </div>
               ))}
             </div>
+            {issuePicker && <div className="border-t border-admin-border px-5 py-3">{issuePicker}</div>}
             {error && <p className="m-0 px-5 py-2 text-xs text-red-400">{error}</p>}
             <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
               <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>

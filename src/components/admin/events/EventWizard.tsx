@@ -120,7 +120,23 @@ export function EventWizard({
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(body?.error === "publish_incomplete" ? "Заполните обязательные поля." : "Не удалось сохранить событие.");
+        // CLAUDE.md §46 — раньше любая причина, кроме publish_incomplete
+        // (в т.ч. осмысленное сообщение от сервера в body.message —
+        // EVENT_FORBIDDEN_MESSAGES, или not_found), схлопывалась в один и
+        // тот же неинформативный текст, и было невозможно понять, что
+        // реально пошло не так (найдено вживую по прямому отчёту
+        // пользователя — "пишет ошибку, но не понятно почему").
+        if (body?.error === "publish_incomplete") {
+          setError("Заполните обязательные поля.");
+        } else if (body?.message) {
+          setError(body.message);
+        } else if (body?.error === "not_found") {
+          setError("Черновик не найден — возможно, он был удалён. Обновите страницу.");
+        } else if (body?.error === "invalid_input") {
+          setError("Проверьте заполненные поля — часть данных некорректна.");
+        } else {
+          setError("Не удалось сохранить событие.");
+        }
         return;
       }
       setDraft((d) => ({
