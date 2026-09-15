@@ -219,6 +219,29 @@ export function EventWizard({
 
   const previewSidebar = <EventPreviewSidebar draft={draft} cityName={cityName} organizerLabel={organizerLabel} slug={draft.slug ?? null} />;
 
+  // "Назад"/"Далее" продублированы у степпера (2026-09-16, по прямому запросу
+  // пользователя) — раньше были только внизу карточки, на длинных шагах
+  // (список занятий/программы) приходилось прокручивать вниз-вверх на каждый
+  // клик. Внизу кнопки оставлены как есть — тот же переход, тот же обработчик.
+  const stepNavButtons = (
+    <div className="flex shrink-0 items-center gap-2">
+      <Button
+        type="button"
+        variant="adminOutline"
+        size="sm"
+        disabled={stepIndex === 0}
+        onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+      >
+        ← Назад
+      </Button>
+      {currentStep !== "publish" && (
+        <Button type="button" variant="admin" size="sm" onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}>
+          Далее →
+        </Button>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <a href={basePath} className="text-sm text-admin-muted hover:text-night-text hover:underline">
@@ -236,7 +259,12 @@ export function EventWizard({
         </div>
 
         <div className="p-5">
-          <WizardNav steps={steps} currentIndex={stepIndex} doneMap={doneMap} onSelect={setStepIndex} />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <WizardNav steps={steps} currentIndex={stepIndex} doneMap={doneMap} onSelect={setStepIndex} />
+            </div>
+            {stepNavButtons}
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-[220px_1fr_320px]">
             <EventTypeSelector

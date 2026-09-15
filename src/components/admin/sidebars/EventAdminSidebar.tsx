@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ContentIcon, TagIcon, NavLink, SidebarFrame, type NavItem } from "@/components/admin/nav-shared";
+import { ContentIcon, NavLink, SidebarFrame, type NavItem } from "@/components/admin/nav-shared";
 import { PlusIcon, GearIcon } from "@/components/admin/icons";
 
 // Ивенты (организатор мероприятий) — только свои события, узкий сайдбар без
@@ -10,13 +10,16 @@ import { PlusIcon, GearIcon } from "@/components/admin/icons";
 //
 // Редизайн (2026-09-16, по прямому запросу пользователя): раньше "Мои
 // события" была единственной ссылкой, ведущей сразу на страницу со списком
-// И мастером создания под ним. Теперь список ("Мои события"), создание
-// ("Создать новое событие") и шаблоны Pass — три отдельных пункта меню;
-// плюс, когда открыта карточка конкретного события (управление —
-// /admin/content/[id]/**, вкладки Обзор/Участники/Команда/...), под "Мои
-// события" плавно выезжает под-пункт "Управление событием" — чтобы было
-// визуально видно, что мы вложены внутрь "Моих событий", а не на отдельном
-// не связанном экране.
+// И мастером создания под ним. Теперь список ("Мои события") и создание
+// ("Создать новое событие") — два отдельных пункта меню; плюс, когда открыта
+// карточка конкретного события (управление — /admin/content/[id]/**, вкладки
+// Обзор/Участники/Команда/...), под "Мои события" плавно выезжает под-пункт
+// "Управление событием" — чтобы было визуально видно, что мы вложены внутрь
+// "Моих событий", а не на отдельном не связанном экране.
+//
+// "Шаблоны Pass" сюда НЕ добавлены (тот же день, повторное уточнение
+// пользователя) — перенесены во вкладку карточки события (см.
+// EventDashboardTabs.tsx), убраны из этого меню как отдельный пункт.
 const MY_EVENTS_ITEM: NavItem = {
   href: "/admin/content",
   label: "Мои события",
@@ -32,13 +35,6 @@ const CREATE_ITEM: NavItem = {
   label: "Создать новое событие",
   icon: <PlusIcon />,
   match: (p) => p === "/admin/content/new",
-};
-
-const PASS_TEMPLATES_ITEM: NavItem = {
-  href: "/admin/content/pass-templates",
-  label: "Шаблоны Pass",
-  icon: <TagIcon />,
-  match: (p) => p.startsWith("/admin/content/pass-templates"),
 };
 
 // Карточка управления конкретным событием — любой путь `/admin/content/<id>`
@@ -81,7 +77,6 @@ export function EventAdminSidebar() {
 
       <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-5 sm:flex-col sm:gap-0.5">
         <NavLink item={CREATE_ITEM} active={CREATE_ITEM.match(pathname)} />
-        <NavLink item={PASS_TEMPLATES_ITEM} active={PASS_TEMPLATES_ITEM.match(pathname)} />
       </div>
     </SidebarFrame>
   );
