@@ -83,6 +83,7 @@ describe("resolveAudienceUserIds() — EVENT_PUBLISHED/UPDATED/CANCELLED", () =>
       format: "PARTY",
       schoolId: null,
       createdById: "user1",
+      changedFields: ["startsAt"],
     });
 
     const where = subscriptionFindMany.mock.calls[0][0].where;

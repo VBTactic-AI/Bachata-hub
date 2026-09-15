@@ -68,45 +68,45 @@ enum UserRole {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  email          String    @unique
+  id                          String    @id @default(cuid())
+  email                       String    @unique
   // Nullable — источник истины для аутентификации теперь Supabase Auth
   // (см. supabaseUserId ниже); свой bcrypt-хэш остаётся только у записей,
   // созданных ДО перехода, и у служебных аккаунтов, которых организатор
   // добавляет вручную без приглашения (registerByAdmin — заводит случайный
   // непроходимый хэш, т.к. этот человек никогда не логинится сам).
-  passwordHash   String?
+  passwordHash                String?
   // Мост на auth.users.id (Supabase Auth) — null, пока пользователь ни разу
   // не входил через Supabase Auth (Google/Apple/email). Заполняется один раз
   // в src/app/auth/callback/route.ts: либо у уже существующей записи (по
   // совпадению email — no-duplicate-account линковка), либо у только что
   // созданной. UNIQUE — одна запись Supabase Auth не может быть связана с
   // двумя разными public.User.
-  supabaseUserId String?   @unique
-  role           UserRole  @default(DANCER)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  lastLoginAt    DateTime?
-  isBlocked      Boolean   @default(false)
+  supabaseUserId              String?   @unique
+  role                        UserRole  @default(DANCER)
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  lastLoginAt                 DateTime?
+  isBlocked                   Boolean   @default(false)
   // Проверенный доступ, выдаваемый ТОЛЬКО через одобрение AccessRequest
   // супер-админом (не выбирается пользователем сам, см. docs/00_DECISIONS.md
   // и /become-organizer) — расширяет canCreateEvents()/доступ к /admin/festival.
-  isVerifiedEventOrganizer    Boolean @default(false)
-  isVerifiedFestivalOrganizer Boolean @default(false)
+  isVerifiedEventOrganizer    Boolean   @default(false)
+  isVerifiedFestivalOrganizer Boolean   @default(false)
 
-  dancer           Dancer?
-  ownedSchools     School[]        @relation("SchoolOwner")
-  createdEvents    Event[]         @relation("EventCreator")
-  moderatedEvents  Event[]         @relation("EventModerator")
-  reviews          Review[]        @relation("ReviewAuthor")
-  moderatedReviews Review[]        @relation("ReviewModerator")
-  moderationLogs   ModerationLog[] @relation("ModerationActor")
-  accessRequestsSubmitted AccessRequest[] @relation("AccessRequestApplicant")
-  accessRequestsReviewed  AccessRequest[] @relation("AccessRequestReviewer")
-  eventTeamMemberships    EventTeamMember[] @relation("EventTeamMemberUser")
-  eventTeamInvitesSent    EventTeamMember[] @relation("EventTeamMemberInvitedBy")
-  eventSuggestionsSubmitted EventSuggestion[] @relation("EventSuggestionSubmitter")
-  eventSuggestionsReviewed  EventSuggestion[] @relation("EventSuggestionReviewer")
+  dancer                      Dancer?
+  ownedSchools                School[]            @relation("SchoolOwner")
+  createdEvents               Event[]             @relation("EventCreator")
+  moderatedEvents             Event[]             @relation("EventModerator")
+  reviews                     Review[]            @relation("ReviewAuthor")
+  moderatedReviews            Review[]            @relation("ReviewModerator")
+  moderationLogs              ModerationLog[]     @relation("ModerationActor")
+  accessRequestsSubmitted     AccessRequest[]     @relation("AccessRequestApplicant")
+  accessRequestsReviewed      AccessRequest[]     @relation("AccessRequestReviewer")
+  eventTeamMemberships        EventTeamMember[]   @relation("EventTeamMemberUser")
+  eventTeamInvitesSent        EventTeamMember[]   @relation("EventTeamMemberInvitedBy")
+  eventSuggestionsSubmitted   EventSuggestion[]   @relation("EventSuggestionSubmitter")
+  eventSuggestionsReviewed    EventSuggestion[]   @relation("EventSuggestionReviewer")
   eventRegistrationsCheckedIn EventRegistration[] @relation("EventRegistrationCheckedInBy")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
@@ -141,13 +141,13 @@ model User {
   // --- Notification & Subscription Engine ---
   // Независимый модуль, реагирует на доменные события Event Engine и слоя 3,
   // не переиспользует и не дублирует их модели.
-  subscriptions          Subscription[]
-  notificationPreference NotificationPreference?
-  notificationEndpoints  NotificationEndpoint[]
-  notifications          Notification[]
+  subscriptions                    Subscription[]
+  notificationPreference           NotificationPreference?
+  notificationEndpoints            NotificationEndpoint[]
+  notifications                    Notification[]
   notificationChannelPricesUpdated NotificationChannelPrice[] @relation("NotificationChannelPriceUpdatedBy")
-  broadcastsSent         Broadcast[]
-  telegramLinkTokens     TelegramLinkToken[]
+  broadcastsSent                   Broadcast[]
+  telegramLinkTokens               TelegramLinkToken[]
 
   @@index([role])
 }
@@ -175,12 +175,12 @@ model City {
   country   Country @relation(fields: [countryId], references: [id])
   isActive  Boolean @default(true) // видна ли в переключателе городов на старте
 
-  schools        School[]
-  events         Event[]
-  dancers        Dancer[]
-  schoolBranches SchoolBranch[]
-  competitions   Competition[]
-  accessRequests AccessRequest[]
+  schools          School[]
+  events           Event[]
+  dancers          Dancer[]
+  schoolBranches   SchoolBranch[]
+  competitions     Competition[]
+  accessRequests   AccessRequest[]
   eventSuggestions EventSuggestion[]
 
   @@index([countryId])
@@ -248,8 +248,8 @@ model Teacher {
   school   School? @relation(fields: [schoolId], references: [id])
   isActive Boolean @default(true)
 
-  schedules           ClassSchedule[]
-  masterclassSessions MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
+  schedules            ClassSchedule[]
+  masterclassSessions  MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
   festivalProgramItems EventProgramItem[] // Events Engine, этап 6 — тот же принцип переиспользования, что и masterclassSessions выше
 
   @@index([schoolId])
@@ -314,10 +314,10 @@ enum AccessRequestStatus {
 }
 
 model AccessRequest {
-  id        String            @id @default(cuid())
-  userId    String
-  user      User              @relation("AccessRequestApplicant", fields: [userId], references: [id])
-  type      AccessRequestType
+  id     String            @id @default(cuid())
+  userId String
+  user   User              @relation("AccessRequestApplicant", fields: [userId], references: [id])
+  type   AccessRequestType
 
   // Общие поля анкеты (одинаковые для всех 4 типов).
   brandName   String // "Как вас представить" — название/бренд
@@ -335,7 +335,7 @@ model AccessRequest {
 
   status        AccessRequestStatus @default(PENDING)
   reviewedById  String?
-  reviewedBy    User?                @relation("AccessRequestReviewer", fields: [reviewedById], references: [id])
+  reviewedBy    User?               @relation("AccessRequestReviewer", fields: [reviewedById], references: [id])
   reviewedAt    DateTime?
   reviewComment String? // причина reject/needs_info — видна заявителю
 
@@ -363,20 +363,20 @@ enum EventSuggestionStatus {
 }
 
 model EventSuggestion {
-  id            String  @id @default(cuid())
+  id            String    @id @default(cuid())
   suggestedById String
-  suggestedBy   User    @relation("EventSuggestionSubmitter", fields: [suggestedById], references: [id])
+  suggestedBy   User      @relation("EventSuggestionSubmitter", fields: [suggestedById], references: [id])
   title         String
   description   String
   cityId        String?
-  city          City?   @relation(fields: [cityId], references: [id])
+  city          City?     @relation(fields: [cityId], references: [id])
   // Предполагаемая дата — часто неизвестна точно тому, кто просто слышал про
   // событие, поэтому необязательна (в отличие от Event.startsAt, который
   // обязателен для настоящего Event).
-  proposedDate DateTime?
+  proposedDate  DateTime?
   // Ссылка-доказательство (пост в соцсети/сайт) — необязательна, но обычно
   // единственный способ админу быстро проверить, что это реально существует.
-  link String?
+  link          String?
 
   status        EventSuggestionStatus @default(PENDING)
   reviewedById  String?
@@ -511,17 +511,19 @@ model Event {
   // см. src/lib/events/event-type-registry.ts). PARTY/MASTERCLASS хранят
   // свои детали здесь; COMPETITION использует уже существующий `competition`
   // выше — новых таблиц для него не заводим.
-  partyDetails       PartyDetails?
-  masterclassDetails MasterclassDetails?
-  festivalDetails    FestivalDetails? // Events Engine, этап 6 — заполняется только когда format = FESTIVAL
-  priceOptions       EventPriceOption[]
-  media              EventMedia[]
+  partyDetails           PartyDetails?
+  masterclassDetails     MasterclassDetails?
+  festivalDetails        FestivalDetails? // Events Engine, этап 6 — заполняется только когда format = FESTIVAL
+  priceOptions           EventPriceOption[]
+  // СЛОЙ 2 — платный доступ к событию (см. комментарий у Pass ниже).
+  passes                 Pass[]
+  media                  EventMedia[]
   // Обратная связь для EventProgramItem.linkedEvent ниже — отдельное
   // "настоящее" событие (party/workshop/contest) со своей публичной
   // страницей, на которое ссылается пункт программы фестиваля. Не путать с
   // festivalDetails выше — то событие ЯВЛЯЕТСЯ фестивалем, это — событие, НА
   // КОТОРОЕ ссылается программа чужого фестиваля.
-  linkedFromProgramItems EventProgramItem[] @relation("ProgramItemLinkedEvent")
+  linkedFromProgramItems EventProgramItem[]  @relation("ProgramItemLinkedEvent")
 
   @@index([cityId, startsAt])
   @@index([schoolId])
@@ -601,6 +603,75 @@ model EventPriceOption {
   createdAt DateTime @default(now())
 
   @@index([eventId])
+}
+
+// ---------------------------------------------------------------------------
+// Pass — СЛОЙ 2, предложение организатора о платном/бесплатном доступе к
+// событию (2026-09-16). Pass ≠ конкретный билет пользователя: Pass
+// описывает ПРЕДЛОЖЕНИЕ ("Full Pass, 120 BYN, 50 мест"), а будущий Ticket —
+// уже выданный/купленный конкретным человеком экземпляр. Модель — только
+// инвентарь/цена/окно продаж, без самой продажи (оплата/QR/промокоды —
+// сознательно вне рамок этой задачи, поля под них не заводятся заранее по
+// принципу "минимально необходимая модель без преждевременного усложнения",
+// добавятся вместе с реальной фичей).
+//
+// НЕ дублирует EventPriceOption выше — та модель ЧИСТО отображаемая строка
+// ("Цена: 15 BYN" на публичной странице, без запасов/статуса/продаж) и
+// продолжает использоваться как есть. Pass — отдельная, более тяжёлая
+// сущность с жизненным циклом и лимитом мест, две модели сосуществуют
+// (EventPriceOption никуда не делась, ничего в ней не меняется).
+//
+// Pass → Ticket ещё не создан: следующий шаг заведёт модель Ticket с полем
+// passId (обратная связь появится здесь как `tickets Ticket[]`). Заводить
+// её уже сейчас — преждевременно (нет ни оплаты, ни выдачи билетов), но
+// eventId/quantity/soldQuantity/salesWindow здесь уже рассчитаны на то, что
+// Ticket будет ссылаться именно на конкретный Pass, а не на Event напрямую.
+enum PassType {
+  FULL_PASS
+  PARTY_PASS
+  WORKSHOP_PASS
+  DAY_PASS
+  COMPETITION_PASS
+  VIP_PASS
+  FREE_PASS
+  CUSTOM
+}
+
+enum PassStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  SOLD_OUT
+  ENDED
+  ARCHIVED
+}
+
+model Pass {
+  id           String     @id @default(cuid())
+  eventId      String
+  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  type         PassType
+  // null — цена ещё не назначена организатором либо type = FREE_PASS.
+  price        Decimal?   @db.Decimal(10, 2)
+  currency     String? // свободный текст, как EventPriceOption.currency ("BYN", "EUR", ...)
+  quantity     Int? // null — без ограничения мест
+  // Пишется только будущим Ticket-сервисом при продаже/выдаче билета —
+  // сегодня ни один код это поле не меняет, стартует с 0.
+  soldQuantity Int        @default(0)
+  salesStartAt DateTime?
+  salesEndAt   DateTime?
+  validFrom    DateTime?
+  validUntil   DateTime?
+  status       PassStatus @default(DRAFT)
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([eventId])
+  @@index([eventId, status])
 }
 
 // 1:1 к Event — заполняется только когда Event.format = PARTY.
@@ -798,15 +869,15 @@ enum EventRegistrationStatus {
 }
 
 model EventRegistration {
-  id          String                  @id @default(cuid())
-  eventId     String
-  event       Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  dancerId    String
-  dancer      Dancer                  @relation(fields: [dancerId], references: [id])
-  status      EventRegistrationStatus @default(REGISTERED)
-  isPaid      Boolean                 @default(false)
-  paidAt      DateTime?
-  cancelledAt DateTime?
+  id            String                  @id @default(cuid())
+  eventId       String
+  event         Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  dancerId      String
+  dancer        Dancer                  @relation(fields: [dancerId], references: [id])
+  status        EventRegistrationStatus @default(REGISTERED)
+  isPaid        Boolean                 @default(false)
+  paidAt        DateTime?
+  cancelledAt   DateTime?
   // Door check-in (2026-09-16, по образцу CheckIn Competition Engine, но без
   // отдельной таблицы — здесь не нужны бирки/заезды, только факт+время+кто
   // отметил). НЕ выбирается вручную из статуса — отдельная кнопка-тумблер
@@ -817,9 +888,9 @@ model EventRegistration {
   // syncNoShowForEvent() сам переводит REGISTERED/CONFIRMED в NO_SHOW.
   checkedInAt   DateTime?
   checkedInById String?
-  checkedInBy   User?    @relation("EventRegistrationCheckedInBy", fields: [checkedInById], references: [id])
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  checkedInBy   User?                   @relation("EventRegistrationCheckedInBy", fields: [checkedInById], references: [id])
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
 
   // Одна регистрация на пару событие-танцор — повторная попытка
   // реактивирует существующую строку (см. registerForEvent), а не создаёт
@@ -2364,7 +2435,6 @@ model Notification {
   deliveries NotificationDelivery[]
 
   @@index([broadcastId])
-
   @@index([userId, isRead, createdAt])
   @@index([userId, createdAt])
 }
