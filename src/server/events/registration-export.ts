@@ -29,10 +29,19 @@ const STATUS_LABELS: Record<EventRegistration["status"], string> = {
   NO_SHOW: "Не пришёл",
 };
 
-// RFC 4180: поле в кавычках, если содержит запятую/кавычку/перенос строки;
-// кавычка внутри — экранируется удвоением.
+// Разделитель — ";", не запятая: Excel в русской локали (где запятая —
+// десятичный разделитель) при обычном двойном клике по .csv ждёт именно ";"
+// и иначе кладёт всю строку в одну колонку A (баг-репорт пользователя,
+// 2026-09-15) — сама дата (formatDateTime) тоже содержит запятую, поэтому
+// раньше это ломалось вдвойне.
+const DELIMITER = ";";
+
+// RFC 4180 (адаптировано под ";" как разделитель): поле в кавычках, если
+// содержит разделитель/кавычку/перенос строки; кавычка внутри —
+// экранируется удвоением. Обычная запятая внутри значения (даты вида
+// "вт, 15 сентября") — больше не спецсимвол, экранировать не нужно.
 function csvField(value: string): string {
-  if (/[",\r\n]/.test(value)) {
+  if (value.includes(DELIMITER) || value.includes('"') || /[\r\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
@@ -48,11 +57,11 @@ export type RegistrationExportRow = {
 // Чистая функция — тестируется отдельно от БД/прав доступа.
 export function buildRegistrationsCsv(rows: RegistrationExportRow[]): string {
   const header = ["Участник", "Дата регистрации", "Статус", "Оплата"];
-  const lines = [header.join(",")];
+  const lines = [header.join(DELIMITER)];
   for (const r of rows) {
     lines.push(
       [csvField(r.displayName), csvField(formatDateTime(r.createdAt)), csvField(STATUS_LABELS[r.status]), csvField(r.isPaid ? "Да" : "Нет")].join(
-        ","
+        DELIMITER
       )
     );
   }

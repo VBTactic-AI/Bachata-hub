@@ -48,15 +48,26 @@ beforeEach(() => {
 });
 
 describe("buildRegistrationsCsv()", () => {
-  it("пустой список — только заголовок", () => {
+  it("пустой список — только заголовок, колонки через ';'", () => {
     const csv = buildRegistrationsCsv([]);
-    expect(csv).toBe("﻿Участник,Дата регистрации,Статус,Оплата");
+    expect(csv).toBe("﻿Участник;Дата регистрации;Статус;Оплата");
   });
 
-  it("экранирует запятую в имени кавычками", () => {
+  // 2026-09-15, баг-репорт пользователя: Excel в русской локали при
+  // двойном клике по .csv ждёт ";" как разделитель колонок, а не ",", иначе
+  // вся строка попадает в один столбец A. Разделитель сменён на ";" — теперь
+  // обычная запятая внутри значения (например, в дате "вт, 15 сентября") не
+  // требует экранирования, это уже не спецсимвол формата.
+  it("обычная запятая внутри значения (например, в дате) НЕ экранируется — она больше не разделитель", () => {
     const csv = buildRegistrationsCsv([{ displayName: "Иванов, Иван", createdAt: new Date("2026-01-01T10:00:00Z"), status: "REGISTERED", isPaid: true }]);
     const rows = csv.replace("﻿", "").split("\r\n");
-    expect(rows[1]).toMatch(/^"Иванов, Иван",/);
+    expect(rows[1]).toMatch(/^Иванов, Иван;/);
+  });
+
+  it("экранирует ';' внутри значения кавычками (значение содержит настоящий разделитель)", () => {
+    const csv = buildRegistrationsCsv([{ displayName: "Иванов; Иван", createdAt: new Date(), status: "REGISTERED", isPaid: true }]);
+    const rows = csv.replace("﻿", "").split("\r\n");
+    expect(rows[1]).toMatch(/^"Иванов; Иван";/);
   });
 
   it("экранирует кавычку внутри значения удвоением", () => {
@@ -67,12 +78,12 @@ describe("buildRegistrationsCsv()", () => {
   it("переводит статус в человекочитаемую метку и оплату в Да/Нет", () => {
     const csv = buildRegistrationsCsv([{ displayName: "A", createdAt: new Date(), status: "WAITLIST", isPaid: false }]);
     expect(csv).toContain("Лист ожидания");
-    expect(csv).toContain(",Нет");
+    expect(csv).toContain(";Нет");
   });
 
-  it("не экранирует обычные значения без запятых/кавычек/переносов", () => {
+  it("не экранирует обычные значения без ';'/кавычек/переносов", () => {
     const csv = buildRegistrationsCsv([{ displayName: "Просто Имя", createdAt: new Date(), status: "CONFIRMED", isPaid: true }]);
-    expect(csv).toContain("Просто Имя,");
+    expect(csv).toContain("Просто Имя;");
     expect(csv).not.toContain('"Просто Имя"');
   });
 });
