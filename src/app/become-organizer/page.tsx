@@ -30,12 +30,18 @@ export default async function BecomeOrganizerPage() {
 
   return (
     <div className="flex flex-col gap-5 pb-4">
-      <div>
-        <h1 className="m-0 font-night text-2xl font-extrabold tracking-tight text-night-text">Стать организатором</h1>
-        <p className="m-0 mt-1 text-sm text-night-muted">
-          Организатор мероприятий, фестиваля, руководитель школы или организатор соревнований — доступ выдаётся после проверки.
-        </p>
-      </div>
+      {/* Заголовок/подзаголовок теперь часть OrganizerHeroPanel внутри
+          визарда (редизайн 2026-09-16) — здесь нужен только когда сам
+          визард не показан (все 4 типа уже запрошены), иначе получилось бы
+          два одинаковых "Стать организатором" подряд. */}
+      {allFourRequested && (
+        <div>
+          <h1 className="m-0 font-night text-2xl font-extrabold tracking-tight text-night-text">Стать организатором</h1>
+          <p className="m-0 mt-1 text-sm text-night-muted">
+            Организатор мероприятий, фестиваля, руководитель школы или организатор соревнований — доступ выдаётся после проверки.
+          </p>
+        </div>
+      )}
 
       {myRequests.length > 0 && <AccessRequestStatusList requests={myRequests} />}
 
