@@ -31,6 +31,7 @@ export type DomainEventPayloadMap = {
     cityId: string;
     format: EventFormat;
     schoolId?: string | null;
+    createdById?: string; // NOTIF-001: Event.createdById — для Subscription targetId=ORGANIZER
   };
   EVENT_UPDATED: {
     entityId: string;
@@ -39,6 +40,7 @@ export type DomainEventPayloadMap = {
     cityId: string;
     format: EventFormat;
     schoolId?: string | null;
+    createdById?: string;
     changedFields: string[]; // напр. ["startsAt", "venueName"] — не используется в шаблоне, но пригодится для аналитики/аудита
   };
   EVENT_CANCELLED: {
@@ -48,6 +50,25 @@ export type DomainEventPayloadMap = {
     cityId: string;
     format: EventFormat;
     schoolId?: string | null;
+    createdById?: string;
+  };
+  // NOTIF-001 — напоминание T-минус-N до начала события. RESOLVE, тот же
+  // eventMatches()/audience-resolver.ts, что и у EVENT_PUBLISHED (подписчики
+  // на EVENT/CITY/EVENT_TYPE/SCHOOL/ORGANIZER) — реминдер адресован тем же
+  // подписчикам, не отдельной аудитории. hoursBefore — конкретное значение
+  // "за сколько часов", по которому process-job.ts сверяет
+  // NotificationPreference.reminderHoursBefore КАЖДОГО кандидата (список
+  // произвольный и настраивается пользователем, не фиксированный набор).
+  EVENT_REMINDER: {
+    entityId: string;
+    eventSlug: string;
+    title: string;
+    date: string;
+    cityId: string;
+    format: EventFormat;
+    schoolId?: string | null;
+    createdById?: string;
+    hoursBefore: number;
   };
   SCHOOL_VERIFIED: {
     entityId: string; // School.id
@@ -135,6 +156,7 @@ export const DOMAIN_EVENT_REGISTRY: Record<DomainEventKey, DomainEventConfig> = 
   EVENT_PUBLISHED: { templateKey: "EVENT_PUBLISHED", defaultPriority: "INFO", audienceKind: "RESOLVE", entityType: "EVENT" },
   EVENT_UPDATED: { templateKey: "EVENT_UPDATED", defaultPriority: "IMPORTANT", audienceKind: "RESOLVE", entityType: "EVENT" },
   EVENT_CANCELLED: { templateKey: "EVENT_CANCELLED", defaultPriority: "URGENT", audienceKind: "RESOLVE", entityType: "EVENT" },
+  EVENT_REMINDER: { templateKey: "EVENT_REMINDER", defaultPriority: "INFO", audienceKind: "RESOLVE", entityType: "EVENT" },
   SCHOOL_VERIFIED: { templateKey: "SCHOOL_VERIFIED", defaultPriority: "INFO", audienceKind: "DIRECT", entityType: "SCHOOL" },
   JNJ_REGISTRATION_OPENED: {
     templateKey: "JNJ_REGISTRATION_OPENED",

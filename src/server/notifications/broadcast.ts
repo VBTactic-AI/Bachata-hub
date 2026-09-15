@@ -99,6 +99,21 @@ export async function listBroadcastTargetOptions(type: SubscriptionType, query?:
     const rows = await prisma.teacher.findMany({ where: { name: filter }, orderBy: { name: "asc" }, take: 10 });
     return rows.map((r) => ({ targetId: r.id, label: r.name }));
   }
+  if (type === "ORGANIZER") {
+    // NOTIF-001 — организатор ищется по email (гарантированно есть у любого
+    // User) или по displayName связанного Dancer (если есть) — сам
+    // организатор как сущность не заведён, targetId = User.id.
+    const rows = await prisma.user.findMany({
+      where: {
+        OR: [{ role: { in: ["SCHOOL_REP", "ORGANIZER", "MODERATOR", "ADMIN"] } }, { isVerifiedEventOrganizer: true }],
+        AND: { OR: [{ email: filter }, { dancer: { displayName: filter } }] },
+      },
+      include: { dancer: { select: { displayName: true } } },
+      orderBy: { email: "asc" },
+      take: 10,
+    });
+    return rows.map((r) => ({ targetId: r.id, label: r.dancer ? `${r.dancer.displayName} (${r.email})` : r.email }));
+  }
 
   return [];
 }

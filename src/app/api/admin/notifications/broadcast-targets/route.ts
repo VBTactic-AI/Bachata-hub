@@ -3,7 +3,7 @@ import type { SubscriptionType } from "@prisma/client";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { listBroadcastTargetOptions } from "@/server/notifications/broadcast";
 
-const VALID_TYPES = new Set(["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR"]);
+const VALID_TYPES = new Set(["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR", "ORGANIZER"]);
 
 // Кандидаты цели рассылки — короткий список (CITY/COUNTRY/EVENT_TYPE) или
 // поиск по имени (SCHOOL/EVENT/INSTRUCTOR), см. broadcast.ts.

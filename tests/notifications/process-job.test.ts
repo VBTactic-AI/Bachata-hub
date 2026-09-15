@@ -260,6 +260,71 @@ describe("processNotificationJob() — RESOLVE-событие (рассылка 
   });
 });
 
+describe("processNotificationJob() — EVENT_REMINDER (NOTIF-001)", () => {
+  const reminderJob = {
+    id: "job-r1",
+    status: "PENDING",
+    attemptCount: 0,
+    eventType: "EVENT_REMINDER",
+    payload: {
+      entityId: "event1",
+      eventSlug: "party",
+      title: "Party",
+      date: "20 сентября, 19:00",
+      cityId: "city1",
+      format: "PARTY",
+      hoursBefore: 24,
+    },
+  };
+
+  it("hoursBefore есть в reminderHoursBefore получателя и notifyReminders включён — проходит фильтр", async () => {
+    notificationJobFindUnique.mockResolvedValue(reminderJob);
+    resolveAudienceUserIdsMock.mockResolvedValue(["u1"]);
+    getPreferenceMapMock
+      .mockResolvedValueOnce(new Map([["u1", DEFAULT_PREF]])) // reminderHoursBefore: [24, 2]
+      .mockResolvedValueOnce(new Map([["u1", DEFAULT_PREF]]));
+    getActiveTemplateMock.mockResolvedValue({ titleTemplate: "Скоро начнётся", bodyTemplate: "«{{title}}» — {{date}}", deepLinkTemplate: "/events/{{eventSlug}}" });
+    notificationFindMany.mockResolvedValue([{ id: "notif-r1", userId: "u1" }]);
+
+    await processNotificationJob("job-r1");
+
+    expect(notificationCreateMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ userId: "u1", type: "EVENT_REMINDER", idempotencyKey: "EVENT_REMINDER:job-r1:u1" })],
+      skipDuplicates: true,
+    });
+  });
+
+  it("notifyReminders выключен — отфильтрован, несмотря на подходящий hoursBefore", async () => {
+    notificationJobFindUnique.mockResolvedValue(reminderJob);
+    resolveAudienceUserIdsMock.mockResolvedValue(["u1"]);
+    getPreferenceMapMock.mockResolvedValue(new Map([["u1", { ...DEFAULT_PREF, notifyReminders: false }]]));
+
+    await processNotificationJob("job-r1");
+
+    expect(notificationCreateMany).not.toHaveBeenCalled();
+  });
+
+  it("hoursBefore не входит в reminderHoursBefore получателя — отфильтрован", async () => {
+    notificationJobFindUnique.mockResolvedValue(reminderJob);
+    resolveAudienceUserIdsMock.mockResolvedValue(["u1"]);
+    getPreferenceMapMock.mockResolvedValue(new Map([["u1", { ...DEFAULT_PREF, reminderHoursBefore: [2] }]]));
+
+    await processNotificationJob("job-r1");
+
+    expect(notificationCreateMany).not.toHaveBeenCalled();
+  });
+
+  it("формат события не входит в eventFormatsEnabled получателя — отфильтрован", async () => {
+    notificationJobFindUnique.mockResolvedValue(reminderJob);
+    resolveAudienceUserIdsMock.mockResolvedValue(["u1"]);
+    getPreferenceMapMock.mockResolvedValue(new Map([["u1", { ...DEFAULT_PREF, eventFormatsEnabled: ["FESTIVAL"] }]]));
+
+    await processNotificationJob("job-r1");
+
+    expect(notificationCreateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("processDueDeliveries() — retry sweep для Web Push/Email", () => {
   it("выбирает просроченные FAILED-доставки, вызывает провайдер и обновляет статус", async () => {
     notificationDeliveryFindMany.mockResolvedValue([

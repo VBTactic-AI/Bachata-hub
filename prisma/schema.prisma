@@ -2173,9 +2173,11 @@ model AudienceVoteWinner {
 //
 // Subscription — универсальная модель (type + targetId), а не отдельная
 // таблица на каждый тип цели: добавление нового SubscriptionType не требует
-// новой миграции самой таблицы Subscription. Organizer как отдельная
-// сущность не заведена (Event.organizerName — свободный текст без id) —
-// подписка "на организатора" реализована через SCHOOL (Event.schoolId).
+// новой миграции самой таблицы Subscription.
+// ORGANIZER (NOTIF-001, 2026-09-16) — targetId = User.id (Event.createdById),
+// НЕ School: у организатора без школы (свободный Event.organizerName) тоже
+// должна быть возможность подписаться именно на него, не только через
+// SCHOOL. Более раннее решение "подписка на организатора = SCHOOL" отменено.
 // STYLE/ARTIST из ТЗ сознательно не заведены сейчас — в схеме нет
 // справочника стилей танца (только свободный текст School.directions/
 // PartyDetails.musicStyles), заводить подписку не на что; универсальная
@@ -2187,6 +2189,7 @@ enum SubscriptionType {
   COUNTRY
   EVENT_TYPE // значение — код EventFormat (PARTY/MASTERCLASS/...)
   INSTRUCTOR // значение — id Teacher
+  ORGANIZER // значение — id User (Event.createdById)
 }
 
 enum SubscriptionSource {

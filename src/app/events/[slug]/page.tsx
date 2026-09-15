@@ -180,6 +180,14 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
       })
     : null;
 
+  // NOTIF-001 — подписка "на организатора" (Event.createdById), отдельно от
+  // подписки на конкретное событие выше.
+  const existingOrganizerSubscription = user
+    ? await prisma.subscription.findUnique({
+        where: { userId_type_targetId: { userId: user.id, type: "ORGANIZER", targetId: event.createdById } },
+      })
+    : null;
+
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const pageUrl = `${siteUrl}/events/${event.slug}`;
 
@@ -585,6 +593,13 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
                 loggedIn={!!user}
                 initialSubscriptionId={existingSubscription?.id ?? null}
                 labelFollow="🔔 Подписаться на событие"
+              />
+              <FollowButton
+                type="ORGANIZER"
+                targetId={event.createdById}
+                loggedIn={!!user}
+                initialSubscriptionId={existingOrganizerSubscription?.id ?? null}
+                labelFollow="🧑‍💼 Подписаться на организатора"
               />
             </div>
           </Card>

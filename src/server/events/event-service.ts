@@ -230,6 +230,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
           cityId: row.cityId,
           format: row.format,
           schoolId: row.schoolId,
+          createdById: row.createdById,
         },
         idempotencyKey: `EVENT_PUBLISHED:${row.id}`,
       });
@@ -243,6 +244,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
           cityId: row.cityId,
           format: row.format,
           schoolId: row.schoolId,
+          createdById: row.createdById,
           changedFields: notifyUpdatedFields,
         },
         // updatedAt в ключе — КАЖДОЕ значимое изменение это отдельное
@@ -415,6 +417,7 @@ export async function cancelEvent(eventId: string, user: User) {
           cityId: row.cityId,
           format: row.format,
           schoolId: row.schoolId,
+          createdById: row.createdById,
         },
         idempotencyKey: `EVENT_CANCELLED:${row.id}`,
       });

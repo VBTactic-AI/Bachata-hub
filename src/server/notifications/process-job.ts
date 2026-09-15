@@ -33,6 +33,16 @@ const PREFERENCE_GATES: Partial<Record<DomainEventKey, PreferenceGate>> = {
   EVENT_PUBLISHED: (pref, payload) => pref.eventFormatsEnabled.includes(payload.format as never),
   EVENT_UPDATED: (pref, payload) => pref.notifyChanges && pref.eventFormatsEnabled.includes(payload.format as never),
   EVENT_CANCELLED: (pref) => pref.notifyCancellations,
+  // NOTIF-001 — напоминание проходит ТОЛЬКО если пользователь в принципе
+  // включил напоминания И именно ЭТО конкретное hoursBefore (из payload
+  // job'а) есть в его собственном настраиваемом списке
+  // reminderHoursBefore (напр. [24, 2]) — один и тот же EVENT_REMINDER-job
+  // (один hoursBefore на job, см. reminders.ts) может подойти одним
+  // подписчикам и не подойти другим.
+  EVENT_REMINDER: (pref, payload) =>
+    pref.notifyReminders &&
+    pref.reminderHoursBefore.includes(payload.hoursBefore as number) &&
+    pref.eventFormatsEnabled.includes(payload.format as never),
 };
 
 function passesPreferenceGate(type: DomainEventKey, pref: PreferenceLike, payload: Record<string, unknown>): boolean {

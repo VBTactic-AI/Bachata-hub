@@ -11,7 +11,7 @@ import { getEventTypeConfig } from "@/lib/events/event-type-registry";
 
 export const NON_IN_APP_CHANNELS: NotificationChannel[] = ["WEB_PUSH", "EMAIL", "TELEGRAM", "MOBILE_PUSH", "WHATSAPP"];
 export const ENDPOINT_CHANNELS: NotificationChannel[] = ["WEB_PUSH", "TELEGRAM", "MOBILE_PUSH"];
-const ALL_SUBSCRIPTION_TYPES: SubscriptionType[] = ["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR"];
+const ALL_SUBSCRIPTION_TYPES: SubscriptionType[] = ["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR", "ORGANIZER"];
 
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -67,6 +67,12 @@ export async function resolveTargetLabels(type: SubscriptionType, targetIds: str
   } else if (type === "INSTRUCTOR") {
     const rows = await prisma.teacher.findMany({ where: { id: { in: targetIds } }, select: { id: true, name: true } });
     for (const r of rows) map.set(r.id, r.name);
+  } else if (type === "ORGANIZER") {
+    const rows = await prisma.user.findMany({
+      where: { id: { in: targetIds } },
+      select: { id: true, email: true, dancer: { select: { displayName: true } } },
+    });
+    for (const r of rows) map.set(r.id, r.dancer ? `${r.dancer.displayName} (${r.email})` : r.email);
   }
 
   return map;

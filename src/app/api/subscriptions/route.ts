@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { listSubscriptions, subscribe, SubscriptionTargetInvalidError } from "@/server/notifications/subscriptions";
 
-const SUBSCRIPTION_TYPES = ["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR"] as const;
+const SUBSCRIPTION_TYPES = ["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR", "ORGANIZER"] as const;
 
 const subscribeSchema = z.object({
   type: z.enum(SUBSCRIPTION_TYPES),

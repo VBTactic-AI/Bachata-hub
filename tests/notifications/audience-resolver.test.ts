@@ -71,6 +71,71 @@ describe("resolveAudienceUserIds() — EVENT_PUBLISHED/UPDATED/CANCELLED", () =>
     expect(result).toEqual(["u1", "u2"]);
     expect(subscriptionFindMany.mock.calls[0][0].distinct).toEqual(["userId"]);
   });
+
+  it("NOTIF-001 — createdById добавляет ORGANIZER-матч (событие с организатором без школы)", async () => {
+    subscriptionFindMany.mockResolvedValue([]);
+
+    await resolveAudienceUserIds("EVENT_UPDATED", {
+      entityId: "event1",
+      eventSlug: "s",
+      title: "t",
+      cityId: "city1",
+      format: "PARTY",
+      schoolId: null,
+      createdById: "user1",
+    });
+
+    const where = subscriptionFindMany.mock.calls[0][0].where;
+    expect(where.OR).toContainEqual({ type: "ORGANIZER", targetId: "user1" });
+  });
+
+  it("без createdById — ORGANIZER-матч не добавляется", async () => {
+    subscriptionFindMany.mockResolvedValue([]);
+
+    await resolveAudienceUserIds("EVENT_CANCELLED", {
+      entityId: "event1",
+      eventSlug: "s",
+      title: "t",
+      cityId: "city1",
+      format: "PARTY",
+      schoolId: null,
+    });
+
+    const where = subscriptionFindMany.mock.calls[0][0].where;
+    expect(where.OR).not.toContainEqual(expect.objectContaining({ type: "ORGANIZER" }));
+  });
+});
+
+describe("resolveAudienceUserIds() — EVENT_REMINDER", () => {
+  it("матчит так же, как EVENT_PUBLISHED/UPDATED/CANCELLED (тот же eventMatches)", async () => {
+    subscriptionFindMany.mockResolvedValue([{ userId: "u1" }]);
+
+    await resolveAudienceUserIds("EVENT_REMINDER", {
+      entityId: "event1",
+      eventSlug: "s",
+      title: "t",
+      date: "d",
+      cityId: "city1",
+      format: "MASTERCLASS",
+      schoolId: "school1",
+      createdById: "user1",
+      hoursBefore: 24,
+    });
+
+    expect(subscriptionFindMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { type: "EVENT", targetId: "event1" },
+          { type: "CITY", targetId: "city1" },
+          { type: "EVENT_TYPE", targetId: "MASTERCLASS" },
+          { type: "SCHOOL", targetId: "school1" },
+          { type: "ORGANIZER", targetId: "user1" },
+        ],
+      },
+      select: { userId: true },
+      distinct: ["userId"],
+    });
+  });
 });
 
 describe("resolveAudienceUserIds() — JNJ_REGISTRATION_OPENED/RESULTS_PUBLISHED", () => {

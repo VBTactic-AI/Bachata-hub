@@ -21,6 +21,7 @@ function eventMatches(payload: {
   cityId: string;
   format: string;
   schoolId?: string | null;
+  createdById?: string | null;
 }): TargetMatch[] {
   const matches: TargetMatch[] = [
     { type: "EVENT", targetId: payload.entityId }, // те, кто следит конкретно за этим событием
@@ -28,6 +29,10 @@ function eventMatches(payload: {
     { type: "EVENT_TYPE", targetId: payload.format },
   ];
   if (payload.schoolId) matches.push({ type: "SCHOOL", targetId: payload.schoolId });
+  // NOTIF-001 — подписка "на организатора" (Event.createdById, не School:
+  // у организатора без школы, как и у школьного, подписчик должен получать
+  // уведомления о его событиях).
+  if (payload.createdById) matches.push({ type: "ORGANIZER", targetId: payload.createdById });
   return matches;
 }
 
@@ -44,6 +49,7 @@ const AUDIENCE_MATCHERS: Partial<{ [K in DomainEventKey]: AudienceMatcher<K> }> 
   EVENT_PUBLISHED: eventMatches,
   EVENT_UPDATED: eventMatches,
   EVENT_CANCELLED: eventMatches,
+  EVENT_REMINDER: eventMatches,
   JNJ_REGISTRATION_OPENED: competitionMatches,
   JNJ_RESULTS_PUBLISHED: competitionMatches,
 };

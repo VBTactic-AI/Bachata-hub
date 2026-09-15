@@ -7,7 +7,7 @@ const audienceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ALL_USERS") }),
   z.object({
     kind: z.literal("SUBSCRIBERS"),
-    type: z.enum(["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR"]),
+    type: z.enum(["EVENT", "SCHOOL", "CITY", "COUNTRY", "EVENT_TYPE", "INSTRUCTOR", "ORGANIZER"]),
     targetId: z.string().min(1),
   }),
 ]);

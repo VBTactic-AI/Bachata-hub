@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-export type FollowSubscriptionType = "EVENT" | "SCHOOL" | "CITY" | "COUNTRY" | "EVENT_TYPE" | "INSTRUCTOR";
+export type FollowSubscriptionType = "EVENT" | "SCHOOL" | "CITY" | "COUNTRY" | "EVENT_TYPE" | "INSTRUCTOR" | "ORGANIZER";
 
 // Notification & Subscription Engine — Follow-кнопка (Phase 8, ТЗ §35).
 // Настоящий optimistic UI: состояние переключается ДО ответа сервера, а не

@@ -18,6 +18,14 @@ const TEMPLATES = [
     supportedChannels: ["IN_APP", "WEB_PUSH", "EMAIL"] as const,
   },
   {
+    key: "EVENT_REMINDER",
+    titleTemplate: "Скоро начнётся",
+    bodyTemplate: "«{{title}}» — {{date}}",
+    deepLinkTemplate: "/events/{{eventSlug}}",
+    defaultPriority: "INFO" as const,
+    supportedChannels: ["IN_APP", "WEB_PUSH", "EMAIL"] as const,
+  },
+  {
     key: "EVENT_UPDATED",
     titleTemplate: "Событие изменилось",
     bodyTemplate: "{{title}}: организатор обновил детали",

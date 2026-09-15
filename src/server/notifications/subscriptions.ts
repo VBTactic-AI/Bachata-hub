@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import type { SubscriptionType } from "@prisma/client";
 import { EVENT_TYPE_REGISTRY } from "@/lib/events/event-type-registry";
+import { canCreateEvents } from "@/lib/auth";
 
 // Notification & Subscription Engine — Subscription Engine (Phase 3).
 // Универсальная модель type+targetId (см. docs/00_DECISIONS.md-стиль
 // обсуждения этой задачи): добавление нового SubscriptionType — новая
 // запись в TARGET_EXISTS ниже, не переделка subscribe()/unsubscribe().
-// Organizer как отдельная сущность не заведена — подписка "на организатора"
-// это подписка type=SCHOOL (Event.organizerName без школы не участвует).
+// ORGANIZER (NOTIF-001, 2026-09-16) — targetId = User.id (Event.createdById);
+// отдельно от SCHOOL, чтобы у организатора без школы тоже была подписка.
 // Matching "кто должен получить уведомление по конкретному событию" — это
 // отдельный Audience Resolver (Phase 4), сюда не относится.
 
@@ -29,6 +30,14 @@ export const TARGET_EXISTS: Record<SubscriptionType, (targetId: string) => Promi
   INSTRUCTOR: async (id) => (await prisma.teacher.findUnique({ where: { id }, select: { id: true } })) !== null,
   // Значение — код EventFormat, не id строки в БД.
   EVENT_TYPE: async (id) => id in EVENT_TYPE_REGISTRY,
+  // NOTIF-001 — подписаться можно только на РЕАЛЬНОГО организатора
+  // (canCreateEvents), не на произвольного пользователя сайта — иначе
+  // "подписка на организатора" на танцора без единого события выглядела бы
+  // как баг, а не осмысленное действие.
+  ORGANIZER: async (id) => {
+    const user = await prisma.user.findUnique({ where: { id } });
+    return user !== null && canCreateEvents(user);
+  },
 };
 
 async function assertValidTarget(type: SubscriptionType, targetId: string) {

@@ -15,11 +15,12 @@ const SUBSCRIPTION_TYPE_LABELS: Record<SubscriptionType, string> = {
   COUNTRY: "Страна",
   EVENT_TYPE: "Тип события",
   INSTRUCTOR: "Преподаватель",
+  ORGANIZER: "Организатор",
 };
 
 // Типы, для которых цель ищется по имени (может быть много записей), а не
 // выбирается из короткого исчерпывающего списка.
-const SEARCH_TYPES: SubscriptionType[] = ["SCHOOL", "EVENT", "INSTRUCTOR"];
+const SEARCH_TYPES: SubscriptionType[] = ["SCHOOL", "EVENT", "INSTRUCTOR", "ORGANIZER"];
 
 type TargetOption = { targetId: string; label: string };
 type Preview = { recipientCount: number; label: string };

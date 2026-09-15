@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processDueNotificationJobs, processDueDeliveries } from "@/server/notifications/process-job";
+import { processDueEventReminders } from "@/server/notifications/reminders";
 
 // Notification & Subscription Engine — retry sweep (Phase 5, ТЗ §12/§20).
 // Подхватывает то, что after() не успел/не смог обработать сразу: свежие
@@ -31,9 +32,14 @@ async function runSweep(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // NOTIF-001 — реминдеры (processDueEventReminders) идут ДО общего sweep'а
+  // (не параллельно), потому что сами создают/апсертят NotificationJob'ы
+  // (через emitDomainEvent) — processDueNotificationJobs ниже должен увидеть
+  // уже созданные реминдер-job'ы этого же тика, а не только на следующем.
+  const remindersEmitted = await processDueEventReminders();
   const [jobsProcessed, deliveriesRetried] = await Promise.all([processDueNotificationJobs(), processDueDeliveries()]);
 
-  return NextResponse.json({ ok: true, jobsProcessed, deliveriesRetried });
+  return NextResponse.json({ ok: true, remindersEmitted, jobsProcessed, deliveriesRetried });
 }
 
 // Vercel Cron вызывает GET; внешние пингеры обычно тоже проще настраивают

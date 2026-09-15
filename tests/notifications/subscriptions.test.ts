@@ -5,6 +5,7 @@ const schoolFindUnique = vi.fn();
 const cityFindUnique = vi.fn();
 const countryFindUnique = vi.fn();
 const teacherFindUnique = vi.fn();
+const userFindUnique = vi.fn();
 const subscriptionUpsert = vi.fn();
 const subscriptionDeleteMany = vi.fn();
 const subscriptionFindMany = vi.fn();
@@ -16,6 +17,7 @@ vi.mock("@/lib/prisma", () => ({
     city: { findUnique: (...a: unknown[]) => cityFindUnique(...a) },
     country: { findUnique: (...a: unknown[]) => countryFindUnique(...a) },
     teacher: { findUnique: (...a: unknown[]) => teacherFindUnique(...a) },
+    user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
     subscription: {
       upsert: (...a: unknown[]) => subscriptionUpsert(...a),
       deleteMany: (...a: unknown[]) => subscriptionDeleteMany(...a),
@@ -39,6 +41,7 @@ beforeEach(() => {
   cityFindUnique.mockReset();
   countryFindUnique.mockReset();
   teacherFindUnique.mockReset();
+  userFindUnique.mockReset();
   subscriptionUpsert.mockReset();
   subscriptionDeleteMany.mockReset();
   subscriptionFindMany.mockReset();
@@ -115,6 +118,34 @@ describe("subscribe() — валидация цели по типу (Registry, �
 
   it("EVENT_TYPE: невалидный код — SubscriptionTargetInvalidError, upsert не вызывается", async () => {
     await expect(subscribe("user1", "EVENT_TYPE", "NOT_A_FORMAT")).rejects.toThrow(SubscriptionTargetInvalidError);
+    expect(subscriptionUpsert).not.toHaveBeenCalled();
+  });
+
+  it("ORGANIZER: пользователь с ролью, дающей canCreateEvents (ORGANIZER) — подписка создаётся", async () => {
+    userFindUnique.mockResolvedValue({ id: "user1", role: "ORGANIZER", isVerifiedEventOrganizer: false });
+    subscriptionUpsert.mockResolvedValue({ id: "sub1" });
+
+    await subscribe("user2", "ORGANIZER", "user1");
+
+    expect(userFindUnique).toHaveBeenCalledWith({ where: { id: "user1" } });
+    expect(subscriptionUpsert).toHaveBeenCalledWith({
+      where: { userId_type_targetId: { userId: "user2", type: "ORGANIZER", targetId: "user1" } },
+      create: { userId: "user2", type: "ORGANIZER", targetId: "user1", source: "USER" },
+      update: {},
+    });
+  });
+
+  it("ORGANIZER: обычный пользователь без прав на создание событий — SubscriptionTargetInvalidError, upsert не вызывается", async () => {
+    userFindUnique.mockResolvedValue({ id: "user1", role: "DANCER", isVerifiedEventOrganizer: false });
+
+    await expect(subscribe("user2", "ORGANIZER", "user1")).rejects.toThrow(SubscriptionTargetInvalidError);
+    expect(subscriptionUpsert).not.toHaveBeenCalled();
+  });
+
+  it("ORGANIZER: несуществующий пользователь — SubscriptionTargetInvalidError", async () => {
+    userFindUnique.mockResolvedValue(null);
+
+    await expect(subscribe("user2", "ORGANIZER", "ghost")).rejects.toThrow(SubscriptionTargetInvalidError);
     expect(subscriptionUpsert).not.toHaveBeenCalled();
   });
 
