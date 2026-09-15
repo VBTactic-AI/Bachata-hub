@@ -26,15 +26,11 @@ export default async function EventTeamPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <a href="/admin/content" className="text-sm text-admin-muted hover:text-night-text hover:underline">
-          ← К моим событиям
-        </a>
-        <h1 className="m-0 mt-1 font-night text-xl font-extrabold text-night-text sm:text-2xl">Команда — {event.title}</h1>
-        <p className="m-0 mt-1 text-sm text-admin-muted">
-          Люди, которым вы дали доступ к управлению этим событием (просмотр и статус участников). Владелец события всегда вы сами.
-        </p>
-      </div>
+      {/* §12 ТЗ — заголовок/бейджи/breadcrumb события теперь общие для всех
+          вкладок, рендерятся один раз в layout.tsx рядом. */}
+      <p className="m-0 text-sm text-admin-muted">
+        Люди, которым вы дали доступ к управлению этим событием (просмотр и статус участников). Владелец события всегда вы сами.
+      </p>
 
       <EventTeamManager
         eventSlug={event.slug}

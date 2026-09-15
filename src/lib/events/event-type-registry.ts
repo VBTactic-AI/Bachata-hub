@@ -1,4 +1,20 @@
-import type { EventFormat } from "@prisma/client";
+import type { EventFormat, EventStatus, ModerationStatus } from "@prisma/client";
+
+// Человекочитаемый статус события (черновик/на модерации/опубликовано/
+// отклонено/архив) — раньше жила только внутри EventWizard.tsx ("use client"),
+// перенесена сюда (2026-09-15, Event Dashboard §12): импорт функции из
+// "use client"-файла в серверный компонент уже один раз ловил баг в этом
+// проекте (см. docs/PROGRESS.md, Notification Control Center — константа из
+// "use client"-файла превращалась в клиентскую ссылку в RSC и возвращала
+// undefined) — этот модуль специально без "use client", безопасен для обеих
+// сторон.
+export function myEventStatusLabel(status: EventStatus, moderationStatus: ModerationStatus): string {
+  if (status === "DRAFT") return "Черновик";
+  if (status === "ARCHIVED") return "В архиве";
+  if (moderationStatus === "APPROVED") return "Опубликовано";
+  if (moderationStatus === "REJECTED") return "Отклонено модератором";
+  return "На модерации";
+}
 
 // Event Engine — расширяемый реестр типов события (задача "Event Engine").
 // Чистый модуль без React и без Prisma-запросов: используется и клиентским

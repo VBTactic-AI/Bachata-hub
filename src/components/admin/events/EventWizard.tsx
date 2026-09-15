@@ -8,6 +8,7 @@ import {
   EVENT_TYPE_REGISTRY,
   computePublishChecklist,
   isChecklistComplete,
+  myEventStatusLabel,
   type EventStepId,
 } from "@/lib/events/event-type-registry";
 import { WizardNav } from "./WizardNav";
@@ -32,14 +33,6 @@ export type MyEventListItem = {
   status: EventStatus;
   moderationStatus: ModerationStatus;
 };
-
-function myEventStatusLabel(status: EventStatus, moderationStatus: ModerationStatus): string {
-  if (status === "DRAFT") return "Черновик";
-  if (status === "ARCHIVED") return "В архиве";
-  if (moderationStatus === "APPROVED") return "Опубликовано";
-  if (moderationStatus === "REJECTED") return "Отклонено модератором";
-  return "На модерации";
-}
 
 // Event Engine — единый Create Event Wizard (задача "ОБЩИЙ CREATE EVENT
 // ENGINE"): один компонент управляет состоянием черновика и навигацией,
@@ -238,11 +231,12 @@ export function EventWizard({
                     Открыть карточку →
                   </a>
                 )}
-                <a href={`/admin/content/${e.id}/registrations`} className="text-xs text-admin-muted hover:text-night-text hover:underline">
-                  Участники →
-                </a>
-                <a href={`/admin/content/${e.id}/team`} className="text-xs text-admin-muted hover:text-night-text hover:underline">
-                  Команда →
+                {/* §12 ТЗ (Event Dashboard, 2026-09-15) — раньше здесь было две
+                    отдельные ссылки ("Участники →"/"Команда →"); теперь одна
+                    точка входа в единую оболочку события (Обзор + вкладки),
+                    а не два несвязанных экрана. */}
+                <a href={`/admin/content/${e.id}`} className="text-xs text-admin-muted hover:text-night-text hover:underline">
+                  Управление →
                 </a>
               </div>
             ))}

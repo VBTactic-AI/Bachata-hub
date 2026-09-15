@@ -128,15 +128,12 @@ export default async function EventRegistrationsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <a href="/admin/content" className="text-sm text-admin-muted hover:text-night-text hover:underline">
-          ← К моим событиям
-        </a>
-        <h1 className="m-0 mt-1 font-night text-xl font-extrabold text-night-text sm:text-2xl">Участники — {event.title}</h1>
-        {!event.registrationEnabled && (
-          <p className="m-0 mt-1 text-sm text-admin-muted">Регистрация на событии сейчас выключена в настройках мастера.</p>
-        )}
-      </div>
+      {/* §12 ТЗ — заголовок/бейджи/breadcrumb события теперь общие для всех
+          вкладок, рендерятся один раз в layout.tsx рядом. Здесь остаётся
+          только специфичное для "Участников" предупреждение. */}
+      {!event.registrationEnabled && (
+        <p className="m-0 text-sm text-admin-muted">Регистрация на событии сейчас выключена в настройках мастера.</p>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Всего регистраций" value={result.totalOverall} icon={<PeopleIcon />} tone="primary" href={totalHref} active={totalActive} />
