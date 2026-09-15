@@ -23,12 +23,14 @@ export function EventDashboardTabs({ eventId, canManageTeam }: { eventId: string
     { href: `${base}/passes`, label: "Билеты и Pass", exact: false },
     { href: `${base}/statistics`, label: "Статистика", exact: false },
     ...(canManageTeam ? [{ href: `${base}/team`, label: "Команда", exact: false }] : []),
-    // Шаблоны Pass (2026-09-16, по прямому запросу пользователя) — НЕ
-    // привязаны к конкретному событию (владелец — User, см. модель
-    // PassTemplate), поэтому ссылка одна и та же независимо от того, в
-    // карточке какого события открыта эта вкладка. Раньше была отдельным
-    // пунктом левого меню (EventAdminSidebar) — перенесена сюда.
-    { href: "/admin/content/pass-templates", label: "Шаблоны Pass", exact: false },
+    // Шаблоны Pass (2026-09-16, по прямому запросу пользователя) — вложенная
+    // вкладка ([id]/pass-templates/page.tsx), а не отдельная самостоятельная
+    // страница (была раньше — обрывала заголовок/EventDashboardTabs карточки
+    // события). Список НЕ зависит от того, в карточке какого события открыта
+    // вкладка — PassTemplate принадлежит User, не Event (см. модель), но URL
+    // всё равно содержит текущий eventId, чтобы вкладка оставалась внутри
+    // [id]/layout.tsx, как и остальные.
+    { href: `${base}/pass-templates`, label: "Шаблоны Pass", exact: false },
   ];
 
   return (

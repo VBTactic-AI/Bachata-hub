@@ -18,8 +18,9 @@ import { PlusIcon, GearIcon } from "@/components/admin/icons";
 // "Моих событий", а не на отдельном не связанном экране.
 //
 // "Шаблоны Pass" сюда НЕ добавлены (тот же день, повторное уточнение
-// пользователя) — перенесены во вкладку карточки события (см.
-// EventDashboardTabs.tsx), убраны из этого меню как отдельный пункт.
+// пользователя) — вложенная вкладка карточки события
+// (/admin/content/[id]/pass-templates, см. EventDashboardTabs.tsx), а не
+// отдельный пункт этого меню и не самостоятельная страница вне [id].
 const MY_EVENTS_ITEM: NavItem = {
   href: "/admin/content",
   label: "Мои события",
@@ -38,9 +39,9 @@ const CREATE_ITEM: NavItem = {
 };
 
 // Карточка управления конкретным событием — любой путь `/admin/content/<id>`
-// (и вложенные вкладки), КРОМЕ "new"/"edit/*"/"pass-templates" (у них свой
-// первый сегмент, не id события).
-const MANAGE_EVENT_PATTERN = /^\/admin\/content\/(?!new(?:\/|$)|edit(?:\/|$)|pass-templates(?:\/|$))([^/]+)/;
+// (и вложенные вкладки, включая pass-templates — она тоже вложена под [id]),
+// КРОМЕ "new"/"edit/*" (у них свой первый сегмент, не id события).
+const MANAGE_EVENT_PATTERN = /^\/admin\/content\/(?!new(?:\/|$)|edit(?:\/|$))([^/]+)/;
 
 export function EventAdminSidebar() {
   const pathname = usePathname() ?? "";
