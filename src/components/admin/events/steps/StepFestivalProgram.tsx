@@ -44,7 +44,7 @@ export function StepFestivalProgram({
   }
 
   return (
-    <div className="flex max-w-[640px] flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">Программа</h2>
       <p className="m-0 -mt-2 text-sm text-admin-muted">Расписание фестиваля по дням — мастер-классы, вечеринки, конкурсы.</p>
 

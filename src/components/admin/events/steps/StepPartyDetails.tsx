@@ -18,35 +18,39 @@ const checkboxClass = "h-4 w-4 rounded border-admin-border bg-admin-card accent-
 export function StepPartyDetails({ draft, onChange }: { draft: WizardDraft; onChange: (patch: Partial<WizardDraft["party"]>) => void }) {
   const p = draft.party;
   return (
-    <div className="flex max-w-[560px] flex-col gap-3.5">
+    <div className="flex w-full flex-col gap-3.5">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">О вечеринке</h2>
 
-      <Label className="text-admin-muted">
-        Диджеи (через запятую)
-        <Input value={p.djs} onChange={(e) => onChange({ djs: e.target.value })} className={fieldClass} />
-      </Label>
-      <Label className="text-admin-muted">
-        Дресс-код
-        <Input value={p.dressCode} onChange={(e) => onChange({ dressCode: e.target.value })} className={fieldClass} />
-      </Label>
-      <Label className="text-admin-muted">
-        Фотограф
-        <Input value={p.photographer} onChange={(e) => onChange({ photographer: e.target.value })} className={fieldClass} />
-      </Label>
+      <div className="grid gap-3.5 sm:grid-cols-2">
+        <Label className="text-admin-muted">
+          Диджеи (через запятую)
+          <Input value={p.djs} onChange={(e) => onChange({ djs: e.target.value })} className={fieldClass} />
+        </Label>
+        <Label className="text-admin-muted">
+          Дресс-код
+          <Input value={p.dressCode} onChange={(e) => onChange({ dressCode: e.target.value })} className={fieldClass} />
+        </Label>
+        <Label className="text-admin-muted">
+          Фотограф
+          <Input value={p.photographer} onChange={(e) => onChange({ photographer: e.target.value })} className={fieldClass} />
+        </Label>
+      </div>
 
-      <label className="flex items-center gap-2 text-sm text-admin-muted">
-        <input type="checkbox" checked={p.parking} onChange={(e) => onChange({ parking: e.target.checked })} className={checkboxClass} />
-        Парковка
-      </label>
-      <label className="flex items-center gap-2 text-sm text-admin-muted">
-        <input
-          type="checkbox"
-          checked={p.cloakroom}
-          onChange={(e) => onChange({ cloakroom: e.target.checked })}
-          className={checkboxClass}
-        />
-        Гардероб
-      </label>
+      <div className="flex flex-wrap gap-5">
+        <label className="flex items-center gap-2 text-sm text-admin-muted">
+          <input type="checkbox" checked={p.parking} onChange={(e) => onChange({ parking: e.target.checked })} className={checkboxClass} />
+          Парковка
+        </label>
+        <label className="flex items-center gap-2 text-sm text-admin-muted">
+          <input
+            type="checkbox"
+            checked={p.cloakroom}
+            onChange={(e) => onChange({ cloakroom: e.target.checked })}
+            className={checkboxClass}
+          />
+          Гардероб
+        </label>
+      </div>
     </div>
   );
 }

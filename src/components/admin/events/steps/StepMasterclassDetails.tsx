@@ -16,23 +16,25 @@ export function StepMasterclassDetails({
 }) {
   const m = draft.masterclass;
   return (
-    <div className="flex max-w-[560px] flex-col gap-3.5">
+    <div className="flex w-full flex-col gap-3.5">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">Детали</h2>
 
-      <Label className="text-admin-muted">
-        Стиль
-        <Input value={m.style} onChange={(e) => onChange({ style: e.target.value })} className={fieldClass} />
-      </Label>
+      <div className="grid gap-3.5 sm:grid-cols-2">
+        <Label className="text-admin-muted">
+          Стиль
+          <Input value={m.style} onChange={(e) => onChange({ style: e.target.value })} className={fieldClass} />
+        </Label>
 
-      <Label className="text-admin-muted">
-        Формат
-        <Input
-          placeholder="Интенсив / цикл занятий / …"
-          value={m.format}
-          onChange={(e) => onChange({ format: e.target.value })}
-          className={fieldClass}
-        />
-      </Label>
+        <Label className="text-admin-muted">
+          Формат
+          <Input
+            placeholder="Интенсив / цикл занятий / …"
+            value={m.format}
+            onChange={(e) => onChange({ format: e.target.value })}
+            className={fieldClass}
+          />
+        </Label>
+      </div>
 
       <label className="flex items-center gap-2 text-sm text-admin-muted">
         <input

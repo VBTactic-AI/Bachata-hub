@@ -10,18 +10,20 @@ const fieldClass =
 
 export function StepDateTime({ draft, onChange }: { draft: WizardDraft; onChange: (patch: Partial<WizardDraft>) => void }) {
   return (
-    <div className="flex max-w-[560px] flex-col gap-3.5">
+    <div className="flex w-full flex-col gap-3.5">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">Дата и время</h2>
 
-      <Label className="text-admin-muted">
-        {t.event.date} / {t.event.time} — начало
-        <DateTimeField required value={draft.startsAt} onChange={(v) => onChange({ startsAt: v })} theme="admin" className={fieldClass} />
-      </Label>
+      <div className="grid gap-3.5 sm:grid-cols-2">
+        <Label className="text-admin-muted">
+          {t.event.date} / {t.event.time} — начало
+          <DateTimeField required value={draft.startsAt} onChange={(v) => onChange({ startsAt: v })} theme="admin" className={fieldClass} />
+        </Label>
 
-      <Label className="text-admin-muted">
-        {t.event.date} / {t.event.time} — окончание (необязательно)
-        <DateTimeField value={draft.endsAt} onChange={(v) => onChange({ endsAt: v })} theme="admin" className={fieldClass} />
-      </Label>
+        <Label className="text-admin-muted">
+          {t.event.date} / {t.event.time} — окончание (необязательно)
+          <DateTimeField value={draft.endsAt} onChange={(v) => onChange({ endsAt: v })} theme="admin" className={fieldClass} />
+        </Label>
+      </div>
 
       <label className="flex items-center gap-2 text-sm text-admin-muted">
         <input

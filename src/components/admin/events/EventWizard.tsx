@@ -43,8 +43,20 @@ export type MyEventListItem = {
 // заранее в артефакте): "Тип" и "Место" больше не отдельные шаги — выбор
 // типа события (EventTypeSelector) и живой предпросмотр (EventPreviewSidebar)
 // теперь ПОСТОЯННЫЕ боковые колонки, видны на каждом шаге (не только на
-// первом), а не собственные полноэкранные шаги. На шаге "basic" колонок три
-// (тип / форма / предпросмотр), на остальных — две (форма / предпросмотр).
+// первом), а не собственные полноэкранные шаги.
+//
+// Уточнение того же дня: раньше колонка EventTypeSelector рендерилась ТОЛЬКО
+// на шаге "basic" (3 колонки), на остальных шагах сетка была из 2 колонок —
+// из-за этого форма визуально "прыгала" по горизонтали при "Далее"/"Назад"
+// (левый край формы сдвигался на ширину колонки селектора). Теперь сетка
+// [220px_1fr_320px] одна и та же на ВСЕХ шагах, включая "basic" — селектор
+// зафиксирован слева всегда, содержимое шага растягивается на всю ширину
+// средней колонки (без центрирования и без узкого max-w — сами Step-
+// компоненты растянуты на 100% ширины, CLAUDE.md §54: поля Input/Select и
+// так уже `w-full` по умолчанию, см. src/components/ui/field.tsx).
+// Смена формата сбрасывает stepIndex на 0 — набор шагов зависит от формата
+// (EVENT_TYPE_REGISTRY), и без сброса номер шага мог бы указывать на другой,
+// не тот шаг после смены формата на середине мастера.
 export function EventWizard({
   cities,
   ownedSchools,
@@ -257,18 +269,18 @@ export function EventWizard({
         <div className="p-5">
           <WizardNav steps={steps} currentIndex={stepIndex} doneMap={doneMap} onSelect={setStepIndex} />
 
-          {currentStep === "basic" ? (
-            <div className="mt-4 grid gap-4 lg:grid-cols-[220px_1fr_280px]">
-              <EventTypeSelector value={draft.format} onChange={(format) => patch({ format })} canCreateCompetition={canCreateCompetition} />
-              <div className="min-w-0">{renderStep(currentStep)}</div>
-              <div className="lg:order-none">{previewSidebar}</div>
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_280px]">
-              <div className="min-w-0">{renderStep(currentStep)}</div>
-              {previewSidebar}
-            </div>
-          )}
+          <div className="mt-4 grid gap-4 lg:grid-cols-[220px_1fr_320px]">
+            <EventTypeSelector
+              value={draft.format}
+              onChange={(format) => {
+                patch({ format });
+                setStepIndex(0);
+              }}
+              canCreateCompetition={canCreateCompetition}
+            />
+            <div className="min-w-0">{renderStep(currentStep)}</div>
+            {previewSidebar}
+          </div>
         </div>
 
         {successMessage && (

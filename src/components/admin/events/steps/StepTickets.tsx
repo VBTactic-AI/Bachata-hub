@@ -28,7 +28,7 @@ export function StepTickets({ draft, onChange }: { draft: WizardDraft; onChange:
   const showPassesHint = draft.ticketingMode === "PASSES" || draft.ticketingMode === "TICKETS_AND_PASSES";
 
   return (
-    <div className="flex max-w-[640px] flex-col gap-3.5">
+    <div className="flex w-full flex-col gap-3.5">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">Билеты и регистрация</h2>
 
       <div className="rounded-app-sm border border-admin-border p-3">
@@ -76,27 +76,29 @@ export function StepTickets({ draft, onChange }: { draft: WizardDraft; onChange:
         Показывать блок регистрации на публичной странице
       </label>
 
-      <Label className="text-admin-muted">
-        {t.event.registerExternal}
-        <Input
-          type="url"
-          placeholder={t.event.addEventForm.linkPlaceholder}
-          value={draft.externalLinkUrl}
-          onChange={(e) => onChange({ externalLinkUrl: e.target.value })}
-          className={fieldClass}
-        />
-      </Label>
+      <div className="grid gap-3.5 sm:grid-cols-2">
+        <Label className="text-admin-muted">
+          {t.event.registerExternal}
+          <Input
+            type="url"
+            placeholder={t.event.addEventForm.linkPlaceholder}
+            value={draft.externalLinkUrl}
+            onChange={(e) => onChange({ externalLinkUrl: e.target.value })}
+            className={fieldClass}
+          />
+        </Label>
 
-      <Label className="text-admin-muted">
-        Вместимость (необязательно)
-        <Input
-          type="number"
-          min={1}
-          value={draft.capacity}
-          onChange={(e) => onChange({ capacity: e.target.value })}
-          className={fieldClass}
-        />
-      </Label>
+        <Label className="text-admin-muted">
+          Вместимость (необязательно)
+          <Input
+            type="number"
+            min={1}
+            value={draft.capacity}
+            onChange={(e) => onChange({ capacity: e.target.value })}
+            className={fieldClass}
+          />
+        </Label>
+      </div>
     </div>
   );
 }

@@ -60,7 +60,7 @@ export function EventPreviewSidebar({
         </p>
       )}
 
-      <div className="mt-1 flex flex-col gap-2.5 rounded-app-sm border border-admin-border bg-admin-card p-3.5">
+      <div className="mt-1 flex flex-col gap-3 rounded-app-sm border border-admin-border bg-admin-card p-4">
         <ChecklistItem icon="📅" label="Дата и время" value={hasDate ? "Указано" : "Не указано — следующий шаг"} ok={hasDate} />
         <ChecklistItem icon="📍" label="Город" value={cityName || "Не указано"} ok={hasCity} />
         <ChecklistItem
@@ -71,7 +71,7 @@ export function EventPreviewSidebar({
         />
       </div>
 
-      <div className="flex gap-2 rounded-app-sm border border-admin-primary/25 bg-admin-primary/5 p-3 text-[11.5px] leading-relaxed text-[#a9c4f5]">
+      <div className="flex gap-2.5 rounded-app-sm border border-admin-primary/25 bg-admin-primary/5 p-3.5 text-xs leading-relaxed text-[#a9c4f5]">
         <span aria-hidden="true">💡</span>
         <span>Черновик сохраняется по кнопке «Сохранить черновик» вверху — вернуться сюда можно в любой момент.</span>
       </div>
@@ -81,8 +81,8 @@ export function EventPreviewSidebar({
 
 function ChecklistItem({ icon, label, value, ok }: { icon: string; label: string; value: string; ok: boolean }) {
   return (
-    <div className="flex items-start gap-2.5 text-xs">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border border-admin-border bg-admin-card2 text-admin-primaryHover">
+    <div className="flex items-start gap-3 text-[13px]">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-admin-border bg-admin-card2 text-base text-admin-primaryHover">
         {icon}
       </span>
       <span>

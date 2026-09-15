@@ -25,7 +25,7 @@ export function StepBasic({
   cities: { id: string; nameRu: string }[];
 }) {
   return (
-    <div className="flex max-w-[640px] flex-col gap-3.5">
+    <div className="flex w-full flex-col gap-3.5">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">Основная информация</h2>
 
       <Label className="text-admin-muted">
