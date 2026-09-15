@@ -16,6 +16,14 @@ const executeRaw = vi.fn().mockResolvedValue(0);
 // этого запроса, но mock всё равно должен существовать для "чужого события".
 const eventTeamMemberFindUnique = vi.fn().mockResolvedValue(null);
 
+// §20 ТЗ — уведомления о регистрации (подтверждена/отклонена/отменена),
+// добавлены поверх этапов 2/QA-фиксов. Мокаем по тому же образцу, что и
+// tests/events/event-service.test.ts (emitDomainEventMock).
+const emitDomainEventMock = vi.fn();
+vi.mock("@/server/notifications/emit-domain-event", () => ({
+  emitDomainEvent: (...a: unknown[]) => emitDomainEventMock(...a),
+}));
+
 // Всё, что теперь происходит ВНУТРИ prisma.$transaction (registerForEvent,
 // cancelMyRegistration, updateEventRegistration — QA BUG-004/005/006
 // добавили lock+promote во все три пути).
@@ -105,13 +113,16 @@ beforeEach(() => {
   eventRegistrationFindMany.mockReset().mockResolvedValue([]);
   topLevelEventRegistrationCount.mockReset().mockResolvedValue(0);
   executeRaw.mockClear();
+  emitDomainEventMock.mockReset();
 
   txEventRegistrationFindUnique.mockReset().mockResolvedValue(null);
   txEventRegistrationFindUniqueOrThrow.mockReset();
   txEventRegistrationFindFirst.mockReset().mockResolvedValue(null);
   txEventRegistrationCount.mockReset().mockResolvedValue(0);
   txEventRegistrationCreate.mockReset().mockResolvedValue({ id: "reg1", status: "REGISTERED" });
-  txEventRegistrationUpdate.mockReset().mockResolvedValue({ id: "reg1", status: "REGISTERED" });
+  // updatedAt нужен всем тестам, где статус меняется — код теперь строит
+  // idempotencyKey уведомления из updated.updatedAt (см. registration-service.ts).
+  txEventRegistrationUpdate.mockReset().mockResolvedValue({ id: "reg1", status: "REGISTERED", updatedAt: new Date() });
   txEventFindUniqueOrThrow.mockReset().mockResolvedValue({ capacity: null });
 });
 
@@ -238,9 +249,9 @@ describe("cancelMyRegistration()", () => {
   // QA BUG-006 regression
   it("активная регистрация с capacity и WAITLIST в очереди — промоутит следующего", async () => {
     txEventRegistrationFindUnique.mockResolvedValue({ id: "reg1", status: "REGISTERED" });
-    txEventFindUniqueOrThrow.mockResolvedValue({ capacity: 2 });
+    txEventFindUniqueOrThrow.mockResolvedValue({ id: "event1", slug: "party", title: "Party", capacity: 2 });
     txEventRegistrationCount.mockResolvedValue(1); // после отмены — 1 активный из 2 мест
-    txEventRegistrationFindFirst.mockResolvedValue({ id: "waitlisted1" });
+    txEventRegistrationFindFirst.mockResolvedValue({ id: "waitlisted1", dancer: { userId: "waitlisted-user1" } });
 
     await cancelMyRegistration("event1", user);
 
@@ -248,6 +259,14 @@ describe("cancelMyRegistration()", () => {
       expect.objectContaining({ where: { id: "reg1" }, data: expect.objectContaining({ status: "CANCELLED" }) })
     );
     expect(txEventRegistrationUpdate).toHaveBeenCalledWith({ where: { id: "waitlisted1" }, data: { status: "REGISTERED" } });
+    // §20 ТЗ — продвинутый по очереди участник получает уведомление "подтверждена"
+    expect(emitDomainEventMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        type: "EVENT_REGISTRATION_CONFIRMED",
+        payload: expect.objectContaining({ directUserId: "waitlisted-user1", entityId: "event1" }),
+      })
+    );
   });
 
   it("места всё ещё нет (capacity уже занята другими) — WAITLIST не трогается", async () => {
@@ -367,20 +386,74 @@ describe("updateEventRegistration() — owner-check", () => {
     });
   });
 
-  it("владелец — меняет статус на CANCELLED, ставит cancelledAt (без capacity — промоушен не запускается)", async () => {
+  // 2026-09-15, по прямому запросу пользователя — CANCELLED теперь
+  // зарезервирован только за самим участником (симметрично тому, как
+  // REJECTED/NO_SHOW зарезервированы только за организатором).
+  describe("CANCELLED зарезервирован за участником (2026-09-15)", () => {
+    it("организатор пытается назначить CANCELLED напрямую — RegistrationForbiddenError, update не вызывается", async () => {
+      topLevelEventRegistrationFindUnique.mockResolvedValue({
+        id: "reg1",
+        eventId: "event1",
+        event: { ...registrableEvent, createdById: "user1", capacity: null },
+        dancer: { userId: "participant1" },
+      });
+
+      await expect(updateEventRegistration("reg1", user, { status: "CANCELLED" })).rejects.toBeInstanceOf(RegistrationForbiddenError);
+      expect(txEventRegistrationUpdate).not.toHaveBeenCalled();
+      expect(emitDomainEventMock).not.toHaveBeenCalled();
+    });
+
+    it("регистрация уже CANCELLED — организатор не может изменить её статус вообще, даже на REGISTERED", async () => {
+      topLevelEventRegistrationFindUnique.mockResolvedValue({
+        id: "reg1",
+        eventId: "event1",
+        status: "CANCELLED",
+        event: { ...registrableEvent, createdById: "user1", capacity: null },
+        dancer: { userId: "participant1" },
+      });
+
+      await expect(updateEventRegistration("reg1", user, { status: "REGISTERED" })).rejects.toBeInstanceOf(RegistrationForbiddenError);
+      expect(txEventRegistrationUpdate).not.toHaveBeenCalled();
+    });
+
+    it("регистрация уже CANCELLED — isPaid всё ещё можно менять (guard только про status)", async () => {
+      topLevelEventRegistrationFindUnique.mockResolvedValue({
+        id: "reg1",
+        eventId: "event1",
+        status: "CANCELLED",
+        event: { ...registrableEvent, createdById: "user1", capacity: null },
+        dancer: { userId: "participant1" },
+      });
+      txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "CANCELLED" });
+
+      await updateEventRegistration("reg1", user, { isPaid: true });
+
+      expect(txEventRegistrationUpdate).toHaveBeenCalledWith({
+        where: { id: "reg1" },
+        data: expect.objectContaining({ isPaid: true }),
+      });
+    });
+  });
+
+  // §20 ТЗ (продолжение) — организатор вручную возвращает активного участника
+  // в лист ожидания: освобождает его место (см. auto-promote ниже) и
+  // одновременно уведомляет демотированного, что его подвинули.
+  it("владелец — переводит активного участника обратно в WAITLIST — эмитит EVENT_REGISTRATION_WAITLISTED", async () => {
     topLevelEventRegistrationFindUnique.mockResolvedValue({
       id: "reg1",
       eventId: "event1",
       event: { ...registrableEvent, createdById: "user1", capacity: null },
+      dancer: { userId: "participant1" },
     });
     txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "REGISTERED" });
 
-    await updateEventRegistration("reg1", user, { status: "CANCELLED" });
+    await updateEventRegistration("reg1", user, { status: "WAITLIST" });
 
-    expect(txEventRegistrationUpdate).toHaveBeenCalledWith({
-      where: { id: "reg1" },
-      data: expect.objectContaining({ status: "CANCELLED", cancelledAt: expect.any(Date) }),
-    });
+    expect(txEventRegistrationUpdate).toHaveBeenCalledWith({ where: { id: "reg1" }, data: { status: "WAITLIST" } });
+    expect(emitDomainEventMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: "EVENT_REGISTRATION_WAITLISTED", payload: expect.objectContaining({ directUserId: "participant1" }) })
+    );
   });
 
   it("регистрация не найдена — RegistrationNotFoundError", async () => {
@@ -421,14 +494,20 @@ describe("updateEventRegistration() — owner-check", () => {
         id: "reg1",
         eventId: "event1",
         event: { ...registrableEvent, createdById: "user1", capacity: 3 },
+        dancer: { userId: "participant1" },
       });
       txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "WAITLIST" });
       txEventRegistrationCount.mockResolvedValue(2);
-      txEventRegistrationUpdate.mockResolvedValue({ id: "reg1", status: "REGISTERED" });
+      txEventRegistrationUpdate.mockResolvedValue({ id: "reg1", status: "REGISTERED", updatedAt: new Date() });
 
       await updateEventRegistration("reg1", user, { status: "REGISTERED" });
 
       expect(txEventRegistrationUpdate).toHaveBeenCalledWith({ where: { id: "reg1" }, data: { status: "REGISTERED" } });
+      // §20 ТЗ — промоушен из листа ожидания вручную организатором — тоже "подтверждена"
+      expect(emitDomainEventMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: "EVENT_REGISTRATION_CONFIRMED", payload: expect.objectContaining({ directUserId: "participant1" }) })
+      );
     });
 
     it("REGISTERED->CONFIRMED (уже активен по обе стороны) — capacity не пересчитывается", async () => {
@@ -436,6 +515,7 @@ describe("updateEventRegistration() — owner-check", () => {
         id: "reg1",
         eventId: "event1",
         event: { ...registrableEvent, createdById: "user1", capacity: 1 },
+        dancer: { userId: "participant1" },
       });
       txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "REGISTERED" });
 
@@ -443,6 +523,11 @@ describe("updateEventRegistration() — owner-check", () => {
 
       expect(txEventRegistrationCount).not.toHaveBeenCalled();
       expect(txEventRegistrationUpdate).toHaveBeenCalledWith({ where: { id: "reg1" }, data: { status: "CONFIRMED" } });
+      // §20 ТЗ — явное подтверждение организатором тоже "подтверждена", даже без перехода из неактивного статуса
+      expect(emitDomainEventMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: "EVENT_REGISTRATION_CONFIRMED", payload: expect.objectContaining({ directUserId: "participant1" }) })
+      );
     });
 
     it("без лимита capacity (null) — WAITLIST->REGISTERED всегда проходит", async () => {
@@ -450,6 +535,7 @@ describe("updateEventRegistration() — owner-check", () => {
         id: "reg1",
         eventId: "event1",
         event: { ...registrableEvent, createdById: "user1", capacity: null },
+        dancer: { userId: "participant1" },
       });
       txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "WAITLIST" });
 
@@ -467,15 +553,25 @@ describe("updateEventRegistration() — owner-check", () => {
         id: "reg1",
         eventId: "event1",
         event: { ...registrableEvent, createdById: "user1", capacity: 2 },
+        dancer: { userId: "participant1" },
       });
       txEventRegistrationFindUniqueOrThrow.mockResolvedValue({ id: "reg1", status: "REGISTERED" });
-      txEventRegistrationUpdate.mockResolvedValueOnce({ id: "reg1", status: "REJECTED" });
+      txEventRegistrationUpdate.mockResolvedValueOnce({ id: "reg1", status: "REJECTED", updatedAt: new Date() });
       txEventRegistrationCount.mockResolvedValue(1); // после отказа — 1 активный из 2
-      txEventRegistrationFindFirst.mockResolvedValue({ id: "waitlisted1" });
+      txEventRegistrationFindFirst.mockResolvedValue({ id: "waitlisted1", dancer: { userId: "waitlisted-user1" } });
 
       await updateEventRegistration("reg1", user, { status: "REJECTED" });
 
       expect(txEventRegistrationUpdate).toHaveBeenCalledWith({ where: { id: "waitlisted1" }, data: { status: "REGISTERED" } });
+      // §20 ТЗ — отклонённый получает REJECTED, продвинутый по очереди — CONFIRMED
+      expect(emitDomainEventMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: "EVENT_REGISTRATION_REJECTED", payload: expect.objectContaining({ directUserId: "participant1" }) })
+      );
+      expect(emitDomainEventMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: "EVENT_REGISTRATION_CONFIRMED", payload: expect.objectContaining({ directUserId: "waitlisted-user1" }) })
+      );
     });
 
     it("статус не меняется (только isPaid) — промоушен не запускается", async () => {

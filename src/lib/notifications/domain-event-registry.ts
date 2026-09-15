@@ -70,6 +70,39 @@ export type DomainEventPayloadMap = {
     competitionName: string;
     directUserId: string; // сам зарегистрировавшийся участник
   };
+  // Events Engine — уведомления об изменении СВОЕЙ EventRegistration (не
+  // путать с EVENT_PUBLISHED/EVENT_UPDATED/EVENT_CANCELLED, это про само
+  // событие для всех подписчиков). Все — DIRECT, получатель уже известен
+  // (registration-service.ts), organizer-инициированные решения по конкретному
+  // участнику. Самостоятельная отмена участником (cancelMyRegistration) сюда
+  // не относится — он и так знает, что сам отменил, и (2026-09-15) CANCELLED
+  // теперь вообще зарезервирован только за самим участником: организатор не
+  // может ни назначить его напрямую, ни изменить статус уже CANCELLED-строки
+  // (см. updateEventRegistration) — поэтому отдельного EVENT_REGISTRATION_
+  // CANCELLED для "организатор отменил" больше не существует, этот путь
+  // недостижим по построению.
+  EVENT_REGISTRATION_CONFIRMED: {
+    entityId: string; // Event.id
+    eventSlug: string;
+    title: string;
+    directUserId: string; // User.id зарегистрировавшегося (dancer.userId)
+  };
+  EVENT_REGISTRATION_REJECTED: {
+    entityId: string;
+    eventSlug: string;
+    title: string;
+    directUserId: string;
+  };
+  // Организатор вручную вернул уже активного (или отклонённого) участника в
+  // лист ожидания — этот переход одновременно освобождает место и запускает
+  // promoteNextWaitlisted() для кого-то другого, так что демотированный
+  // человек должен явно об этом узнать, а не просто "молча пропасть".
+  EVENT_REGISTRATION_WAITLISTED: {
+    entityId: string;
+    eventSlug: string;
+    title: string;
+    directUserId: string;
+  };
 };
 
 export type DomainEventKey = keyof DomainEventPayloadMap;
@@ -101,4 +134,22 @@ export const DOMAIN_EVENT_REGISTRY: Record<DomainEventKey, DomainEventConfig> = 
     entityType: "COMPETITION",
   },
   JNJ_REGISTERED: { templateKey: "JNJ_REGISTERED", defaultPriority: "INFO", audienceKind: "DIRECT", entityType: "COMPETITION" },
+  EVENT_REGISTRATION_CONFIRMED: {
+    templateKey: "EVENT_REGISTRATION_CONFIRMED",
+    defaultPriority: "INFO",
+    audienceKind: "DIRECT",
+    entityType: "EVENT",
+  },
+  EVENT_REGISTRATION_REJECTED: {
+    templateKey: "EVENT_REGISTRATION_REJECTED",
+    defaultPriority: "IMPORTANT",
+    audienceKind: "DIRECT",
+    entityType: "EVENT",
+  },
+  EVENT_REGISTRATION_WAITLISTED: {
+    templateKey: "EVENT_REGISTRATION_WAITLISTED",
+    defaultPriority: "IMPORTANT",
+    audienceKind: "DIRECT",
+    entityType: "EVENT",
+  },
 };

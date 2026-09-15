@@ -1,6 +1,7 @@
 import type { EventRegistration, Prisma, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess } from "./access";
+import { emitDomainEvent } from "../notifications/emit-domain-event";
 
 // Events Engine, этап 2 — регистрация на обычное событие (Party/Masterclass/
 // ...). НЕ путать с Registration Competition Engine (Слой 3, J&J с ролями/
@@ -32,19 +33,33 @@ function isActiveStatus(status: EventRegistration["status"]): boolean {
 // смысл листа ожидания теряется. Вызывается ТОЛЬКО изнутри транзакции с уже
 // взятым advisory-локом на eventId — свободных мест не может "утечь" между
 // count() и update() того же вызова.
-async function promoteNextWaitlisted(tx: Prisma.TransactionClient, eventId: string, capacity: number | null) {
-  if (capacity == null) return; // без лимита вместимости WAITLIST в принципе не создаётся, но проверяем явно
+//
+// §20 ТЗ (уведомления о регистрации) — продвинутый по очереди участник не
+// делал ничего сам (его подвинуло либо чужое действие организатора, либо
+// чья-то самостоятельная отмена), поэтому получает EVENT_REGISTRATION_CONFIRMED
+// точно так же, как и при ручном промоушене в updateEventRegistration.
+async function promoteNextWaitlisted(
+  tx: Prisma.TransactionClient,
+  event: { id: string; slug: string; title: string; capacity: number | null }
+) {
+  if (event.capacity == null) return; // без лимита вместимости WAITLIST в принципе не создаётся, но проверяем явно
   const activeCount = await tx.eventRegistration.count({
-    where: { eventId, status: { in: ACTIVE_STATUSES } },
+    where: { eventId: event.id, status: { in: ACTIVE_STATUSES } },
   });
-  if (activeCount >= capacity) return;
+  if (activeCount >= event.capacity) return;
   const next = await tx.eventRegistration.findFirst({
-    where: { eventId, status: "WAITLIST" },
+    where: { eventId: event.id, status: "WAITLIST" },
     orderBy: { createdAt: "asc" },
+    include: { dancer: { select: { userId: true } } },
   });
-  if (next) {
-    await tx.eventRegistration.update({ where: { id: next.id }, data: { status: "REGISTERED" } });
-  }
+  if (!next) return;
+
+  const promoted = await tx.eventRegistration.update({ where: { id: next.id }, data: { status: "REGISTERED" } });
+  await emitDomainEvent(tx, {
+    type: "EVENT_REGISTRATION_CONFIRMED",
+    payload: { entityId: event.id, eventSlug: event.slug, title: event.title, directUserId: next.dancer.userId },
+    idempotencyKey: `EVENT_REGISTRATION_CONFIRMED:${promoted.id}:${promoted.updatedAt.toISOString()}`,
+  });
 }
 
 async function requireDancer(userId: string) {
@@ -151,8 +166,11 @@ export async function cancelMyRegistration(eventId: string, user: User): Promise
     });
 
     if (wasActive) {
-      const event = await tx.event.findUniqueOrThrow({ where: { id: eventId }, select: { capacity: true } });
-      await promoteNextWaitlisted(tx, eventId, event.capacity);
+      const event = await tx.event.findUniqueOrThrow({
+        where: { id: eventId },
+        select: { id: true, slug: true, title: true, capacity: true },
+      });
+      await promoteNextWaitlisted(tx, event);
     }
 
     return updated;
@@ -215,10 +233,29 @@ export async function updateEventRegistration(
 ): Promise<EventRegistration> {
   const registration = await prisma.eventRegistration.findUnique({
     where: { id: registrationId },
-    include: { event: true },
+    include: { event: true, dancer: { select: { userId: true } } },
   });
   if (!registration) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(registration.event, user))) throw new RegistrationForbiddenError("forbidden");
+
+  // 2026-09-15, по прямому запросу пользователя: CANCELLED — статус, который
+  // проставляет только сам участник (cancelMyRegistration), симметрично
+  // REJECTED/NO_SHOW, которые может проставить только организатор. Отсюда
+  // два независимых правила:
+  // 1) организатор не может НАЗНАЧИТЬ CANCELLED напрямую — иначе это было бы
+  //    неотличимо от самоотмены, но с потерянной причиной/атрибуцией;
+  // 2) организатор не может изменить статус УЖЕ CANCELLED-регистрации —
+  //    иначе он мог бы тихо "вернуть" того, кто сам отменился, что молча
+  //    отменяет решение участника (CLAUDE.md §60 — по аналогии с запретом
+  //    тихо менять чужие решения).
+  // Обе проверки — до транзакции/advisory-лока: незачем лочить событие ради
+  // запроса, который в любом случае будет отклонён.
+  if (patch.status === "CANCELLED") {
+    throw new RegistrationForbiddenError("cancelled_status_reserved_for_participant");
+  }
+  if (patch.status !== undefined && registration.status === "CANCELLED") {
+    throw new RegistrationForbiddenError("registration_cancelled_by_participant");
+  }
 
   return prisma.$transaction(async (tx) => {
     // QA BUG-004: тот же advisory lock, что и в registerForEvent — без него
@@ -248,17 +285,65 @@ export async function updateEventRegistration(
     const updated = await tx.eventRegistration.update({
       where: { id: registrationId },
       data: {
-        ...(patch.status ? { status: patch.status, ...(patch.status === "CANCELLED" ? { cancelledAt: new Date() } : {}) } : {}),
+        ...(patch.status ? { status: patch.status } : {}),
         ...(patch.isPaid !== undefined ? { isPaid: patch.isPaid, paidAt: patch.isPaid ? new Date() : null } : {}),
       },
     });
 
-    // QA BUG-006: организатор переводит активного участника в CANCELLED/
-    // REJECTED/NO_SHOW — освободившееся место автоматически продвигает
-    // следующего по очереди WAITLIST (тот же helper, что и в
-    // cancelMyRegistration/самоотмене).
+    // §20 ТЗ — уведомить самого участника об организаторском решении по ЕГО
+    // регистрации (не про самоотмену — той занимается cancelMyRegistration
+    // и туда эти уведомления намеренно не добавлены, человек и так знает,
+    // что сам отменился). CANCELLED сюда больше не попадает вообще (см. guard
+    // выше) — patch.status здесь гарантированно один из REGISTERED/CONFIRMED/
+    // WAITLIST/REJECTED/NO_SHOW.
+    if (statusChanging && patch.status) {
+      const becomesConfirmed = patch.status === "CONFIRMED" || (becomesActive && !wasActive);
+      if (becomesConfirmed) {
+        await emitDomainEvent(tx, {
+          type: "EVENT_REGISTRATION_CONFIRMED",
+          payload: {
+            entityId: registration.eventId,
+            eventSlug: registration.event.slug,
+            title: registration.event.title,
+            directUserId: registration.dancer.userId,
+          },
+          idempotencyKey: `EVENT_REGISTRATION_CONFIRMED:${updated.id}:${updated.updatedAt.toISOString()}`,
+        });
+      } else if (patch.status === "REJECTED") {
+        await emitDomainEvent(tx, {
+          type: "EVENT_REGISTRATION_REJECTED",
+          payload: {
+            entityId: registration.eventId,
+            eventSlug: registration.event.slug,
+            title: registration.event.title,
+            directUserId: registration.dancer.userId,
+          },
+          idempotencyKey: `EVENT_REGISTRATION_REJECTED:${updated.id}:${updated.updatedAt.toISOString()}`,
+        });
+      } else if (patch.status === "WAITLIST") {
+        // Организатор вручную вернул участника в лист ожидания — это
+        // одновременно освобождает его место (см. promoteNextWaitlisted
+        // ниже), поэтому демотированный человек должен явно об этом узнать.
+        await emitDomainEvent(tx, {
+          type: "EVENT_REGISTRATION_WAITLISTED",
+          payload: {
+            entityId: registration.eventId,
+            eventSlug: registration.event.slug,
+            title: registration.event.title,
+            directUserId: registration.dancer.userId,
+          },
+          idempotencyKey: `EVENT_REGISTRATION_WAITLISTED:${updated.id}:${updated.updatedAt.toISOString()}`,
+        });
+      }
+    }
+
+    // QA BUG-006: организатор переводит активного участника в REJECTED/
+    // NO_SHOW/WAITLIST (CANCELLED сюда больше не попадает, см. guard выше) —
+    // освободившееся место автоматически продвигает следующего по очереди
+    // WAITLIST (тот же helper, что и в cancelMyRegistration/самоотмене) и сам
+    // шлёт EVENT_REGISTRATION_CONFIRMED продвинутому участнику.
     if (statusChanging && wasActive && !becomesActive) {
-      await promoteNextWaitlisted(tx, registration.eventId, registration.event.capacity);
+      await promoteNextWaitlisted(tx, registration.event);
     }
 
     return updated;

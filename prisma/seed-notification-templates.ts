@@ -65,6 +65,30 @@ const TEMPLATES = [
     defaultPriority: "INFO" as const,
     supportedChannels: ["IN_APP", "EMAIL"] as const,
   },
+  {
+    key: "EVENT_REGISTRATION_CONFIRMED",
+    titleTemplate: "Регистрация подтверждена",
+    bodyTemplate: "Ваша регистрация на «{{title}}» подтверждена",
+    deepLinkTemplate: "/events/{{eventSlug}}",
+    defaultPriority: "INFO" as const,
+    supportedChannels: ["IN_APP", "EMAIL"] as const,
+  },
+  {
+    key: "EVENT_REGISTRATION_REJECTED",
+    titleTemplate: "Регистрация отклонена",
+    bodyTemplate: "Ваша регистрация на «{{title}}» отклонена организатором",
+    deepLinkTemplate: "/events/{{eventSlug}}",
+    defaultPriority: "IMPORTANT" as const,
+    supportedChannels: ["IN_APP", "EMAIL"] as const,
+  },
+  {
+    key: "EVENT_REGISTRATION_WAITLISTED",
+    titleTemplate: "Вы в листе ожидания",
+    bodyTemplate: "Организатор перевёл вашу регистрацию на «{{title}}» в лист ожидания",
+    deepLinkTemplate: "/events/{{eventSlug}}",
+    defaultPriority: "IMPORTANT" as const,
+    supportedChannels: ["IN_APP", "EMAIL"] as const,
+  },
 ];
 
 async function main() {
