@@ -7,6 +7,7 @@ import {
   EventForbiddenError,
   EventValidationError,
   EventNotFoundError,
+  EVENT_FORBIDDEN_MESSAGES,
 } from "@/server/events/event-service";
 
 // Event Engine — "Reload Draft"/"Continue Wizard": отдаёт сохранённый
@@ -23,7 +24,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, event });
   } catch (err) {
     if (err instanceof EventNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    if (err instanceof EventForbiddenError) return NextResponse.json({ error: err.code }, { status: 403 });
+    if (err instanceof EventForbiddenError) {
+      return NextResponse.json({ error: err.code, message: EVENT_FORBIDDEN_MESSAGES[err.code] }, { status: 403 });
+    }
     throw err;
   }
 }
@@ -44,7 +47,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, event, competitionId });
   } catch (err) {
     if (err instanceof EventNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    if (err instanceof EventForbiddenError) return NextResponse.json({ error: err.code }, { status: 403 });
+    if (err instanceof EventForbiddenError) {
+      return NextResponse.json({ error: err.code, message: EVENT_FORBIDDEN_MESSAGES[err.code] }, { status: 403 });
+    }
     if (err instanceof EventValidationError) {
       return NextResponse.json({ error: "publish_incomplete", issues: err.issues }, { status: 400 });
     }

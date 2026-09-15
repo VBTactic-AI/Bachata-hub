@@ -133,6 +133,11 @@ export default async function AdminContentPage({
         ownedSchools={ownedSchools}
         teachers={teachers}
         canCreateCompetition={canCreateCompetition}
+        // QA BUG-012: индикатор "будет опубликовано без модерации" раньше
+        // учитывал только верифицированную школу — организатор, верифицированный
+        // лично (isVerifiedEventOrganizer, без школы), видел неверное "на
+        // модерации", хотя сервер его и так одобрит автоматически.
+        isVerifiedEventOrganizer={user.role === "ADMIN" || user.isVerifiedEventOrganizer}
         initialDraft={initialDraft}
         myEvents={drafts.filter((d) => d.id !== draftId)}
       />

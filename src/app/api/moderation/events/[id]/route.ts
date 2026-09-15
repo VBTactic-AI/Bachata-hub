@@ -23,6 +23,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params;
 
+  // QA BUG-010: без этой проверки несуществующий id падал в сыром
+  // PrismaClientKnownRequestError (P2025) прямо до клиента (CLAUDE.md §46 —
+  // технические детали в логи, пользователю — понятное сообщение).
+  const exists = await prisma.event.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
   const event = await prisma.$transaction(async (tx) => {
     const existing = await tx.event.findUnique({ where: { id } });
     const row = await tx.event.update({

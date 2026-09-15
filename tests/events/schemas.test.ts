@@ -33,3 +33,41 @@ describe("eventDraftSchema — certainty", () => {
     }
   });
 });
+
+// QA (EVT-26/Test Gap #11, 2026-09-15) — в схеме вообще не было проверки
+// endsAt > startsAt, не только теста.
+describe("eventDraftSchema — endsAt > startsAt", () => {
+  const base = { status: "DRAFT" as const, format: "PARTY" as const };
+
+  it("отклоняет endsAt раньше startsAt", () => {
+    const result = eventDraftSchema.safeParse({
+      ...base,
+      startsAt: "2026-10-17T20:00:00.000Z",
+      endsAt: "2026-10-17T18:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("отклоняет endsAt равный startsAt (нулевая длительность)", () => {
+    const result = eventDraftSchema.safeParse({
+      ...base,
+      startsAt: "2026-10-17T20:00:00.000Z",
+      endsAt: "2026-10-17T20:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("принимает endsAt позже startsAt", () => {
+    const result = eventDraftSchema.safeParse({
+      ...base,
+      startsAt: "2026-10-17T20:00:00.000Z",
+      endsAt: "2026-10-17T23:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("без endsAt вообще — валидно (необязательное поле)", () => {
+    const result = eventDraftSchema.safeParse({ ...base, startsAt: "2026-10-17T20:00:00.000Z" });
+    expect(result.success).toBe(true);
+  });
+});

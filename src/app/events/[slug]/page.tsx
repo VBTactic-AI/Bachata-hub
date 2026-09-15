@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n/dictionary";
 import { formatDateTime, formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
+import { safeJsonLd } from "@/lib/json-ld";
 import { COMPETITION_STATUS_LABELS } from "@/lib/competition-labels";
 import { AttendanceButtons } from "@/components/AttendanceButtons";
 import { EventRegistrationButton } from "@/components/EventRegistrationButton";
@@ -31,11 +32,17 @@ async function getEvent(slug: string) {
       partyDetails: true,
       masterclassDetails: { include: { sessions: { include: { teacher: true }, orderBy: { order: "asc" } } } },
       // Events Engine, этап 6 — программа фестиваля. linkedEvent — только
-      // минимум для ссылки-карточки (slug/title/format), не весь Event.
+      // минимум для ссылки-карточки (slug/title/format); status/moderationStatus
+      // читаются ТОЛЬКО для проверки видимости ниже (QA BUG-007) — Prisma не
+      // умеет фильтровать to-one реляцию в самом include, поэтому непубличный
+      // linkedEvent обнуляется в коде сразу после запроса, до рендера.
       festivalDetails: {
         include: {
           programItems: {
-            include: { teacher: true, linkedEvent: { select: { slug: true, title: true, format: true } } },
+            include: {
+              teacher: true,
+              linkedEvent: { select: { slug: true, title: true, format: true, status: true, moderationStatus: true } },
+            },
             orderBy: { order: "asc" },
           },
         },
@@ -252,7 +259,19 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
 
   // Events Engine, этап 6 — та же группировка по дням, что и у расписания
   // мастер-класса выше, только источник — EventProgramItem.
-  const programItems = event.festivalDetails?.programItems ?? [];
+  //
+  // QA BUG-007 — linkedEvent обнуляется здесь, если он сам не публично виден
+  // (тот же инвариант, что и гейт этой страницы выше: status=PUBLISHED И
+  // moderationStatus=APPROVED). Prisma не умеет фильтровать to-one реляцию
+  // прямо в include/select, поэтому проверка — здесь, до любого рендера, а
+  // не "на месте" в JSX (иначе легко забыть при следующей правке).
+  const programItems = (event.festivalDetails?.programItems ?? []).map((p) => ({
+    ...p,
+    linkedEvent:
+      p.linkedEvent && p.linkedEvent.status === "PUBLISHED" && p.linkedEvent.moderationStatus === "APPROVED"
+        ? p.linkedEvent
+        : null,
+  }));
   const programDays: [string, typeof programItems][] =
     programItems.length > 0
       ? Array.from(
@@ -282,7 +301,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
     <article className="flex flex-col gap-6">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }}
       />
 
       {isOwnerOrAdmin && !(event.status === "PUBLISHED" && event.moderationStatus === "APPROVED") && (

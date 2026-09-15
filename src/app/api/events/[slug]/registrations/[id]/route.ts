@@ -5,6 +5,7 @@ import {
   updateEventRegistration,
   RegistrationForbiddenError,
   RegistrationNotFoundError,
+  CapacityExceededError,
 } from "@/server/events/registration-service";
 
 const patchSchema = z.object({
@@ -37,6 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   } catch (e) {
     if (e instanceof RegistrationForbiddenError) return NextResponse.json({ error: e.code }, { status: 403 });
     if (e instanceof RegistrationNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    // QA BUG-004
+    if (e instanceof CapacityExceededError) return NextResponse.json({ error: "capacity_exceeded", message: e.message }, { status: 400 });
     throw e;
   }
 }

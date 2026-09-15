@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { eventDraftSchema } from "@/server/events/schemas";
-import { upsertEventDraft, EventForbiddenError, EventValidationError } from "@/server/events/event-service";
+import {
+  upsertEventDraft,
+  EventForbiddenError,
+  EventValidationError,
+  EVENT_FORBIDDEN_MESSAGES,
+} from "@/server/events/event-service";
 
 // Event Engine — единая точка входа и для "Save Draft", и для "Publish"
 // (разница — только поле status в теле запроса). Заменяет прежний
@@ -21,7 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, event, competitionId });
   } catch (err) {
     if (err instanceof EventForbiddenError) {
-      return NextResponse.json({ error: err.code }, { status: 403 });
+      return NextResponse.json({ error: err.code, message: EVENT_FORBIDDEN_MESSAGES[err.code] }, { status: 403 });
     }
     if (err instanceof EventValidationError) {
       return NextResponse.json({ error: "publish_incomplete", issues: err.issues }, { status: 400 });

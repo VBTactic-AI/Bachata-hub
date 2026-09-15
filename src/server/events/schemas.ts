@@ -59,7 +59,12 @@ export const festivalDetailsInputSchema = z.object({
   programItems: z.array(festivalProgramItemSchema).optional(),
 });
 
-export const eventDraftSchema = z.object({
+// QA (EVT-26/Test Gap #11, 2026-09-15): endsAt < startsAt раньше вообще не
+// проверялся ни на клиенте, ни на сервере — не только отсутствовал тест,
+// отсутствовала сама валидация. Проверяется и для DRAFT тоже (внутренне
+// противоречивый диапазон дат — это не "недостающие данные", которые схема
+// сознательно терпит в черновике, а прямо неверные).
+const eventDraftObjectSchema = z.object({
   status: z.enum(["DRAFT", "PUBLISHED"]),
   format: z.enum(["PARTY", "MASTERCLASS", "FESTIVAL", "CONTEST", "INTENSIVE", "SOCIAL", "OPEN_AIR", "PRACTICE", "OTHER"]),
   // Events Engine — независимая ось от status: "дата уточняется" (TENTATIVE)
@@ -88,4 +93,15 @@ export const eventDraftSchema = z.object({
   masterclass: masterclassDetailsInputSchema.optional(),
   festival: festivalDetailsInputSchema.optional(),
 });
+
+export const eventDraftSchema = eventDraftObjectSchema.refine(
+  (data) => {
+    if (!data.startsAt || !data.endsAt) return true;
+    const start = new Date(data.startsAt).getTime();
+    const end = new Date(data.endsAt).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end)) return true; // формат даты — не забота этой проверки
+    return end > start;
+  },
+  { message: "Дата/время окончания должны быть позже даты/времени начала.", path: ["endsAt"] }
+);
 export type EventDraftInput = z.infer<typeof eventDraftSchema>;

@@ -26,6 +26,10 @@ const fakeTx = {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    // QA BUG-010 — прежде чем открывать транзакцию, роут теперь проверяет
+    // существование события отдельным вызовом (тот же eventFindUnique —
+    // тестам, где событие "существует", ничего менять не нужно).
+    event: { findUnique: (...a: unknown[]) => eventFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
@@ -117,6 +121,18 @@ describe("PATCH /api/moderation/events/[id] — EVENT_PUBLISHED, второй в
     const res = await patchEventModeration(fakeRequest({ action: "approve" }), { params: Promise.resolve({ id: "event5" }) });
 
     expect(res.status).toBe(403);
+    expect(emitDomainEventMock).not.toHaveBeenCalled();
+  });
+
+  // QA BUG-010 regression — раньше несуществующий id падал сырым
+  // PrismaClientKnownRequestError (P2025) прямо из tx.event.update.
+  it("несуществующий id — понятная 404, транзакция не открывается", async () => {
+    eventFindUnique.mockResolvedValue(null);
+
+    const res = await patchEventModeration(fakeRequest({ action: "approve" }), { params: Promise.resolve({ id: "missing" }) });
+
+    expect(res.status).toBe(404);
+    expect(eventUpdate).not.toHaveBeenCalled();
     expect(emitDomainEventMock).not.toHaveBeenCalled();
   });
 });

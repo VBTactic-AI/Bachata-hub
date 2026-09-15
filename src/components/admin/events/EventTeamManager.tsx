@@ -69,6 +69,13 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
 
   return (
     <div className="flex flex-col gap-4">
+      {/* QA BUG-011: роль сегодня не даёт разных прав — все 4 варианта видят
+          и меняют статус/оплату участников одинаково; название роли не
+          обещает больше этого (например, "Редактор" НЕ даёт прав
+          редактировать само событие). */}
+      <p className="m-0 text-xs text-admin-muted">
+        Роль пока влияет только на подпись в списке — все роли дают одинаковый доступ: просмотр участников и изменение их статуса/оплаты.
+      </p>
       <div className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
         <Label className="text-admin-muted">
           Email участника

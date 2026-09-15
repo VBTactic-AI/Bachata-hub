@@ -17,6 +17,35 @@ export class RegistrationForbiddenError extends Error {
 export class RegistrationNotFoundError extends Error {}
 export class NoDancerProfileError extends Error {}
 export class RegistrationClosedError extends Error {}
+// QA BUG-004 — переполнение вместимости при переводе WAITLIST -> REGISTERED/
+// CONFIRMED организатором (плейн-update без проверки capacity).
+export class CapacityExceededError extends Error {}
+
+const ACTIVE_STATUSES: EventRegistration["status"][] = ["REGISTERED", "CONFIRMED"];
+
+function isActiveStatus(status: EventRegistration["status"]): boolean {
+  return ACTIVE_STATUSES.includes(status);
+}
+
+// QA BUG-006 — освобождение слота (отмена/reject/no-show активной
+// регистрации) должно продвигать следующего по очереди WAITLIST, иначе сам
+// смысл листа ожидания теряется. Вызывается ТОЛЬКО изнутри транзакции с уже
+// взятым advisory-локом на eventId — свободных мест не может "утечь" между
+// count() и update() того же вызова.
+async function promoteNextWaitlisted(tx: Prisma.TransactionClient, eventId: string, capacity: number | null) {
+  if (capacity == null) return; // без лимита вместимости WAITLIST в принципе не создаётся, но проверяем явно
+  const activeCount = await tx.eventRegistration.count({
+    where: { eventId, status: { in: ACTIVE_STATUSES } },
+  });
+  if (activeCount >= capacity) return;
+  const next = await tx.eventRegistration.findFirst({
+    where: { eventId, status: "WAITLIST" },
+    orderBy: { createdAt: "asc" },
+  });
+  if (next) {
+    await tx.eventRegistration.update({ where: { id: next.id }, data: { status: "REGISTERED" } });
+  }
+}
 
 async function requireDancer(userId: string) {
   const dancer = await prisma.dancer.findUnique({ where: { userId } });
@@ -84,7 +113,7 @@ async function resolveInitialStatus(
 ): Promise<"REGISTERED" | "WAITLIST"> {
   if (capacity == null) return "REGISTERED";
   const activeCount = await tx.eventRegistration.count({
-    where: { eventId, status: { in: ["REGISTERED", "CONFIRMED"] } },
+    where: { eventId, status: { in: ACTIVE_STATUSES } },
   });
   return activeCount < capacity ? "REGISTERED" : "WAITLIST";
 }
@@ -93,15 +122,40 @@ async function resolveInitialStatus(
 // регистрации сохраняется, как и везде в проекте, CLAUDE.md §18).
 export async function cancelMyRegistration(eventId: string, user: User): Promise<EventRegistration> {
   const dancer = await requireDancer(user.id);
-  const existing = await prisma.eventRegistration.findUnique({
-    where: { eventId_dancerId: { eventId, dancerId: dancer.id } },
-  });
-  if (!existing) throw new RegistrationNotFoundError();
-  if (existing.status === "CANCELLED") return existing; // идемпотентно
 
-  return prisma.eventRegistration.update({
-    where: { id: existing.id },
-    data: { status: "CANCELLED", cancelledAt: new Date() },
+  return prisma.$transaction(async (tx) => {
+    // Тот же advisory lock, что и в registerForEvent/updateEventRegistration —
+    // отмена может тут же освободить слот и продвинуть WAITLIST (см. ниже),
+    // это должно быть атомарно с любой параллельной регистрацией/промоушеном
+    // на то же событие.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
+
+    const existing = await tx.eventRegistration.findUnique({
+      where: { eventId_dancerId: { eventId, dancerId: dancer.id } },
+    });
+    if (!existing) throw new RegistrationNotFoundError();
+    if (existing.status === "CANCELLED") return existing; // идемпотентно
+    // QA BUG-005: REJECTED/NO_SHOW — решение организатора, участник не может
+    // сам его переписать в CANCELLED (тот же принцип, что уже применён в
+    // registerForEvent при попытке самостоятельно реактивировать такую
+    // регистрацию, — раньше здесь проверялся только CANCELLED, всё
+    // остальное, включая REJECTED/NO_SHOW, безусловно перезаписывалось).
+    if (existing.status === "REJECTED" || existing.status === "NO_SHOW") {
+      throw new RegistrationForbiddenError("registration_decided_by_organizer");
+    }
+
+    const wasActive = isActiveStatus(existing.status);
+    const updated = await tx.eventRegistration.update({
+      where: { id: existing.id },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    });
+
+    if (wasActive) {
+      const event = await tx.event.findUniqueOrThrow({ where: { id: eventId }, select: { capacity: true } });
+      await promoteNextWaitlisted(tx, eventId, event.capacity);
+    }
+
+    return updated;
   });
 }
 
@@ -166,11 +220,47 @@ export async function updateEventRegistration(
   if (!registration) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(registration.event, user))) throw new RegistrationForbiddenError("forbidden");
 
-  return prisma.eventRegistration.update({
-    where: { id: registrationId },
-    data: {
-      ...(patch.status ? { status: patch.status, ...(patch.status === "CANCELLED" ? { cancelledAt: new Date() } : {}) } : {}),
-      ...(patch.isPaid !== undefined ? { isPaid: patch.isPaid, paidAt: patch.isPaid ? new Date() : null } : {}),
-    },
+  return prisma.$transaction(async (tx) => {
+    // QA BUG-004: тот же advisory lock, что и в registerForEvent — без него
+    // организатор (или два team-члена одновременно) мог(ли) промоутить
+    // сколько угодно WAITLIST-регистраций в REGISTERED/CONFIRMED мимо
+    // Event.capacity, простым plain-update без единой проверки. Лочим здесь
+    // же, до повторного чтения текущего статуса — capacity ниже проверяется
+    // относительно уже актуального (не устаревшего) состояния.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${registration.eventId}))`;
+
+    const current = await tx.eventRegistration.findUniqueOrThrow({ where: { id: registrationId } });
+    const statusChanging = patch.status !== undefined && patch.status !== current.status;
+    const wasActive = isActiveStatus(current.status);
+    const becomesActive = patch.status !== undefined && isActiveStatus(patch.status);
+
+    if (statusChanging && becomesActive && !wasActive && registration.event.capacity != null) {
+      const activeCount = await tx.eventRegistration.count({
+        where: { eventId: registration.eventId, status: { in: ACTIVE_STATUSES } },
+      });
+      if (activeCount >= registration.event.capacity) {
+        throw new CapacityExceededError(
+          `Нет свободных мест: вместимость ${registration.event.capacity}, уже подтверждено ${activeCount}. Оставьте участника в листе ожидания или сначала освободите место.`
+        );
+      }
+    }
+
+    const updated = await tx.eventRegistration.update({
+      where: { id: registrationId },
+      data: {
+        ...(patch.status ? { status: patch.status, ...(patch.status === "CANCELLED" ? { cancelledAt: new Date() } : {}) } : {}),
+        ...(patch.isPaid !== undefined ? { isPaid: patch.isPaid, paidAt: patch.isPaid ? new Date() : null } : {}),
+      },
+    });
+
+    // QA BUG-006: организатор переводит активного участника в CANCELLED/
+    // REJECTED/NO_SHOW — освободившееся место автоматически продвигает
+    // следующего по очереди WAITLIST (тот же helper, что и в
+    // cancelMyRegistration/самоотмене).
+    if (statusChanging && wasActive && !becomesActive) {
+      await promoteNextWaitlisted(tx, registration.eventId, registration.event.capacity);
+    }
+
+    return updated;
   });
 }

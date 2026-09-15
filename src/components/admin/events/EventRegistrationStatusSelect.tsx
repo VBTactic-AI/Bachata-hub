@@ -42,7 +42,7 @@ export function EventRegistrationStatusSelect({
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Не удалось изменить статус.");
+      setError(data.message || data.error || "Не удалось изменить статус.");
       return;
     }
     router.refresh();

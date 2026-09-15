@@ -51,6 +51,7 @@ export function EventWizard({
   ownedSchools,
   teachers,
   canCreateCompetition,
+  isVerifiedEventOrganizer = false,
   initialDraft,
   myEvents,
   eventListLabel = "Мои события",
@@ -59,6 +60,10 @@ export function EventWizard({
   ownedSchools: { id: string; name: string; verificationStatus: "COMMUNITY" | "VERIFIED" }[];
   teachers: { id: string; name: string }[];
   canCreateCompetition: boolean;
+  // QA BUG-012 — "будет опубликовано без модерации" должно совпадать с
+  // реальным shouldAutoApproveEvent() на сервере (ADMIN или верифицированный
+  // организатор), а не только с верифицированной школой.
+  isVerifiedEventOrganizer?: boolean;
   initialDraft: WizardDraft;
   myEvents: MyEventListItem[];
   // "Мои события" не точно, когда список — ВСЕ события платформы (Мониторинг
@@ -148,7 +153,7 @@ export function EventWizard({
   }
 
   const selectedSchool = ownedSchools.find((s) => s.id === draft.schoolId);
-  const willAutoApprove = !!(selectedSchool && selectedSchool.verificationStatus === "VERIFIED");
+  const willAutoApprove = isVerifiedEventOrganizer || !!(selectedSchool && selectedSchool.verificationStatus === "VERIFIED");
   const cityName = cities.find((c) => c.id === draft.cityId)?.nameRu ?? "";
   const organizerLabel = selectedSchool?.name ?? draft.organizerName;
 

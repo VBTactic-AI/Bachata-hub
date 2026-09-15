@@ -22,6 +22,11 @@ vi.mock("@/server/notifications/emit-domain-event", () => ({
   emitDomainEvent: (...a: unknown[]) => emitDomainEventMock(...a),
 }));
 
+// QA BUG-001 — logModeration() зовётся ПОСЛЕ $transaction, когда организатор
+// снимает с публикации живое событие (см. event-service.ts).
+const logModerationMock = vi.fn();
+vi.mock("@/lib/moderation", () => ({ logModeration: (...a: unknown[]) => logModerationMock(...a) }));
+
 const schoolFindUnique = vi.fn();
 const eventFindUnique = vi.fn();
 const eventUpdate = vi.fn();
@@ -37,6 +42,9 @@ const fakeTx = {
   // независимо от формата, поэтому нужны в моке для ЛЮБОГО теста.
   festivalDetails: { deleteMany: vi.fn(), upsert: vi.fn().mockResolvedValue({ id: "festivalDetails1" }) },
   eventProgramItem: { deleteMany: vi.fn(), createMany: vi.fn() },
+  // QA BUG-001 — подсчёт активных регистраций для audit-заметки при снятии
+  // с публикации (см. isUnpublishing в event-service.ts).
+  eventRegistration: { count: vi.fn().mockResolvedValue(0) },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -87,6 +95,8 @@ beforeEach(() => {
   eventUpdate.mockReset();
   eventCreate.mockReset();
   emitDomainEventMock.mockReset();
+  logModerationMock.mockReset();
+  fakeTx.eventRegistration.count.mockReset().mockResolvedValue(0);
   shouldAutoApproveMock.mockReset().mockReturnValue(true);
 });
 
@@ -234,7 +244,7 @@ describe("upsertEventDraft() — EVENT_UPDATED (только значимые п
 
 describe("cancelEvent() — EVENT_CANCELLED (Phase 6, минимальная отмена)", () => {
   it("отменяет опубликованное событие — status=ARCHIVED, эмитит EVENT_CANCELLED", async () => {
-    eventFindUnique.mockResolvedValue({ id: "event6", createdById: "creator1", status: "PUBLISHED" });
+    eventFindUnique.mockResolvedValue({ id: "event6", createdById: "creator1", status: "PUBLISHED", moderationStatus: "APPROVED" });
     eventUpdate.mockResolvedValue({ id: "event6", slug: "s", title: "x", cityId: "city1", format: "PARTY", schoolId: null, status: "ARCHIVED" });
 
     await cancelEvent("event6", user);
@@ -251,6 +261,19 @@ describe("cancelEvent() — EVENT_CANCELLED (Phase 6, минимальная о�
     eventUpdate.mockResolvedValue({ id: "event7", status: "ARCHIVED" });
 
     await cancelEvent("event7", user);
+
+    expect(emitDomainEventMock).not.toHaveBeenCalled();
+  });
+
+  // QA BUG-003 regression — раньше проверялся только status, не
+  // moderationStatus, поэтому отмена PENDING-события (status=PUBLISHED, но
+  // модератор его ещё не одобрил, никто его не видел) всё равно слала
+  // EVENT_CANCELLED.
+  it("отменяет PUBLISHED, но ещё PENDING (никто не видел) — НЕ эмитит EVENT_CANCELLED", async () => {
+    eventFindUnique.mockResolvedValue({ id: "event7b", createdById: "creator1", status: "PUBLISHED", moderationStatus: "PENDING" });
+    eventUpdate.mockResolvedValue({ id: "event7b", status: "ARCHIVED" });
+
+    await cancelEvent("event7b", user);
 
     expect(emitDomainEventMock).not.toHaveBeenCalled();
   });
@@ -387,5 +410,107 @@ describe("upsertEventDraft() — festival program (Events Engine, Stage 6)", () 
 
     expect(fakeTx.festivalDetails.deleteMany).toHaveBeenCalledWith({ where: { eventId: "event13" } });
     expect(fakeTx.festivalDetails.upsert).not.toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event13" } }));
+  });
+});
+
+// QA BUG-001 regression
+describe("upsertEventDraft() — ARCHIVED неизменяемо (QA BUG-001)", () => {
+  it("сохранение ARCHIVED события отклоняется — event_archived, update не вызывается", async () => {
+    eventFindUnique.mockResolvedValue({ id: "eventArchived", createdById: "creator1", status: "ARCHIVED", moderationStatus: "APPROVED" });
+
+    await expect(upsertEventDraft(baseInput(), user, "eventArchived")).rejects.toMatchObject({ code: "event_archived" });
+    expect(eventUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// QA BUG-001 regression — снятие с публикации живого события не тихое
+describe("upsertEventDraft() — unpublish живого события аудируется (QA BUG-001)", () => {
+  it("PUBLISHED+APPROVED -> DRAFT — logModeration('unpublish') вызывается с числом активных регистраций", async () => {
+    eventFindUnique.mockResolvedValue({
+      id: "eventLive",
+      createdById: "creator1",
+      status: "PUBLISHED",
+      moderationStatus: "APPROVED",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Club X",
+      venueAddress: null,
+    });
+    eventUpdate.mockResolvedValue({ id: "eventLive", slug: "s", title: "x", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
+    fakeTx.eventRegistration.count.mockResolvedValue(3);
+
+    await upsertEventDraft(baseInput({ status: "DRAFT", startsAt: "2026-09-01T00:00:00.000Z", venueName: "Club X" }), user, "eventLive");
+
+    expect(logModerationMock).toHaveBeenCalledWith(
+      user,
+      "EVENT",
+      "eventLive",
+      "unpublish",
+      expect.stringContaining("3")
+    );
+  });
+
+  it("DRAFT -> DRAFT (уже черновик) — не унопубликовывает повторно, logModeration не вызывается", async () => {
+    eventFindUnique.mockResolvedValue({
+      id: "eventDraft",
+      createdById: "creator1",
+      status: "DRAFT",
+      moderationStatus: "PENDING",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Club X",
+      venueAddress: null,
+    });
+    eventUpdate.mockResolvedValue({ id: "eventDraft", slug: "s", title: "x", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
+
+    await upsertEventDraft(baseInput({ status: "DRAFT", startsAt: "2026-09-01T00:00:00.000Z", venueName: "Club X" }), user, "eventDraft");
+
+    expect(logModerationMock).not.toHaveBeenCalled();
+  });
+});
+
+// QA BUG-002 regression — самый критичный найденный баг: republish после
+// явного REJECTED обходил решение модератора через auto-approve.
+describe("upsertEventDraft() — republish после REJECTED требует нового review (QA BUG-002)", () => {
+  it("REJECTED -> DRAFT -> PUBLISHED, верифицированный организатор — НЕ auto-approve, уходит в PENDING", async () => {
+    shouldAutoApproveMock.mockReturnValue(true); // организатор верифицирован — обычно auto-approve
+    eventFindUnique.mockResolvedValue({
+      id: "eventRejected",
+      createdById: "creator1",
+      status: "DRAFT", // уже был пересохранён как DRAFT до этого вызова (BUG-001 exploit path)
+      moderationStatus: "REJECTED",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Club X",
+      venueAddress: null,
+    });
+    eventUpdate.mockResolvedValue({ id: "eventRejected", slug: "s", title: "x", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
+
+    await upsertEventDraft(baseInput({ status: "PUBLISHED", startsAt: "2026-09-01T00:00:00.000Z", venueName: "Club X" }), user, "eventRejected");
+
+    expect(eventUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ moderationStatus: "PENDING" }) })
+    );
+    expect(eventUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ moderationStatus: "APPROVED" }) })
+    );
+    expect(emitDomainEventMock).not.toHaveBeenCalledWith(fakeTx, expect.objectContaining({ type: "EVENT_PUBLISHED" }));
+  });
+
+  it("обычная первая публикация верифицированного организатора — auto-approve, moderatedById явно null (не наследует старое значение)", async () => {
+    shouldAutoApproveMock.mockReturnValue(true);
+    eventFindUnique.mockResolvedValue({
+      id: "eventNew",
+      createdById: "creator1",
+      status: "DRAFT",
+      moderationStatus: "PENDING",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Club X",
+      venueAddress: null,
+    });
+    eventUpdate.mockResolvedValue({ id: "eventNew", slug: "s", title: "x", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
+
+    await upsertEventDraft(baseInput({ status: "PUBLISHED", startsAt: "2026-09-01T00:00:00.000Z", venueName: "Club X" }), user, "eventNew");
+
+    expect(eventUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ moderationStatus: "APPROVED", moderatedById: null }) })
+    );
   });
 });

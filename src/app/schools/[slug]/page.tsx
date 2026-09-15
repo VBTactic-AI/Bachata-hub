@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n/dictionary";
+import { safeJsonLd } from "@/lib/json-ld";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ReviewForm } from "@/components/ReviewForm";
 import { FollowButton } from "@/components/notifications/FollowButton";
@@ -89,7 +90,7 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
     <div className="flex flex-col gap-5 pb-4">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }}
       />
 
       <div className="flex flex-col items-start gap-2">

@@ -127,6 +127,9 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
         ownedSchools={[]}
         teachers={teachers}
         canCreateCompetition={canCreateCompetition}
+        // Страница уже гейтится isAdmin(user) выше — ADMIN всегда auto-approve
+        // (QA BUG-012, тот же индикатор, что и в admin/content/page.tsx).
+        isVerifiedEventOrganizer
         initialDraft={initialDraft}
         myEvents={allEvents.filter((d) => d.id !== draftId)}
         eventListLabel="Все события"

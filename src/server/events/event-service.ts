@@ -4,6 +4,7 @@ import { uniqueSlug } from "@/lib/slug";
 import { canCreateEvents } from "@/lib/auth";
 import { formatEventDate } from "@/lib/format";
 import { shouldAutoApproveEvent } from "@/lib/events/moderation";
+import { logModeration } from "@/lib/moderation";
 import { computePublishChecklist, isChecklistComplete, type ChecklistItem } from "@/lib/events/event-type-registry";
 import { createCompetition } from "@/server/competition/create-competition";
 import { can } from "@/server/rbac/authorize";
@@ -27,6 +28,13 @@ export class EventValidationError extends Error {
   }
 }
 export class EventNotFoundError extends Error {}
+
+// Понятные сообщения (CLAUDE.md §46) для кодов EventForbiddenError, у которых
+// причина не самоочевидна из самого кода — используется обоими роутами
+// (/api/events, /api/event-drafts/[id]), не дублируется в каждом.
+export const EVENT_FORBIDDEN_MESSAGES: Record<string, string> = {
+  event_archived: "Событие в архиве — редактирование недоступно.",
+};
 
 const BASELINE_IDS = new Set(["title", "city", "venue", "startsAt"]);
 
@@ -72,12 +80,27 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
   if (existingId && (!existing || (existing.createdById !== user.id && user.role !== "ADMIN"))) {
     throw new EventForbiddenError("forbidden");
   }
+  // QA BUG-001: ARCHIVED — терминальное состояние для этого сервиса (сюда
+  // ведёт только cancelEvent()). Без этой проверки ARCHIVED→PUBLISHED
+  // проходил бы напрямую через обычное сохранение черновика, минуя вообще
+  // любую проверку модерации/видимости (см. отчёт QA). Явной функциональности
+  // "вернуть из архива" сегодня нет ни в одном UI — если понадобится, это
+  // отдельная, осознанная операция, а не побочный эффект обычного save.
+  if (existing && existing.status === "ARCHIVED") {
+    throw new EventForbiddenError("event_archived");
+  }
 
   const autoApprove = shouldAutoApproveEvent(user, school);
   const startsAt = new Date(input.startsAt!);
   const endsAt = input.endsAt ? new Date(input.endsAt) : null;
 
-  const event = await prisma.$transaction(async (tx) => {
+  const { row: event, unpublishAuditNote } = await prisma.$transaction(async (tx) => {
+    // QA BUG-001 — заполняется ниже, если событие снимается с публикации;
+    // logModeration зовётся ПОСЛЕ commit'а транзакции (тот же порядок, что и
+    // в api/moderation/events/[id]/route.ts — тот тоже логирует отдельным
+    // вызовом после $transaction, не внутри неё), поэтому наружу отдаём
+    // просто данные, а не сам вызов.
+    let unpublishAuditNote: { eventId: string; activeRegistrations: number } | null = null;
     const base = {
       title: input.title!,
       cityId: input.cityId!,
@@ -121,6 +144,25 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
 
     if (existing) {
       const movingDraftToPublished = existing.status === "DRAFT" && input.status === "PUBLISHED";
+      // QA BUG-002: republish после явного REJECTED не должен тихо обходить
+      // решение модератора через auto-approve — organizer мог бы: сохранить
+      // отклонённое PUBLISHED-событие как DRAFT (см. BUG-001), затем сразу
+      // опубликовать снова, и verified-organizer auto-approve пропускал бы
+      // его без единого нового review, да ещё с искажённой атрибуцией
+      // (moderatedById оставался указывать на админа, который его отклонил).
+      // Явный REJECTED всегда требует нового человеческого решения — auto-
+      // approve рассчитан на "модератор ещё не видел контент", а не на
+      // "модератор его явно отклонил".
+      const requiresReReview = movingDraftToPublished && existing.moderationStatus === "REJECTED";
+      const willAutoApprove = movingDraftToPublished && autoApprove && !requiresReReview;
+      // QA BUG-001: снятие с публикации живого (реально видимого) события —
+      // не должно быть тихим. Полноценного AuditLog в Слое 1 нет (см.
+      // audit_report.md), поэтому переиспользуем уже существующий
+      // ModerationLog тем же способом, что и /api/moderation/events/[id] —
+      // вызывается ПОСЛЕ транзакции (см. ниже), здесь только считаем флаг.
+      const wasLiveAndVisible = existing.status === "PUBLISHED" && existing.moderationStatus === "APPROVED";
+      const isUnpublishing = wasLiveAndVisible && input.status === "DRAFT";
+
       row = await tx.event.update({
         where: { id: existing.id },
         data: {
@@ -129,19 +171,30 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
           // первого Publish — повторное сохранение уже опубликованного
           // события не должно тихо перезапускать модерацию заново.
           ...(movingDraftToPublished
-            ? autoApprove
-              ? { moderationStatus: "APPROVED" as const, moderatedAt: new Date() }
+            ? willAutoApprove
+              ? // moderatedById явно очищается (не наследует старое значение
+                // от предыдущего решения человека) — это автоматическое
+                // системное решение, а не решение того админа, что стоял в
+                // этом поле раньше (та самая искажённая атрибуция из BUG-002).
+                { moderationStatus: "APPROVED" as const, moderatedAt: new Date(), moderatedById: null }
               : { moderationStatus: "PENDING" as const }
             : {}),
         },
       });
 
-      notifyPublished = movingDraftToPublished && autoApprove;
+      notifyPublished = movingDraftToPublished && willAutoApprove;
+
+      if (isUnpublishing) {
+        const activeRegistrations = await tx.eventRegistration.count({
+          where: { eventId: existing.id, status: { in: ["REGISTERED", "CONFIRMED", "WAITLIST"] } },
+        });
+        unpublishAuditNote = { eventId: existing.id, activeRegistrations };
+      }
 
       // "Изменение" — только для события, которое УЖЕ было полностью живым
       // (не в момент его первой публикации выше) и только по полям, реально
       // значимым для подписчика (время/место), не по любому сохранению формы.
-      if (existing.status === "PUBLISHED" && existing.moderationStatus === "APPROVED" && !movingDraftToPublished) {
+      if (wasLiveAndVisible && !movingDraftToPublished) {
         const changed: string[] = [];
         if (existing.startsAt.getTime() !== startsAt.getTime()) changed.push("startsAt");
         if (existing.venueName !== base.venueName) changed.push("venueName");
@@ -284,8 +337,20 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       await tx.festivalDetails.deleteMany({ where: { eventId: row.id } });
     }
 
-    return row;
+    return { row, unpublishAuditNote };
   });
+
+  if (unpublishAuditNote) {
+    await logModeration(
+      user,
+      "EVENT",
+      unpublishAuditNote.eventId,
+      "unpublish",
+      unpublishAuditNote.activeRegistrations > 0
+        ? `Снято с публикации организатором, активных регистраций на момент снятия: ${unpublishAuditNote.activeRegistrations}`
+        : "Снято с публикации организатором"
+    );
+  }
 
   // Competition создаётся ВНЕ транзакции Event (createCompetition — уже
   // существующий, отдельно протестированный сервис со своей транзакцией и
@@ -328,7 +393,12 @@ export async function cancelEvent(eventId: string, user: User) {
   if (event.createdById !== user.id && user.role !== "ADMIN") throw new EventForbiddenError("forbidden");
   if (event.status === "ARCHIVED") return event; // идемпотентно — повторная отмена не ошибка
 
-  const wasPublished = event.status === "PUBLISHED";
+  // QA BUG-003: видимость события — status=PUBLISHED И moderationStatus=
+  // APPROVED (тот же инвариант, что и activeEventFilter() в src/lib/events.ts
+  // и гейт /events/[slug]) — раньше проверялся только status, поэтому отмена
+  // ещё не одобренного модератором (PENDING) события слала EVENT_CANCELLED,
+  // хотя его никто и не видел.
+  const wasPublished = event.status === "PUBLISHED" && event.moderationStatus === "APPROVED";
 
   return prisma.$transaction(async (tx) => {
     const row = await tx.event.update({ where: { id: eventId }, data: { status: "ARCHIVED" } });
