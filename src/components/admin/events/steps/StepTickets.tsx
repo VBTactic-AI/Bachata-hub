@@ -2,12 +2,12 @@
 
 import { t } from "@/lib/i18n/dictionary";
 import { Input, Label } from "@/components/ui/field";
+import { Switch } from "@/components/admin/Switch";
 import { cn } from "@/lib/cn";
 import type { WizardDraft } from "../wizard-types";
 
 const fieldClass =
   "border-admin-border bg-admin-card text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
-const checkboxClass = "h-4 w-4 rounded border-admin-border bg-admin-card accent-admin-primary";
 
 // "Способ доступа" (2026-09-16, Ticket Engine v2) — чисто UI-подсказка (см.
 // комментарий у Event.ticketingMode в schema.prisma): определяет, какой
@@ -93,15 +93,32 @@ export function StepTickets({ draft, onChange }: { draft: WizardDraft; onChange:
           ))}
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-admin-muted">
-        <input
-          type="checkbox"
+      {/* Редизайн (по прямому запросу пользователя) — раньше мелкий чекбокс в
+          общем потоке, легко было пропустить взглядом; теперь отдельная
+          карточка-строка настройки с переключателем Switch (переиспользован
+          из "Участники" — тот же компонент, не новый), сразу видно текущее
+          состояние. */}
+      <div className="flex items-center justify-between gap-3 rounded-app-sm border border-admin-border bg-admin-card2/40 p-3.5">
+        <div className="flex items-start gap-2.5">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-admin-border bg-admin-card text-lg"
+            aria-hidden="true"
+          >
+            🌐
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13.5px] font-bold text-night-text">Регистрация на публичной странице</span>
+            <span className="block text-[11.5px] text-admin-muted">
+              {draft.registrationEnabled ? "Блок регистрации виден на странице события." : "Блок регистрации скрыт от посетителей."}
+            </span>
+          </span>
+        </div>
+        <Switch
           checked={draft.registrationEnabled}
-          onChange={(e) => onChange({ registrationEnabled: e.target.checked })}
-          className={checkboxClass}
+          onChange={() => onChange({ registrationEnabled: !draft.registrationEnabled })}
+          label="Показывать блок регистрации на публичной странице"
         />
-        Показывать блок регистрации на публичной странице
-      </label>
+      </div>
 
       <div className="grid gap-3.5 sm:grid-cols-2">
         <Label className="text-admin-muted">
