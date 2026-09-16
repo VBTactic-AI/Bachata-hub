@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Event, EventTemplate, User } from "@prisma/client";
+import type { Event, EventTemplate, EventTemplateTicketType, EventTemplatePass, TicketType, Pass, User } from "@prisma/client";
 
 const eventTemplateFindUnique = vi.fn();
 const eventTemplateCreate = vi.fn();
@@ -7,19 +7,35 @@ const eventTemplateUpdate = vi.fn();
 const eventTemplateFindMany = vi.fn();
 const schoolFindUnique = vi.fn();
 const eventFindUnique = vi.fn();
+const eventTemplateTicketTypeDeleteMany = vi.fn();
+const eventTemplateTicketTypeCreateMany = vi.fn();
+const eventTemplatePassDeleteMany = vi.fn();
+const eventTemplatePassCreateMany = vi.fn();
 
-vi.mock("@/lib/prisma", () => ({
-  prisma: {
-    eventTemplate: {
-      findUnique: (...a: unknown[]) => eventTemplateFindUnique(...a),
-      create: (...a: unknown[]) => eventTemplateCreate(...a),
-      update: (...a: unknown[]) => eventTemplateUpdate(...a),
-      findMany: (...a: unknown[]) => eventTemplateFindMany(...a),
-    },
-    event: { findUnique: (...a: unknown[]) => eventFindUnique(...a) },
-    school: { findUnique: (...a: unknown[]) => schoolFindUnique(...a) },
+const prismaMock = {
+  eventTemplate: {
+    findUnique: (...a: unknown[]) => eventTemplateFindUnique(...a),
+    create: (...a: unknown[]) => eventTemplateCreate(...a),
+    update: (...a: unknown[]) => eventTemplateUpdate(...a),
+    findMany: (...a: unknown[]) => eventTemplateFindMany(...a),
   },
-}));
+  eventTemplateTicketType: {
+    deleteMany: (...a: unknown[]) => eventTemplateTicketTypeDeleteMany(...a),
+    createMany: (...a: unknown[]) => eventTemplateTicketTypeCreateMany(...a),
+  },
+  eventTemplatePass: {
+    deleteMany: (...a: unknown[]) => eventTemplatePassDeleteMany(...a),
+    createMany: (...a: unknown[]) => eventTemplatePassCreateMany(...a),
+  },
+  event: { findUnique: (...a: unknown[]) => eventFindUnique(...a) },
+  school: { findUnique: (...a: unknown[]) => schoolFindUnique(...a) },
+  // updateEventTemplate оборачивает замену ticketTypes/passes в транзакцию —
+  // мок просто прогоняет callback с тем же mock-объектом, чтобы вызовы
+  // tx.eventTemplateTicketType/eventTemplatePass попадали в те же vi.fn().
+  $transaction: (fn: (tx: unknown) => unknown) => fn(prismaMock),
+};
+
+vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
 const {
   createEventTemplateFromEvent,
@@ -30,13 +46,15 @@ const {
   getEventTemplate,
   EventTemplateForbiddenError,
   EventTemplateNotFoundError,
+  EventTemplateValidationError,
 } = await import("@/server/events/event-template-service");
 
 const owner = { id: "user_owner", role: "DANCER", isVerifiedEventOrganizer: true } as User;
 const stranger = { id: "user_stranger", role: "DANCER", isVerifiedEventOrganizer: false } as User;
 const admin = { id: "user_admin", role: "ADMIN" } as User;
 
-function makeTemplate(overrides: Partial<EventTemplate> = {}): EventTemplate {
+function makeTemplate(overrides: Partial<EventTemplate> & { ticketTypes?: EventTemplateTicketType[]; passes?: EventTemplatePass[] } = {}): EventTemplate & { ticketTypes: EventTemplateTicketType[]; passes: EventTemplatePass[] } {
+  const { ticketTypes, passes, ...rest } = overrides;
   return {
     id: "tpl_1",
     createdById: owner.id,
@@ -62,11 +80,16 @@ function makeTemplate(overrides: Partial<EventTemplate> = {}): EventTemplate {
     status: "ACTIVE",
     createdAt: new Date(),
     updatedAt: new Date(),
-    ...overrides,
-  } as EventTemplate;
+    ...rest,
+    ticketTypes: ticketTypes ?? [],
+    passes: passes ?? [],
+  } as EventTemplate & { ticketTypes: EventTemplateTicketType[]; passes: EventTemplatePass[] };
 }
 
-function makeSourceEvent(overrides: Partial<Event> = {}): Event & { partyDetails: unknown } {
+function makeSourceEvent(
+  overrides: Partial<Event> & { ticketTypes?: TicketType[]; passes?: Pass[] } = {}
+): Event & { partyDetails: unknown; ticketTypes: TicketType[]; passes: Pass[] } {
+  const { ticketTypes, passes, ...rest } = overrides;
   return {
     id: "evt_source",
     createdById: owner.id,
@@ -89,13 +112,15 @@ function makeSourceEvent(overrides: Partial<Event> = {}): Event & { partyDetails
     certainty: "CONFIRMED",
     photoUrl: null,
     partyDetails: null,
-    ...overrides,
-  } as unknown as Event & { partyDetails: unknown };
+    ...rest,
+    ticketTypes: ticketTypes ?? [],
+    passes: passes ?? [],
+  } as unknown as Event & { partyDetails: unknown; ticketTypes: TicketType[]; passes: Pass[] };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  eventTemplateCreate.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: "tpl_1", ...data }));
+  eventTemplateCreate.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: "tpl_1", ticketTypes: [], passes: [], ...data }));
 });
 
 describe("createEventTemplateFromEvent — RBAC/вывод HH:mm из startsAt/endsAt", () => {
@@ -139,6 +164,25 @@ describe("createEventTemplateFromEvent — RBAC/вывод HH:mm из startsAt/e
     eventFindUnique.mockResolvedValue(makeSourceEvent());
     await expect(createEventTemplateFromEvent("evt_source", owner, "   ")).rejects.toThrow();
   });
+
+  it("тикеты и Pass события снимаются в шаблон (без дат/soldQuantity/status)", async () => {
+    eventFindUnique.mockResolvedValue(
+      makeSourceEvent({
+        ticketTypes: [
+          { id: "tt_1", eventId: "evt_source", name: "Early Bird", description: null, price: "25.00", currency: "BYN", quantity: 50, soldQuantity: 3, salesStartAt: null, salesEndAt: null, status: "ACTIVE", sortOrder: 0, isActive: true, createdAt: new Date(), updatedAt: new Date() } as unknown as TicketType,
+        ],
+        passes: [
+          { id: "p_1", eventId: "evt_source", name: "Full Pass", description: null, type: "FULL_PASS", price: "120.00", currency: "BYN", quantity: null, soldQuantity: 1, salesStartAt: null, salesEndAt: null, validFrom: null, validUntil: null, status: "ACTIVE", sortOrder: 0, isActive: true, imageUrl: null, allowMultipleEntry: true, createdAt: new Date(), updatedAt: new Date() } as unknown as Pass,
+        ],
+      })
+    );
+    await createEventTemplateFromEvent("evt_source", owner);
+    const data = eventTemplateCreate.mock.calls[0][0].data;
+    expect(data.ticketTypes.create).toEqual([{ name: "Early Bird", description: null, price: "25.00", currency: "BYN", quantity: 50 }]);
+    expect(data.passes.create).toEqual([
+      { name: "Full Pass", description: null, type: "FULL_PASS", price: "120.00", currency: "BYN", quantity: null, imageUrl: null, allowMultipleEntry: true },
+    ]);
+  });
 });
 
 describe("updateEventTemplate / доступ", () => {
@@ -170,6 +214,29 @@ describe("updateEventTemplate / доступ", () => {
     eventTemplateFindUnique.mockResolvedValue(makeTemplate({ status: "ARCHIVED" }));
     await expect(updateEventTemplate("tpl_1", owner, { name: "X" })).rejects.toThrow(EventTemplateForbiddenError);
   });
+
+  it("ticketTypes/passes в патче — полная замена (deleteMany + createMany)", async () => {
+    eventTemplateFindUnique.mockResolvedValue(makeTemplate());
+    eventTemplateUpdate.mockResolvedValue(makeTemplate());
+    await updateEventTemplate("tpl_1", owner, {
+      ticketTypes: [{ name: "Standard", price: 35 }],
+      passes: [{ name: "Full Pass", type: "FULL_PASS" }],
+    });
+    expect(eventTemplateTicketTypeDeleteMany).toHaveBeenCalledWith({ where: { eventTemplateId: "tpl_1" } });
+    expect(eventTemplateTicketTypeCreateMany).toHaveBeenCalledWith({
+      data: [{ eventTemplateId: "tpl_1", name: "Standard", description: null, price: 35, currency: null, quantity: null }],
+    });
+    expect(eventTemplatePassDeleteMany).toHaveBeenCalledWith({ where: { eventTemplateId: "tpl_1" } });
+    expect(eventTemplatePassCreateMany).toHaveBeenCalledWith({
+      data: [{ eventTemplateId: "tpl_1", name: "Full Pass", description: null, type: "FULL_PASS", price: null, currency: null, quantity: null, imageUrl: null, allowMultipleEntry: true }],
+    });
+  });
+
+  it("пустое название тикета в патче отклоняется", async () => {
+    eventTemplateFindUnique.mockResolvedValue(makeTemplate());
+    await expect(updateEventTemplate("tpl_1", owner, { ticketTypes: [{ name: "  " }] })).rejects.toThrow(EventTemplateValidationError);
+    expect(eventTemplateTicketTypeDeleteMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("archive/unarchive — идемпотентность", () => {
@@ -200,5 +267,18 @@ describe("duplicateEventTemplate", () => {
     const result = await duplicateEventTemplate("tpl_1", owner);
     expect(result.id).toBe("tpl_2");
     expect(eventTemplateCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ createdById: owner.id }) }));
+  });
+
+  it("копирует тикеты/Pass шаблона в дубликат", async () => {
+    eventTemplateFindUnique.mockResolvedValue(
+      makeTemplate({
+        ticketTypes: [{ id: "tt_1", eventTemplateId: "tpl_1", name: "Standard", description: null, price: null, currency: null, quantity: null, createdAt: new Date(), updatedAt: new Date() }],
+        passes: [],
+      })
+    );
+    eventTemplateCreate.mockResolvedValue(makeTemplate({ id: "tpl_2" }));
+    await duplicateEventTemplate("tpl_1", owner);
+    const data = eventTemplateCreate.mock.calls[0][0].data;
+    expect(data.ticketTypes.create).toEqual([{ name: "Standard", description: null, price: null, currency: null, quantity: null }]);
   });
 });

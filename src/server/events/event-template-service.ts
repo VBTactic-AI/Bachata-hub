@@ -1,4 +1,4 @@
-import type { EventTemplate, User } from "@prisma/client";
+import type { EventTemplate, EventTemplateTicketType, EventTemplatePass, PassType, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { zonedDateParts, formatHhMm } from "./recurrence";
 
@@ -48,6 +48,38 @@ export type EventTemplateInput = {
   certainty?: EventTemplate["certainty"];
   photoUrl?: string | null;
   typeDetails?: unknown;
+  // Наследование тикетов/Pass (2026-09-16, по прямому запросу пользователя)
+  // — те же "содержательные" поля, что и у TicketType/Pass, без дат продаж/
+  // valid-периодов и без soldQuantity/status/sortOrder/isActive (см.
+  // комментарий у EventTemplate.ticketTypes/passes, schema.prisma). undefined
+  // = не менять, [] = очистить — как и остальные optional-массивы этого
+  // input (см. tags).
+  ticketTypes?: EventTemplateTicketTypeInput[];
+  passes?: EventTemplatePassInput[];
+};
+
+export type EventTemplateTicketTypeInput = {
+  name: string;
+  description?: string | null;
+  price?: number | null;
+  currency?: string | null;
+  quantity?: number | null;
+};
+
+export type EventTemplatePassInput = {
+  name: string;
+  description?: string | null;
+  type: PassType;
+  price?: number | null;
+  currency?: string | null;
+  quantity?: number | null;
+  imageUrl?: string | null;
+  allowMultipleEntry?: boolean;
+};
+
+export type EventTemplateWithDetails = EventTemplate & {
+  ticketTypes: EventTemplateTicketType[];
+  passes: EventTemplatePass[];
 };
 
 function validateInput(input: Partial<EventTemplateInput>): void {
@@ -61,6 +93,12 @@ function validateInput(input: Partial<EventTemplateInput>): void {
     if (t && !/^([0-1]?\d|2[0-3]):[0-5]\d$/.test(t)) {
       throw new EventTemplateValidationError("invalid_time", `Некорректное время: "${t}", ожидается "HH:mm".`);
     }
+  }
+  for (const t of input.ticketTypes ?? []) {
+    if (!t.name.trim()) throw new EventTemplateValidationError("ticket_name_required", "Название тикета обязательно.");
+  }
+  for (const p of input.passes ?? []) {
+    if (!p.name.trim()) throw new EventTemplateValidationError("pass_name_required", "Название Pass обязательно.");
   }
 }
 
@@ -76,8 +114,11 @@ async function assertSchoolAccess(schoolId: string | null | undefined, user: Use
 // серия (см. createSeriesFromEvent в event-series-service.ts), больше не
 // заводится пустой формой: организатор сохраняет как шаблон уже заполненное
 // (черновик или опубликованное) событие на шаге "Публикация" мастера.
-export async function createEventTemplateFromEvent(eventId: string, user: User, name?: string): Promise<EventTemplate> {
-  const event = await prisma.event.findUnique({ where: { id: eventId }, include: { partyDetails: true } });
+export async function createEventTemplateFromEvent(eventId: string, user: User, name?: string): Promise<EventTemplateWithDetails> {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: { partyDetails: true, ticketTypes: true, passes: true },
+  });
   if (!event) throw new EventTemplateNotFoundError();
   if (event.createdById !== user.id && user.role !== "ADMIN") throw new EventTemplateForbiddenError("forbidden");
   if (name !== undefined) validateInput({ name });
@@ -136,7 +177,36 @@ export async function createEventTemplateFromEvent(eventId: string, user: User, 
       photoUrl: event.photoUrl,
       typeDetails: (typeDetails ?? undefined) as never,
       status: "ACTIVE",
+      // Наследование тикетов/Pass (см. комментарий у EventTemplateInput) —
+      // снимается вместе с остальным состоянием события в момент "Сохранить
+      // как шаблон", без дат продаж/valid-периодов и без soldQuantity/status.
+      ticketTypes: event.ticketTypes.length
+        ? {
+            create: event.ticketTypes.map((t) => ({
+              name: t.name,
+              description: t.description,
+              price: t.price,
+              currency: t.currency,
+              quantity: t.quantity,
+            })),
+          }
+        : undefined,
+      passes: event.passes.length
+        ? {
+            create: event.passes.map((p) => ({
+              name: p.name,
+              description: p.description,
+              type: p.type,
+              price: p.price,
+              currency: p.currency,
+              quantity: p.quantity,
+              imageUrl: p.imageUrl,
+              allowMultipleEntry: p.allowMultipleEntry,
+            })),
+          }
+        : undefined,
     },
+    include: { ticketTypes: true, passes: true },
   });
 }
 
@@ -150,14 +220,21 @@ export async function listEventTemplatesForUser(user: User, includeArchived = fa
   });
 }
 
-export async function getEventTemplate(templateId: string, user: User): Promise<EventTemplate> {
-  const template = await prisma.eventTemplate.findUnique({ where: { id: templateId } });
+export async function getEventTemplate(templateId: string, user: User): Promise<EventTemplateWithDetails> {
+  const template = await prisma.eventTemplate.findUnique({
+    where: { id: templateId },
+    include: { ticketTypes: true, passes: true },
+  });
   if (!template) throw new EventTemplateNotFoundError();
   if (!canManageTemplate(template, user)) throw new EventTemplateForbiddenError("forbidden");
   return template;
 }
 
-export async function updateEventTemplate(templateId: string, user: User, patch: Partial<EventTemplateInput>): Promise<EventTemplate> {
+export async function updateEventTemplate(
+  templateId: string,
+  user: User,
+  patch: Partial<EventTemplateInput>
+): Promise<EventTemplateWithDetails> {
   const template = await prisma.eventTemplate.findUnique({ where: { id: templateId } });
   if (!template) throw new EventTemplateNotFoundError();
   if (!canManageTemplate(template, user)) throw new EventTemplateForbiddenError("forbidden");
@@ -165,29 +242,71 @@ export async function updateEventTemplate(templateId: string, user: User, patch:
   validateInput(patch);
   if (patch.schoolId !== undefined) await assertSchoolAccess(patch.schoolId, user);
 
-  return prisma.eventTemplate.update({
-    where: { id: templateId },
-    data: {
-      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
-      ...(patch.description !== undefined ? { description: patch.description?.trim() || null } : {}),
-      ...(patch.format !== undefined ? { format: patch.format } : {}),
-      ...(patch.level !== undefined ? { level: patch.level } : {}),
-      ...(patch.schoolId !== undefined ? { schoolId: patch.schoolId || null } : {}),
-      ...(patch.cityId !== undefined ? { cityId: patch.cityId || null } : {}),
-      ...(patch.venueName !== undefined ? { venueName: patch.venueName?.trim() || null } : {}),
-      ...(patch.venueAddress !== undefined ? { venueAddress: patch.venueAddress?.trim() || null } : {}),
-      ...(patch.defaultStartTime !== undefined ? { defaultStartTime: patch.defaultStartTime || null } : {}),
-      ...(patch.defaultEndTime !== undefined ? { defaultEndTime: patch.defaultEndTime || null } : {}),
-      ...(patch.ticketingMode !== undefined ? { ticketingMode: patch.ticketingMode } : {}),
-      ...(patch.registrationEnabled !== undefined ? { registrationEnabled: patch.registrationEnabled } : {}),
-      ...(patch.capacity !== undefined ? { capacity: patch.capacity } : {}),
-      ...(patch.priceText !== undefined ? { priceText: patch.priceText?.trim() || null } : {}),
-      ...(patch.externalLinkUrl !== undefined ? { externalLinkUrl: patch.externalLinkUrl?.trim() || null } : {}),
-      ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
-      ...(patch.certainty !== undefined ? { certainty: patch.certainty } : {}),
-      ...(patch.photoUrl !== undefined ? { photoUrl: patch.photoUrl?.trim() || null } : {}),
-      ...(patch.typeDetails !== undefined ? { typeDetails: patch.typeDetails as never } : {}),
-    },
+  // Тикеты/Pass — полная замена на каждое сохранение, а не построчный
+  // диффинг (тот же приём, что и type-specific данные события в
+  // upsertEventDraft, event-service.ts — объём всегда мал, строки шаблона
+  // не имеют собственной истории/ссылок извне, CLAUDE.md §18 здесь не
+  // применим, см. комментарий у EventTemplate).
+  return prisma.$transaction(async (tx) => {
+    if (patch.ticketTypes !== undefined) {
+      await tx.eventTemplateTicketType.deleteMany({ where: { eventTemplateId: templateId } });
+      if (patch.ticketTypes.length > 0) {
+        await tx.eventTemplateTicketType.createMany({
+          data: patch.ticketTypes.map((t) => ({
+            eventTemplateId: templateId,
+            name: t.name.trim(),
+            description: t.description?.trim() || null,
+            price: t.price ?? null,
+            currency: t.currency || null,
+            quantity: t.quantity ?? null,
+          })),
+        });
+      }
+    }
+    if (patch.passes !== undefined) {
+      await tx.eventTemplatePass.deleteMany({ where: { eventTemplateId: templateId } });
+      if (patch.passes.length > 0) {
+        await tx.eventTemplatePass.createMany({
+          data: patch.passes.map((p) => ({
+            eventTemplateId: templateId,
+            name: p.name.trim(),
+            description: p.description?.trim() || null,
+            type: p.type,
+            price: p.price ?? null,
+            currency: p.currency || null,
+            quantity: p.quantity ?? null,
+            imageUrl: p.imageUrl?.trim() || null,
+            allowMultipleEntry: p.allowMultipleEntry ?? true,
+          })),
+        });
+      }
+    }
+
+    return tx.eventTemplate.update({
+      where: { id: templateId },
+      data: {
+        ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+        ...(patch.description !== undefined ? { description: patch.description?.trim() || null } : {}),
+        ...(patch.format !== undefined ? { format: patch.format } : {}),
+        ...(patch.level !== undefined ? { level: patch.level } : {}),
+        ...(patch.schoolId !== undefined ? { schoolId: patch.schoolId || null } : {}),
+        ...(patch.cityId !== undefined ? { cityId: patch.cityId || null } : {}),
+        ...(patch.venueName !== undefined ? { venueName: patch.venueName?.trim() || null } : {}),
+        ...(patch.venueAddress !== undefined ? { venueAddress: patch.venueAddress?.trim() || null } : {}),
+        ...(patch.defaultStartTime !== undefined ? { defaultStartTime: patch.defaultStartTime || null } : {}),
+        ...(patch.defaultEndTime !== undefined ? { defaultEndTime: patch.defaultEndTime || null } : {}),
+        ...(patch.ticketingMode !== undefined ? { ticketingMode: patch.ticketingMode } : {}),
+        ...(patch.registrationEnabled !== undefined ? { registrationEnabled: patch.registrationEnabled } : {}),
+        ...(patch.capacity !== undefined ? { capacity: patch.capacity } : {}),
+        ...(patch.priceText !== undefined ? { priceText: patch.priceText?.trim() || null } : {}),
+        ...(patch.externalLinkUrl !== undefined ? { externalLinkUrl: patch.externalLinkUrl?.trim() || null } : {}),
+        ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
+        ...(patch.certainty !== undefined ? { certainty: patch.certainty } : {}),
+        ...(patch.photoUrl !== undefined ? { photoUrl: patch.photoUrl?.trim() || null } : {}),
+        ...(patch.typeDetails !== undefined ? { typeDetails: patch.typeDetails as never } : {}),
+      },
+      include: { ticketTypes: true, passes: true },
+    });
   });
 }
 
@@ -207,7 +326,7 @@ export async function unarchiveEventTemplate(templateId: string, user: User): Pr
   return prisma.eventTemplate.update({ where: { id: templateId }, data: { status: "ACTIVE" } });
 }
 
-export async function duplicateEventTemplate(templateId: string, user: User, name?: string): Promise<EventTemplate> {
+export async function duplicateEventTemplate(templateId: string, user: User, name?: string): Promise<EventTemplateWithDetails> {
   const template = await getEventTemplate(templateId, user);
   return prisma.eventTemplate.create({
     data: {
@@ -231,6 +350,32 @@ export async function duplicateEventTemplate(templateId: string, user: User, nam
       certainty: template.certainty,
       photoUrl: template.photoUrl,
       typeDetails: template.typeDetails as never,
+      ticketTypes: template.ticketTypes.length
+        ? {
+            create: template.ticketTypes.map((t) => ({
+              name: t.name,
+              description: t.description,
+              price: t.price,
+              currency: t.currency,
+              quantity: t.quantity,
+            })),
+          }
+        : undefined,
+      passes: template.passes.length
+        ? {
+            create: template.passes.map((p) => ({
+              name: p.name,
+              description: p.description,
+              type: p.type,
+              price: p.price,
+              currency: p.currency,
+              quantity: p.quantity,
+              imageUrl: p.imageUrl,
+              allowMultipleEntry: p.allowMultipleEntry,
+            })),
+          }
+        : undefined,
     },
+    include: { ticketTypes: true, passes: true },
   });
 }

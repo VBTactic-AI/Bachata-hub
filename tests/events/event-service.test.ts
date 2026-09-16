@@ -31,6 +31,11 @@ const schoolFindUnique = vi.fn();
 const eventFindUnique = vi.fn();
 const eventUpdate = vi.fn();
 const eventCreate = vi.fn();
+// Наследование тикетов/Pass шаблоном (см. комментарий у upsertEventDraft,
+// event-service.ts) — задействуются только когда input.templateId задан.
+const eventTemplateFindUnique = vi.fn().mockResolvedValue(null);
+const ticketTypeCreateMany = vi.fn();
+const passCreateMany = vi.fn();
 
 const fakeTx = {
   event: { update: (...a: unknown[]) => eventUpdate(...a), create: (...a: unknown[]) => eventCreate(...a) },
@@ -45,6 +50,9 @@ const fakeTx = {
   // QA BUG-001 — подсчёт активных регистраций для audit-заметки при снятии
   // с публикации (см. isUnpublishing в event-service.ts).
   eventRegistration: { count: vi.fn().mockResolvedValue(0) },
+  eventTemplate: { findUnique: (...a: unknown[]) => eventTemplateFindUnique(...a) },
+  ticketType: { createMany: (...a: unknown[]) => ticketTypeCreateMany(...a) },
+  pass: { createMany: (...a: unknown[]) => passCreateMany(...a) },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -55,7 +63,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const { upsertEventDraft, cancelEvent, EventForbiddenError } = await import("@/server/events/event-service");
+const { upsertEventDraft, cancelEvent, publishEvent, EventForbiddenError } = await import("@/server/events/event-service");
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -98,6 +106,9 @@ beforeEach(() => {
   logModerationMock.mockReset();
   fakeTx.eventRegistration.count.mockReset().mockResolvedValue(0);
   shouldAutoApproveMock.mockReset().mockReturnValue(true);
+  eventTemplateFindUnique.mockReset().mockResolvedValue(null);
+  ticketTypeCreateMany.mockReset();
+  passCreateMany.mockReset();
 });
 
 describe("upsertEventDraft() — EVENT_PUBLISHED (Notification & Subscription Engine, Phase 6)", () => {
@@ -512,5 +523,135 @@ describe("upsertEventDraft() — republish после REJECTED требует н
     expect(eventUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ moderationStatus: "APPROVED", moderatedById: null }) })
     );
+  });
+});
+
+// Наследование тикетов/Pass шаблоном (2026-09-16, по прямому запросу
+// пользователя) — templateId копируется в TicketType/Pass РОВНО ОДИН РАЗ,
+// только при создании нового события (см. комментарий в event-service.ts).
+describe("upsertEventDraft() — наследование тикетов/Pass из EventTemplate.templateId", () => {
+  it("создание с templateId — копирует ticketTypes/passes шаблона на новое событие", async () => {
+    eventCreate.mockResolvedValue({ id: "event1", slug: "party-slug", title: "Bachata Night", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
+    eventTemplateFindUnique.mockResolvedValue({
+      id: "tpl_1",
+      createdById: "creator1",
+      ticketTypes: [{ name: "Early Bird", description: null, price: "25.00", currency: "BYN", quantity: 50 }],
+      passes: [{ name: "Full Pass", description: null, type: "FULL_PASS", price: "120.00", currency: "BYN", quantity: null, imageUrl: null, allowMultipleEntry: true }],
+    });
+
+    await upsertEventDraft(baseInput({ templateId: "tpl_1" }), user);
+
+    expect(eventTemplateFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "tpl_1" } })
+    );
+    expect(ticketTypeCreateMany).toHaveBeenCalledWith({
+      data: [{ eventId: "event1", name: "Early Bird", description: null, price: "25.00", currency: "BYN", quantity: 50 }],
+    });
+    expect(passCreateMany).toHaveBeenCalledWith({
+      data: [{ eventId: "event1", name: "Full Pass", description: null, type: "FULL_PASS", price: "120.00", currency: "BYN", quantity: null, imageUrl: null, allowMultipleEntry: true }],
+    });
+  });
+
+  it("templateId, принадлежащий чужому пользователю — тихо игнорируется, тикеты не копируются", async () => {
+    eventCreate.mockResolvedValue({ id: "event1", slug: "party-slug", title: "Bachata Night", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
+    eventTemplateFindUnique.mockResolvedValue({
+      id: "tpl_1",
+      createdById: "someone_else",
+      ticketTypes: [{ name: "Early Bird", description: null, price: null, currency: null, quantity: null }],
+      passes: [],
+    });
+
+    await upsertEventDraft(baseInput({ templateId: "tpl_1" }), user);
+
+    expect(ticketTypeCreateMany).not.toHaveBeenCalled();
+  });
+
+  it("редактирование существующего события — templateId в input игнорируется (не переприменяется задним числом)", async () => {
+    eventFindUnique.mockResolvedValue({
+      id: "eventExisting",
+      createdById: "creator1",
+      status: "DRAFT",
+      moderationStatus: "PENDING",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Club X",
+      venueAddress: null,
+    });
+    eventUpdate.mockResolvedValue({ id: "eventExisting", slug: "s", title: "x", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
+
+    await upsertEventDraft(baseInput({ status: "DRAFT", templateId: "tpl_1", startsAt: "2026-09-01T00:00:00.000Z", venueName: "Club X" }), user, "eventExisting");
+
+    expect(eventTemplateFindUnique).not.toHaveBeenCalled();
+  });
+});
+
+// "Опубликовать" из таблички "Мои события" (2026-09-16, по прямому запросу
+// пользователя) — publishEvent() собирает EventDraftInput из уже
+// сохранённого события и делегирует upsertEventDraft(), так что чеклист/
+// модерация/уведомления — та же логика, что и обычная публикация из мастера
+// (см. комментарий у функции, event-service.ts).
+describe("publishEvent() — быстрая публикация из списка «Мои события»", () => {
+  function makeDraftEventRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "eventDraft1",
+      createdById: "creator1",
+      status: "DRAFT",
+      moderationStatus: "PENDING",
+      format: "PARTY",
+      certainty: "CONFIRMED",
+      title: "Bachata Night",
+      description: null,
+      level: "ALL_LEVELS",
+      cityId: "city1",
+      schoolId: null,
+      organizerName: null,
+      venueName: "Club X",
+      venueAddress: null,
+      startsAt: new Date("2026-09-20T18:00:00.000Z"),
+      endsAt: null,
+      capacity: null,
+      registrationEnabled: false,
+      ticketingMode: "UNSET",
+      priceText: null,
+      externalLinkUrl: null,
+      tags: [],
+      priceOptions: [],
+      partyDetails: null,
+      masterclassDetails: null,
+      festivalDetails: null,
+      ...overrides,
+    };
+  }
+
+  it("уже опубликованное событие — идемпотентно, upsertEventDraft не вызывается", async () => {
+    eventFindUnique.mockResolvedValue(makeDraftEventRow({ status: "PUBLISHED" }));
+    const result = await publishEvent("eventDraft1", user);
+    expect(result.status).toBe("PUBLISHED");
+    expect(eventUpdate).not.toHaveBeenCalled();
+  });
+
+  it("черновик со всеми обязательными полями — публикуется через ту же логику upsertEventDraft (эмитит EVENT_PUBLISHED)", async () => {
+    eventFindUnique.mockResolvedValue(makeDraftEventRow());
+    eventUpdate.mockResolvedValue({
+      id: "eventDraft1",
+      slug: "party-slug",
+      title: "Bachata Night",
+      cityId: "city1",
+      format: "PARTY",
+      schoolId: null,
+      startsAt: new Date("2026-09-20T18:00:00.000Z"),
+      updatedAt: new Date(),
+    });
+
+    await publishEvent("eventDraft1", user);
+
+    expect(eventUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "eventDraft1" }, data: expect.objectContaining({ status: "PUBLISHED", title: "Bachata Night" }) })
+    );
+    expect(emitDomainEventMock).toHaveBeenCalledWith(fakeTx, expect.objectContaining({ type: "EVENT_PUBLISHED" }));
+  });
+
+  it("посторонний пользователь — forbidden", async () => {
+    eventFindUnique.mockResolvedValue(makeDraftEventRow());
+    await expect(publishEvent("eventDraft1", makeUser({ id: "someone_else" }))).rejects.toThrow(EventForbiddenError);
   });
 });

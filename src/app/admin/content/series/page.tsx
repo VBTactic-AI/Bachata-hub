@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { listEventSeriesForUser } from "@/server/events/event-series-service";
 import { StatCard } from "@/components/admin/StatCard";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/admin/StatusBadge";
-import { RepeatIcon, CheckCircleIcon, PauseIcon, PlayIcon, GearIcon } from "@/components/admin/icons";
+import { RepeatIcon, CheckCircleIcon, PauseIcon, PlayIcon, GearIcon, PencilIcon, ArchiveBoxIcon } from "@/components/admin/icons";
 import { PostActionButton } from "@/components/admin/events/PostActionButton";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
@@ -114,8 +114,27 @@ export default async function EventSeriesListPage() {
                         >
                           <GearIcon />
                         </Link>
+                        {s.status !== "ARCHIVED" && (
+                          <Link
+                            href={`/admin/content/series/${s.id}?edit=1`}
+                            title="Редактировать"
+                            aria-label="Редактировать серию"
+                            className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+                          >
+                            <PencilIcon />
+                          </Link>
+                        )}
                         {s.status === "ACTIVE" && <PostActionButton endpoint={`/api/event-series/${s.id}/pause`} icon={<PauseIcon />} label="Пауза" />}
                         {s.status === "PAUSED" && <PostActionButton endpoint={`/api/event-series/${s.id}/resume`} icon={<PlayIcon />} label="Возобновить" />}
+                        {s.status !== "ARCHIVED" && (
+                          <PostActionButton
+                            endpoint={`/api/event-series/${s.id}/archive`}
+                            icon={<ArchiveBoxIcon />}
+                            label="Удалить"
+                            tone="danger"
+                            confirmText={`Удалить серию «${s.name}»? Она уйдёт в архив — генерация и автопубликация остановятся, уже созданные события останутся.`}
+                          />
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -137,8 +156,27 @@ export default async function EventSeriesListPage() {
                   {s.venueName} · {next ? `${formatDateTime(next)} · ${futureCount} в очереди` : "нет будущих событий"}
                 </p>
                 <div className="mt-2 flex items-center gap-1">
+                  {s.status !== "ARCHIVED" && (
+                    <Link
+                      href={`/admin/content/series/${s.id}?edit=1`}
+                      title="Редактировать"
+                      aria-label="Редактировать серию"
+                      className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+                    >
+                      <PencilIcon />
+                    </Link>
+                  )}
                   {s.status === "ACTIVE" && <PostActionButton endpoint={`/api/event-series/${s.id}/pause`} icon={<PauseIcon />} label="Пауза" />}
                   {s.status === "PAUSED" && <PostActionButton endpoint={`/api/event-series/${s.id}/resume`} icon={<PlayIcon />} label="Возобновить" />}
+                  {s.status !== "ARCHIVED" && (
+                    <PostActionButton
+                      endpoint={`/api/event-series/${s.id}/archive`}
+                      icon={<ArchiveBoxIcon />}
+                      label="Удалить"
+                      tone="danger"
+                      confirmText={`Удалить серию «${s.name}»? Она уйдёт в архив — генерация и автопубликация остановятся, уже созданные события останутся.`}
+                    />
+                  )}
                 </div>
               </div>
             ))}

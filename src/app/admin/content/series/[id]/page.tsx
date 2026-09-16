@@ -8,6 +8,8 @@ import type { RecurrenceRule } from "@/server/events/recurrence";
 import { StatCard } from "@/components/admin/StatCard";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/admin/StatusBadge";
 import { PostActionButton } from "@/components/admin/events/PostActionButton";
+import { EventDeleteButton } from "@/components/admin/events/EventDeleteButton";
+import { SeriesRecurrenceEditor } from "@/components/admin/events/SeriesRecurrenceEditor";
 import { RepeatIcon, DatabaseIcon, GearIcon, CopyIcon, PauseIcon, PlayIcon, ArchiveBoxIcon, CheckCircleIcon } from "@/components/admin/icons";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -30,12 +32,18 @@ const STATUS_VARIANT: Record<EventSeriesStatus, StatusBadgeVariant> = {
 const OCC_STATUS_LABEL: Record<string, string> = { DRAFT: "Черновик", PUBLISHED: "Опубликовано", ARCHIVED: "Отменено" };
 const OCC_STATUS_VARIANT: Record<string, StatusBadgeVariant> = { DRAFT: "neutral", PUBLISHED: "success", ARCHIVED: "danger" };
 
-export default async function EventSeriesDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ cursor?: string }> }) {
+export default async function EventSeriesDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ cursor?: string; edit?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const { id } = await params;
-  const { cursor } = await searchParams;
+  const { cursor, edit } = await searchParams;
 
   let series;
   try {
@@ -69,6 +77,18 @@ export default async function EventSeriesDetailPage({ params, searchParams }: { 
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <SeriesRecurrenceEditor
+            series={{
+              id: series.id,
+              recurrenceRule: series.recurrenceRule as unknown as RecurrenceRule,
+              endDate: series.endDate,
+              generationHorizonDays: series.generationHorizonDays,
+              autoPublish: series.autoPublish,
+              publishDaysBefore: series.publishDaysBefore,
+              publishAtTime: series.publishAtTime,
+            }}
+            autoOpen={edit === "1"}
+          />
           <PostActionButton endpoint={`/api/event-series/${series.id}/duplicate`} icon={<CopyIcon />} label="Дублировать" variant="full" />
           {series.status === "ACTIVE" && (
             <PostActionButton endpoint={`/api/event-series/${series.id}/pause`} icon={<PauseIcon />} label="Пауза серии" variant="full" />
@@ -113,14 +133,17 @@ export default async function EventSeriesDetailPage({ params, searchParams }: { 
                       <StatusBadge label={OCC_STATUS_LABEL[o.status] ?? o.status} variant={OCC_STATUS_VARIANT[o.status] ?? "neutral"} />
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <Link
-                        href={`/admin/content/${o.id}`}
-                        title="Открыть"
-                        aria-label="Открыть событие"
-                        className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-admin-primaryHover"
-                      >
-                        <GearIcon />
-                      </Link>
+                      <div className="flex items-center gap-1">
+                        <Link
+                          href={`/admin/content/${o.id}`}
+                          title="Открыть"
+                          aria-label="Открыть событие"
+                          className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-admin-primaryHover"
+                        >
+                          <GearIcon />
+                        </Link>
+                        {o.status !== "ARCHIVED" && <EventDeleteButton eventId={o.id} title={o.title} />}
+                      </div>
                     </td>
                   </tr>
                 );

@@ -19,7 +19,30 @@ const FORMAT_VALUES = [
 const LEVEL_VALUES = ["BEGINNER", "ALL_LEVELS", "ADVANCED"] as const;
 const TICKETING_MODE_VALUES = ["UNSET", "FREE", "TICKETS", "PASSES", "TICKETS_AND_PASSES"] as const;
 const CERTAINTY_VALUES = ["TENTATIVE", "CONFIRMED"] as const;
+const PASS_TYPE_VALUES = ["FULL_PASS", "PARTY_PASS", "WORKSHOP_PASS", "DAY_PASS", "COMPETITION_PASS", "VIP_PASS", "FREE_PASS", "CUSTOM"] as const;
 const TIME_RE = /^([0-1]?\d|2[0-3]):[0-5]\d$/;
+
+// Наследование тикетов/Pass шаблоном (2026-09-16) — те же "содержательные"
+// поля, что и у TicketType/Pass, без дат продаж/valid-периодов и без
+// soldQuantity/status/sortOrder/isActive (см. комментарий у
+// EventTemplate.ticketTypes/passes, schema.prisma).
+export const eventTemplateTicketTypeSchema = z.object({
+  name: z.string().min(1).max(160),
+  description: z.string().max(2000).optional().nullable(),
+  price: z.number().nonnegative().optional().nullable(),
+  currency: z.string().max(8).optional().nullable(),
+  quantity: z.number().int().positive().optional().nullable(),
+});
+export const eventTemplatePassSchema = z.object({
+  name: z.string().min(1).max(160),
+  description: z.string().max(2000).optional().nullable(),
+  type: z.enum(PASS_TYPE_VALUES),
+  price: z.number().nonnegative().optional().nullable(),
+  currency: z.string().max(8).optional().nullable(),
+  quantity: z.number().int().positive().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
+  allowMultipleEntry: z.boolean().optional(),
+});
 
 export const eventTemplateCreateSchema = z.object({
   name: z.string().min(1).max(160),
@@ -41,6 +64,8 @@ export const eventTemplateCreateSchema = z.object({
   certainty: z.enum(CERTAINTY_VALUES).optional(),
   photoUrl: z.string().optional().nullable(),
   typeDetails: z.unknown().optional(),
+  ticketTypes: z.array(eventTemplateTicketTypeSchema).optional(),
+  passes: z.array(eventTemplatePassSchema).optional(),
 });
 export const eventTemplatePatchSchema = eventTemplateCreateSchema.partial();
 

@@ -1,4 +1,4 @@
-import type { User } from "@prisma/client";
+import type { Event, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { uniqueSlug } from "@/lib/slug";
 import { canCreateEvents } from "@/lib/auth";
@@ -164,7 +164,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
     // autoApprove=false, PUBLISHED уходит в очередь модерации и уведомление
     // отправится позже, из PATCH /api/moderation/events/[id] (там же, где
     // moderationStatus реально становится APPROVED).
-    let row;
+    let row: Event;
     let notifyPublished = false;
     let notifyUpdatedFields: string[] | null = null;
 
@@ -234,6 +234,50 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       });
 
       notifyPublished = input.status === "PUBLISHED" && autoApprove;
+
+      // Наследование тикетов/Pass шаблоном (2026-09-16, по прямому запросу
+      // пользователя) — копируется РОВНО ОДИН РАЗ, в момент создания нового
+      // события из шаблона (тот же принцип, что и typeDetails при
+      // prefill'е WizardDraft в new/page.tsx). templateId не проверяется
+      // zod'ом на принадлежность — доверяем только тому, что реально
+      // принадлежит текущему пользователю (или ADMIN), иначе тихо
+      // игнорируем: это bonus-préfill, а не обязательное поле, форсированная
+      // ошибка здесь только сломала бы обычное сохранение события.
+      if (input.templateId) {
+        const template = await tx.eventTemplate.findUnique({
+          where: { id: input.templateId },
+          include: { ticketTypes: true, passes: true },
+        });
+        if (template && (template.createdById === user.id || user.role === "ADMIN")) {
+          if (template.ticketTypes.length > 0) {
+            await tx.ticketType.createMany({
+              data: template.ticketTypes.map((t) => ({
+                eventId: row.id,
+                name: t.name,
+                description: t.description,
+                price: t.price,
+                currency: t.currency,
+                quantity: t.quantity,
+              })),
+            });
+          }
+          if (template.passes.length > 0) {
+            await tx.pass.createMany({
+              data: template.passes.map((p) => ({
+                eventId: row.id,
+                name: p.name,
+                description: p.description,
+                type: p.type,
+                price: p.price,
+                currency: p.currency,
+                quantity: p.quantity,
+                imageUrl: p.imageUrl,
+                allowMultipleEntry: p.allowMultipleEntry,
+              })),
+            });
+          }
+        }
+      }
     }
 
     if (notifyPublished) {
@@ -461,4 +505,90 @@ export async function getEventDraftForEdit(eventId: string, user: User) {
   if (!event) throw new EventNotFoundError();
   if (event.createdById !== user.id && user.role !== "ADMIN") throw new EventForbiddenError("forbidden");
   return event;
+}
+
+// "Опубликовать" из таблички "Мои события" (2026-09-16, по прямому запросу
+// пользователя) — быстрое действие ИЗ СПИСКА, БЕЗ захода в мастер. Явно
+// НЕ флипает status напрямую (CLAUDE.md §45 "плохо: PATCH со status в
+// теле") — собирает те же данные, что мастер отправил бы на шаге
+// "Публикация", и прогоняет их через upsertEventDraft(), так что
+// EventValidationError (недостающий чеклист), модерация и уведомления — та
+// же единая логика, что и при обычной публикации из мастера, не отдельная
+// урезанная копия.
+export async function publishEvent(eventId: string, user: User) {
+  const event = await getEventDraftForEdit(eventId, user);
+  if (event.status === "PUBLISHED") return event; // идемпотентно
+
+  const input: EventDraftInput = {
+    status: "PUBLISHED",
+    format: event.format,
+    certainty: event.certainty,
+    title: event.title,
+    description: event.description ?? undefined,
+    level: event.level,
+    cityId: event.cityId,
+    schoolId: event.schoolId ?? undefined,
+    organizerName: event.organizerName ?? undefined,
+    venueName: event.venueName,
+    venueAddress: event.venueAddress ?? undefined,
+    startsAt: event.startsAt.toISOString(),
+    endsAt: event.endsAt ? event.endsAt.toISOString() : undefined,
+    capacity: event.capacity ?? undefined,
+    registrationEnabled: event.registrationEnabled,
+    ticketingMode: event.ticketingMode,
+    priceText: event.priceText ?? undefined,
+    externalLinkUrl: event.externalLinkUrl || undefined,
+    tags: event.tags,
+    priceOptions: event.priceOptions.map((p) => ({
+      label: p.label,
+      price: p.price != null ? Number(p.price) : undefined,
+      currency: p.currency ?? undefined,
+    })),
+    party:
+      event.format === "PARTY" && event.partyDetails
+        ? {
+            musicStyles: event.partyDetails.musicStyles,
+            djs: event.partyDetails.djs,
+            danceFloors: event.partyDetails.danceFloors,
+            artists: event.partyDetails.artists,
+            dressCode: event.partyDetails.dressCode ?? undefined,
+            photographer: event.partyDetails.photographer ?? undefined,
+            foodAndDrinks: event.partyDetails.foodAndDrinks ?? undefined,
+            parking: event.partyDetails.parking ?? undefined,
+            cloakroom: event.partyDetails.cloakroom ?? undefined,
+          }
+        : undefined,
+    masterclass:
+      event.format === "MASTERCLASS" && event.masterclassDetails
+        ? {
+            style: event.masterclassDetails.style ?? undefined,
+            format: event.masterclassDetails.format ?? undefined,
+            partnerRequired: event.masterclassDetails.partnerRequired,
+            sessions: event.masterclassDetails.sessions.map((s) => ({
+              title: s.title,
+              teacherId: s.teacherId ?? undefined,
+              startTime: s.startTime.toISOString(),
+              endTime: s.endTime.toISOString(),
+              room: s.room ?? undefined,
+              level: s.level ?? undefined,
+              capacity: s.capacity ?? undefined,
+            })),
+          }
+        : undefined,
+    festival:
+      event.format === "FESTIVAL" && event.festivalDetails
+        ? {
+            programItems: event.festivalDetails.programItems.map((p) => ({
+              title: p.title,
+              type: p.type,
+              startTime: p.startTime.toISOString(),
+              endTime: p.endTime ? p.endTime.toISOString() : undefined,
+              teacherId: p.teacherId ?? undefined,
+            })),
+          }
+        : undefined,
+  };
+
+  const result = await upsertEventDraft(input, user, eventId);
+  return result.event;
 }

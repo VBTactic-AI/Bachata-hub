@@ -155,6 +155,7 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
       <TicketsAndPassesTabs
         ticketsCount={ticketTypes.length}
         passesCount={passes.length}
+        showPasses={event.format === "FESTIVAL" || passes.length > 0}
         ticketsPanel={
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

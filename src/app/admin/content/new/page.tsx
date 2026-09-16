@@ -61,6 +61,7 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
         externalLinkUrl: template.externalLinkUrl || "",
         tags: template.tags.join(", "),
         certainty: template.certainty,
+        sourceTemplateId: template.id,
         party:
           template.format === "PARTY" && template.typeDetails
             ? {

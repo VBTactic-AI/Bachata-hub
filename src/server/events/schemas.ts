@@ -66,6 +66,9 @@ export const festivalDetailsInputSchema = z.object({
 // сознательно терпит в черновике, а прямо неверные).
 const eventDraftObjectSchema = z.object({
   status: z.enum(["DRAFT", "PUBLISHED"]),
+  // Recurring Events v2 — шаблон, из которого создаётся это событие (только
+  // при первом создании, см. WizardDraft.sourceTemplateId в wizard-types.ts).
+  templateId: z.string().optional(),
   format: z.enum(["PARTY", "MASTERCLASS", "FESTIVAL", "CONTEST", "INTENSIVE", "SOCIAL", "OPEN_AIR", "PRACTICE", "OTHER"]),
   // Events Engine — независимая ось от status: "дата уточняется" (TENTATIVE)
   // vs подтверждённое событие. Default CONFIRMED, если организатор не отметил

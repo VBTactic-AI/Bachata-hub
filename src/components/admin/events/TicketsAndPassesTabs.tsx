@@ -10,11 +10,19 @@ export function TicketsAndPassesTabs({
   passesCount,
   ticketsPanel,
   passesPanel,
+  showPasses = true,
 }: {
   ticketsCount: number;
   passesCount: number;
   ticketsPanel: ReactNode;
   passesPanel: ReactNode;
+  // Pass — только для фестивалей (2026-09-16, по прямому запросу
+  // пользователя): для остальных форматов Pass не имеет смысла (доступ к
+  // нескольким пунктам программы), поэтому таб скрывается. Событие, у
+  // которого Pass уже реально существует (заведён до этого правила),
+  // продолжает показывать таб — иначе организатор потерял бы доступ к уже
+  // проданным Pass молча (см. страницу, которая передаёт этот проп).
+  showPasses?: boolean;
 }) {
   const [tab, setTab] = useState<"tickets" | "passes">("tickets");
 
@@ -22,6 +30,8 @@ export function TicketsAndPassesTabs({
     `rounded-app-sm px-3 py-1.5 text-sm font-semibold transition-colors ${
       active ? "bg-admin-primary text-white" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
     }`;
+
+  if (!showPasses) return <div className="flex flex-col gap-3">{ticketsPanel}</div>;
 
   return (
     <div className="flex flex-col gap-3">

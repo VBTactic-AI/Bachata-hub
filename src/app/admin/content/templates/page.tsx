@@ -4,7 +4,7 @@ import { getCurrentUser, canCreateEvents } from "@/lib/auth";
 import { listEventTemplatesForUser } from "@/server/events/event-template-service";
 import { EVENT_TYPE_REGISTRY } from "@/lib/events/event-type-registry";
 import { PostActionButton } from "@/components/admin/events/PostActionButton";
-import { CopyIcon, ArchiveBoxIcon, PlayIcon } from "@/components/admin/icons";
+import { CopyIcon, ArchiveBoxIcon, PlayIcon, GearIcon } from "@/components/admin/icons";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
@@ -46,12 +46,24 @@ export default async function EventTemplatesListPage() {
               <div className="flex h-9 w-9 items-center justify-center rounded-app-sm bg-admin-primary/15 text-lg" aria-hidden="true">
                 {EVENT_TYPE_REGISTRY[t.format].icon}
               </div>
-              <div>
-                <h3 className="m-0 text-sm font-bold text-night-text">{t.name}</h3>
-                <p className="m-0 text-xs text-admin-muted">
-                  {EVENT_TYPE_REGISTRY[t.format].label}
-                  {t.venueName ? ` · ${t.venueName}` : ""}
-                </p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/admin/content/templates/${t.id}`} className="block truncate text-sm font-bold text-night-text hover:text-admin-primaryHover hover:underline">
+                    {t.name}
+                  </Link>
+                  <p className="m-0 text-xs text-admin-muted">
+                    {EVENT_TYPE_REGISTRY[t.format].label}
+                    {t.venueName ? ` · ${t.venueName}` : ""}
+                  </p>
+                </div>
+                <Link
+                  href={`/admin/content/templates/${t.id}`}
+                  title="Открыть"
+                  aria-label="Открыть шаблон"
+                  className="inline-flex shrink-0 items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-admin-primaryHover"
+                >
+                  <GearIcon />
+                </Link>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <Link

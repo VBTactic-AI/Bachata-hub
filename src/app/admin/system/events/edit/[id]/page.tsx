@@ -104,6 +104,7 @@ export default async function EditSystemEventPage({ params }: { params: Promise<
     makeRecurring: false,
     recurrence: emptyWizardRecurrenceState(),
     seriesId: event.seriesId,
+    sourceTemplateId: null,
   };
 
   return (

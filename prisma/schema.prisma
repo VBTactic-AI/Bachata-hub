@@ -1398,11 +1398,57 @@ model EventTemplate {
   createdAt DateTime            @default(now())
   updatedAt DateTime            @updatedAt
 
-  series EventSeries[]
+  series      EventSeries[]
+  // Наследование тикетов/Pass шаблоном (2026-09-16, по прямому запросу
+  // пользователя) — заготовки, из которых при создании события ИЗ ЭТОГО
+  // шаблона создаются настоящие TicketType/Pass строки на новом Event (тот
+  // же принцип "копирование только при создании", что и typeDetails выше,
+  // НЕ live-синк). Набор полей — тот же осознанно урезанный подход, что и у
+  // PassTemplate (см. комментарий там): без дат продаж/valid-периодов и без
+  // soldQuantity/status/sortOrder/isActive — это состояние конкретного
+  // Pass/TicketType на конкретном событии, не шаблона.
+  ticketTypes EventTemplateTicketType[]
+  passes      EventTemplatePass[]
 
   @@index([createdById])
   @@index([schoolId])
   @@index([status])
+}
+
+// Заготовка TicketType для EventTemplate — см. комментарий у
+// EventTemplate.ticketTypes.
+model EventTemplateTicketType {
+  id              String        @id @default(cuid())
+  eventTemplateId String
+  eventTemplate   EventTemplate @relation(fields: [eventTemplateId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  price           Decimal?      @db.Decimal(10, 2)
+  currency        String?
+  quantity        Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([eventTemplateId])
+}
+
+// Заготовка Pass для EventTemplate — см. комментарий у EventTemplate.passes.
+model EventTemplatePass {
+  id                 String        @id @default(cuid())
+  eventTemplateId    String
+  eventTemplate      EventTemplate @relation(fields: [eventTemplateId], references: [id], onDelete: Cascade)
+  name               String
+  description        String?
+  type               PassType
+  price              Decimal?      @db.Decimal(10, 2)
+  currency           String?
+  quantity           Int?
+  imageUrl           String?
+  allowMultipleEntry Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([eventTemplateId])
 }
 
 enum EventSeriesStatus {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ContentIcon, TagIcon, NavLink, SidebarFrame, type NavItem } from "@/components/admin/nav-shared";
-import { PlusIcon, GearIcon, RepeatIcon } from "@/components/admin/icons";
+import { PlusIcon, GearIcon, RepeatIcon, CardIcon } from "@/components/admin/icons";
 
 // Ивенты (организатор мероприятий) — только свои события, узкий сайдбар без
 // ссылок на другие разделы (Мониторинг/Соревнования/Школу/Фестивали).
@@ -17,10 +17,6 @@ import { PlusIcon, GearIcon, RepeatIcon } from "@/components/admin/icons";
 // "Управление событием" — чтобы было визуально видно, что мы вложены внутрь
 // "Моих событий", а не на отдельном не связанном экране.
 //
-// "Шаблоны Pass" сюда НЕ добавлены (тот же день, повторное уточнение
-// пользователя) — вложенная вкладка карточки события
-// (/admin/content/[id]/pass-templates, см. EventDashboardTabs.tsx), а не
-// отдельный пункт этого меню и не самостоятельная страница вне [id].
 const MY_EVENTS_ITEM: NavItem = {
   href: "/admin/content",
   label: "Мои события",
@@ -56,15 +52,30 @@ const TEMPLATES_ITEM: NavItem = {
   match: (p) => p.startsWith("/admin/content/templates"),
 };
 
+// "Шаблоны Pass" — отдельный пункт меню (2026-09-16, разворот более раннего
+// решения того же дня — см. комментарий у /admin/content/pass-templates/page.tsx).
+const PASS_TEMPLATES_ITEM: NavItem = {
+  href: "/admin/content/pass-templates",
+  label: "Шаблоны Pass",
+  icon: <CardIcon />,
+  match: (p) => p.startsWith("/admin/content/pass-templates"),
+};
+
 // Карточка управления конкретным событием — любой путь `/admin/content/<id>`
-// (и вложенные вкладки, включая pass-templates — она тоже вложена под [id]),
-// КРОМЕ "new"/"edit/*"/"series"/"templates" (у них свой первый сегмент, не id
-// события — "series"/"templates" добавлены Recurring Events v2, см. ниже).
-const MANAGE_EVENT_PATTERN = /^\/admin\/content\/(?!new(?:\/|$)|edit(?:\/|$)|series(?:\/|$)|templates(?:\/|$))([^/]+)/;
+// (и вложенные вкладки), КРОМЕ "new"/"edit/*"/"series"/"templates"/
+// "pass-templates" (у них свой первый сегмент, не id события).
+const MANAGE_EVENT_PATTERN =
+  /^\/admin\/content\/(?!new(?:\/|$)|edit(?:\/|$)|series(?:\/|$)|templates(?:\/|$)|pass-templates(?:\/|$))([^/]+)/;
+
+// Управление конкретной регулярной серией — тот же приём, что и у
+// "Управление событием" выше, для /admin/content/series/[id] (см.
+// комментарий там). Не путать с "series" без id — это сам список.
+const MANAGE_SERIES_PATTERN = /^\/admin\/content\/series\/([^/]+)/;
 
 export function EventAdminSidebar() {
   const pathname = usePathname() ?? "";
   const manageEventId = pathname.match(MANAGE_EVENT_PATTERN)?.[1] ?? null;
+  const manageSeriesId = pathname.match(MANAGE_SERIES_PATTERN)?.[1] ?? null;
   const myEventsActive = MY_EVENTS_ITEM.match(pathname) || manageEventId !== null;
 
   return (
@@ -99,9 +110,32 @@ export function EventAdminSidebar() {
         <NavLink item={CREATE_ITEM} active={CREATE_ITEM.match(pathname)} />
       </div>
 
-      <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-5 sm:flex-col sm:gap-0.5">
-        <NavLink item={SERIES_ITEM} active={SERIES_ITEM.match(pathname)} />
+      <div className="mt-0 flex shrink-0 flex-col gap-1.5 sm:mt-5 sm:gap-0.5">
+        <NavLink item={SERIES_ITEM} active={SERIES_ITEM.match(pathname) || manageSeriesId !== null} />
+
+        {/* Коллапс-подпункт "Управление серией" — тот же приём (grid-template-
+            rows), что и "Управление событием" у MY_EVENTS_ITEM выше. */}
+        <div className={`grid shrink-0 transition-[grid-template-rows] duration-300 ease-out ${manageSeriesId ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+          <div className="min-h-0 overflow-hidden">
+            <div className="pt-0.5 sm:pl-3">
+              {manageSeriesId && (
+                <Link
+                  href={`/admin/content/series/${manageSeriesId}`}
+                  aria-current="page"
+                  className="flex items-center gap-2.5 whitespace-nowrap rounded-app-sm bg-admin-primary/15 px-3 py-2 text-sm font-medium text-night-text no-underline hover:no-underline"
+                >
+                  <span className="text-admin-primary">
+                    <GearIcon />
+                  </span>
+                  Управление серией
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+
         <NavLink item={TEMPLATES_ITEM} active={TEMPLATES_ITEM.match(pathname)} />
+        <NavLink item={PASS_TEMPLATES_ITEM} active={PASS_TEMPLATES_ITEM.match(pathname)} />
       </div>
     </SidebarFrame>
   );

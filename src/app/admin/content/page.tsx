@@ -5,8 +5,9 @@ import { Input, Select } from "@/components/ui/field";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { StatCard } from "@/components/admin/StatCard";
-import { GridIcon, PencilIcon, CheckCircleIcon, AlertIcon, GearIcon } from "@/components/admin/icons";
+import { GridIcon, PencilIcon, CheckCircleIcon, AlertIcon, GearIcon, RepeatIcon, PlayIcon } from "@/components/admin/icons";
 import { EventDeleteButton } from "@/components/admin/events/EventDeleteButton";
+import { PostActionButton } from "@/components/admin/events/PostActionButton";
 import {
   EVENT_TYPE_REGISTRY,
   ALL_EVENT_FORMATS,
@@ -38,7 +39,7 @@ import { cn } from "@/lib/cn";
 // обложку/тинт формата, вторую строку (город · дата) и цветную полосу статуса
 // слева; три текстовые/иконочные действия сведены к трём одинаковым
 // icon-button (Управление/Редактировать/Удалить).
-type SearchParams = { q?: string; format?: string; status?: string };
+type SearchParams = { q?: string; format?: string; status?: string; regular?: string };
 
 function buildHref(current: SearchParams, overrides: Partial<SearchParams>) {
   const merged = { ...current, ...overrides };
@@ -64,7 +65,8 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
 
   const sp = await searchParams;
   const format = ALL_EVENT_FORMATS.find((f) => f === sp.format);
-  const hasActiveFilter = Boolean(sp.q || sp.format || sp.status);
+  const hasActiveFilter = Boolean(sp.q || sp.format || sp.status || sp.regular);
+  const regularWhere = sp.regular === "yes" ? { seriesId: { not: null } } : sp.regular === "no" ? { seriesId: null } : {};
 
   const [events, totalCount, draftCount, pendingCount, publishedCount] = await Promise.all([
     prisma.event.findMany({
@@ -73,9 +75,10 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
         ...myEventStatusFilterWhere(sp.status),
         ...(format ? { format } : {}),
         ...(sp.q ? { title: { contains: sp.q, mode: "insensitive" } } : {}),
+        ...regularWhere,
       },
       orderBy: { updatedAt: "desc" },
-      select: { id: true, title: true, format: true, status: true, moderationStatus: true, photoUrl: true, startsAt: true, city: { select: { nameRu: true } } },
+      select: { id: true, title: true, format: true, status: true, moderationStatus: true, photoUrl: true, startsAt: true, seriesId: true, city: { select: { nameRu: true } } },
     }),
     // KPI-плитки считают ВСЕ свои события целиком, независимо от q/format —
     // тот же принцип, что и totalOverall/waitlistCount на вкладке
@@ -174,6 +177,18 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
             ))}
           </Select>
         </label>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Регулярность
+          <Select
+            name="regular"
+            defaultValue={sp.regular ?? ""}
+            className="max-w-[160px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+          >
+            <option value="">Все события</option>
+            <option value="yes">Только регулярные</option>
+            <option value="no">Только разовые</option>
+          </Select>
+        </label>
         <Button type="submit" size="sm">
           Найти
         </Button>
@@ -221,9 +236,20 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                           <div className="min-w-0">
                             {/* Клик по названию = "Управление" (карточка события) — по прямому
                                 запросу пользователя; "Редактировать" (мастер) — отдельная иконка. */}
-                            <a href={`/admin/content/${e.id}`} className="block truncate font-medium text-night-text hover:text-admin-primaryHover hover:underline">
-                              {e.title || "Без названия"}
-                            </a>
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <a href={`/admin/content/${e.id}`} className="truncate font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                                {e.title || "Без названия"}
+                              </a>
+                              {e.seriesId && (
+                                <a
+                                  href={`/admin/content/series/${e.seriesId}`}
+                                  title="Открыть серию"
+                                  className="inline-flex shrink-0 items-center gap-1 rounded-app-sm bg-admin-violet/15 px-1.5 py-0.5 text-[10px] font-semibold text-admin-violet hover:bg-admin-violet/25"
+                                >
+                                  <RepeatIcon /> Регулярное
+                                </a>
+                              )}
+                            </div>
                             <p className="m-0 truncate text-xs text-admin-muted">
                               {e.city.nameRu} · {formatDateTime(e.startsAt)}
                             </p>
@@ -238,6 +264,9 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                       </td>
                       <td className="px-3 py-2 align-top">
                         <div className="flex items-center gap-1">
+                          {e.status === "DRAFT" && (
+                            <PostActionButton endpoint={`/api/event-drafts/${e.id}/publish`} icon={<PlayIcon />} label="Опубликовать" />
+                          )}
                           <a
                             href={`/admin/content/${e.id}`}
                             title="Управление"
@@ -293,6 +322,17 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={variant} />
+                    {e.seriesId && (
+                      <a
+                        href={`/admin/content/series/${e.seriesId}`}
+                        className="inline-flex items-center gap-1 rounded-app-sm bg-admin-violet/15 px-1.5 py-0.5 text-[10px] font-semibold text-admin-violet hover:bg-admin-violet/25"
+                      >
+                        <RepeatIcon /> Регулярное
+                      </a>
+                    )}
+                    {e.status === "DRAFT" && (
+                      <PostActionButton endpoint={`/api/event-drafts/${e.id}/publish`} icon={<PlayIcon />} label="Опубликовать" variant="full" />
+                    )}
                     <a href={`/admin/content/${e.id}`} className="text-xs font-semibold text-admin-primaryHover hover:underline">
                       Управление →
                     </a>

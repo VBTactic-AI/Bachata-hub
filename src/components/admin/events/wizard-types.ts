@@ -107,6 +107,14 @@ export type WizardDraft = {
   // ID серии, созданной по кнопке "Сохранить регулярность" — используется
   // только для редиректа на карточку серии после успеха.
   seriesId: string | null;
+
+  // Recurring Events v2 — шаблон, из которого создаётся ЭТО событие
+  // (?templateId= на /admin/content/new, см. new/page.tsx). Отправляется
+  // серверу ТОЛЬКО при первом создании (toApiPayload не шлёт его при
+  // редактировании уже существующего события) — сервер копирует
+  // EventTemplateTicketType/EventTemplatePass шаблона в настоящие
+  // TicketType/Pass нового Event один раз, при создании (event-service.ts).
+  sourceTemplateId: string | null;
 };
 
 export type WizardRecurrenceState = {
@@ -164,6 +172,36 @@ export function recurrenceStateToApiPayload(s: WizardRecurrenceState) {
   };
 }
 
+// Обратное преобразование — уже сохранённая серия (EventSeries) в состояние
+// формы шага "Повторение", для редактирования уже существующей серии
+// (см. SeriesRecurrenceEditor.tsx). Симметрично recurrenceStateToApiPayload
+// выше.
+export function seriesToWizardRecurrenceState(series: {
+  recurrenceRule: RecurrenceRule;
+  endDate: Date | null;
+  generationHorizonDays: number;
+  autoPublish: boolean;
+  publishDaysBefore: number | null;
+  publishAtTime: string | null;
+}): WizardRecurrenceState {
+  const rule = series.recurrenceRule;
+  return {
+    frequency: rule.frequency,
+    interval: rule.interval,
+    daysOfWeek: rule.frequency === "WEEKLY" ? rule.daysOfWeek : [],
+    // NTH_WEEKDAY (например, "второй вторник месяца") не поддерживается этим
+    // шагом мастера (StepRecurrence умеет только DAY_OF_MONTH) — такая серия
+    // существующая до этого попапа, показывает дефолт "1", не падает.
+    monthlyDayOfMonth: rule.frequency === "MONTHLY" && rule.mode === "DAY_OF_MONTH" ? String(rule.dayOfMonth) : "1",
+    endless: !series.endDate,
+    endDate: series.endDate ? series.endDate.toISOString().slice(0, 10) : "",
+    generationHorizonDays: series.generationHorizonDays,
+    autoPublish: series.autoPublish,
+    publishDaysBefore: series.publishDaysBefore ?? 3,
+    publishAtTime: series.publishAtTime ?? "10:00",
+  };
+}
+
 export function emptyWizardDraft(defaultCityId: string): WizardDraft {
   return {
     status: "DRAFT",
@@ -206,6 +244,7 @@ export function emptyWizardDraft(defaultCityId: string): WizardDraft {
     makeRecurring: false,
     recurrence: emptyWizardRecurrenceState(),
     seriesId: null,
+    sourceTemplateId: null,
   };
 }
 
@@ -230,6 +269,8 @@ function csvToArray(s: string): string[] {
 export function toApiPayload(d: WizardDraft, status: "DRAFT" | "PUBLISHED") {
   return {
     status,
+    // Только при создании — см. комментарий у WizardDraft.sourceTemplateId.
+    templateId: !d.id && d.sourceTemplateId ? d.sourceTemplateId : undefined,
     format: d.format,
     certainty: d.certainty,
     title: d.title,
