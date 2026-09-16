@@ -1,4 +1,5 @@
 import type { EventFormat, DanceLevel, EventStatus, EventCertainty, EventTicketingMode } from "@prisma/client";
+import type { RecurrenceRule } from "@/server/events/recurrence";
 
 // Event Engine — форма черновика в состоянии React (клиент). Отдельно от
 // EventDraftInput (server/events/schemas.ts, zod) намеренно: инпуты формы
@@ -93,7 +94,75 @@ export type WizardDraft = {
     programItems: WizardProgramItem[];
   };
   competitionId: string | null;
+
+  // Recurring Events v2 — "Дополнительно" на шаге "Публикация" (не поля
+  // самого Event, никогда не попадают в toApiPayload/POST /api/events).
+  makeTemplate: boolean;
+  templateName: string;
+  makeRecurring: boolean;
+  // Состояние шага "Повторение" (появляется только если makeRecurring) —
+  // хранится здесь, а не локальным state компонента, чтобы не сбрасываться
+  // при переходе "Назад"/"Далее" между шагами мастера.
+  recurrence: WizardRecurrenceState;
+  // ID серии, созданной по кнопке "Сохранить регулярность" — используется
+  // только для редиректа на карточку серии после успеха.
+  seriesId: string | null;
 };
+
+export type WizardRecurrenceState = {
+  frequency: "DAILY" | "WEEKLY" | "MONTHLY";
+  interval: number;
+  daysOfWeek: number[]; // 0=вс..6=сб, см. src/server/events/recurrence.ts
+  monthlyDayOfMonth: string; // строка для поля ввода, число 1..31
+  endless: boolean;
+  endDate: string; // "YYYY-MM-DD", используется только если !endless
+  generationHorizonDays: number;
+  autoPublish: boolean;
+  publishDaysBefore: number;
+  publishAtTime: string; // "HH:mm"
+};
+
+export function emptyWizardRecurrenceState(): WizardRecurrenceState {
+  return {
+    frequency: "WEEKLY",
+    interval: 1,
+    daysOfWeek: [],
+    monthlyDayOfMonth: "1",
+    endless: true,
+    endDate: "",
+    generationHorizonDays: 84,
+    autoPublish: true,
+    publishDaysBefore: 3,
+    publishAtTime: "10:00",
+  };
+}
+
+// Форма "Повторение" -> тело POST /api/event-drafts/[id]/make-recurring.
+// Бросает понятную ошибку, если пользователь не выбрал ни одного дня недели
+// для WEEKLY — тот же принцип, что и обязательный checklist на "Публикации"
+// (не отправлять заведомо отклоняемый сервером запрос).
+export function recurrenceStateToApiPayload(s: WizardRecurrenceState) {
+  let recurrenceRule: RecurrenceRule;
+  if (s.frequency === "WEEKLY") {
+    if (s.daysOfWeek.length === 0) throw new Error("Выберите хотя бы один день недели.");
+    recurrenceRule = { frequency: "WEEKLY", interval: s.interval, daysOfWeek: s.daysOfWeek };
+  } else if (s.frequency === "MONTHLY") {
+    const dayOfMonth = Number(s.monthlyDayOfMonth);
+    if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) throw new Error("Укажите число месяца от 1 до 31.");
+    recurrenceRule = { frequency: "MONTHLY", interval: s.interval, mode: "DAY_OF_MONTH", dayOfMonth };
+  } else {
+    recurrenceRule = { frequency: "DAILY", interval: s.interval };
+  }
+
+  return {
+    recurrenceRule,
+    endDate: s.endless ? undefined : s.endDate || undefined,
+    generationHorizonDays: s.generationHorizonDays,
+    autoPublish: s.autoPublish,
+    publishDaysBefore: s.autoPublish ? s.publishDaysBefore : undefined,
+    publishAtTime: s.autoPublish ? s.publishAtTime : undefined,
+  };
+}
 
 export function emptyWizardDraft(defaultCityId: string): WizardDraft {
   return {
@@ -132,6 +201,11 @@ export function emptyWizardDraft(defaultCityId: string): WizardDraft {
     masterclass: { style: "", format: "", partnerRequired: false, sessions: [] },
     festival: { programItems: [] },
     competitionId: null,
+    makeTemplate: false,
+    templateName: "",
+    makeRecurring: false,
+    recurrence: emptyWizardRecurrenceState(),
+    seriesId: null,
   };
 }
 

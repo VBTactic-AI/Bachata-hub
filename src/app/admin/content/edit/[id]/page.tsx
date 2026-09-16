@@ -5,7 +5,7 @@ import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
 import { getEventDraftForEdit, EventNotFoundError, EventForbiddenError } from "@/server/events/event-service";
 import { EventWizard } from "@/components/admin/events/EventWizard";
-import { dateToLocalInputValue, type WizardDraft } from "@/components/admin/events/wizard-types";
+import { dateToLocalInputValue, emptyWizardRecurrenceState, type WizardDraft } from "@/components/admin/events/wizard-types";
 
 // "Редактировать" — отдельная страница (см. комментарий в .../new/page.tsx).
 // Намеренно НЕ /admin/content/[id]/edit — тот путь уже занят
@@ -112,6 +112,11 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
         })) ?? [],
     },
     competitionId: event.competition?.id ?? null,
+    makeTemplate: false,
+    templateName: "",
+    makeRecurring: false,
+    recurrence: emptyWizardRecurrenceState(),
+    seriesId: event.seriesId,
   };
 
   return (

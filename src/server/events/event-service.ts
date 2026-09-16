@@ -41,6 +41,28 @@ export const EVENT_FORBIDDEN_MESSAGES: Record<string, string> = {
 
 const BASELINE_IDS = new Set(["title", "city", "venue", "startsAt"]);
 
+// Вынесено из upsertEventDraft (2026-09-16, Recurring Events) — та же самая
+// проверка "auto-approve vs требует нового review после REJECTED" (QA BUG-002)
+// нужна и в src/server/events/series-publish.ts (автопубликация occurrence
+// серии) — переиспользуем один расчёт вместо повторной копии критичной для
+// безопасности логики модерации.
+export function decidePublishModeration(
+  currentModerationStatus: "PENDING" | "APPROVED" | "REJECTED",
+  autoApprove: boolean
+): {
+  moderationFields: { moderationStatus: "APPROVED"; moderatedAt: Date; moderatedById: null } | { moderationStatus: "PENDING" };
+  notifyPublished: boolean;
+} {
+  const requiresReReview = currentModerationStatus === "REJECTED";
+  const willAutoApprove = autoApprove && !requiresReReview;
+  return {
+    moderationFields: willAutoApprove
+      ? { moderationStatus: "APPROVED" as const, moderatedAt: new Date(), moderatedById: null }
+      : { moderationStatus: "PENDING" as const },
+    notifyPublished: willAutoApprove,
+  };
+}
+
 // Даже сохранение ЧЕРНОВИКА требует минимум данных — этого требует сама
 // таблица Event (title/cityId/venueName/startsAt NOT NULL, существовали до
 // этой задачи, менять ради частично-пустых черновиков означало бы
@@ -157,8 +179,7 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       // Явный REJECTED всегда требует нового человеческого решения — auto-
       // approve рассчитан на "модератор ещё не видел контент", а не на
       // "модератор его явно отклонил".
-      const requiresReReview = movingDraftToPublished && existing.moderationStatus === "REJECTED";
-      const willAutoApprove = movingDraftToPublished && autoApprove && !requiresReReview;
+      const publishDecision = movingDraftToPublished ? decidePublishModeration(existing.moderationStatus, autoApprove) : null;
       // QA BUG-001: снятие с публикации живого (реально видимого) события —
       // не должно быть тихим. Полноценного AuditLog в Слое 1 нет (см.
       // audit_report.md), поэтому переиспользуем уже существующий
@@ -174,19 +195,11 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
           // Отправка на модерацию/авто-approve происходит один раз, в момент
           // первого Publish — повторное сохранение уже опубликованного
           // события не должно тихо перезапускать модерацию заново.
-          ...(movingDraftToPublished
-            ? willAutoApprove
-              ? // moderatedById явно очищается (не наследует старое значение
-                // от предыдущего решения человека) — это автоматическое
-                // системное решение, а не решение того админа, что стоял в
-                // этом поле раньше (та самая искажённая атрибуция из BUG-002).
-                { moderationStatus: "APPROVED" as const, moderatedAt: new Date(), moderatedById: null }
-              : { moderationStatus: "PENDING" as const }
-            : {}),
+          ...(publishDecision ? publishDecision.moderationFields : {}),
         },
       });
 
-      notifyPublished = movingDraftToPublished && willAutoApprove;
+      notifyPublished = publishDecision?.notifyPublished ?? false;
 
       if (isUnpublishing) {
         const activeRegistrations = await tx.eventRegistration.count({

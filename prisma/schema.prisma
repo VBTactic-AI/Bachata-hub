@@ -98,6 +98,8 @@ model User {
   ownedSchools                School[]            @relation("SchoolOwner")
   createdEvents               Event[]             @relation("EventCreator")
   moderatedEvents             Event[]             @relation("EventModerator")
+  createdEventTemplates       EventTemplate[]     @relation("EventTemplateCreator")
+  createdEventSeries          EventSeries[]       @relation("EventSeriesCreator")
   reviews                     Review[]            @relation("ReviewAuthor")
   moderatedReviews            Review[]            @relation("ReviewModerator")
   moderationLogs              ModerationLog[]     @relation("ModerationActor")
@@ -184,6 +186,8 @@ model City {
   competitions     Competition[]
   accessRequests   AccessRequest[]
   eventSuggestions EventSuggestion[]
+  eventTemplates   EventTemplate[]
+  eventSeries      EventSeries[]
 
   @@index([countryId])
 }
@@ -216,11 +220,13 @@ model School {
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
 
-  branches  SchoolBranch[]
-  teachers  Teacher[]
-  schedules ClassSchedule[]
-  events    Event[]
-  reviews   Review[]
+  branches       SchoolBranch[]
+  teachers       Teacher[]
+  schedules      ClassSchedule[]
+  events         Event[]
+  reviews        Review[]
+  eventTemplates EventTemplate[]
+  eventSeries    EventSeries[]
 
   @@index([cityId])
   @@index([verificationStatus])
@@ -520,6 +526,18 @@ model Event {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
+  // Recurring Events (2026-09-16) — если это событие сгенерировано серией,
+  // seriesId ссылается на неё, occurrenceDate — СТАБИЛЬНЫЙ календарный "слот"
+  // серии на момент генерации (НЕ пересчитывается, если организатор потом
+  // переопределил конкретные startsAt/endsAt для этого occurrence — см.
+  // комментарий у EventSeries). Именно на occurrenceDate держится
+  // идемпотентность генератора через unique-констрейнт ниже, а не на startsAt.
+  // onDelete: SetNull — серии сегодня не удаляются физически (только
+  // архивируются), но это defense-in-depth на случай будущего hard-delete.
+  seriesId       String?
+  series         EventSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  occurrenceDate DateTime?
+
   attendances   Attendance[]
   achievements  Achievement[]
   competition   Competition? // СЛОЙ 3: когда eventType = CONTEST, здесь — привязанное соревнование движка Jack & Jill (см. docs/00_DECISIONS.md, D3)
@@ -550,6 +568,7 @@ model Event {
   // КОТОРОЕ ссылается программа чужого фестиваля.
   linkedFromProgramItems EventProgramItem[]  @relation("ProgramItemLinkedEvent")
 
+  @@unique([seriesId, occurrenceDate]) // идемпотентность генератора — NULL/NULL (обычные разовые события) не конфликтуют между собой в Postgres
   @@index([cityId, startsAt])
   @@index([schoolId])
   @@index([moderationStatus])
@@ -557,6 +576,7 @@ model Event {
   @@index([createdById])
   @@index([moderatedById])
   @@index([status])
+  @@index([seriesId])
 }
 
 // Единая Media-сущность события (Event Media Gallery, задача от 2026-09-12) —
@@ -1314,6 +1334,171 @@ model EventTeamMember {
   @@unique([eventId, userId])
   @@index([eventId])
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Recurring Events — EventTemplate / EventSeries (2026-09-16)
+// ---------------------------------------------------------------------------
+//
+// Важное архитектурное решение (см. обсуждение задачи "Event Engine —
+// регулярные события"): здесь НЕТ runtime-наследования Template → Series →
+// Event. Оба — только заготовки, используемые В МОМЕНТ создания/генерации,
+// чтобы записать конкретные значения в обычный Event. После генерации
+// occurrence — самостоятельный Event, источник истины сам по себе (это и
+// требует ТЗ §5/§18 "после генерации — обычный Event Engine", и совпадает с
+// тем, как в проекте уже сделан JudgingCriterionCatalog → FinalCriterion,
+// A32 в docs/00_DECISIONS.md — copy-on-write, не live-ссылка).
+
+enum EventTemplateStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// EventTemplate — переиспользуемая заготовка настроек события (НЕ само
+// событие, не публикуется, не виден в публичном каталоге). Из шаблона можно
+// создать разовое событие или сразу серию (EventSeries.templateId ниже) —
+// оба пути только копируют значения при создании.
+model EventTemplate {
+  id          String  @id @default(cuid())
+  createdById String
+  createdBy   User    @relation("EventTemplateCreator", fields: [createdById], references: [id])
+  schoolId    String?
+  school      School? @relation(fields: [schoolId], references: [id])
+  name        String
+  description String?
+
+  format       EventFormat
+  level        DanceLevel  @default(ALL_LEVELS)
+  cityId       String?
+  city         City?       @relation(fields: [cityId], references: [id])
+  venueName    String?
+  venueAddress String?
+
+  // "HH:mm" — черновое время без даты, тот же приём, что уже используется
+  // у ClassSchedule.startTime/endTime (schema.prisma, "без таймзон-логики").
+  defaultStartTime String?
+  defaultEndTime   String?
+
+  ticketingMode       EventTicketingMode @default(UNSET)
+  registrationEnabled Boolean            @default(false)
+  capacity            Int?
+  priceText           String?
+  externalLinkUrl     String?
+  tags                String[]
+  certainty           EventCertainty     @default(CONFIRMED)
+  photoUrl            String?
+  // Тип-специфичные настройки по умолчанию (party/masterclass/festival) — тот
+  // же формат, что *DetailsInputSchema в src/server/events/schemas.ts. Json,
+  // т.к. шаблон не имеет собственных строк PartyDetails/MasterclassDetails/
+  // FestivalDetails (docs/02_DATABASE_SPECIFICATION.md §21 — Json только для
+  // настраиваемых структур, не для нормализованных данных).
+  typeDetails         Json?
+
+  status    EventTemplateStatus @default(ACTIVE)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  series EventSeries[]
+
+  @@index([createdById])
+  @@index([schoolId])
+  @@index([status])
+}
+
+enum EventSeriesStatus {
+  DRAFT // создана, генерация ещё не запускалась
+  ACTIVE // генерирует occurrences и (если включено) публикует их
+  PAUSED // организатор поставил на паузу: новые occurrences не создаются, уже созданные не трогаются
+  ENDED // endDate наступила — выставляется автоматически тем же job'ом, что генерирует occurrences
+  ARCHIVED // терминально, вручную
+}
+
+// EventSeries — регулярное событие ("Bachata Friday — каждую пятницу").
+// Сама НЕ является Event и не показывается в публичном каталоге — публично
+// видны только сгенерированные occurrences (обычные Event с seriesId).
+model EventSeries {
+  id            String         @id @default(cuid())
+  createdById   String
+  createdBy     User           @relation("EventSeriesCreator", fields: [createdById], references: [id])
+  schoolId      String?
+  school        School?        @relation(fields: [schoolId], references: [id])
+  organizerName String?
+  templateId    String?
+  // SetNull, не Cascade — тот же принцип, что и JudgingCriterionCatalog→
+  // FinalCriterion (A32): templateId это только след происхождения, архивация
+  // или (в будущем) удаление шаблона не должны ломать уже существующую серию.
+  template      EventTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  name         String
+  description  String?
+  format       EventFormat
+  level        DanceLevel  @default(ALL_LEVELS)
+  cityId       String
+  city         City        @relation(fields: [cityId], references: [id])
+  venueName    String
+  venueAddress String?
+
+  // IANA timezone серии ("Europe/Minsk") — ОБЯЗАТЕЛЕН (см. задачу §4):
+  // используется генератором (src/server/events/recurrence.ts), чтобы
+  // перевести "каждую пятницу 21:00" в конкретный UTC-инстант Event.startsAt.
+  // У самого Event отдельного поля timezone нет и не заводится — после
+  // генерации это обычный Event с обычным UTC startsAt, как и все остальные.
+  timezone String @default("Europe/Minsk")
+
+  // Структурированное правило повторения (НЕ свободный текст, см. задачу §4)
+  // — дискриминированный union, валидируется recurrenceRuleSchema в
+  // src/server/events/recurrence.ts. Json, а не отдельные колонки/enum —
+  // рассчитанная на расширение конфигурация, тот же принцип, что и
+  // Round.config/FinalSettings.config в движке слоя 3.
+  recurrenceRule   Json
+  defaultStartTime String // "HH:mm"
+  defaultEndTime   String?
+
+  startDate DateTime // календарная дата начала действия серии
+  endDate   DateTime? // null = бессрочно
+
+  // Generation horizon (задача §6): сколько дней вперёд держать
+  // сгенерированными occurrences и порог, при достижении которого генератор
+  // досоздаёт следующие.
+  generationHorizonDays   Int @default(84) // 12 недель
+  generationThresholdDays Int @default(28) // 4 недели
+
+  // Auto publish (задача §7, уточнено пользователем — не "за N минут до
+  // старта" единым числом, а "за N дней, в HH:mm" — иначе публикация могла
+  // бы случайно попасть на 3 часа ночи). Оба поля обязательны вместе, когда
+  // autoPublish=true (проверяется в event-series-service.ts, не в схеме).
+  // publishDaysBefore=0 — публиковать в день самого события, в publishAtTime.
+  autoPublish       Boolean @default(false)
+  publishDaysBefore Int?
+  publishAtTime     String? // "HH:mm", тот же формат, что defaultStartTime
+
+  ticketingMode       EventTicketingMode @default(UNSET)
+  registrationEnabled Boolean            @default(false)
+  capacity            Int?
+  priceText           String?
+  externalLinkUrl     String?
+  tags                String[]
+  certainty           EventCertainty     @default(CONFIRMED)
+  photoUrl            String?
+  typeDetails         Json?
+
+  status EventSeriesStatus @default(ACTIVE)
+
+  // Курсор генератора — до какой календарной даты уже сгенерированы
+  // occurrences (НЕ "количество", т.к. WEEKLY с несколькими днями недели даёт
+  // несколько occurrences на "неделю горизонта" — см. §6 задачи). Позволяет
+  // генератору не пересканировать с самого startDate на каждом тике.
+  lastGeneratedThrough DateTime?
+  lastGeneratedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events Event[]
+
+  @@index([createdById])
+  @@index([schoolId])
+  @@index([status, lastGeneratedThrough])
 }
 
 // ---------------------------------------------------------------------------

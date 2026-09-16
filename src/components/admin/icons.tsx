@@ -243,6 +243,58 @@ export function BellIcon() {
   );
 }
 
+// Recurring Events v2 — действия над сериями (Пауза/Возобновить) и шаблонами
+// (Дублировать/Архивировать) — тот же нейтральный контурный стиль.
+export function PauseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+
+export function PlayIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M6 4.5v15l13-7.5-13-7.5Z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function CopyIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="8.5" y="8.5" width="11" height="11" rx="1.5" />
+      <path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8a1.5 1.5 0 0 0 1.5 1.5h2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function ArchiveBoxIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="3.5" y="4" width="17" height="4.5" rx="1" />
+      <path d="M4.5 8.5V18a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V8.5" strokeLinecap="round" />
+      <path d="M10 12.5h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Recurring Events v2 — пункт сайдбара "Регулярные события" (круговые
+// стрелки повторения) — тот же нейтральный контурный стиль, что и остальные
+// иконки этого файла.
+export function RepeatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M17 2.1 21 6l-4 3.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 11V9a4 4 0 0 1 4-4h14" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 21.9 3 18l4-3.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 13v2a4 4 0 0 1-4 4H3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

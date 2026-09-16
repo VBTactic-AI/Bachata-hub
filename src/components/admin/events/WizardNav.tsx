@@ -12,6 +12,7 @@ const STEP_LABELS: Record<EventStepId, string> = {
   festivalProgram: "Программа",
   tickets: "Билеты",
   publish: "Публикация",
+  recurrence: "Повторение",
 };
 
 // Горизонтальный номерной степпер (редизайн 2026-09-16, по прямому запросу

@@ -92,6 +92,10 @@ export function myEventStatusFilterWhere(filter?: string) {
 // живой предпросмотр), сам предпросмотр стал ПОСТОЯННО видимой боковой
 // панелью на каждом шаге (см. EventPreviewSidebar.tsx), а не отдельным
 // шагом в конце.
+// "recurrence" — НЕ часть EVENT_TYPE_REGISTRY ниже (не зависит от формата
+// события): EventWizard.tsx добавляет его в конец эффективного списка шагов
+// динамически, только если организатор отметил "Сделать регулярным" на шаге
+// "Публикация" (Recurring Events v2, см. wizard-types.ts).
 export type EventStepId =
   | "basic"
   | "datetime"
@@ -100,7 +104,8 @@ export type EventStepId =
   | "details"
   | "festivalProgram"
   | "tickets"
-  | "publish";
+  | "publish"
+  | "recurrence";
 
 export type EventTypeConfig = {
   format: EventFormat;

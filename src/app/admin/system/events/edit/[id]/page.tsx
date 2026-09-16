@@ -5,7 +5,7 @@ import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
 import { getEventDraftForEdit } from "@/server/events/event-service";
 import { EventWizard } from "@/components/admin/events/EventWizard";
-import { dateToLocalInputValue, type WizardDraft } from "@/components/admin/events/wizard-types";
+import { dateToLocalInputValue, emptyWizardRecurrenceState, type WizardDraft } from "@/components/admin/events/wizard-types";
 
 // Мониторинг → "Ивенты (все)" → редактировать ЛЮБОЕ событие. См. комментарий
 // в /admin/content/edit/[id]/page.tsx — тот же паттерн (getEventDraftForEdit
@@ -99,6 +99,11 @@ export default async function EditSystemEventPage({ params }: { params: Promise<
         })) ?? [],
     },
     competitionId: event.competition?.id ?? null,
+    makeTemplate: false,
+    templateName: "",
+    makeRecurring: false,
+    recurrence: emptyWizardRecurrenceState(),
+    seriesId: event.seriesId,
   };
 
   return (

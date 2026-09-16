@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { EVENT_TYPE_REGISTRY, computePublishChecklist, isChecklistComplete, type EventStepId } from "@/lib/events/event-type-registry";
-import { formatEventTime } from "@/lib/format";
+import { formatEventTime, formatDateTime } from "@/lib/format";
 import { WizardNav } from "./WizardNav";
 import { EventTypeSelector } from "./EventTypeSelector";
 import { EventPreviewSidebar } from "./EventPreviewSidebar";
@@ -16,6 +16,7 @@ import { StepFestivalProgram } from "./steps/StepFestivalProgram";
 import { StepMasterclassDetails } from "./steps/StepMasterclassDetails";
 import { StepTickets } from "./steps/StepTickets";
 import { StepPublish } from "./steps/StepPublish";
+import { StepRecurrence } from "./steps/StepRecurrence";
 import { toApiPayload, type WizardDraft } from "./wizard-types";
 
 // Event Engine — единый Create Event Wizard (задача "ОБЩИЙ CREATE EVENT
@@ -81,7 +82,12 @@ export function EventWizard({
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
   const config = EVENT_TYPE_REGISTRY[draft.format];
-  const steps = config.steps;
+  // "recurrence" — виртуальный шаг, не часть EVENT_TYPE_REGISTRY (не зависит
+  // от формата события, см. комментарий у EventStepId) — добавляется в конец,
+  // как только отмечено "Сделать регулярным". После успешного сохранения
+  // серии (draft.seriesId) мастер сразу редиректит на карточку серии, поэтому
+  // не отдельно скрывает шаг обратно — компонент к этому моменту уже уходит.
+  const steps = draft.makeRecurring ? [...config.steps, "recurrence" as const] : config.steps;
   const currentStep = steps[Math.min(stepIndex, steps.length - 1)];
 
   const checklist = useMemo(
@@ -107,6 +113,7 @@ export function EventWizard({
     details: true,
     tickets: true,
     publish: complete,
+    recurrence: !!draft.seriesId,
   };
 
   function patch(p: Partial<WizardDraft>) {
@@ -146,27 +153,63 @@ export function EventWizard({
         return;
       }
       const isFirstSave = !draft.id;
+      const eventId: string = body.event.id;
       setLastSavedAt(new Date());
       setDraft((d) => ({
         ...d,
-        id: body.event.id,
+        id: eventId,
         slug: body.event.slug,
         status: body.event.status,
         competitionId: body.competitionId ?? d.competitionId,
       }));
-      if (isFirstSave) {
+      // Recurring Events v2 — найдено вживую при первой проверке: router.replace
+      // размонтирует EventWizard (переход на другой page.tsx = другой
+      // initialDraft с сервера) и стирает stepIndex/makeRecurring/makeTemplate —
+      // организатора выкидывало с только что появившегося шага "Повторение"
+      // обратно на шаг 1. Если дальше открывается "Повторение" — редирект
+      // на /edit/[id] пропускаем: URL обновится сам через router.push на
+      // карточку серии сразу по завершении (StepRecurrence::onSaved ниже),
+      // а до этого момента переход на /edit/[id] не даёт ничего, кроме риска
+      // потерять состояние мастера.
+      const willShowRecurrenceStep = status === "PUBLISHED" && draft.makeRecurring;
+      if (isFirstSave && !willShowRecurrenceStep) {
         // Первое сохранение черновика создаёт Event — переезжаем с "/new" на
         // постоянный URL редактирования, чтобы обновление страницы и "Мои
         // события" вели на тот же черновик, а не на пустую форму.
-        router.replace(`${basePath}/edit/${body.event.id}`);
+        router.replace(`${basePath}/edit/${eventId}`);
       }
       if (status === "PUBLISHED") {
-        // Задача: после публикации показать понятное сообщение
-        // (опубликовано / на модерации) и перекинуть на карточку события,
-        // чтобы организатор сразу проверил, всё ли заполнено верно.
+        // Recurring Events v2: "Сохранить как шаблон" — фоновым действием
+        // сразу после публикации, не блокирует и не отменяет сам факт
+        // публикации, если вдруг не удастся (сообщаем отдельной, некритичной
+        // ошибкой, не ошибкой всей операции).
+        if (draft.makeTemplate) {
+          try {
+            const tRes = await fetch(`/api/event-drafts/${eventId}/save-as-template`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: draft.templateName || undefined }),
+            });
+            if (!tRes.ok) setError("Событие опубликовано, но шаблон сохранить не удалось — попробуйте ещё раз со страницы события.");
+          } catch {
+            setError("Событие опубликовано, но шаблон сохранить не удалось — проверьте соединение.");
+          }
+        }
+
         const approved = body.event.moderationStatus === "APPROVED";
-        setSuccessMessage(approved ? "Событие опубликовано! Открываем карточку…" : "Событие отправлено на модерацию. Открываем карточку…");
-        setTimeout(() => router.push(`/events/${body.event.slug}`), 1400);
+        if (draft.makeRecurring) {
+          // Публикация уже произошла — остаёмся в мастере и открываем
+          // добавленный шаг "Повторение" (createSeriesFromEvent донастроит
+          // серию отдельным явным действием там же, не здесь).
+          setSuccessMessage(approved ? "Событие опубликовано! Настройте повторение ниже." : "Событие отправлено на модерацию. Настройте повторение ниже.");
+          setStepIndex(steps.length - 1);
+        } else {
+          // Задача: после публикации показать понятное сообщение
+          // (опубликовано / на модерации) и перекинуть на карточку события,
+          // чтобы организатор сразу проверил, всё ли заполнено верно.
+          setSuccessMessage(approved ? "Событие опубликовано! Открываем карточку…" : "Событие отправлено на модерацию. Открываем карточку…");
+          setTimeout(() => router.push(`/events/${body.event.slug}`), 1400);
+        }
       }
     } catch {
       setError("Не удалось сохранить событие — проверьте соединение.");
@@ -218,8 +261,29 @@ export function EventWizard({
             competitionId={draft.competitionId}
             saving={saving === "publish"}
             onPublish={() => save("PUBLISHED")}
+            makeTemplate={draft.makeTemplate}
+            onChangeMakeTemplate={(v) => patch({ makeTemplate: v })}
+            templateName={draft.templateName}
+            onChangeTemplateName={(v) => patch({ templateName: v })}
+            makeRecurring={draft.makeRecurring}
+            onChangeMakeRecurring={(v) => patch({ makeRecurring: v })}
+            alreadyInSeries={!!draft.seriesId}
           />
         );
+      case "recurrence":
+        return draft.id ? (
+          <StepRecurrence
+            eventId={draft.id}
+            eventTitle={draft.title}
+            eventDateTimeLabel={draft.startsAt ? formatDateTime(new Date(draft.startsAt)) : ""}
+            value={draft.recurrence}
+            onChange={(p) => patch({ recurrence: { ...draft.recurrence, ...p } })}
+            onSaved={(seriesId) => {
+              patch({ seriesId });
+              router.push(`/admin/content/series/${seriesId}`);
+            }}
+          />
+        ) : null;
     }
   }
 
@@ -240,7 +304,7 @@ export function EventWizard({
       >
         ← Назад
       </Button>
-      {currentStep !== "publish" && (
+      {currentStep !== "publish" && currentStep !== "recurrence" && (
         <Button type="button" variant="admin" size="sm" onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}>
           Далее →
         </Button>
@@ -322,7 +386,7 @@ export function EventWizard({
           >
             ← Назад
           </Button>
-          {currentStep !== "publish" && (
+          {currentStep !== "publish" && currentStep !== "recurrence" && (
             <Button
               type="button"
               variant="admin"

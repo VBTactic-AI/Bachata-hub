@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ContentIcon, NavLink, SidebarFrame, type NavItem } from "@/components/admin/nav-shared";
-import { PlusIcon, GearIcon } from "@/components/admin/icons";
+import { ContentIcon, TagIcon, NavLink, SidebarFrame, type NavItem } from "@/components/admin/nav-shared";
+import { PlusIcon, GearIcon, RepeatIcon } from "@/components/admin/icons";
 
 // Ивенты (организатор мероприятий) — только свои события, узкий сайдбар без
 // ссылок на другие разделы (Мониторинг/Соревнования/Школу/Фестивали).
@@ -38,10 +38,29 @@ const CREATE_ITEM: NavItem = {
   match: (p) => p === "/admin/content/new",
 };
 
+// Recurring Events v2 — Series/Templates больше НЕ имеют своих форм создания
+// (см. комментарий у createSeriesFromEvent/createEventTemplateFromEvent) —
+// только списки + управление уже существующими; создание идёт через
+// CREATE_ITEM выше (шаг "Публикация" мастера).
+const SERIES_ITEM: NavItem = {
+  href: "/admin/content/series",
+  label: "Регулярные события",
+  icon: <RepeatIcon />,
+  match: (p) => p.startsWith("/admin/content/series"),
+};
+
+const TEMPLATES_ITEM: NavItem = {
+  href: "/admin/content/templates",
+  label: "Шаблоны событий",
+  icon: <TagIcon />,
+  match: (p) => p.startsWith("/admin/content/templates"),
+};
+
 // Карточка управления конкретным событием — любой путь `/admin/content/<id>`
 // (и вложенные вкладки, включая pass-templates — она тоже вложена под [id]),
-// КРОМЕ "new"/"edit/*" (у них свой первый сегмент, не id события).
-const MANAGE_EVENT_PATTERN = /^\/admin\/content\/(?!new(?:\/|$)|edit(?:\/|$))([^/]+)/;
+// КРОМЕ "new"/"edit/*"/"series"/"templates" (у них свой первый сегмент, не id
+// события — "series"/"templates" добавлены Recurring Events v2, см. ниже).
+const MANAGE_EVENT_PATTERN = /^\/admin\/content\/(?!new(?:\/|$)|edit(?:\/|$)|series(?:\/|$)|templates(?:\/|$))([^/]+)/;
 
 export function EventAdminSidebar() {
   const pathname = usePathname() ?? "";
@@ -78,6 +97,11 @@ export function EventAdminSidebar() {
 
       <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-5 sm:flex-col sm:gap-0.5">
         <NavLink item={CREATE_ITEM} active={CREATE_ITEM.match(pathname)} />
+      </div>
+
+      <div className="mt-0 flex shrink-0 gap-1.5 sm:mt-5 sm:flex-col sm:gap-0.5">
+        <NavLink item={SERIES_ITEM} active={SERIES_ITEM.match(pathname)} />
+        <NavLink item={TEMPLATES_ITEM} active={TEMPLATES_ITEM.match(pathname)} />
       </div>
     </SidebarFrame>
   );
