@@ -58,8 +58,10 @@ export type WizardDraft = {
   organizerName: string;
   venueName: string;
   venueAddress: string;
-  latitude: string;
-  longitude: string;
+  // Широта/долгота убраны из мастера (2026-09-16, по прямому запросу
+  // пользователя) — поля Event.latitude/longitude остаются в схеме/API
+  // (см. schemas.ts, оба optional) для уже существующих событий, просто
+  // черновик их больше не собирает и не отправляет.
   startsAt: string;
   endsAt: string;
   capacity: string;
@@ -107,8 +109,6 @@ export function emptyWizardDraft(defaultCityId: string): WizardDraft {
     organizerName: "",
     venueName: "",
     venueAddress: "",
-    latitude: "",
-    longitude: "",
     startsAt: "",
     endsAt: "",
     capacity: "",
@@ -166,8 +166,6 @@ export function toApiPayload(d: WizardDraft, status: "DRAFT" | "PUBLISHED") {
     organizerName: d.organizerName || undefined,
     venueName: d.venueName || undefined,
     venueAddress: d.venueAddress || undefined,
-    latitude: d.latitude ? Number(d.latitude) : undefined,
-    longitude: d.longitude ? Number(d.longitude) : undefined,
     startsAt: d.startsAt || undefined,
     endsAt: d.endsAt || undefined,
     capacity: d.capacity ? Number(d.capacity) : undefined,

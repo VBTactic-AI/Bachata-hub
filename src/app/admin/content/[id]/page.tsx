@@ -51,43 +51,67 @@ export default async function EventOverviewPage({ params }: { params: Promise<{ 
 
   const basePath = `/admin/content/${event.id}`;
   const pct = (count: number) => (stats.totalOverall === 0 ? 0 : Math.round((count / stats.totalOverall) * 100));
+  const isLive = event.status === "PUBLISHED" && event.moderationStatus === "APPROVED";
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-app border border-admin-border bg-admin-card p-4">
-        <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">О событии</h2>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          <div className="flex justify-between gap-2 sm:justify-start">
-            <dt className="text-admin-muted">Формат</dt>
-            <dd className="m-0 font-medium text-night-text">{EVENT_TYPE_REGISTRY[event.format].label}</dd>
-          </div>
-          <div className="flex justify-between gap-2 sm:justify-start">
-            <dt className="text-admin-muted">Город</dt>
-            <dd className="m-0 font-medium text-night-text">{event.city.nameRu}</dd>
-          </div>
-          <div className="flex justify-between gap-2 sm:justify-start">
-            <dt className="text-admin-muted">Место</dt>
-            <dd className="m-0 font-medium text-night-text">{event.venueName}</dd>
-          </div>
-          <div className="flex justify-between gap-2 sm:justify-start">
-            <dt className="text-admin-muted">Начало</dt>
-            <dd className="m-0 font-medium text-night-text">{formatDateTime(event.startsAt)}</dd>
-          </div>
-          {event.endsAt && (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">О событии</h2>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
             <div className="flex justify-between gap-2 sm:justify-start">
-              <dt className="text-admin-muted">Окончание</dt>
-              <dd className="m-0 font-medium text-night-text">{formatDateTime(event.endsAt)}</dd>
+              <dt className="text-admin-muted">Формат</dt>
+              <dd className="m-0 font-medium text-night-text">{EVENT_TYPE_REGISTRY[event.format].label}</dd>
             </div>
-          )}
-          <div className="flex justify-between gap-2 sm:justify-start">
-            <dt className="text-admin-muted">Вместимость</dt>
-            <dd className="m-0 font-medium text-night-text">{event.capacity ?? "без ограничения"}</dd>
+            <div className="flex justify-between gap-2 sm:justify-start">
+              <dt className="text-admin-muted">Город</dt>
+              <dd className="m-0 font-medium text-night-text">{event.city.nameRu}</dd>
+            </div>
+            <div className="flex justify-between gap-2 sm:justify-start">
+              <dt className="text-admin-muted">Место</dt>
+              <dd className="m-0 font-medium text-night-text">{event.venueName}</dd>
+            </div>
+            <div className="flex justify-between gap-2 sm:justify-start">
+              <dt className="text-admin-muted">Начало</dt>
+              <dd className="m-0 font-medium text-night-text">{formatDateTime(event.startsAt)}</dd>
+            </div>
+            {event.endsAt && (
+              <div className="flex justify-between gap-2 sm:justify-start">
+                <dt className="text-admin-muted">Окончание</dt>
+                <dd className="m-0 font-medium text-night-text">{formatDateTime(event.endsAt)}</dd>
+              </div>
+            )}
+            <div className="flex justify-between gap-2 sm:justify-start">
+              <dt className="text-admin-muted">Вместимость</dt>
+              <dd className="m-0 font-medium text-night-text">{event.capacity ?? "без ограничения"}</dd>
+            </div>
+            <div className="flex justify-between gap-2 sm:justify-start">
+              <dt className="text-admin-muted">Регистрация</dt>
+              <dd className="m-0 font-medium text-night-text">{event.registrationEnabled ? "включена" : "выключена"}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* "Быстрые действия" (2026-09-16, по итогам UX-ревью) — раньше под KPI
+            оставалось пустое место, а частые переходы (билеты, экспорт списка,
+            публичная страница) искать приходилось по вкладкам/шапке. Только
+            реально существующие действия — ничего не придумано заново. */}
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Быстрые действия</h2>
+          <div className="flex flex-col gap-2 text-sm">
+            <a href={`${basePath}/passes`} className="text-admin-primaryHover hover:underline">
+              → Настроить билеты и Pass
+            </a>
+            <a href={`/api/events/${event.slug}/registrations/export`} className="text-admin-primaryHover hover:underline">
+              → Экспортировать участников (CSV)
+            </a>
+            {isLive && (
+              <a href={`/events/${event.slug}`} target="_blank" className="text-admin-primaryHover hover:underline">
+                → Открыть публичную страницу
+              </a>
+            )}
           </div>
-          <div className="flex justify-between gap-2 sm:justify-start">
-            <dt className="text-admin-muted">Регистрация</dt>
-            <dd className="m-0 font-medium text-night-text">{event.registrationEnabled ? "включена" : "выключена"}</dd>
-          </div>
-        </dl>
+        </div>
       </div>
 
       <div>

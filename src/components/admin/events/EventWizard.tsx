@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { EVENT_TYPE_REGISTRY, computePublishChecklist, isChecklistComplete, type EventStepId } from "@/lib/events/event-type-registry";
+import { formatEventTime } from "@/lib/format";
 import { WizardNav } from "./WizardNav";
 import { EventTypeSelector } from "./EventTypeSelector";
 import { EventPreviewSidebar } from "./EventPreviewSidebar";
@@ -74,6 +75,10 @@ export function EventWizard({
   const [saving, setSaving] = useState<"draft" | "publish" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // "Сохранено в HH:MM" рядом с кнопкой (2026-09-16, по итогам UX-ревью) —
+  // раньше кнопка ничем не подтверждала, что черновик реально сохранился и
+  // когда: спиннер мелькал и пропадал, а дальше — тишина.
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
   const config = EVENT_TYPE_REGISTRY[draft.format];
   const steps = config.steps;
@@ -141,6 +146,7 @@ export function EventWizard({
         return;
       }
       const isFirstSave = !draft.id;
+      setLastSavedAt(new Date());
       setDraft((d) => ({
         ...d,
         id: body.event.id,
@@ -253,9 +259,14 @@ export function EventWizard({
           <h1 className="m-0 font-night text-base font-extrabold uppercase tracking-wide text-night-text">
             {draft.id ? "Редактирование события" : "Создание события"}
           </h1>
-          <Button type="button" variant="adminOutline" size="sm" disabled={!canSaveDraft || saving !== null} onClick={() => save("DRAFT")}>
-            {saving === "draft" ? "…" : "Сохранить черновик"}
-          </Button>
+          <div className="flex items-center gap-2.5">
+            {saving !== "draft" && lastSavedAt && (
+              <span className="text-xs text-admin-muted">Сохранено в {formatEventTime(lastSavedAt)}</span>
+            )}
+            <Button type="button" variant="adminOutline" size="sm" disabled={!canSaveDraft || saving !== null} onClick={() => save("DRAFT")}>
+              {saving === "draft" ? "Сохраняем…" : "Сохранить черновик"}
+            </Button>
+          </div>
         </div>
 
         <div className="p-5">
@@ -270,6 +281,22 @@ export function EventWizard({
             <EventTypeSelector
               value={draft.format}
               onChange={(format) => {
+                // Подтверждение при смене формата (2026-09-16, по итогам UX-ревью) —
+                // раньше клик тут же тихо сбрасывал шаг на первый и менял набор
+                // шагов, даже если организатор уже успел заполнить несколько
+                // экранов. hasProgress — грубая, но дешёвая эвристика: реальный
+                // прогресс либо уже сдвинул шаг вперёд, либо есть название.
+                if (format !== draft.format) {
+                  const hasProgress = stepIndex > 0 || draft.title.trim().length > 0;
+                  if (
+                    hasProgress &&
+                    !window.confirm(
+                      "Сменить тип события? Мастер вернётся на первый шаг, а набор шагов ниже изменится под новый формат. Уже введённые данные (название, дата и т.д.) не пропадут, но часть заполненных шагов может стать неактуальной."
+                    )
+                  ) {
+                    return;
+                  }
+                }
                 patch({ format });
                 setStepIndex(0);
               }}

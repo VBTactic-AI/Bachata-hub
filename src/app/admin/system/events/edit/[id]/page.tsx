@@ -49,8 +49,6 @@ export default async function EditSystemEventPage({ params }: { params: Promise<
     organizerName: event.organizerName ?? "",
     venueName: event.venueName,
     venueAddress: event.venueAddress ?? "",
-    latitude: event.latitude != null ? String(event.latitude) : "",
-    longitude: event.longitude != null ? String(event.longitude) : "",
     startsAt: dateToLocalInputValue(event.startsAt),
     endsAt: event.endsAt ? dateToLocalInputValue(event.endsAt) : "",
     capacity: event.capacity != null ? String(event.capacity) : "",

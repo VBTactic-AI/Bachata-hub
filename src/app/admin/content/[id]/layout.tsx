@@ -2,10 +2,11 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess, isOwnerOrAdmin } from "@/server/events/access";
-import { myEventStatusLabel } from "@/lib/events/event-type-registry";
+import { EVENT_TYPE_REGISTRY, myEventStatusLabel } from "@/lib/events/event-type-registry";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { EventDashboardTabs } from "@/components/admin/events/EventDashboardTabs";
 import { buttonVariants } from "@/components/ui/button";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 // §12 ТЗ (Event Dashboard, 2026-09-15) — единая оболочка ОДНОГО события:
@@ -33,7 +34,19 @@ export default async function EventDashboardLayout({
 
   const event = await prisma.event.findUnique({
     where: { id },
-    select: { id: true, slug: true, title: true, createdById: true, status: true, moderationStatus: true, certainty: true },
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      createdById: true,
+      status: true,
+      moderationStatus: true,
+      certainty: true,
+      format: true,
+      photoUrl: true,
+      startsAt: true,
+      city: { select: { nameRu: true } },
+    },
   });
   if (!event) notFound();
   if (!(await hasEventAccess(event, user))) redirect("/admin/content");
@@ -47,13 +60,31 @@ export default async function EventDashboardLayout({
         <a href="/admin/content" className="text-sm text-admin-muted hover:text-night-text hover:underline">
           ← К моим событиям
         </a>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">{event.title || "Без названия"}</h1>
-          <StatusBadge
-            label={myEventStatusLabel(event.status, event.moderationStatus)}
-            variant={isLive ? "success" : event.moderationStatus === "REJECTED" ? "danger" : "neutral"}
-          />
-          {event.certainty === "TENTATIVE" && <StatusBadge label="Дата уточняется" variant="warning" />}
+        {/* Обложка + город/дата (2026-09-16, по итогам UX-ревью) — раньше
+            шапка была чистым текстом, ни одно событие нельзя было опознать
+            с одного взгляда; тот же приём, что и в таблице "Мои события". */}
+        <div className="mt-1 flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-app-sm bg-gradient-to-br from-admin-primary/30 to-admin-violet/30 text-xl">
+            {event.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={event.photoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span aria-hidden="true">{EVENT_TYPE_REGISTRY[event.format].icon}</span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">{event.title || "Без названия"}</h1>
+              <StatusBadge
+                label={myEventStatusLabel(event.status, event.moderationStatus)}
+                variant={isLive ? "success" : event.moderationStatus === "REJECTED" ? "danger" : "neutral"}
+              />
+              {event.certainty === "TENTATIVE" && <StatusBadge label="Дата уточняется" variant="warning" />}
+            </div>
+            <p className="m-0 mt-0.5 text-sm text-admin-muted">
+              {EVENT_TYPE_REGISTRY[event.format].label} · {event.city.nameRu} · {formatDateTime(event.startsAt)}
+            </p>
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap gap-3 text-sm">
           {canManage && (
