@@ -219,9 +219,9 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                             )}
                           </div>
                           <div className="min-w-0">
-                            {/* Клик по названию = "Редактировать" (мастер) — по прямому запросу
-                                пользователя; "Управление" (карточка) — отдельная иконка в действиях. */}
-                            <a href={`/admin/content/edit/${e.id}`} className="block truncate font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                            {/* Клик по названию = "Управление" (карточка события) — по прямому
+                                запросу пользователя; "Редактировать" (мастер) — отдельная иконка. */}
+                            <a href={`/admin/content/${e.id}`} className="block truncate font-medium text-night-text hover:text-admin-primaryHover hover:underline">
                               {e.title || "Без названия"}
                             </a>
                             <p className="m-0 truncate text-xs text-admin-muted">
@@ -281,7 +281,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <a href={`/admin/content/edit/${e.id}`} className="block truncate font-medium text-night-text hover:text-admin-primaryHover hover:underline">
+                        <a href={`/admin/content/${e.id}`} className="block truncate font-medium text-night-text hover:text-admin-primaryHover hover:underline">
                           {e.title || "Без названия"}
                         </a>
                         <EventDeleteButton eventId={e.id} title={e.title} />
