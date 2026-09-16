@@ -3,16 +3,25 @@
 Дата: 2026-09-17. Продолжение `docs/FESTIVAL_ENGINE_AUDIT.md` и
 `docs/FESTIVAL_ENGINE_ER.md`.
 
-**Статус: схема реализована.** Все решения из раздела 2 внесены в
-`prisma/schema.prisma`, миграция написана —
+**Статус: схема реализована И применена к реальной БД (2026-09-17).** Все
+решения из раздела 2 внесены в `prisma/schema.prisma`, миграция написана —
 `prisma/migrations/20260917000000_festival_ui_features/migration.sql`.
 `npx prisma validate`/`generate`, `npx tsc --noEmit` (после точечных правок в
 `reviews/page.tsx`, `BroadcastComposer.tsx`, `subscriptions.ts`,
 `pass-service.test.ts` — см. `docs/PROGRESS.md`), `npx vitest run` (1358
-тестов) и `npx next build` — все зелёные. **Миграция НЕ применена к реальной
-БД** — Supabase MCP недоступен в этой сессии (та же ситуация, что и с
-`20260916140000_festival_engine`); применить `apply_migration`, когда MCP
-будет доступен, ДО того, как начнётся сервисный слой поверх этих таблиц.
+тестов) и `npx next build` — все зелёные.
+
+Применена к реальной БД напрямую через Prisma Client (`$executeRawUnsafe`
+по каждому statement, Supabase MCP по-прежнему недоступен в этой сессии) —
+**вместе с предыдущей миграцией `20260916140000_festival_engine`**,
+которая тоже оставалась неприменённой с прошлой сессии (обнаружено при
+попытке применить эту: `ProgramItem`/`Festival` в реальной БД ещё не
+существовали, были только старые `EventProgramItem`/`FestivalDetails`).
+Проверено на реальных данных: 1 строка `FestivalDetails` → 1 `Festival`
+(`legacy_...`), 1 `EventProgramItem` → 1 `ProgramItem` с верным
+`festivalId`, `PassAccessGrant` пуст (0 строк, ничего не могло сломаться
+при рефактор-миграции). Итоговое число таблиц в БД: 86 → 91 (+5 новых
+Festival-моделей, ноль изменений от переименования/бэкафилла).
 
 ## 0. Исправление моей ошибки
 
