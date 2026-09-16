@@ -2,6 +2,7 @@
 
 import { t } from "@/lib/i18n/dictionary";
 import { Input, Label } from "@/components/ui/field";
+import { cn } from "@/lib/cn";
 import type { WizardDraft } from "../wizard-types";
 
 const fieldClass =
@@ -13,11 +14,17 @@ const checkboxClass = "h-4 w-4 rounded border-admin-border bg-admin-card accent-
 // раздел вкладки "Билеты и Pass" показать по умолчанию после публикации.
 // Ничего не блокирует — организатор технически может завести и TicketType,
 // и Pass независимо от выбора здесь.
-const TICKETING_MODE_OPTIONS: { value: WizardDraft["ticketingMode"]; label: string; hint: string }[] = [
-  { value: "FREE", label: "Бесплатное событие", hint: "Без продажи билетов." },
-  { value: "TICKETS", label: "Продажа билетов", hint: "Простые билеты на это событие (Teacher/Dancer/…)." },
-  { value: "PASSES", label: "Продажа Pass", hint: "Доступ к нескольким пунктам программы (фестиваль/интенсив)." },
-  { value: "TICKETS_AND_PASSES", label: "Билеты + Pass", hint: "И то, и другое одновременно." },
+//
+// Редизайн (2026-09-16, по прямому запросу пользователя) — раньше это был
+// голый список нативных radio; теперь карточки-кнопки, тот же визуальный
+// язык, что и у EventTypeSelector (иконка в квадрате + жирный заголовок +
+// приглушённая подсказка + выделение primary-рамкой при выборе), чтобы
+// весь мастер использовал один и тот же паттерн "выбор одного из вариантов".
+const TICKETING_MODE_OPTIONS: { value: WizardDraft["ticketingMode"]; label: string; hint: string; icon: string }[] = [
+  { value: "FREE", label: "Бесплатное событие", hint: "Без продажи билетов.", icon: "🆓" },
+  { value: "TICKETS", label: "Продажа билетов", hint: "Простые билеты на это событие (Teacher/Dancer/…).", icon: "🎫" },
+  { value: "PASSES", label: "Продажа Pass", hint: "Доступ к нескольким пунктам программы (фестиваль/интенсив).", icon: "🏷️" },
+  { value: "TICKETS_AND_PASSES", label: "Билеты + Pass", hint: "И то, и другое одновременно.", icon: "🎟️" },
 ];
 
 // STEP "Tickets / registration" — общий для PARTY (Early Bird/Regular/At
@@ -31,24 +38,44 @@ export function StepTickets({ draft, onChange }: { draft: WizardDraft; onChange:
     <div className="flex w-full flex-col gap-3.5">
       <h2 className="m-0 font-night text-lg font-bold text-night-text">Билеты и регистрация</h2>
 
-      <div className="rounded-app-sm border border-admin-border p-3">
-        <p className="m-0 mb-2 text-sm font-semibold text-night-text">Способ доступа</p>
-        <div className="flex flex-col gap-1.5">
-          {TICKETING_MODE_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-start gap-2 text-sm text-night-text">
-              <input
-                type="radio"
-                name="ticketingMode"
-                checked={draft.ticketingMode === opt.value}
-                onChange={() => onChange({ ticketingMode: opt.value })}
-                className="mt-0.5 accent-admin-primary"
-              />
-              <span>
-                {opt.label}
-                <span className="block text-xs text-admin-muted">{opt.hint}</span>
-              </span>
-            </label>
-          ))}
+      <div className="rounded-app-sm border border-admin-border p-3.5">
+        <p className="m-0 mb-3 text-[10.5px] font-semibold uppercase tracking-wide text-admin-muted">Способ доступа</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {TICKETING_MODE_OPTIONS.map((opt) => {
+            const selected = draft.ticketingMode === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onChange({ ticketingMode: opt.value })}
+                aria-pressed={selected}
+                className={cn(
+                  "flex items-start gap-2.5 rounded-app-sm border p-3 text-left transition duration-150 ease-out",
+                  selected
+                    ? "border-admin-primary bg-admin-primary/10 shadow-[0_0_0_1px_theme(colors.admin.primary)]"
+                    : "border-admin-border bg-admin-card2 hover:border-admin-primary/60"
+                )}
+              >
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-admin-border bg-admin-card text-lg"
+                  aria-hidden="true"
+                >
+                  {opt.icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-bold text-night-text">{opt.label}</span>
+                  <span className="block text-[11.5px] text-admin-muted">{opt.hint}</span>
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "mt-1 h-4 w-4 shrink-0 rounded-full border-2",
+                    selected ? "border-admin-primary bg-admin-primary" : "border-admin-disabled"
+                  )}
+                />
+              </button>
+            );
+          })}
         </div>
         {(showTicketsHint || showPassesHint) &&
           (draft.id ? (
