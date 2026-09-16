@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { EventFormat } from "@prisma/client";
-import { ALL_EVENT_FORMATS, EVENT_TYPE_REGISTRY, FEATURED_EVENT_FORMATS } from "@/lib/events/event-type-registry";
+import { WIZARD_SELECTABLE_EVENT_FORMATS, EVENT_TYPE_REGISTRY, FEATURED_EVENT_FORMATS } from "@/lib/events/event-type-registry";
 import { cn } from "@/lib/cn";
 
 // Выбор типа события (редизайн 2026-09-16, по прямому запросу пользователя,
@@ -15,7 +15,7 @@ import { cn } from "@/lib/cn";
 // - Мобильный (< sm) — одна горизонтально прокручиваемая лента чипов на
 //   ВСЕ форматы (вертикальные карточки на телефоне съедали бы весь экран
 //   ещё до формы, найдено при согласовании макета).
-const OTHER_EVENT_FORMATS: EventFormat[] = ALL_EVENT_FORMATS.filter((f) => !FEATURED_EVENT_FORMATS.includes(f));
+const OTHER_EVENT_FORMATS: EventFormat[] = WIZARD_SELECTABLE_EVENT_FORMATS.filter((f) => !FEATURED_EVENT_FORMATS.includes(f));
 
 export function EventTypeSelector({
   value,
@@ -36,7 +36,7 @@ export function EventTypeSelector({
     <div className="flex flex-col gap-3">
       {/* ---------- Мобильный вариант — горизонтальная лента ---------- */}
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:hidden">
-        {ALL_EVENT_FORMATS.map((format) => {
+        {WIZARD_SELECTABLE_EVENT_FORMATS.map((format) => {
           const config = EVENT_TYPE_REGISTRY[format];
           const disabled = isDisabled(format);
           const selected = value === format;

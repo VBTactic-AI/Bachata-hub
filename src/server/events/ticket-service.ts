@@ -455,7 +455,7 @@ export async function getEventTicketTypeRevenue(eventId: string, user: User): Pr
 // ---------------------------------------------------------------------------
 // Межсобытийный Pass фестиваля (этап 3, 2026-09-16) — см. подробный
 // комментарий у модели Ticket в schema.prisma. Программа фестиваля состоит
-// из пунктов (EventProgramItem), часть из которых ссылается на реальные,
+// из пунктов (ProgramItem), часть из которых ссылается на реальные,
 // отдельно опубликованные дочерние Event (linkedEventId — party/workshop/
 // contest со своей публичной страницей). Pass, купленный НА СОБЫТИИ
 // ФЕСТИВАЛЯ, должен давать вход на эти дочерние события — без повторной
@@ -469,18 +469,22 @@ export type FestivalPassMatch = {
 };
 
 // Ищет действующий Pass, купленный этим танцором на фестивале, к которому
-// (через EventProgramItem.linkedEvent) относится eventId — и который даёт
+// (через ProgramItem.linkedEvent) относится eventId — и который даёт
 // доступ именно к этому пункту программы. Пустой PassAccessGrant у Pass =
 // доступ ко всему (см. комментарий у модели Pass), поэтому Full Pass не
 // обязан явно перечислять каждый пункт программы.
 export async function findFestivalPassForEvent(eventId: string, dancerId: string): Promise<FestivalPassMatch | null> {
-  const programItem = await prisma.eventProgramItem.findFirst({
+  const programItem = await prisma.programItem.findFirst({
     where: { linkedEventId: eventId },
-    select: { id: true, festivalDetails: { select: { eventId: true } } },
+    select: { id: true, festival: { select: { eventId: true } } },
   });
   if (!programItem) return null; // это событие не является дочерним ни для одного фестиваля
 
-  const festivalEventId = programItem.festivalDetails.eventId;
+  const festivalEventId = programItem.festival.eventId;
+  // Festival.eventId nullable (черновик без Pass ещё не может продавать —
+  // см. docs/FESTIVAL_ENGINE_ER.md) — купить Pass в принципе не на чём,
+  // совпадения нет и быть не может.
+  if (!festivalEventId) return null;
 
   const passTicket = await prisma.ticket.findFirst({
     where: {

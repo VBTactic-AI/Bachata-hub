@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { t } from "@/lib/i18n/dictionary";
 import { Input, Label, Select, Textarea } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
-import { EVENT_TYPE_REGISTRY, ALL_EVENT_FORMATS } from "@/lib/events/event-type-registry";
+import { EVENT_TYPE_REGISTRY, WIZARD_SELECTABLE_EVENT_FORMATS } from "@/lib/events/event-type-registry";
 
 const fieldClass = "border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 const groupClass = "flex flex-col gap-3 rounded-app border border-admin-border bg-admin-card p-4";
@@ -168,7 +168,7 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
           <Label className="text-admin-muted">
             Тип события
             <Select value={format} onChange={(e) => setFormat(e.target.value)} className={fieldClass}>
-              {ALL_EVENT_FORMATS.map((f) => (
+              {WIZARD_SELECTABLE_EVENT_FORMATS.map((f) => (
                 <option key={f} value={f}>
                   {EVENT_TYPE_REGISTRY[f].icon} {EVENT_TYPE_REGISTRY[f].label}
                 </option>

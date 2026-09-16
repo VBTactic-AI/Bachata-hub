@@ -9,7 +9,6 @@ const STEP_LABELS: Record<EventStepId, string> = {
   partyDetails: "О вечеринке",
   sessions: "Занятия",
   details: "Детали",
-  festivalProgram: "Программа",
   tickets: "Билеты",
   publish: "Публикация",
   recurrence: "Повторение",

@@ -100,6 +100,7 @@ model User {
   moderatedEvents             Event[]             @relation("EventModerator")
   createdEventTemplates       EventTemplate[]     @relation("EventTemplateCreator")
   createdEventSeries          EventSeries[]       @relation("EventSeriesCreator")
+  createdFestivals            Festival[]          @relation("FestivalCreator")
   reviews                     Review[]            @relation("ReviewAuthor")
   moderatedReviews            Review[]            @relation("ReviewModerator")
   moderationLogs              ModerationLog[]     @relation("ModerationActor")
@@ -188,6 +189,7 @@ model City {
   eventSuggestions EventSuggestion[]
   eventTemplates   EventTemplate[]
   eventSeries      EventSeries[]
+  festivals        Festival[]
 
   @@index([countryId])
 }
@@ -258,7 +260,7 @@ model Teacher {
 
   schedules            ClassSchedule[]
   masterclassSessions  MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
-  festivalProgramItems EventProgramItem[] // Events Engine, этап 6 — тот же принцип переиспользования, что и masterclassSessions выше
+  festivalProgramItems ProgramItem[] // Festival Engine — тот же принцип переиспользования, что и masterclassSessions выше
 
   @@index([schoolId])
 }
@@ -550,7 +552,12 @@ model Event {
   // выше — новых таблиц для него не заводим.
   partyDetails           PartyDetails?
   masterclassDetails     MasterclassDetails?
-  festivalDetails        FestivalDetails? // Events Engine, этап 6 — заполняется только когда format = FESTIVAL
+  // Festival Engine — обратная связь bridge-Event → Festival (Festival.eventId,
+  // по образцу Competition.eventId, D3). Festival — САМОСТОЯТЕЛЬНАЯ сущность,
+  // не деталь-таблица Event (в отличие от PartyDetails/MasterclassDetails
+  // выше) — см. docs/FESTIVAL_ENGINE_ER.md. Это событие может быть bridge
+  // максимум одного Festival (nullable, @unique на Festival.eventId).
+  festival               Festival?
   priceOptions           EventPriceOption[]
   // Простые билеты на само это событие (2026-09-16) — см. комментарий у
   // TicketType. Независимо от passes ниже — событие может продавать и то, и
@@ -561,12 +568,12 @@ model Event {
   tickets                Ticket[]
   promoCodes             PromoCode[]
   media                  EventMedia[]
-  // Обратная связь для EventProgramItem.linkedEvent ниже — отдельное
+  // Обратная связь для ProgramItem.linkedEvent ниже — отдельное
   // "настоящее" событие (party/workshop/contest) со своей публичной
   // страницей, на которое ссылается пункт программы фестиваля. Не путать с
-  // festivalDetails выше — то событие ЯВЛЯЕТСЯ фестивалем, это — событие, НА
+  // festival выше — то событие ЯВЛЯЕТСЯ bridge фестиваля, это — событие, НА
   // КОТОРОЕ ссылается программа чужого фестиваля.
-  linkedFromProgramItems EventProgramItem[]  @relation("ProgramItemLinkedEvent")
+  linkedFromProgramItems ProgramItem[]  @relation("ProgramItemLinkedEvent")
 
   @@unique([seriesId, occurrenceDate]) // идемпотентность генератора — NULL/NULL (обычные разовые события) не конфликтуют между собой в Postgres
   @@index([cityId, startsAt])
@@ -721,7 +728,7 @@ model TicketType {
 // - PassPriceTier — несколько ценовых периодов (Early Bird/Regular/Late) с
 //   собственным окном действия; Pass.price/currency остаются "базовой"
 //   ценой (используется, если ни один тир не активен на текущий момент).
-// - PassAccessGrant — к каким конкретным пунктам программы (EventProgramItem
+// - PassAccessGrant — к каким конкретным пунктам программы (ProgramItem
 //   фестиваля) или сессиям мастер-класса (MasterclassSession) даёт доступ
 //   этот Pass. Пустой список = доступ ко ВСЕМУ (Full Pass не обязан
 //   перечислять каждый пункт программы вручную) — ограничение начинается
@@ -862,7 +869,7 @@ model PassAccessGrant {
   passId               String
   pass                 Pass                @relation(fields: [passId], references: [id], onDelete: Cascade)
   programItemId        String?
-  programItem          EventProgramItem?   @relation(fields: [programItemId], references: [id], onDelete: Cascade)
+  programItem          ProgramItem?        @relation(fields: [programItemId], references: [id], onDelete: Cascade)
   masterclassSessionId String?
   masterclassSession   MasterclassSession? @relation(fields: [masterclassSessionId], references: [id], onDelete: Cascade)
   createdAt            DateTime            @default(now())
@@ -950,7 +957,7 @@ model PromoCodePass {
 //   ticket-service.ts.
 // - Событие С Pass, но БЕЗ собственного билета (2026-09-16, этап 3
 //   "межсобытийный Pass фестиваля") — если это событие является дочерним
-//   (EventProgramItem.linkedEvent) для фестиваля, на котором танцор держит
+//   (ProgramItem.linkedEvent) для фестиваля, на котором танцор держит
 //   действующий Pass с доступом к этому пункту программы, вход
 //   материализуется отдельным "производным" Ticket с eventId = ЭТО дочернее
 //   событие, passId = Pass фестиваля, price = null (деньги уже получены при
@@ -1103,20 +1110,54 @@ model MasterclassSession {
 }
 
 // ---------------------------------------------------------------------------
-// FestivalDetails / EventProgramItem — программа фестиваля (Events Engine,
-// этап 6)
+// Festival / ProgramItem — Festival Engine
 // ---------------------------------------------------------------------------
 //
-// 1:1 к Event — тот же паттерн, что и PartyDetails/MasterclassDetails,
-// заполняется только когда Event.format = FESTIVAL (audit_report.md FEST-001:
-// "не создавать параллельную модель Festival, по аналогии с PartyDetails
-// добавить FestivalDetails/EventProgramItem[]"). "Пропуска"/цены festival —
-// НЕ новая сущность: переиспользуется уже существующий EventPriceOption
-// (общий для PARTY/MASTERCLASS/FESTIVAL, см. комментарий у него).
-// "Преподаватели фестиваля" — НЕ отдельный денормализованный список, а
-// производная от EventProgramItem.teacherId у пунктов типа WORKSHOP (тот же
-// принцип переиспользования Teacher, что и MasterclassSession.teacherId) —
-// без риска рассинхронизации отдельного списка с реальным расписанием.
+// Festival — САМОСТОЯТЕЛЬНАЯ сущность верхнего уровня (НЕ Event(format=
+// FESTIVAL), НЕ деталь-таблица Event по образцу PartyDetails/
+// MasterclassDetails — предыдущая реализация FestivalDetails/
+// EventProgramItem этого типа была пересмотрена и заменена, см.
+// docs/FESTIVAL_ENGINE_ER.md/FESTIVAL_ENGINE_AUDIT.md). Публикация/
+// модерация/SEO/Team/Ticket-Pass фестиваля НЕ дублируются на Festival —
+// они целиком идут через опционально привязанный bridge-Event (eventId,
+// тот же паттерн, что Competition.eventId, D3). Продуктовое правило (не
+// проверяется в БД, только в сервисном слое): фестиваль можно
+// опубликовать, как только создан хотя бы один Pass (любого типа) на
+// одном из событий его программы — отдельного действия "привязать
+// событие" не существует, его результат — побочный эффект создания Pass.
+// "Пропуска"/цены — НЕ новая сущность: переиспользуется уже существующий
+// Pass/PassAccessGrant/EventPriceOption на bridge-Event. "Преподаватели
+// фестиваля" — НЕ отдельный денормализованный список, а производная от
+// ProgramItem.teacherId у пунктов типа WORKSHOP (тот же принцип
+// переиспользования Teacher, что и MasterclassSession.teacherId).
+model Festival {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  description String?
+  cityId      String
+  city        City      @relation(fields: [cityId], references: [id])
+  // Свободный текст, как Event.venueName/Competition.venue — формальной
+  // модели площадки/зала в проекте нет нигде, заводить её только для
+  // Festival было бы первым таким прецедентом (см. аудит §7.2).
+  venueName   String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  createdById String
+  createdBy   User      @relation("FestivalCreator", fields: [createdById], references: [id])
+  // Bridge-Event — см. комментарий выше у модели. Nullable: черновик
+  // Festival можно готовить и редактировать без привязанного события.
+  eventId     String?   @unique
+  event       Event?    @relation(fields: [eventId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  programItems ProgramItem[]
+
+  @@index([cityId])
+  @@index([createdById])
+}
+
 enum FestivalProgramItemType {
   WORKSHOP
   PARTY
@@ -1124,37 +1165,29 @@ enum FestivalProgramItemType {
   OTHER
 }
 
-model FestivalDetails {
-  id      String @id @default(cuid())
-  eventId String @unique
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  programItems EventProgramItem[]
-}
-
-model EventProgramItem {
-  id                String                  @id @default(cuid())
-  festivalDetailsId String
-  festivalDetails   FestivalDetails         @relation(fields: [festivalDetailsId], references: [id], onDelete: Cascade)
-  title             String
-  type              FestivalProgramItemType
-  startTime         DateTime
-  endTime           DateTime?
-  teacherId         String?
-  teacher           Teacher?                @relation(fields: [teacherId], references: [id])
+model ProgramItem {
+  id         String                  @id @default(cuid())
+  festivalId String
+  festival   Festival                @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+  title      String
+  type       FestivalProgramItemType
+  startTime  DateTime
+  endTime    DateTime?
+  teacherId  String?
+  teacher    Teacher?                @relation(fields: [teacherId], references: [id])
   // Опциональная ссылка на дочернее "настоящее" событие со своей публичной
   // страницей (party/workshop как отдельный Event, или CONTEST — у которого,
   // в свою очередь, уже есть Event.competition, см. D3) — не заводим
   // отдельный linkedCompetitionId, Event уже покрывает оба случая.
-  linkedEventId     String?
-  linkedEvent       Event?                  @relation("ProgramItemLinkedEvent", fields: [linkedEventId], references: [id])
-  order             Int                     @default(0)
+  linkedEventId String?
+  linkedEvent   Event?                @relation("ProgramItemLinkedEvent", fields: [linkedEventId], references: [id])
+  order         Int                   @default(0)
 
   // СЛОЙ 2 — Pass может ограничивать доступ конкретно этим пунктом
   // программы (см. комментарий у PassAccessGrant).
   passAccessGrants PassAccessGrant[]
 
-  @@index([festivalDetailsId])
+  @@index([festivalId])
   @@index([teacherId])
   @@index([linkedEventId])
 }
@@ -1387,11 +1420,13 @@ model EventTemplate {
   tags                String[]
   certainty           EventCertainty     @default(CONFIRMED)
   photoUrl            String?
-  // Тип-специфичные настройки по умолчанию (party/masterclass/festival) — тот
+  // Тип-специфичные настройки по умолчанию (party/masterclass) — тот
   // же формат, что *DetailsInputSchema в src/server/events/schemas.ts. Json,
-  // т.к. шаблон не имеет собственных строк PartyDetails/MasterclassDetails/
-  // FestivalDetails (docs/02_DATABASE_SPECIFICATION.md §21 — Json только для
-  // настраиваемых структур, не для нормализованных данных).
+  // т.к. шаблон не имеет собственных строк PartyDetails/MasterclassDetails
+  // (docs/02_DATABASE_SPECIFICATION.md §21 — Json только для
+  // настраиваемых структур, не для нормализованных данных). FESTIVAL сюда
+  // не относится — Festival больше не создаётся через EventTemplate/Wizard,
+  // см. Festival Engine (docs/FESTIVAL_ENGINE_ER.md).
   typeDetails         Json?
 
   status    EventTemplateStatus @default(ACTIVE)

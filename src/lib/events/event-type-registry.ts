@@ -102,7 +102,6 @@ export type EventStepId =
   | "partyDetails"
   | "sessions"
   | "details"
-  | "festivalProgram"
   | "tickets"
   | "publish"
   | "recurrence";
@@ -149,16 +148,19 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
     // (/admin/competitions/[id]), не дублируется здесь.
     steps: ["basic", "datetime", "publish"],
   },
-  // Events Engine, этап 6 — программа фестиваля (FestivalDetails +
-  // EventProgramItem, см. schema.prisma). Раньше FESTIVAL был
-  // generic-конфигурацией без своего шага — теперь у него есть "Программа",
-  // по аналогии со StepSessions у MASTERCLASS.
+  // Festival Engine — FESTIVAL больше НЕ создаётся через Event Wizard:
+  // Festival — отдельная first-class сущность со своим флоу создания (см.
+  // docs/FESTIVAL_ENGINE_ER.md), bridge-Event для неё заводится изнутри
+  // этого флоу, не выбором формата организатором (см.
+  // WIZARD_SELECTABLE_EVENT_FORMATS ниже — FESTIVAL туда не входит).
+  // Запись в реестре остаётся: существующие bridge-Event уже имеют
+  // format=FESTIVAL, label/icon им всё ещё нужны в общих списках/карточках.
   FESTIVAL: {
     format: "FESTIVAL",
     label: "Фестиваль",
     description: "Многодневный танцевальный фестиваль",
     icon: "🎪",
-    steps: ["basic", "datetime", "festivalProgram", "tickets", "publish"],
+    steps: ["basic", "datetime", "tickets", "publish"],
   },
   INTENSIVE: {
     format: "INTENSIVE",
@@ -216,6 +218,16 @@ export const ALL_EVENT_FORMATS: EventFormat[] = [
   "PRACTICE",
   "OTHER",
 ];
+
+// Festival Engine — форматы, которые организатор может выбрать САМ при
+// создании обычного события (Event Wizard/EventTemplate). FESTIVAL
+// исключён: он больше не создаётся выбором формата — bridge-Event для
+// Festival заводится изнутри флоу создания Festival, см. комментарий у
+// EVENT_TYPE_REGISTRY.FESTIVAL. Отличается от ALL_EVENT_FORMATS
+// (используется там, где FESTIVAL — валидный существующий формат для
+// фильтра/подписки, а не выбор при создании — списки событий, настройки
+// уведомлений).
+export const WIZARD_SELECTABLE_EVENT_FORMATS: EventFormat[] = ALL_EVENT_FORMATS.filter((f) => f !== "FESTIVAL");
 
 export function getEventTypeConfig(format: EventFormat): EventTypeConfig {
   return EVENT_TYPE_REGISTRY[format];

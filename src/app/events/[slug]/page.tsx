@@ -32,22 +32,6 @@ async function getEvent(slug: string) {
       priceOptions: { orderBy: { order: "asc" } },
       partyDetails: true,
       masterclassDetails: { include: { sessions: { include: { teacher: true }, orderBy: { order: "asc" } } } },
-      // Events Engine, этап 6 — программа фестиваля. linkedEvent — только
-      // минимум для ссылки-карточки (slug/title/format); status/moderationStatus
-      // читаются ТОЛЬКО для проверки видимости ниже (QA BUG-007) — Prisma не
-      // умеет фильтровать to-one реляцию в самом include, поэтому непубличный
-      // linkedEvent обнуляется в коде сразу после запроса, до рендера.
-      festivalDetails: {
-        include: {
-          programItems: {
-            include: {
-              teacher: true,
-              linkedEvent: { select: { slug: true, title: true, format: true, status: true, moderationStatus: true } },
-            },
-            orderBy: { order: "asc" },
-          },
-        },
-      },
       // "О соревновании" (2026-09-14) — только публичные поля Competition
       // (rulesText/rulesUrl документированы в схеме как "для зрителей"),
       // без затрагивания остального движка слоя 3 (divisions — только имена
@@ -266,33 +250,6 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         )
       : [];
 
-  // Events Engine, этап 6 — та же группировка по дням, что и у расписания
-  // мастер-класса выше, только источник — EventProgramItem.
-  //
-  // QA BUG-007 — linkedEvent обнуляется здесь, если он сам не публично виден
-  // (isEventDirectlyVisible — тот же гейт, что и у этой страницы выше, вынесен
-  // в src/lib/events.ts, чтобы не размножать один инвариант и чтобы его можно
-  // было протестировать без Prisma). Prisma не умеет фильтровать to-one
-  // реляцию прямо в include/select, поэтому проверка — здесь, до любого
-  // рендера, а не "на месте" в JSX (иначе легко забыть при следующей правке).
-  const programItems = (event.festivalDetails?.programItems ?? []).map((p) => ({
-    ...p,
-    linkedEvent: p.linkedEvent && isEventDirectlyVisible(p.linkedEvent) ? p.linkedEvent : null,
-  }));
-  const programDays: [string, typeof programItems][] =
-    programItems.length > 0
-      ? Array.from(
-          programItems.reduce((map, p) => {
-            const key = formatEventDate(p.startTime);
-            const list = map.get(key) ?? [];
-            list.push(p);
-            map.set(key, list);
-            return map;
-          }, new Map<string, typeof programItems>())
-        )
-      : [];
-  const PROGRAM_TYPE_LABELS: Record<string, string> = { WORKSHOP: "Мастер-класс", PARTY: "Вечеринка", COMPETITION: "Конкурс", OTHER: "Другое" };
-
   const competition = event.competition;
   const divisionNames = competition ? Array.from(new Set(competition.divisions.map((d) => d.category.name))) : [];
 
@@ -437,40 +394,6 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
             </section>
           )}
 
-          {programDays.length > 0 && (
-            <section>
-              <SectionTitle accent={EVENT_FORMAT_COLOR.FESTIVAL}>Программа</SectionTitle>
-              <div className="flex flex-col gap-5">
-                {programDays.map(([day, list]) => (
-                  <div key={day}>
-                    <p className="m-0 mb-2 text-xs font-bold uppercase tracking-wide text-night-muted">{day}</p>
-                    <div className="flex flex-col gap-2">
-                      {list.map((p) => (
-                        <div
-                          key={p.id}
-                          className="grid grid-cols-[64px_1fr] items-start gap-3 rounded-app-sm border border-night-border bg-night-card px-3.5 py-3 sm:grid-cols-[90px_1fr]"
-                        >
-                          <span className="text-sm font-bold tabular-nums text-night-text">{formatEventTime(p.startTime)}</span>
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="m-0 text-sm font-semibold text-night-text">{p.title}</p>
-                              <Tag className="border border-night-border bg-transparent text-night-muted">{PROGRAM_TYPE_LABELS[p.type] ?? p.type}</Tag>
-                            </div>
-                            {p.teacher?.name && <p className="m-0 mt-0.5 text-xs text-night-muted">{p.teacher.name}</p>}
-                            {p.linkedEvent && (
-                              <a href={`/events/${p.linkedEvent.slug}`} className="text-xs text-night-primary hover:underline">
-                                Страница события →
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
 
           {competition && (
             <section>

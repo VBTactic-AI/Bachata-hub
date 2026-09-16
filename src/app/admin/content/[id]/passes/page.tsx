@@ -61,10 +61,13 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
 
   // Доступ к пунктам программы/сессиям — только для форматов, где они вообще
   // существуют (FESTIVAL/MASTERCLASS, см. исследование перед реализацией:
-  // PartyDetails не имеет дочерних сущностей).
+  // PartyDetails не имеет дочерних сущностей). Festival Engine: программа
+  // больше не деталь-таблица Event, а связана через Festival.eventId
+  // (bridge, см. docs/FESTIVAL_ENGINE_ER.md) — событие может быть bridge
+  // максимум одного Festival.
   let accessOptions: AccessTargetOption[] = [];
   if (event.format === "FESTIVAL") {
-    const festival = await prisma.festivalDetails.findUnique({
+    const festival = await prisma.festival.findUnique({
       where: { eventId: event.id },
       include: { programItems: { orderBy: { order: "asc" } } },
     });

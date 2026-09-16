@@ -14,7 +14,7 @@ const ticketFindMany = vi.fn();
 const ticketFindFirst = vi.fn(); // findFestivalPassForEvent
 const ticketCreate = vi.fn(); // issueFestivalPassEntry (вне транзакции)
 const ticketCount = vi.fn(); // getEventPassAttendanceCount
-const eventProgramItemFindFirst = vi.fn(); // findFestivalPassForEvent
+const programItemFindFirst = vi.fn(); // findFestivalPassForEvent
 const eventRegistrationFindUnique = vi.fn(); // markRegistrationPayment/listTicketsForRegistration
 const eventTeamMemberFindUnique = vi.fn(); // hasEventAccess
 
@@ -49,7 +49,7 @@ vi.mock("@/lib/prisma", () => ({
       create: (...a: unknown[]) => ticketCreate(...a),
       count: (...a: unknown[]) => ticketCount(...a),
     },
-    eventProgramItem: { findFirst: (...a: unknown[]) => eventProgramItemFindFirst(...a) },
+    programItem: { findFirst: (...a: unknown[]) => programItemFindFirst(...a) },
     eventRegistration: { findUnique: (...a: unknown[]) => eventRegistrationFindUnique(...a) },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
@@ -128,7 +128,7 @@ beforeEach(() => {
   ticketFindFirst.mockReset().mockResolvedValue(null);
   ticketCreate.mockReset().mockResolvedValue({ id: "derived-ticket" });
   ticketCount.mockReset().mockResolvedValue(0);
-  eventProgramItemFindFirst.mockReset().mockResolvedValue(null);
+  programItemFindFirst.mockReset().mockResolvedValue(null);
   // По умолчанию танцор уже зарегистрирован на событие (issueTicket это
   // требует, 2026-09-16) — тесты, которым конкретно нужен другой случай,
   // переопределяют этот мок сами.
@@ -600,20 +600,20 @@ describe("getEventTicketTypeRevenue()", () => {
 
 describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсобытийный Pass фестиваля (этап 3)", () => {
   it("событие не является дочерним ни для одного фестиваля — null", async () => {
-    eventProgramItemFindFirst.mockResolvedValue(null);
+    programItemFindFirst.mockResolvedValue(null);
     const result = await findFestivalPassForEvent("child-event", "dancer1");
     expect(result).toBeNull();
   });
 
   it("дочернее событие фестиваля, но у танцора нет Pass фестиваля — null", async () => {
-    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
     ticketFindFirst.mockResolvedValue(null);
     const result = await findFestivalPassForEvent("child-event", "dancer1");
     expect(result).toBeNull();
   });
 
   it("у Pass пустые accessGrants — доступ ко всей программе фестиваля", async () => {
-    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
     ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
 
     const result = await findFestivalPassForEvent("child-event", "dancer1");
@@ -622,7 +622,7 @@ describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсоб
   });
 
   it("у Pass есть accessGrants, но не на этот пункт программы — null", async () => {
-    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
     ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Party Pass", accessGrants: [{ programItemId: "other-item" }] } });
 
     const result = await findFestivalPassForEvent("child-event", "dancer1");
@@ -631,7 +631,7 @@ describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсоб
   });
 
   it("accessGrants включают именно этот пункт программы — доступ разрешён", async () => {
-    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
     ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Party Pass", accessGrants: [{ programItemId: "item1" }] } });
 
     const result = await findFestivalPassForEvent("child-event", "dancer1");
@@ -640,13 +640,13 @@ describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсоб
   });
 
   it("issueFestivalPassEntry — нет действующего Pass — TicketValidationError('no_festival_pass')", async () => {
-    eventProgramItemFindFirst.mockResolvedValue(null);
+    programItemFindFirst.mockResolvedValue(null);
     await expect(issueFestivalPassEntry("child-event", "dancer1", owner)).rejects.toMatchObject({ code: "no_festival_pass" });
     expect(ticketCreate).not.toHaveBeenCalled();
   });
 
   it("issueFestivalPassEntry — уже материализован (идемпотентно) — возвращает существующий, не создаёт новый", async () => {
-    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
     ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
     ticketFindUnique.mockResolvedValue({ id: "existing-derived", eventId: "child-event", passId: "pass1", dancerId: "dancer1" });
 
@@ -657,7 +657,7 @@ describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсоб
   });
 
   it("issueFestivalPassEntry — создаёт производный Ticket с price=null, isPaid=true", async () => {
-    eventProgramItemFindFirst.mockResolvedValue({ id: "item1", festivalDetails: { eventId: "festival1" } });
+    programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
     ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
     ticketFindUnique.mockResolvedValue(null);
 

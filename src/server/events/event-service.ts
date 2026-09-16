@@ -333,7 +333,6 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
 
     if (input.format === "PARTY") {
       await tx.masterclassDetails.deleteMany({ where: { eventId: row.id } });
-      await tx.festivalDetails.deleteMany({ where: { eventId: row.id } });
       await tx.partyDetails.upsert({
         where: { eventId: row.id },
         create: { eventId: row.id, ...(input.party ?? {}) },
@@ -341,7 +340,6 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
       });
     } else if (input.format === "MASTERCLASS") {
       await tx.partyDetails.deleteMany({ where: { eventId: row.id } });
-      await tx.festivalDetails.deleteMany({ where: { eventId: row.id } });
       const details = await tx.masterclassDetails.upsert({
         where: { eventId: row.id },
         create: {
@@ -372,32 +370,14 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
           })),
         });
       }
-    } else if (input.format === "FESTIVAL") {
-      await tx.partyDetails.deleteMany({ where: { eventId: row.id } });
-      await tx.masterclassDetails.deleteMany({ where: { eventId: row.id } });
-      const details = await tx.festivalDetails.upsert({
-        where: { eventId: row.id },
-        create: { eventId: row.id },
-        update: {},
-      });
-      await tx.eventProgramItem.deleteMany({ where: { festivalDetailsId: details.id } });
-      if (input.festival?.programItems?.length) {
-        await tx.eventProgramItem.createMany({
-          data: input.festival.programItems.map((p, order) => ({
-            festivalDetailsId: details.id,
-            title: p.title,
-            type: p.type,
-            startTime: new Date(p.startTime),
-            endTime: p.endTime ? new Date(p.endTime) : null,
-            teacherId: p.teacherId || null,
-            order,
-          })),
-        });
-      }
     } else {
+      // FESTIVAL — больше не создаётся через этот мастер (Festival Engine:
+      // Festival — отдельная сущность, создаётся своим флоу, не Event Wizard'ом,
+      // см. docs/FESTIVAL_ENGINE_ER.md). format=FESTIVAL остаётся валидным
+      // значением enum только как метка на bridge-Event уже существующего
+      // Festival — сюда код не заходит осознанно, ветки для него нет.
       await tx.partyDetails.deleteMany({ where: { eventId: row.id } });
       await tx.masterclassDetails.deleteMany({ where: { eventId: row.id } });
-      await tx.festivalDetails.deleteMany({ where: { eventId: row.id } });
     }
 
     return { row, unpublishAuditNote };
@@ -496,7 +476,6 @@ export async function getEventDraftForEdit(eventId: string, user: User) {
       school: true,
       partyDetails: true,
       masterclassDetails: { include: { sessions: { orderBy: { order: "asc" } } } },
-      festivalDetails: { include: { programItems: { orderBy: { order: "asc" } } } },
       priceOptions: { orderBy: { order: "asc" } },
       media: { orderBy: { sortOrder: "asc" } },
       competition: true,
@@ -572,18 +551,6 @@ export async function publishEvent(eventId: string, user: User) {
               room: s.room ?? undefined,
               level: s.level ?? undefined,
               capacity: s.capacity ?? undefined,
-            })),
-          }
-        : undefined,
-    festival:
-      event.format === "FESTIVAL" && event.festivalDetails
-        ? {
-            programItems: event.festivalDetails.programItems.map((p) => ({
-              title: p.title,
-              type: p.type,
-              startTime: p.startTime.toISOString(),
-              endTime: p.endTime ? p.endTime.toISOString() : undefined,
-              teacherId: p.teacherId ?? undefined,
             })),
           }
         : undefined,

@@ -42,23 +42,6 @@ export const masterclassDetailsInputSchema = z.object({
   sessions: z.array(masterclassSessionSchema).optional(),
 });
 
-// Events Engine, этап 6 — пункт программы фестиваля (см. комментарий у
-// EventProgramItem в schema.prisma). linkedEventId сознательно НЕ включён —
-// привязка пункта программы к дочернему Event пока делается только напрямую
-// через API/БД, Wizard эту связь не показывает (нет UI поиска событий,
-// отдельная задача следующего прохода).
-export const festivalProgramItemSchema = z.object({
-  title: z.string().min(1).max(160),
-  type: z.enum(["WORKSHOP", "PARTY", "COMPETITION", "OTHER"]),
-  startTime: z.string().min(1),
-  endTime: z.string().optional(),
-  teacherId: z.string().optional(),
-});
-
-export const festivalDetailsInputSchema = z.object({
-  programItems: z.array(festivalProgramItemSchema).optional(),
-});
-
 // QA (EVT-26/Test Gap #11, 2026-09-15): endsAt < startsAt раньше вообще не
 // проверялся ни на клиенте, ни на сервере — не только отсутствовал тест,
 // отсутствовала сама валидация. Проверяется и для DRAFT тоже (внутренне
@@ -97,7 +80,6 @@ const eventDraftObjectSchema = z.object({
   priceOptions: z.array(eventPriceOptionSchema).optional(),
   party: partyDetailsInputSchema.optional(),
   masterclass: masterclassDetailsInputSchema.optional(),
-  festival: festivalDetailsInputSchema.optional(),
 });
 
 export const eventDraftSchema = eventDraftObjectSchema.refine(

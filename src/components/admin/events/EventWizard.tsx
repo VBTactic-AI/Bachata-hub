@@ -12,7 +12,6 @@ import { StepBasic } from "./steps/StepBasic";
 import { StepDateTime } from "./steps/StepDateTime";
 import { StepPartyDetails } from "./steps/StepPartyDetails";
 import { StepSessions } from "./steps/StepSessions";
-import { StepFestivalProgram } from "./steps/StepFestivalProgram";
 import { StepMasterclassDetails } from "./steps/StepMasterclassDetails";
 import { StepTickets } from "./steps/StepTickets";
 import { StepPublish } from "./steps/StepPublish";
@@ -241,14 +240,6 @@ export function EventWizard({
         );
       case "details":
         return <StepMasterclassDetails draft={draft} onChange={(p) => patch({ masterclass: { ...draft.masterclass, ...p } })} />;
-      case "festivalProgram":
-        return (
-          <StepFestivalProgram
-            items={draft.festival.programItems}
-            onChange={(programItems) => patch({ festival: { ...draft.festival, programItems } })}
-            teachers={teachers}
-          />
-        );
       case "tickets":
         return <StepTickets draft={draft} onChange={patch} />;
       case "publish":

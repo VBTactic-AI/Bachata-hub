@@ -16,7 +16,7 @@ describe("activeEventFilter()", () => {
 });
 
 // QA BUG-007/Test Gap #13 — тот же гейт, что и /events/[slug], теперь
-// переиспользуется и для видимости EventProgramItem.linkedEvent.
+// переиспользуется и для видимости ProgramItem.linkedEvent.
 describe("isEventDirectlyVisible()", () => {
   it("PUBLISHED + APPROVED — видимо", () => {
     expect(isEventDirectlyVisible({ status: "PUBLISHED", moderationStatus: "APPROVED" })).toBe(true);

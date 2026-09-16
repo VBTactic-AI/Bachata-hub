@@ -42,11 +42,6 @@ const fakeTx = {
   eventPriceOption: { deleteMany: vi.fn() },
   partyDetails: { deleteMany: vi.fn(), upsert: vi.fn() },
   masterclassDetails: { deleteMany: vi.fn() },
-  // Events Engine, этап 6 — FestivalDetails/EventProgramItem чистятся при
-  // каждом сохранении черновика (см. комментарий в event-service.ts),
-  // независимо от формата, поэтому нужны в моке для ЛЮБОГО теста.
-  festivalDetails: { deleteMany: vi.fn(), upsert: vi.fn().mockResolvedValue({ id: "festivalDetails1" }) },
-  eventProgramItem: { deleteMany: vi.fn(), createMany: vi.fn() },
   // QA BUG-001 — подсчёт активных регистраций для audit-заметки при снятии
   // с публикации (см. isUnpublishing в event-service.ts).
   eventRegistration: { count: vi.fn().mockResolvedValue(0) },
@@ -363,67 +358,6 @@ describe("upsertEventDraft() — certainty (Events Engine, Stage 1)", () => {
   });
 });
 
-// Events Engine, этап 6 — FestivalDetails/EventProgramItem, тот же паттерн
-// "полная замена на каждое сохранение", что и MasterclassSession.
-describe("upsertEventDraft() — festival program (Events Engine, Stage 6)", () => {
-  it("format=FESTIVAL с programItems — upsert FestivalDetails + createMany EventProgramItem, чистит party/masterclass", async () => {
-    eventCreate.mockResolvedValue({
-      id: "event12",
-      slug: "fest-slug",
-      title: "Grodno Latina Fest",
-      cityId: "city1",
-      format: "FESTIVAL",
-      schoolId: null,
-      startsAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    await upsertEventDraft(
-      baseInput({
-        format: "FESTIVAL",
-        festival: {
-          programItems: [
-            { title: "Открытие", type: "PARTY", startTime: "2026-10-17T18:00:00.000Z", endTime: undefined, teacherId: undefined },
-            { title: "Bachata Sensual МК", type: "WORKSHOP", startTime: "2026-10-18T11:00:00.000Z", endTime: "2026-10-18T12:30:00.000Z", teacherId: "teacher1" },
-          ],
-        },
-      }),
-      user
-    );
-
-    expect(fakeTx.partyDetails.deleteMany).toHaveBeenCalledWith({ where: { eventId: "event12" } });
-    expect(fakeTx.masterclassDetails.deleteMany).toHaveBeenCalledWith({ where: { eventId: "event12" } });
-    expect(fakeTx.festivalDetails.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { eventId: "event12" } })
-    );
-    expect(fakeTx.eventProgramItem.deleteMany).toHaveBeenCalledWith({ where: { festivalDetailsId: "festivalDetails1" } });
-    expect(fakeTx.eventProgramItem.createMany).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({ festivalDetailsId: "festivalDetails1", title: "Открытие", type: "PARTY", order: 0 }),
-        expect.objectContaining({ festivalDetailsId: "festivalDetails1", title: "Bachata Sensual МК", type: "WORKSHOP", teacherId: "teacher1", order: 1 }),
-      ],
-    });
-  });
-
-  it("format=PARTY чистит FestivalDetails (переключение формата не оставляет старую программу)", async () => {
-    eventCreate.mockResolvedValue({
-      id: "event13",
-      slug: "s",
-      title: "x",
-      cityId: "city1",
-      format: "PARTY",
-      schoolId: null,
-      startsAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    await upsertEventDraft(baseInput({ format: "PARTY" }), user);
-
-    expect(fakeTx.festivalDetails.deleteMany).toHaveBeenCalledWith({ where: { eventId: "event13" } });
-    expect(fakeTx.festivalDetails.upsert).not.toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: "event13" } }));
-  });
-});
-
 // QA BUG-001 regression
 describe("upsertEventDraft() — ARCHIVED неизменяемо (QA BUG-001)", () => {
   it("сохранение ARCHIVED события отклоняется — event_archived, update не вызывается", async () => {
@@ -617,7 +551,6 @@ describe("publishEvent() — быстрая публикация из списк
       priceOptions: [],
       partyDetails: null,
       masterclassDetails: null,
-      festivalDetails: null,
       ...overrides,
     };
   }

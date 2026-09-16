@@ -130,7 +130,7 @@ export default async function EventRegistrationsPage({
     // каждому танцору страницы (для подавляющего большинства обычных
     // событий этот запрос вернёт null, и вся festival-pass-логика ниже
     // просто пропускается).
-    prisma.eventProgramItem.findFirst({ where: { linkedEventId: event.id }, select: { id: true } }),
+    prisma.programItem.findFirst({ where: { linkedEventId: event.id }, select: { id: true } }),
   ]);
   const hasPassCatalog = passCount > 0;
   const hasTicketTypeCatalog = ticketTypeCount > 0;

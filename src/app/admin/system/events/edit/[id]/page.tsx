@@ -88,16 +88,6 @@ export default async function EditSystemEventPage({ params }: { params: Promise<
           capacity: s.capacity != null ? String(s.capacity) : "",
         })) ?? [],
     },
-    festival: {
-      programItems:
-        event.festivalDetails?.programItems.map((p) => ({
-          title: p.title,
-          type: p.type,
-          startTime: dateToLocalInputValue(p.startTime),
-          endTime: p.endTime ? dateToLocalInputValue(p.endTime) : "",
-          teacherId: p.teacherId ?? "",
-        })) ?? [],
-    },
     competitionId: event.competition?.id ?? null,
     makeTemplate: false,
     templateName: "",
