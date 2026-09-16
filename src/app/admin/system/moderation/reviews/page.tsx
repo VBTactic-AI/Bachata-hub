@@ -21,8 +21,15 @@ export default async function ModerationReviewsPage({
   const sp = await searchParams;
   const tab = sp.tab === "all" ? "all" : "new";
 
+  // Review.schoolId стал nullable (2026-09-17, Festival Engine — отзывы
+  // фестиваля через Review.festivalId), но эта очередь — сайтовая
+  // модерация ИМЕННО отзывов о школах; отзывы фестивалей модерирует
+  // организатор фестиваля в консоли самого фестиваля, не здесь.
   const reviews = await prisma.review.findMany({
-    where: tab === "new" ? { moderatedById: null } : undefined,
+    where: {
+      schoolId: { not: null },
+      ...(tab === "new" ? { moderatedById: null } : {}),
+    },
     include: { school: true, author: true },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -80,7 +87,7 @@ export default async function ModerationReviewsPage({
                     <p className="m-0 mt-1 text-night-text">{r.text}</p>
                   </td>
                   <td className="px-3 py-2.5 text-admin-muted">
-                    <p className="m-0 text-night-text">{r.school.name}</p>
+                    <p className="m-0 text-night-text">{r.school?.name ?? "—"}</p>
                     <p className="m-0 text-xs text-admin-disabled">{r.author.email}</p>
                   </td>
                   <td className="px-3 py-2.5">

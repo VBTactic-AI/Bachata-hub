@@ -38,6 +38,12 @@ export const TARGET_EXISTS: Record<SubscriptionType, (targetId: string) => Promi
     const user = await prisma.user.findUnique({ where: { id } });
     return user !== null && canCreateEvents(user);
   },
+  // Festival Engine (2026-09-17) — targetId = Pass.id, для будущей рассылки
+  // держателям конкретного Pass (docs/FESTIVAL_UI_TO_DB_PLAN.md, решение
+  // №1). Только проверка существования — резолв аудитории (кто держит
+  // активный Ticket на этот Pass) и сама UI-точка входа для рассылки по
+  // Pass реализуются отдельным заходом, не в этой миграции.
+  PASS: async (id) => (await prisma.pass.findUnique({ where: { id }, select: { id: true } })) !== null,
 };
 
 async function assertValidTarget(type: SubscriptionType, targetId: string) {

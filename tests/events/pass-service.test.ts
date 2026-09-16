@@ -121,6 +121,9 @@ const basePass = {
   isActive: true,
   imageUrl: null,
   allowMultipleEntry: true,
+  refundPolicy: "NONE" as const,
+  refundDeadline: null as Date | null,
+  refundFeePercent: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

@@ -8,7 +8,14 @@ import { Input, Label, Select, Textarea } from "@/components/ui/field";
 
 const fieldClass = "border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
 
-const SUBSCRIPTION_TYPE_LABELS: Record<SubscriptionType, string> = {
+// Partial, не Record<SubscriptionType, string> — PASS (Festival Engine,
+// 2026-09-17) намеренно не перечислен здесь: этот компонент — сайтовый
+// Broadcast Control Center, рассылка держателям конкретного Pass — это
+// отдельная, ещё не реализованная точка входа внутри консоли фестиваля, не
+// расширение этого универсального инструмента (см.
+// docs/FESTIVAL_UI_TO_DB_PLAN.md). Отсутствие ключа = тип просто не
+// появляется в выпадающем списке ниже.
+const SUBSCRIPTION_TYPE_LABELS: Partial<Record<SubscriptionType, string>> = {
   EVENT: "Конкретное событие",
   SCHOOL: "Школа",
   CITY: "Город",
@@ -200,7 +207,7 @@ export function BroadcastComposer() {
         <div className="flex flex-col gap-2">
           {isSearchType ? (
             <Label className="text-night-text">
-              Поиск ({SUBSCRIPTION_TYPE_LABELS[subscriptionType].toLowerCase()}, от 2 символов)
+              Поиск ({(SUBSCRIPTION_TYPE_LABELS[subscriptionType] ?? subscriptionType).toLowerCase()}, от 2 символов)
               <Input
                 className={fieldClass}
                 value={targetQuery}

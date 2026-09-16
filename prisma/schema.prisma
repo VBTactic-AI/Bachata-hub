@@ -113,6 +113,8 @@ model User {
   eventRegistrationsCheckedIn EventRegistration[] @relation("EventRegistrationCheckedInBy")
   ticketsIssued               Ticket[]            @relation("TicketIssuedBy")
   passTemplatesCreated        PassTemplate[]      @relation("PassTemplateCreatedBy")
+  festivalQuestionsModerated  FestivalGuestQuestion[] @relation("FestivalGuestQuestionModerator")
+  festivalQuestionsAnswered   FestivalGuestQuestion[] @relation("FestivalGuestQuestionAnswerer")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -222,13 +224,14 @@ model School {
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
 
-  branches       SchoolBranch[]
-  teachers       Teacher[]
-  schedules      ClassSchedule[]
-  events         Event[]
-  reviews        Review[]
-  eventTemplates EventTemplate[]
-  eventSeries    EventSeries[]
+  branches              SchoolBranch[]
+  teachers              Teacher[]
+  schedules             ClassSchedule[]
+  events                Event[]
+  reviews               Review[]
+  eventTemplates        EventTemplate[]
+  eventSeries           EventSeries[]
+  festivalReferralCodes FestivalReferralCode[]
 
   @@index([cityId])
   @@index([verificationStatus])
@@ -258,9 +261,10 @@ model Teacher {
   school   School? @relation(fields: [schoolId], references: [id])
   isActive Boolean @default(true)
 
-  schedules            ClassSchedule[]
-  masterclassSessions  MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
-  festivalProgramItems ProgramItem[] // Festival Engine — тот же принцип переиспользования, что и masterclassSessions выше
+  schedules             ClassSchedule[]
+  masterclassSessions   MasterclassSession[] // СЛОЙ Event Engine — переиспользуется как преподаватель мастер-класса, не дублируется отдельной сущностью
+  festivalProgramItems  ProgramItem[] // Festival Engine — тот же принцип переиспользования, что и masterclassSessions выше
+  festivalReferralCodes FestivalReferralCode[]
 
   @@index([schoolId])
 }
@@ -763,6 +767,19 @@ enum PassStatus {
   ARCHIVED
 }
 
+// Условия возврата (2026-09-17, план docs/FESTIVAL_UI_TO_DB_PLAN.md) — только
+// ПОЛИТИКА ("можно ли и на каких условиях"), показывается покупателю на
+// публичной странице до оплаты. Сам факт возврата — Ticket.status=REFUNDED
+// (уже существовал), это разные оси: политика не гарантирует, что кто-то
+// когда-либо ею воспользуется, а REFUNDED не говорит, было ли это разрешено
+// правилами Pass (проверка правила — сервисный слой, не в этой миграции).
+enum PassRefundPolicy {
+  NONE // без возврата
+  UNTIL_DATE // возврат разрешён до refundDeadline
+  PARTIAL // возврат с удержанием комиссии refundFeePercent
+  FULL // полный возврат в любой момент
+}
+
 model Pass {
   id                 String     @id @default(cuid())
   eventId            String
@@ -793,6 +810,10 @@ model Pass {
   // за фестиваль, Party Pass на конкретный вечер — как правило один раз.
   // Поле заведено заранее, реальная проверка появится вместе с check-in.
   allowMultipleEntry Boolean    @default(true)
+  // Условия возврата (2026-09-17) — см. комментарий у enum PassRefundPolicy.
+  refundPolicy       PassRefundPolicy @default(NONE)
+  refundDeadline     DateTime?
+  refundFeePercent   Decimal?   @db.Decimal(5, 2)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
@@ -1027,6 +1048,16 @@ model Ticket {
   promoCode      PromoCode? @relation(fields: [promoCodeId], references: [id])
   discountAmount Decimal?   @db.Decimal(10, 2)
 
+  // Реферальный код артиста/школы (2026-09-17, план
+  // docs/FESTIVAL_UI_TO_DB_PLAN.md) — та же природа снимка, что и у
+  // promoCodeId/discountAmount выше: referralDiscountAmount/
+  // referralCommissionAmount фиксируют суммы НА МОМЕНТ выдачи, не
+  // пересчитываются задним числом при изменении FestivalReferralCode.
+  referralCodeId           String?
+  referralCode             FestivalReferralCode? @relation(fields: [referralCodeId], references: [id])
+  referralDiscountAmount   Decimal?              @db.Decimal(10, 2)
+  referralCommissionAmount Decimal?              @db.Decimal(10, 2)
+
   issuedAt    DateTime  @default(now())
   cancelledAt DateTime?
   createdAt   DateTime  @default(now())
@@ -1057,6 +1088,7 @@ model Ticket {
   @@index([dancerId])
   @@index([passId, status])
   @@index([ticketTypeId, status])
+  @@index([referralCodeId])
 }
 
 // 1:1 к Event — заполняется только когда Event.format = PARTY.
@@ -1152,7 +1184,13 @@ model Festival {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  programItems ProgramItem[]
+  programItems   ProgramItem[]
+  reviews        Review[]
+  sponsors       FestivalSponsor[]
+  faqItems       FestivalFaqItem[]
+  guestQuestions FestivalGuestQuestion[]
+  expenses       FestivalExpense[]
+  referralCodes  FestivalReferralCode[]
 
   @@index([cityId])
   @@index([createdById])
@@ -1183,6 +1221,14 @@ model ProgramItem {
   linkedEvent   Event?                @relation("ProgramItemLinkedEvent", fields: [linkedEventId], references: [id])
   order         Int                   @default(0)
 
+  // Лимит мест (2026-09-17, план docs/FESTIVAL_UI_TO_DB_PLAN.md) —
+  // ограничивает запись именно на этот пункт программы, отдельно от того,
+  // сколько Pass продано на весь фестиваль (по образцу уже существующего
+  // Event.capacity). showCapacityPublicly — организатор может вести
+  // capacity только для себя, не показывая остаток гостям.
+  capacity             Int?
+  showCapacityPublicly Boolean @default(true)
+
   // СЛОЙ 2 — Pass может ограничивать доступ конкретно этим пунктом
   // программы (см. комментарий у PassAccessGrant).
   passAccessGrants PassAccessGrant[]
@@ -1193,13 +1239,165 @@ model ProgramItem {
 }
 
 // ---------------------------------------------------------------------------
+// Festival Engine — доп. сущности консоли фестиваля (2026-09-17, план
+// docs/FESTIVAL_UI_TO_DB_PLAN.md, продолжение UI-прототипа). Модерацию
+// новых публичных (гостевых) блоков — FestivalGuestQuestion, отзывы через
+// Review.festivalId — производит организатор ЭТОГО фестиваля (прямое
+// решение пользователя), не сайтовый модератор: право проверяется в
+// сервисном слое (isOwnerOrAdmin/EventTeamMember), а не отдельной ролью
+// в схеме.
+// ---------------------------------------------------------------------------
+
+model FestivalSponsor {
+  id         String   @id @default(cuid())
+  festivalId String
+  festival   Festival @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+  name       String
+  // Свободный текст (организатор печатает сам, напр. "Генеральный
+  // спонсор") — сознательно не enum, см. docs/FESTIVAL_UI_TO_DB_PLAN.md §2.5.
+  tier        String
+  logoUrl     String?
+  websiteUrl  String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([festivalId])
+}
+
+model FestivalFaqItem {
+  id         String   @id @default(cuid())
+  festivalId String
+  festival   Festival @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+  question   String
+  answer     String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([festivalId])
+}
+
+// Вопрос гостя фестивалю — ДВЕ независимые оси состояния (прямое решение
+// пользователя): moderationStatus (виден ли вопрос публично вообще — спам-
+// фильтр организатора) и answer/answeredAt (ответил ли организатор). Вопрос
+// может быть APPROVED, но ещё без ответа ("Ожидает ответа" в UI); вопрос со
+// статусом PENDING/REJECTED не показывается на публичной странице вне
+// зависимости от наличия ответа.
+model FestivalGuestQuestion {
+  id               String           @id @default(cuid())
+  festivalId       String
+  festival         Festival         @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+  askerName        String?
+  question         String
+  moderationStatus ModerationStatus @default(PENDING)
+  moderatedById    String?
+  moderatedBy      User?            @relation("FestivalGuestQuestionModerator", fields: [moderatedById], references: [id])
+  moderatedAt      DateTime?
+  answer           String?
+  answeredById     String?
+  answeredBy       User?            @relation("FestivalGuestQuestionAnswerer", fields: [answeredById], references: [id])
+  answeredAt       DateTime?
+  createdAt        DateTime         @default(now())
+
+  @@index([festivalId])
+  @@index([moderationStatus])
+}
+
+enum FestivalExpenseCategory {
+  ARTISTS
+  VENUE
+  MARKETING
+  EQUIPMENT
+  OTHER
+}
+
+enum FestivalExpenseStatus {
+  PENDING
+  PAID
+}
+
+model FestivalExpense {
+  id         String                  @id @default(cuid())
+  festivalId String
+  festival   Festival                @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+  title      String
+  category   FestivalExpenseCategory
+  amount     Decimal                 @db.Decimal(10, 2)
+  currency   String?
+  status     FestivalExpenseStatus   @default(PENDING)
+  note       String?
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@index([festivalId])
+}
+
+// Реферальный код артиста/школы (2026-09-17) — ОТДЕЛЬНАЯ модель от
+// PromoCode по прямому решению пользователя: PromoCode — это скидка
+// покупателю (discountValue обязателен), реферальный код — в первую
+// очередь атрибуция продаж конкретному владельцу и может существовать без
+// скидки вообще (discountValue/discountType nullable). Владелец — ровно
+// один из ownerTeacherId/ownerSchoolId (CHECK в migration.sql, тот же
+// принцип, что и у PassAccessGrant/Review выше).
+//
+// discountType добавлен сверх исходного списка полей пользователя — без
+// него discountValue было бы не по чему интерпретировать ("5" — это % или
+// BYN); переиспользован уже существующий enum PromoDiscountType, чтобы не
+// заводить третий одинаковый enum. Названия active/startsAt/expiresAt —
+// как задал пользователь (у PromoCode для того же смысла —
+// isActive/validFrom/validUntil; расхождение в имени сознательно оставлено
+// как есть, не унифицировано без отдельного решения).
+enum ReferralCommissionType {
+  PERCENT
+  FIXED_AMOUNT
+}
+
+model FestivalReferralCode {
+  id              String                 @id @default(cuid())
+  festivalId      String
+  festival        Festival               @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+  code            String
+  ownerTeacherId  String?
+  ownerTeacher    Teacher?               @relation(fields: [ownerTeacherId], references: [id])
+  ownerSchoolId   String?
+  ownerSchool     School?                @relation(fields: [ownerSchoolId], references: [id])
+  discountType    PromoDiscountType?
+  discountValue   Decimal?               @db.Decimal(10, 2)
+  commissionType  ReferralCommissionType
+  commissionValue Decimal                @db.Decimal(10, 2)
+  active          Boolean                @default(true)
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  tickets Ticket[]
+
+  @@unique([festivalId, code])
+  @@index([festivalId])
+  @@index([ownerTeacherId])
+  @@index([ownerSchoolId])
+}
+
+// ---------------------------------------------------------------------------
 // Review — отзыв о школе
 // ---------------------------------------------------------------------------
 
+// Отзыв о школе ИЛИ о фестивале — ровно одно из двух (2026-09-17, план
+// docs/FESTIVAL_UI_TO_DB_PLAN.md, CHECK-constraint в migration.sql, тот же
+// принцип, что и у PassAccessGrant). Для отзыва о фестивале модератор —
+// организатор ЭТОГО фестиваля (прямое решение пользователя), не сайтовый
+// модератор школ; moderatedById остаётся тем же общим полем на User,
+// разграничение "кто имеет право модерировать" — проверка в сервисном
+// слое (isOwnerOrAdmin по Festival.createdById/EventTeamMember), не в
+// схеме.
 model Review {
   id               String           @id @default(cuid())
-  schoolId         String
-  school           School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolId         String?
+  school           School?          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  festivalId       String?
+  festival         Festival?        @relation(fields: [festivalId], references: [id], onDelete: Cascade)
   authorId         String
   author           User             @relation("ReviewAuthor", fields: [authorId], references: [id])
   rating           Int // 1..5
@@ -1211,6 +1409,7 @@ model Review {
   createdAt        DateTime         @default(now())
 
   @@index([schoolId])
+  @@index([festivalId])
   @@index([moderationStatus])
   @@index([authorId])
   @@index([moderatedById])
@@ -2897,6 +3096,13 @@ enum SubscriptionType {
   EVENT_TYPE // значение — код EventFormat (PARTY/MASTERCLASS/...)
   INSTRUCTOR // значение — id Teacher
   ORGANIZER // значение — id User (Event.createdById)
+  // Рассылка держателям конкретного Pass (2026-09-17, план
+  // docs/FESTIVAL_UI_TO_DB_PLAN.md, решение №1) — значение targetId у
+  // Broadcast/Notification в этом случае = id Pass, а не Subscription.
+  // Аудитория резолвится держателями активного Ticket на этот Pass, а не
+  // строками Subscription — расширение перечисления целей рассылки, не
+  // самого механизма подписок.
+  PASS
 }
 
 enum SubscriptionSource {
