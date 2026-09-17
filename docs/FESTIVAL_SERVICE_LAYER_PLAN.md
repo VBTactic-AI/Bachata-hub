@@ -52,12 +52,13 @@ Stage 5 — `festival-broadcast-service.ts` (`sendFestivalPassBroadcast`, RBAC
 Stage 6 — `festival-member-service.ts` (`getMyFestivalAccess`, читает уже
 существующие `Ticket`/`Pass`/`PassAccessGrant`, `isProgramItemAccessibleByGrants`
 вынесена из `findFestivalPassForEvent` как общий предикат),
-`/profile/festivals/[slug]` (личный кабинет участника). `qrcode` установлен
-пользователем вручную (npm registry был недоступен через прокси сессии),
-типы — свой `src/types/qrcode.d.ts` (`@types/qrcode` не ставится по тому же
-сетевому ограничению, тот же приём, что уже применён для `web-push`) —
-`FestivalPassQrCode.tsx` рендерит настоящий QR (`ticket.id`) поверх
-текстового кода. Закрыто полностью, открытых пунктов не осталось.
+`/profile/festivals/[slug]` (личный кабинет участника). `qrcode` +
+`@types/qrcode` установлены пользователем вручную (npm registry был
+недоступен через прокси сессии) — `FestivalPassQrCode.tsx` рендерит
+настоящий QR (`ticket.id`) поверх текстового кода. Промежуточный самодельный
+`src/types/qrcode.d.ts` (пока `@types/qrcode` не ставился) удалён, как
+только пользователь поставил настоящий пакет типов. Закрыто полностью,
+открытых пунктов не осталось.
 
 Stage 7 — `refundPolicy`/`refundDeadline`/`refundFeePercent` (уже были в
 схеме `Pass`) подключены к `PassInput`/CRUD (`pass-service.ts`,
