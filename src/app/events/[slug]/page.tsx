@@ -9,8 +9,10 @@ import { formatDateTime, formatEventDate, formatEventTime, formatRelativeDayLabe
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { safeJsonLd } from "@/lib/json-ld";
 import { COMPETITION_STATUS_LABELS } from "@/lib/competition-labels";
+import { getEventTypeConfig } from "@/lib/events/event-type-registry";
 import { AttendanceButtons } from "@/components/AttendanceButtons";
 import { EventRegistrationButton } from "@/components/EventRegistrationButton";
+import { EventCountdown } from "@/components/EventCountdown";
 import { ShareButtons } from "@/components/ShareButtons";
 import { PublicEventGallery } from "@/components/PublicEventGallery";
 import { FollowButton } from "@/components/notifications/FollowButton";
@@ -253,9 +255,15 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   if (event.priceText) facts.push({ l: t.event.price, v: event.priceText });
 
   const formatAccent = EVENT_FORMAT_COLOR[event.format];
+  const typeConfig = getEventTypeConfig(event.format);
+  // Декоративная градиентная "шапка" карточки — только когда у события нет
+  // ни одного загруженного фото: настоящая афиша/галерея (PublicEventGallery
+  // ниже) уже несёт достаточно визуального веса сама по себе, дублировать
+  // поверх неё ещё и абстрактный градиент избыточно.
+  const hasVisualMedia = event.media.length > 0 || !!event.photoUrl;
 
   return (
-    <article className="flex flex-col gap-6">
+    <article className="flex flex-col gap-6 sm:pb-20 lg:pb-0">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }}
@@ -269,16 +277,35 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
         </div>
       )}
 
-      {event.media.length > 0 ? (
+      {event.media.length > 0 && (
         <PublicEventGallery
           title={event.title}
           images={event.media.map((m) => ({ id: m.id, url: m.url, objectPosition: m.objectPosition, width: m.width, height: m.height }))}
         />
-      ) : (
-        event.photoUrl && <img src={event.photoUrl} alt={event.title} className="rounded-app" />
+      )}
+      {event.media.length === 0 && event.photoUrl && (
+        <img src={event.photoUrl} alt={event.title} className="rounded-app border border-night-border" />
       )}
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 overflow-hidden rounded-app border border-night-border bg-night-card p-5 sm:p-6">
+        {!hasVisualMedia && (
+          // Декоративная "шапка" вместо настоящего фото — тот же градиент,
+          // что уже используют другие тёмные экраны сайта (gradient-night-hero,
+          // tailwind.config.ts), подсвеченный акцентом формата, плюс его emoji
+          // из EVENT_TYPE_REGISTRY водяным знаком. Даёт карточке лицо даже
+          // когда организатор ещё не загрузил афишу.
+          <div
+            className="relative -m-5 -mb-1 h-[136px] overflow-hidden rounded-t-app bg-gradient-night-hero sm:-m-6 sm:-mb-1 sm:h-[168px]"
+            aria-hidden="true"
+          >
+            <div
+              className="absolute inset-0"
+              style={{ background: `radial-gradient(120% 140% at 82% -10%, ${formatAccent}55, transparent 60%)` }}
+            />
+            <span className="absolute -bottom-4 right-3 text-[84px] leading-none opacity-20 sm:text-[110px]">{typeConfig.icon}</span>
+          </div>
+        )}
+
         <div>
           <Tag style={{ backgroundColor: `${formatAccent}26`, color: formatAccent }}>{t.event.formats[event.format]}</Tag>
           <Tag className="bg-night-card2 text-night-pink">{t.event.levels[event.level]}</Tag>
@@ -298,7 +325,10 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
           {relativeDay && (
-            <span className="rounded-full bg-night-primary/15 px-2.5 py-1 text-[0.72rem] font-bold uppercase tracking-wide text-night-primary">
+            <span
+              className="rounded-full px-2.5 py-1 text-[0.72rem] font-bold uppercase tracking-wide"
+              style={{ backgroundColor: `${formatAccent}26`, color: formatAccent }}
+            >
               {relativeDay}
             </span>
           )}
@@ -306,6 +336,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
             {formatDateTime(event.startsAt)}
             {event.endsAt ? ` — ${formatDateTime(event.endsAt)}` : ""}
           </span>
+          {!isPast && <EventCountdown startsAt={event.startsAt.toISOString()} />}
           {event.certainty === "TENTATIVE" && (
             <span className="text-night-muted">({t.event.tentativeBadgeSubtitle})</span>
           )}
@@ -362,15 +393,19 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
               <div className="flex flex-col gap-5">
                 {sessionDays.map(([day, list]) => (
                   <div key={day}>
-                    <p className="m-0 mb-2 text-xs font-bold uppercase tracking-wide text-night-muted">{day}</p>
-                    <div className="flex flex-col gap-2">
+                    <p className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-night-muted">{day}</p>
+                    <div className="flex flex-col gap-4 border-l border-night-border pl-4">
                       {list.map((s) => (
-                        <div
-                          key={s.id}
-                          className="grid grid-cols-[64px_1fr] items-start gap-3 rounded-app-sm border border-night-border bg-night-card px-3.5 py-3 sm:grid-cols-[90px_1fr]"
-                        >
-                          <span className="text-sm font-bold tabular-nums text-night-text">{formatEventTime(s.startTime)}</span>
-                          <div className="min-w-0">
+                        <div key={s.id} className="relative">
+                          <span
+                            className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 bg-night-card"
+                            style={{ borderColor: EVENT_FORMAT_COLOR.MASTERCLASS }}
+                            aria-hidden="true"
+                          />
+                          <span className="text-sm font-bold tabular-nums" style={{ color: EVENT_FORMAT_COLOR.MASTERCLASS }}>
+                            {formatEventTime(s.startTime)}
+                          </span>
+                          <div className="mt-1.5 min-w-0 rounded-app-sm border border-night-border bg-night-card px-3.5 py-3">
                             <p className="m-0 text-sm font-semibold text-night-text">{s.title}</p>
                             <p className="m-0 mt-0.5 text-xs text-night-muted">
                               {[s.teacher?.name, s.level ? t.event.levels[s.level] : null, s.room, s.capacity != null ? `до ${s.capacity} чел.` : null]
@@ -433,20 +468,6 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
             </section>
           )}
 
-          {event.priceOptions.length > 0 && (
-            <section>
-              <SectionTitle>Билеты</SectionTitle>
-              <div className="flex flex-col gap-1.5">
-                {event.priceOptions.map((o) => (
-                  <div key={o.id} className="flex items-center justify-between rounded-app-sm border border-night-border bg-night-card px-3.5 py-2.5 text-sm">
-                    <span className="text-night-text">{o.label}</span>
-                    <span className="tabular-nums text-night-muted">{o.price != null ? `${o.price} ${o.currency ?? ""}`.trim() : "—"}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
           {event.description && (
             <section>
               <SectionTitle>{t.event.description}</SectionTitle>
@@ -465,7 +486,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
           )}
         </main>
 
-        <aside className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start">
+        <aside id="event-actions" className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start">
           <Card className="flex flex-col gap-3 border-night-border bg-night-card">
             {facts.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -473,6 +494,17 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
                   <div key={f.l} className="min-w-[92px] flex-1 rounded-app-sm border border-night-border bg-night-card2 px-3 py-2">
                     <div className="text-[0.64rem] font-semibold uppercase tracking-wide text-night-muted">{f.l}</div>
                     <div className="mt-1 text-sm font-bold tabular-nums text-night-text">{f.v}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {event.priceOptions.length > 0 && (
+              <div className="flex flex-col gap-1.5 border-t border-night-border/60 pt-3">
+                {event.priceOptions.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between rounded-app-sm border border-night-border bg-night-card2 px-3.5 py-2.5 text-sm">
+                    <span className="text-night-text">{o.label}</span>
+                    <span className="tabular-nums text-night-muted">{o.price != null ? `${o.price} ${o.currency ?? ""}`.trim() : "—"}</span>
                   </div>
                 ))}
               </div>
@@ -525,6 +557,47 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
           </Card>
         </aside>
       </div>
+
+      {/* Липкая CTA-панель — только для диапазона ширины между глобальным
+          мобильным таб-баром сайта (BottomNav, events/layout.tsx, виден до
+          640px — см. sm:hidden там) и десктопным sticky-сайдбаром (виден от
+          1024px, lg:sticky выше). Ниже 640px эта панель заняла бы то же
+          fixed inset-x-0 bottom-0 место, что и BottomNav, и легла бы поверх
+          неё — на реальном телефоне это были бы две наложенные друг на
+          друга панели, поэтому здесь она умышленно не показывается.
+          Не дублирует состояние AttendanceButtons/EventRegistrationButton
+          (это клиентские компоненты со своими запросами — дублировать их
+          было бы риском рассинхронизации/двойных сабмитов), а просто ведёт
+          к настоящему блоку действий в сайдбаре (#event-actions). Внешняя
+          ссылка регистрации безопасно дублируется как есть — это обычная
+          ссылка без состояния. */}
+      {!isPast && (
+        <div className="fixed inset-x-0 bottom-0 z-20 hidden items-center gap-3 border-t border-night-border bg-night-card/95 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+12px)] backdrop-blur sm:flex lg:hidden">
+          {event.priceText && (
+            <div className="min-w-0 flex-1">
+              <div className="text-[0.62rem] font-semibold uppercase tracking-wide text-night-muted">{t.event.price}</div>
+              <div className="truncate text-sm font-bold tabular-nums text-night-text">{event.priceText}</div>
+            </div>
+          )}
+          {event.externalLinkUrl ? (
+            <a
+              href={event.externalLinkUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`whitespace-nowrap rounded-full bg-gradient-night-cta px-5 py-3 text-center text-sm font-bold text-white no-underline hover:no-underline ${event.priceText ? "" : "flex-1"}`}
+            >
+              {t.event.registerExternal}
+            </a>
+          ) : (
+            <a
+              href="#event-actions"
+              className={`whitespace-nowrap rounded-full bg-gradient-night-cta px-5 py-3 text-center text-sm font-bold text-white no-underline hover:no-underline ${event.priceText ? "" : "flex-1"}`}
+            >
+              Билеты и участие
+            </a>
+          )}
+        </div>
+      )}
     </article>
   );
 }
