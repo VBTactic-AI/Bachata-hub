@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hasEventAccess } from "./access";
 import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 import { getCurrentPassPrice } from "./pass-service";
+import { isReferralCodeCurrentlyActive } from "./festival-referral-code-service";
 
 // Ticket Engine (2026-09-16) — билет доступа (с Pass или без, см. комментарий
 // у модели Ticket в schema.prisma). Управление билетами/оплатой — тот же
@@ -75,7 +76,12 @@ function assertOnSale(pass: { status: string; salesStartAt: Date | null; salesEn
 // без отдельных "невидимых" покупателей.
 const REGISTERED_STATUSES_FOR_PASS_PURCHASE = ["REGISTERED", "CONFIRMED", "WAITLIST"] as const;
 
-export async function issueTicket(passId: string, dancerId: string, user: User, options: { markPaid?: boolean } = {}): Promise<Ticket> {
+export async function issueTicket(
+  passId: string,
+  dancerId: string,
+  user: User,
+  options: { markPaid?: boolean; referralCode?: string } = {}
+): Promise<Ticket> {
   const pass = await requireAccessForPass(passId, user);
   const dancer = await prisma.dancer.findUnique({ where: { id: dancerId } });
   if (!dancer) throw new RegistrationNotFoundError();
@@ -109,6 +115,29 @@ export async function issueTicket(passId: string, dancerId: string, user: User, 
     const effective = getCurrentPassPrice(current, tiers);
     const isFree = effective.price == null || effective.price === 0;
 
+    // Реферальный код артиста/школы (2026-09-17, Stage 4 плана Festival
+    // Engine, docs/FESTIVAL_SERVICE_LAYER_PLAN.md) — привязка+снимок ТОЛЬКО,
+    // без расчёта скидки на чекауте (прямое решение пользователя — того же
+    // не реализовано даже у PromoCode). referralDiscountAmount/
+    // referralCommissionAmount — снимок ОБЪЯВЛЕННЫХ значений кода на момент
+    // выдачи (discountValue/commissionValue как есть), не результат
+    // применения процента к цене Pass — организатор сам решает, как эти
+    // цифры учитывать при расчёте с артистом/школой вне системы (в проекте
+    // нет онлайн-эквайринга, см. комментарий у Ticket).
+    let referralCode: Awaited<ReturnType<typeof tx.festivalReferralCode.findUnique>> = null;
+    if (options.referralCode) {
+      const festival = await tx.festival.findUnique({ where: { eventId: current.eventId } });
+      const candidate = festival
+        ? await tx.festivalReferralCode.findUnique({
+            where: { festivalId_code: { festivalId: festival.id, code: options.referralCode.trim().toUpperCase() } },
+          })
+        : null;
+      if (!candidate || !isReferralCodeCurrentlyActive(candidate)) {
+        throw new TicketValidationError("invalid_referral_code", "Реферальный код недействителен, неактивен или истёк.");
+      }
+      referralCode = candidate;
+    }
+
     let ticket: Ticket;
     try {
       ticket = await tx.ticket.create({
@@ -121,6 +150,9 @@ export async function issueTicket(passId: string, dancerId: string, user: User, 
           isPaid: isFree || Boolean(options.markPaid),
           paidAt: isFree || options.markPaid ? new Date() : null,
           issuedById: user.id,
+          referralCodeId: referralCode?.id ?? null,
+          referralDiscountAmount: referralCode?.discountValue ?? null,
+          referralCommissionAmount: referralCode?.commissionValue ?? null,
         },
       });
     } catch (err) {

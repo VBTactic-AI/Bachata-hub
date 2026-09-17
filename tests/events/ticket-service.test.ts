@@ -27,6 +27,8 @@ const txTicketCreate = vi.fn();
 const txTicketUpdate = vi.fn();
 const txTicketFindFirst = vi.fn();
 const txPassPriceTierFindMany = vi.fn();
+const txFestivalFindUnique = vi.fn(); // referralCode — festival() bridge lookup внутри issueTicket
+const txReferralCodeFindUnique = vi.fn();
 
 const fakeTx = {
   $executeRaw: executeRaw,
@@ -34,6 +36,8 @@ const fakeTx = {
   ticketType: { findUniqueOrThrow: txTicketTypeFindUniqueOrThrow, update: txTicketTypeUpdate },
   ticket: { create: txTicketCreate, update: txTicketUpdate, findFirst: txTicketFindFirst },
   passPriceTier: { findMany: txPassPriceTierFindMany },
+  festival: { findUnique: txFestivalFindUnique },
+  festivalReferralCode: { findUnique: txReferralCodeFindUnique },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -143,6 +147,8 @@ beforeEach(() => {
   txTicketCreate.mockReset().mockResolvedValue({ id: "ticket1", passId: "pass1", dancerId: "dancer1", isPaid: false });
   txTicketUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: "ticket1", ...args.data }));
   txTicketFindFirst.mockReset().mockResolvedValue(null);
+  txFestivalFindUnique.mockReset().mockResolvedValue(null);
+  txReferralCodeFindUnique.mockReset().mockResolvedValue(null);
 });
 
 describe("issueTicket()", () => {
@@ -271,6 +277,82 @@ describe("issueTicket()", () => {
     await issueTicket("pass1", "dancer1", owner);
 
     expect(txPassUpdate).not.toHaveBeenCalledWith({ where: { id: "pass1" }, data: { status: "SOLD_OUT" } });
+  });
+});
+
+describe("issueTicket() — реферальный код (Stage 4 Festival Engine, 2026-09-17)", () => {
+  const activeReferralCode = {
+    id: "ref1",
+    festivalId: "fest1",
+    code: "TEACHER10",
+    discountValue: 10,
+    commissionValue: 15,
+    active: true,
+    startsAt: null as Date | null,
+    expiresAt: null as Date | null,
+  };
+
+  it("код не передан — referralCodeId/снимки не заполняются", async () => {
+    await issueTicket("pass1", "dancer1", owner);
+    expect(txFestivalFindUnique).not.toHaveBeenCalled();
+    expect(txTicketCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ referralCodeId: null, referralDiscountAmount: null, referralCommissionAmount: null }),
+    });
+  });
+
+  it("Pass не принадлежит ни одному фестивалю (bridge-Event не найден) — invalid_referral_code", async () => {
+    txFestivalFindUnique.mockResolvedValue(null);
+    await expect(issueTicket("pass1", "dancer1", owner, { referralCode: "TEACHER10" })).rejects.toMatchObject({
+      code: "invalid_referral_code",
+    });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("код не найден у фестиваля — invalid_referral_code", async () => {
+    txFestivalFindUnique.mockResolvedValue({ id: "fest1" });
+    txReferralCodeFindUnique.mockResolvedValue(null);
+    await expect(issueTicket("pass1", "dancer1", owner, { referralCode: "MISSING" })).rejects.toMatchObject({
+      code: "invalid_referral_code",
+    });
+  });
+
+  it("код неактивен (active=false) — invalid_referral_code", async () => {
+    txFestivalFindUnique.mockResolvedValue({ id: "fest1" });
+    txReferralCodeFindUnique.mockResolvedValue({ ...activeReferralCode, active: false });
+    await expect(issueTicket("pass1", "dancer1", owner, { referralCode: "TEACHER10" })).rejects.toMatchObject({
+      code: "invalid_referral_code",
+    });
+  });
+
+  it("код ещё не начал действовать (startsAt в будущем) — invalid_referral_code", async () => {
+    txFestivalFindUnique.mockResolvedValue({ id: "fest1" });
+    txReferralCodeFindUnique.mockResolvedValue({ ...activeReferralCode, startsAt: new Date(Date.now() + 86_400_000) });
+    await expect(issueTicket("pass1", "dancer1", owner, { referralCode: "TEACHER10" })).rejects.toMatchObject({
+      code: "invalid_referral_code",
+    });
+  });
+
+  it("код уже истёк (expiresAt в прошлом) — invalid_referral_code", async () => {
+    txFestivalFindUnique.mockResolvedValue({ id: "fest1" });
+    txReferralCodeFindUnique.mockResolvedValue({ ...activeReferralCode, expiresAt: new Date(Date.now() - 86_400_000) });
+    await expect(issueTicket("pass1", "dancer1", owner, { referralCode: "TEACHER10" })).rejects.toMatchObject({
+      code: "invalid_referral_code",
+    });
+  });
+
+  it("действующий код — ищется по (festivalId фестиваля этого Pass, код в верхнем регистре), снимок на Ticket", async () => {
+    txFestivalFindUnique.mockResolvedValue({ id: "fest1" });
+    txReferralCodeFindUnique.mockResolvedValue(activeReferralCode);
+
+    await issueTicket("pass1", "dancer1", owner, { referralCode: "teacher10" });
+
+    expect(txFestivalFindUnique).toHaveBeenCalledWith({ where: { eventId: "event1" } });
+    expect(txReferralCodeFindUnique).toHaveBeenCalledWith({
+      where: { festivalId_code: { festivalId: "fest1", code: "TEACHER10" } },
+    });
+    expect(txTicketCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ referralCodeId: "ref1", referralDiscountAmount: 10, referralCommissionAmount: 15 }),
+    });
   });
 });
 
