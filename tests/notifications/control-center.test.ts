@@ -8,6 +8,7 @@ const schoolFindMany = vi.fn();
 const cityFindMany = vi.fn();
 const countryFindMany = vi.fn();
 const teacherFindMany = vi.fn();
+const passFindMany = vi.fn();
 const notificationEndpointGroupBy = vi.fn();
 const notificationGroupBy = vi.fn();
 const notificationDeliveryGroupBy = vi.fn();
@@ -28,6 +29,7 @@ vi.mock("@/lib/prisma", () => ({
     city: { findMany: (...a: unknown[]) => cityFindMany(...a) },
     country: { findMany: (...a: unknown[]) => countryFindMany(...a) },
     teacher: { findMany: (...a: unknown[]) => teacherFindMany(...a) },
+    pass: { findMany: (...a: unknown[]) => passFindMany(...a) },
     notificationEndpoint: { groupBy: (...a: unknown[]) => notificationEndpointGroupBy(...a) },
     notification: { groupBy: (...a: unknown[]) => notificationGroupBy(...a) },
     notificationDelivery: {
@@ -44,6 +46,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const {
   getSubscriptionOverview,
+  resolveTargetLabels,
   getChannelUsageOverview,
   getNotificationVolumeOverview,
   getDeliveryStats,
@@ -65,6 +68,7 @@ beforeEach(() => {
   cityFindMany.mockReset().mockResolvedValue([]);
   countryFindMany.mockReset().mockResolvedValue([]);
   teacherFindMany.mockReset().mockResolvedValue([]);
+  passFindMany.mockReset().mockResolvedValue([]);
   notificationEndpointGroupBy.mockReset().mockResolvedValue([]);
   notificationGroupBy.mockReset().mockResolvedValue([]);
   notificationDeliveryGroupBy.mockReset().mockResolvedValue([]);
@@ -72,6 +76,21 @@ beforeEach(() => {
   notificationJobFindMany.mockReset().mockResolvedValue([]);
   notificationChannelPriceFindMany.mockReset().mockResolvedValue([]);
   notificationChannelPriceUpsert.mockReset().mockResolvedValue({});
+});
+
+describe("resolveTargetLabels() — PASS (Festival Engine, Stage 5, 2026-09-17)", () => {
+  it("резолвит имя Pass по id", async () => {
+    passFindMany.mockResolvedValue([{ id: "pass1", name: "Full Pass" }]);
+    const labels = await resolveTargetLabels("PASS", ["pass1"]);
+    expect(labels.get("pass1")).toBe("Full Pass");
+    expect(passFindMany).toHaveBeenCalledWith({ where: { id: { in: ["pass1"] } }, select: { id: true, name: true } });
+  });
+
+  it("пустой список id — не запрашивает БД", async () => {
+    const labels = await resolveTargetLabels("PASS", []);
+    expect(labels.size).toBe(0);
+    expect(passFindMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("getSubscriptionOverview() — кто на что подписан", () => {

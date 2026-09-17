@@ -14,11 +14,13 @@ const countryFindMany = vi.fn();
 const schoolFindMany = vi.fn();
 const eventFindMany = vi.fn();
 const teacherFindMany = vi.fn();
+const ticketFindMany = vi.fn(); // Festival Engine, Stage 5 — аудитория PASS
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findMany: (...a: unknown[]) => userFindMany(...a) },
     subscription: { findMany: (...a: unknown[]) => subscriptionFindMany(...a) },
+    ticket: { findMany: (...a: unknown[]) => ticketFindMany(...a) },
     broadcast: {
       create: (...a: unknown[]) => broadcastCreate(...a),
       findUniqueOrThrow: (...a: unknown[]) => broadcastFindUniqueOrThrow(...a),
@@ -89,6 +91,7 @@ beforeEach(() => {
   schoolFindMany.mockReset().mockResolvedValue([]);
   eventFindMany.mockReset().mockResolvedValue([]);
   teacherFindMany.mockReset().mockResolvedValue([]);
+  ticketFindMany.mockReset().mockResolvedValue([]);
   targetExistsMock.mockReset().mockResolvedValue(true);
   resolveTargetLabelsMock.mockReset().mockResolvedValue(new Map());
   getPreferenceMapMock.mockReset().mockResolvedValue(new Map());
@@ -127,6 +130,32 @@ describe("previewBroadcastAudience()", () => {
       select: { userId: true },
       distinct: ["userId"],
     });
+  });
+});
+
+describe("resolveAudience() — PASS (Festival Engine, Stage 5, 2026-09-17)", () => {
+  it("держатели ISSUED-билетов этого Pass, не строки Subscription", async () => {
+    targetExistsMock.mockResolvedValue(true);
+    ticketFindMany.mockResolvedValue([{ dancer: { userId: "u1" } }, { dancer: { userId: "u2" } }]);
+    resolveTargetLabelsMock.mockResolvedValue(new Map([["pass1", "Full Pass"]]));
+
+    const result = await previewBroadcastAudience({ kind: "SUBSCRIBERS", type: "PASS", targetId: "pass1" });
+
+    expect(result).toEqual({ recipientCount: 2, label: "Full Pass" });
+    expect(ticketFindMany).toHaveBeenCalledWith({
+      where: { passId: "pass1", status: "ISSUED" },
+      select: { dancer: { select: { userId: true } } },
+      distinct: ["dancerId"],
+    });
+    expect(subscriptionFindMany).not.toHaveBeenCalled();
+  });
+
+  it("Pass не существует — BroadcastTargetInvalidError, Ticket не запрашивается", async () => {
+    targetExistsMock.mockResolvedValue(false);
+    await expect(previewBroadcastAudience({ kind: "SUBSCRIBERS", type: "PASS", targetId: "ghost" })).rejects.toThrow(
+      BroadcastTargetInvalidError
+    );
+    expect(ticketFindMany).not.toHaveBeenCalled();
   });
 });
 

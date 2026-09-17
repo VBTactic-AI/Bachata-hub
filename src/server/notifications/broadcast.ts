@@ -46,6 +46,23 @@ async function resolveAudience(audience: BroadcastAudience): Promise<{ userIds: 
   const exists = await TARGET_EXISTS[audience.type](audience.targetId);
   if (!exists) throw new BroadcastTargetInvalidError("target_not_found");
 
+  // Festival Engine, Stage 5 (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md,
+  // решение №1) — аудитория PASS резолвится ДЕРЖАТЕЛЯМИ активного Ticket на
+  // этот Pass (dancer.userId), а не строками Subscription: держатель Pass не
+  // "подписывается" на него отдельным действием, сам факт покупки уже делает
+  // его получателем.
+  if (audience.type === "PASS") {
+    const [tickets, labels] = await Promise.all([
+      prisma.ticket.findMany({
+        where: { passId: audience.targetId, status: "ISSUED" },
+        select: { dancer: { select: { userId: true } } },
+        distinct: ["dancerId"],
+      }),
+      resolveTargetLabels(audience.type, [audience.targetId]),
+    ]);
+    return { userIds: tickets.map((t) => t.dancer.userId), label: labels.get(audience.targetId) ?? audience.targetId };
+  }
+
   const [rows, labels] = await Promise.all([
     prisma.subscription.findMany({
       where: { type: audience.type, targetId: audience.targetId },

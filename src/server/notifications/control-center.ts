@@ -73,6 +73,11 @@ export async function resolveTargetLabels(type: SubscriptionType, targetIds: str
       select: { id: true, email: true, dancer: { select: { displayName: true } } },
     });
     for (const r of rows) map.set(r.id, r.dancer ? `${r.dancer.displayName} (${r.email})` : r.email);
+  } else if (type === "PASS") {
+    // Festival Engine, Stage 5 (2026-09-17) — targetLabel рассылки держателям
+    // Pass ("Full Pass" вместо голого id) в истории Broadcast.
+    const rows = await prisma.pass.findMany({ where: { id: { in: targetIds } }, select: { id: true, name: true } });
+    for (const r of rows) map.set(r.id, r.name);
   }
 
   return map;
