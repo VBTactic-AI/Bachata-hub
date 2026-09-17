@@ -8,10 +8,10 @@ import { cn } from "@/lib/cn";
 // (Events Engine): каждая вкладка — отдельная страница со своей загрузкой
 // данных, не показ/скрытие уже загруженного. Список вкладок расширяется по
 // мере переноса разделов UI-макета (docs/PROGRESS.md, Festival Engine UI
-// transfer, Stage UI-1/2: Обзор/Программа/Команда/Пассы) — остальные
-// (Спонсоры/FAQ/Бюджет/Публикация) добавляются следующими стадиями, чтобы
-// не заводить ссылки на несуществующие страницы (404 хуже отсутствующей
-// вкладки).
+// transfer, Stage UI-1/2/3: Обзор/Программа/Команда/Пассы/Спонсоры и
+// FAQ/Вопросы и отзывы) — Бюджет и рассылка (Stage UI-4) и публичная
+// страница (Stage UI-5) остаются следующими стадиями, чтобы не заводить
+// ссылки на несуществующие страницы (404 хуже отсутствующей вкладки).
 export function FestivalDashboardTabs({ festivalId }: { festivalId: string }) {
   const pathname = usePathname();
   const base = `/admin/festival/${festivalId}`;
@@ -21,6 +21,8 @@ export function FestivalDashboardTabs({ festivalId }: { festivalId: string }) {
     { href: `${base}/program`, label: "Программа", exact: false },
     { href: `${base}/team`, label: "Команда", exact: false },
     { href: `${base}/passes`, label: "Пассы", exact: false },
+    { href: `${base}/sponsors-faq`, label: "Спонсоры и FAQ", exact: false },
+    { href: `${base}/guests`, label: "Вопросы и отзывы", exact: false },
   ];
 
   return (

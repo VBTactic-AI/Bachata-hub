@@ -124,7 +124,11 @@ describe("listFestivalReviews() / listPublicFestivalReviews()", () => {
   it("организатор видит все отзывы (включая неодобренные)", async () => {
     reviewFindMany.mockResolvedValue([baseReview]);
     const result = await listFestivalReviews("fest1", owner);
-    expect(reviewFindMany).toHaveBeenCalledWith({ where: { festivalId: "fest1" }, orderBy: { createdAt: "desc" } });
+    expect(reviewFindMany).toHaveBeenCalledWith({
+      where: { festivalId: "fest1" },
+      include: { author: { select: { id: true, email: true, dancer: { select: { displayName: true } } } } },
+      orderBy: { createdAt: "desc" },
+    });
     expect(result).toHaveLength(1);
   });
 

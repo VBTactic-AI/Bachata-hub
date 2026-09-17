@@ -73,13 +73,21 @@ export async function moderateFestivalReview(reviewId: string, moderator: User, 
 }
 
 // Очередь модерации организатора — ВСЕ отзывы фестиваля (включая ещё не
-// одобренные), не то же самое, что публичный список ниже.
-export async function listFestivalReviews(festivalId: string, user: User): Promise<Review[]> {
+// одобренные), не то же самое, что публичный список ниже. include автора
+// (2026-09-17, перенос UI консоли — очереди модерации нужно показать, ЧЕЙ
+// это отзыв; тот же паттерн, что уже используют resolveTargetLabels()
+// (ORGANIZER) и сайтовая /admin/system/moderation/reviews — dancer.displayName,
+// с email как запасным вариантом для аккаунтов без профиля танцора).
+export async function listFestivalReviews(festivalId: string, user: User) {
   const festival = await prisma.festival.findUnique({ where: { id: festivalId } });
   if (!festival) throw new RegistrationNotFoundError();
   if (!(await hasFestivalAccess(festival, user))) throw new RegistrationForbiddenError("forbidden");
 
-  return prisma.review.findMany({ where: { festivalId }, orderBy: { createdAt: "desc" } });
+  return prisma.review.findMany({
+    where: { festivalId },
+    include: { author: { select: { id: true, email: true, dancer: { select: { displayName: true } } } } },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 // Публичная — только одобренные, без RBAC (будущая публичная страница).
