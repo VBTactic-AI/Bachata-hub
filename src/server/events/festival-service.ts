@@ -4,7 +4,7 @@ import { isAdmin, isVerifiedFestivalOrganizer } from "@/lib/auth";
 import { uniqueSlug } from "@/lib/slug";
 import { shouldAutoApproveEvent } from "@/lib/events/moderation";
 import { decidePublishModeration } from "./event-service";
-import { validateCommon as validatePassInput, type PassInput } from "./pass-service";
+import { validateCommon as validatePassInput, deriveRefundFields, type PassInput } from "./pass-service";
 import { isOwnerOrAdminFestival, hasFestivalAccess } from "./access";
 import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
@@ -183,6 +183,7 @@ export async function createFestivalPass(festivalId: string, user: User, input: 
   if (!festival) throw new RegistrationNotFoundError();
   if (!isOwnerOrAdminFestival(festival, user)) throw new RegistrationForbiddenError("forbidden");
   validatePassInput(input);
+  const refundFields = deriveRefundFields(input);
 
   return prisma.$transaction(async (tx) => {
     let eventId = festival.eventId;
@@ -244,6 +245,7 @@ export async function createFestivalPass(festivalId: string, user: User, input: 
         sortOrder: input.sortOrder ?? 0,
         imageUrl: input.imageUrl?.trim() || null,
         allowMultipleEntry: input.allowMultipleEntry ?? true,
+        ...refundFields,
       },
     });
   });

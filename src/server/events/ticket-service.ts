@@ -500,11 +500,21 @@ export type FestivalPassMatch = {
   festivalEventId: string;
 };
 
+// Пустой список PassAccessGrant у Pass = доступ ко всему (см. комментарий у
+// модели Pass) — Full Pass не обязан явно перечислять каждый пункт
+// программы. Общий предикат для findFestivalPassForEvent (доступ к ОДНОМУ
+// конкретному дочернему событию) и getMyFestivalAccess в
+// festival-member-service.ts (Stage 6, 2026-09-17 — перечисление ВСЕХ
+// доступных пунктов программы для личного кабинета участника) — та же
+// проверка, не дублируется в двух местах.
+export function isProgramItemAccessibleByGrants(grants: { programItemId: string | null }[], programItemId: string): boolean {
+  if (grants.length === 0) return true;
+  return grants.some((g) => g.programItemId === programItemId);
+}
+
 // Ищет действующий Pass, купленный этим танцором на фестивале, к которому
 // (через ProgramItem.linkedEvent) относится eventId — и который даёт
-// доступ именно к этому пункту программы. Пустой PassAccessGrant у Pass =
-// доступ ко всему (см. комментарий у модели Pass), поэтому Full Pass не
-// обязан явно перечислять каждый пункт программы.
+// доступ именно к этому пункту программы.
 export async function findFestivalPassForEvent(eventId: string, dancerId: string): Promise<FestivalPassMatch | null> {
   const programItem = await prisma.programItem.findFirst({
     where: { linkedEventId: eventId },
@@ -530,10 +540,7 @@ export async function findFestivalPassForEvent(eventId: string, dancerId: string
   });
   if (!passTicket?.pass) return null;
 
-  const grants = passTicket.pass.accessGrants;
-  const unrestricted = grants.length === 0;
-  const grantsThisItem = grants.some((g) => g.programItemId === programItem.id);
-  if (!unrestricted && !grantsThisItem) return null;
+  if (!isProgramItemAccessibleByGrants(passTicket.pass.accessGrants, programItem.id)) return null;
 
   return { passId: passTicket.pass.id, passName: passTicket.pass.name, festivalEventId };
 }

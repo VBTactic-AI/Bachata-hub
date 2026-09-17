@@ -79,6 +79,8 @@ const {
   setAccessGrants,
   createPromoCode,
   setPromoCodeActive,
+  deriveRefundFields,
+  validateRefundPolicy,
   PassValidationError,
 } = await import("@/server/events/pass-service");
 const { RegistrationForbiddenError, RegistrationNotFoundError } = await import("@/server/events/registration-service");
@@ -218,6 +220,80 @@ describe("createPass()", () => {
         sortOrder: 0,
       }),
     });
+  });
+
+  it("refundPolicy не передан — дефолт NONE, deadline/feePercent не заданы", async () => {
+    await createPass("event1", owner, { name: "Full Pass", type: "FULL_PASS" });
+    expect(passCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ refundPolicy: "NONE", refundDeadline: null, refundFeePercent: null }),
+    });
+  });
+
+  it("refundPolicy=UNTIL_DATE без refundDeadline — PassValidationError", async () => {
+    await expect(createPass("event1", owner, { name: "VIP", type: "VIP_PASS", refundPolicy: "UNTIL_DATE" })).rejects.toMatchObject({
+      code: "refund_deadline_required",
+    });
+    expect(passCreate).not.toHaveBeenCalled();
+  });
+
+  it("refundPolicy=UNTIL_DATE с датой — сохраняется, feePercent игнорируется (null)", async () => {
+    const deadline = new Date("2027-01-01");
+    await createPass("event1", owner, {
+      name: "VIP",
+      type: "VIP_PASS",
+      refundPolicy: "UNTIL_DATE",
+      refundDeadline: deadline,
+      refundFeePercent: 50, // не относится к UNTIL_DATE — должен быть отброшен
+    });
+    expect(passCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ refundPolicy: "UNTIL_DATE", refundDeadline: deadline, refundFeePercent: null }),
+    });
+  });
+
+  it("refundPolicy=PARTIAL без refundFeePercent — PassValidationError", async () => {
+    await expect(createPass("event1", owner, { name: "VIP", type: "VIP_PASS", refundPolicy: "PARTIAL" })).rejects.toMatchObject({
+      code: "refund_fee_required",
+    });
+  });
+
+  it("refundPolicy=PARTIAL с feePercent=0 — тоже ошибка (нужен положительный размер)", async () => {
+    await expect(
+      createPass("event1", owner, { name: "VIP", type: "VIP_PASS", refundPolicy: "PARTIAL", refundFeePercent: 0 })
+    ).rejects.toMatchObject({ code: "refund_fee_required" });
+  });
+
+  it("refundFeePercent > 100 — PassValidationError, независимо от политики", async () => {
+    await expect(
+      createPass("event1", owner, { name: "VIP", type: "VIP_PASS", refundPolicy: "PARTIAL", refundFeePercent: 150 })
+    ).rejects.toMatchObject({ code: "invalid_refund_fee_percent" });
+  });
+
+  it("refundPolicy=FULL — deadline/feePercent игнорируются, даже если переданы", async () => {
+    await createPass("event1", owner, {
+      name: "VIP",
+      type: "VIP_PASS",
+      refundPolicy: "FULL",
+      refundDeadline: new Date("2027-01-01"),
+      refundFeePercent: 10,
+    });
+    expect(passCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ refundPolicy: "FULL", refundDeadline: null, refundFeePercent: null }),
+    });
+  });
+});
+
+describe("deriveRefundFields() / validateRefundPolicy() — условия возврата (Stage 7 Festival Engine, 2026-09-17)", () => {
+  it("пустой input — NONE без deadline/feePercent", () => {
+    expect(deriveRefundFields({})).toEqual({ refundPolicy: "NONE", refundDeadline: null, refundFeePercent: null });
+  });
+
+  it("validateRefundPolicy принимает валидные комбинации", () => {
+    expect(() => validateRefundPolicy({ refundPolicy: "NONE", refundDeadline: null, refundFeePercent: null })).not.toThrow();
+    expect(() =>
+      validateRefundPolicy({ refundPolicy: "UNTIL_DATE", refundDeadline: new Date(), refundFeePercent: null })
+    ).not.toThrow();
+    expect(() => validateRefundPolicy({ refundPolicy: "PARTIAL", refundDeadline: null, refundFeePercent: 25 })).not.toThrow();
+    expect(() => validateRefundPolicy({ refundPolicy: "FULL", refundDeadline: null, refundFeePercent: null })).not.toThrow();
   });
 });
 

@@ -75,6 +75,7 @@ const {
   findFestivalPassForEvent,
   issueFestivalPassEntry,
   getEventPassAttendanceCount,
+  isProgramItemAccessibleByGrants,
   TicketValidationError,
   DuplicateTicketError,
 } = await import("@/server/events/ticket-service");
@@ -761,6 +762,20 @@ describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсоб
   it("issueFestivalPassEntry — чужое событие — RegistrationForbiddenError", async () => {
     eventFindUnique.mockResolvedValue({ id: "child-event", createdById: "someone-else" });
     await expect(issueFestivalPassEntry("child-event", "dancer1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+  });
+});
+
+describe("isProgramItemAccessibleByGrants() — вынесено из findFestivalPassForEvent (Stage 6 Festival Engine, 2026-09-17)", () => {
+  it("пустой список грантов — доступ ко всему (Full Pass)", () => {
+    expect(isProgramItemAccessibleByGrants([], "item1")).toBe(true);
+  });
+
+  it("гранты есть, но не на этот пункт — недоступно", () => {
+    expect(isProgramItemAccessibleByGrants([{ programItemId: "other" }], "item1")).toBe(false);
+  });
+
+  it("гранты включают этот пункт — доступно", () => {
+    expect(isProgramItemAccessibleByGrants([{ programItemId: "other" }, { programItemId: "item1" }], "item1")).toBe(true);
   });
 });
 

@@ -9,6 +9,7 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/
 // только владелец события/ADMIN (см. комментарий в pass-service.ts).
 
 const PASS_TYPES = ["FULL_PASS", "PARTY_PASS", "WORKSHOP_PASS", "DAY_PASS", "COMPETITION_PASS", "VIP_PASS", "FREE_PASS", "CUSTOM"] as const;
+const REFUND_POLICIES = ["NONE", "UNTIL_DATE", "PARTIAL", "FULL"] as const;
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -24,6 +25,9 @@ const createSchema = z.object({
   sortOrder: z.number().int().optional(),
   imageUrl: z.string().optional().nullable(),
   allowMultipleEntry: z.boolean().optional(),
+  refundPolicy: z.enum(REFUND_POLICIES).optional(),
+  refundDeadline: z.coerce.date().optional().nullable(),
+  refundFeePercent: z.number().min(0).max(100).optional().nullable(),
 });
 
 async function getEventBySlug(slug: string) {

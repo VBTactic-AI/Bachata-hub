@@ -1,4 +1,4 @@
-import type { Pass, PassAccessGrant, PassPriceTier, PassStatus, PassType, PromoCode, PromoDiscountType, User } from "@prisma/client";
+import type { Pass, PassAccessGrant, PassPriceTier, PassRefundPolicy, PassStatus, PassType, PromoCode, PromoDiscountType, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess, isOwnerOrAdmin } from "./access";
 import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
@@ -62,6 +62,15 @@ export type PassInput = {
   sortOrder?: number;
   imageUrl?: string | null;
   allowMultipleEntry?: boolean;
+  // Условия возврата (2026-09-17, Stage 7 плана Festival Engine,
+  // docs/FESTIVAL_SERVICE_LAYER_PLAN.md) — поля уже были в схеме
+  // (PassRefundPolicy), здесь впервые подключены к CRUD. Это ТОЛЬКО
+  // информационная политика для покупателя — никакой автоматической
+  // обработки возврата по ней не реализуется, refundTicket() как был
+  // ручным (организатор решает сам), так и остаётся.
+  refundPolicy?: PassRefundPolicy;
+  refundDeadline?: Date | null;
+  refundFeePercent?: number | null;
 };
 
 // Экспортирована (2026-09-17) — переиспользуется festival-service.ts
@@ -85,9 +94,48 @@ export function validateCommon(input: Partial<PassInput>): void {
   }
 }
 
+type EffectiveRefundFields = { refundPolicy: PassRefundPolicy; refundDeadline: Date | null; refundFeePercent: number | null };
+
+// UNTIL_DATE без даты или PARTIAL без размера комиссии — не по чему судить
+// покупателю об условиях (тот же принцип, что и у discountType/discountValue
+// в festival-referral-code-service.ts). Проверяется на уже СХЛОПНУТЫХ
+// (effective) значениях — вызывающий код сам решает, как их получить: у
+// createPass/createFestivalPass это просто input с дефолтами, у updatePass —
+// патч, слитый с уже сохранённым Pass (см. computeEffectiveRefundFields).
+export function validateRefundPolicy(effective: EffectiveRefundFields): void {
+  if (effective.refundPolicy === "UNTIL_DATE" && !effective.refundDeadline) {
+    throw new PassValidationError("refund_deadline_required", "Для условия «возврат до даты» нужно указать дату.");
+  }
+  if (effective.refundPolicy === "PARTIAL" && (effective.refundFeePercent == null || effective.refundFeePercent <= 0)) {
+    throw new PassValidationError("refund_fee_required", "Для частичного возврата нужно указать размер комиссии в процентах.");
+  }
+  if (effective.refundFeePercent != null && (effective.refundFeePercent < 0 || effective.refundFeePercent > 100)) {
+    throw new PassValidationError("invalid_refund_fee_percent", "Комиссия за возврат должна быть от 0 до 100%.");
+  }
+}
+
+// Поля refundDeadline/refundFeePercent имеют смысл только при своей
+// соответствующей политике — при остальных политиках нормализуются в null,
+// чтобы в БД не залёживались значения от политики, которая больше не
+// действует (например, дата дедлайна от старого UNTIL_DATE после смены на
+// FULL). Экспортирована — переиспользуется createFestivalPass в
+// festival-service.ts (тот же "create с дефолтами", не merge с текущей
+// строкой, как у updatePass ниже).
+export function deriveRefundFields(input: Partial<PassInput>): EffectiveRefundFields {
+  const refundPolicy = input.refundPolicy ?? "NONE";
+  const effective: EffectiveRefundFields = {
+    refundPolicy,
+    refundDeadline: refundPolicy === "UNTIL_DATE" ? input.refundDeadline ?? null : null,
+    refundFeePercent: refundPolicy === "PARTIAL" ? input.refundFeePercent ?? null : null,
+  };
+  validateRefundPolicy(effective);
+  return effective;
+}
+
 export async function createPass(eventId: string, user: User, input: PassInput): Promise<Pass> {
   await requireOwnerOrAdminEvent(eventId, user);
   validateCommon(input);
+  const refundFields = deriveRefundFields(input);
 
   return prisma.pass.create({
     data: {
@@ -105,6 +153,7 @@ export async function createPass(eventId: string, user: User, input: PassInput):
       sortOrder: input.sortOrder ?? 0,
       imageUrl: input.imageUrl?.trim() || null,
       allowMultipleEntry: input.allowMultipleEntry ?? true,
+      ...refundFields,
     },
   });
 }
@@ -123,6 +172,29 @@ export async function updatePass(passId: string, user: User, patch: Partial<Pass
     );
   }
 
+  // Условия возврата — интерфейс "патча", а не независимые поля: чтобы
+  // проверить пару UNTIL_DATE+refundDeadline/PARTIAL+refundFeePercent,
+  // нужны СХЛОПНУТЫЕ (patch поверх уже сохранённого Pass) значения, не сам
+  // patch по отдельности — иначе "поменяли только refundFeePercent, политика
+  // уже была PARTIAL" не прошло бы валидацию, хотя это корректное изменение.
+  const refundTouched = patch.refundPolicy !== undefined || patch.refundDeadline !== undefined || patch.refundFeePercent !== undefined;
+  let refundFields: Partial<EffectiveRefundFields> = {};
+  if (refundTouched) {
+    const refundPolicy = patch.refundPolicy ?? pass.refundPolicy;
+    const refundDeadline =
+      refundPolicy === "UNTIL_DATE" ? (patch.refundDeadline !== undefined ? patch.refundDeadline : pass.refundDeadline) : null;
+    const refundFeePercent =
+      refundPolicy === "PARTIAL"
+        ? patch.refundFeePercent !== undefined
+          ? patch.refundFeePercent
+          : pass.refundFeePercent != null
+            ? Number(pass.refundFeePercent)
+            : null
+        : null;
+    validateRefundPolicy({ refundPolicy, refundDeadline, refundFeePercent });
+    refundFields = { refundPolicy, refundDeadline, refundFeePercent };
+  }
+
   return prisma.pass.update({
     where: { id: passId },
     data: {
@@ -139,6 +211,7 @@ export async function updatePass(passId: string, user: User, patch: Partial<Pass
       ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
       ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl?.trim() || null } : {}),
       ...(patch.allowMultipleEntry !== undefined ? { allowMultipleEntry: patch.allowMultipleEntry } : {}),
+      ...refundFields,
     },
   });
 }

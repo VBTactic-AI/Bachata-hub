@@ -5,6 +5,7 @@ import { createFestivalPass } from "@/server/events/festival-service";
 import { respondToEventsError } from "@/server/events/http";
 
 const PASS_TYPES = ["FULL_PASS", "PARTY_PASS", "WORKSHOP_PASS", "DAY_PASS", "COMPETITION_PASS", "VIP_PASS", "FREE_PASS", "CUSTOM"] as const;
+const REFUND_POLICIES = ["NONE", "UNTIL_DATE", "PARTIAL", "FULL"] as const;
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -20,6 +21,9 @@ const createSchema = z.object({
   sortOrder: z.number().int().optional(),
   imageUrl: z.string().optional().nullable(),
   allowMultipleEntry: z.boolean().optional(),
+  refundPolicy: z.enum(REFUND_POLICIES).optional(),
+  refundDeadline: z.string().optional().nullable(),
+  refundFeePercent: z.number().min(0).max(100).optional().nullable(),
 });
 
 // POST /api/festivals/[id]/passes — единственная точка создания Pass для
@@ -43,6 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       salesEndAt: parsed.data.salesEndAt ? new Date(parsed.data.salesEndAt) : null,
       validFrom: parsed.data.validFrom ? new Date(parsed.data.validFrom) : null,
       validUntil: parsed.data.validUntil ? new Date(parsed.data.validUntil) : null,
+      refundDeadline: parsed.data.refundDeadline ? new Date(parsed.data.refundDeadline) : null,
     });
     return NextResponse.json({ ok: true, pass });
   } catch (e) {

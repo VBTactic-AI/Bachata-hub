@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/events/registration-service";
 
 const PASS_TYPES = ["FULL_PASS", "PARTY_PASS", "WORKSHOP_PASS", "DAY_PASS", "COMPETITION_PASS", "VIP_PASS", "FREE_PASS", "CUSTOM"] as const;
+const REFUND_POLICIES = ["NONE", "UNTIL_DATE", "PARTIAL", "FULL"] as const;
 
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
@@ -20,6 +21,9 @@ const patchSchema = z.object({
   sortOrder: z.number().int().optional(),
   imageUrl: z.string().optional().nullable(),
   allowMultipleEntry: z.boolean().optional(),
+  refundPolicy: z.enum(REFUND_POLICIES).optional(),
+  refundDeadline: z.coerce.date().optional().nullable(),
+  refundFeePercent: z.number().min(0).max(100).optional().nullable(),
 });
 
 // Редактирование одного Pass (owner-check — внутри updatePass). Статус
