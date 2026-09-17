@@ -95,26 +95,32 @@ model User {
   isVerifiedFestivalOrganizer Boolean   @default(false)
 
   dancer                      Dancer?
-  ownedSchools                School[]            @relation("SchoolOwner")
-  createdEvents               Event[]             @relation("EventCreator")
-  moderatedEvents             Event[]             @relation("EventModerator")
-  createdEventTemplates       EventTemplate[]     @relation("EventTemplateCreator")
-  createdEventSeries          EventSeries[]       @relation("EventSeriesCreator")
-  createdFestivals            Festival[]          @relation("FestivalCreator")
-  reviews                     Review[]            @relation("ReviewAuthor")
-  moderatedReviews            Review[]            @relation("ReviewModerator")
-  moderationLogs              ModerationLog[]     @relation("ModerationActor")
-  accessRequestsSubmitted     AccessRequest[]     @relation("AccessRequestApplicant")
-  accessRequestsReviewed      AccessRequest[]     @relation("AccessRequestReviewer")
-  eventTeamMemberships        EventTeamMember[]   @relation("EventTeamMemberUser")
-  eventTeamInvitesSent        EventTeamMember[]   @relation("EventTeamMemberInvitedBy")
-  eventSuggestionsSubmitted   EventSuggestion[]   @relation("EventSuggestionSubmitter")
-  eventSuggestionsReviewed    EventSuggestion[]   @relation("EventSuggestionReviewer")
-  eventRegistrationsCheckedIn EventRegistration[] @relation("EventRegistrationCheckedInBy")
-  ticketsIssued               Ticket[]            @relation("TicketIssuedBy")
-  passTemplatesCreated        PassTemplate[]      @relation("PassTemplateCreatedBy")
+  ownedSchools                School[]                @relation("SchoolOwner")
+  createdEvents               Event[]                 @relation("EventCreator")
+  moderatedEvents             Event[]                 @relation("EventModerator")
+  createdEventTemplates       EventTemplate[]         @relation("EventTemplateCreator")
+  createdEventSeries          EventSeries[]           @relation("EventSeriesCreator")
+  createdFestivals            Festival[]              @relation("FestivalCreator")
+  reviews                     Review[]                @relation("ReviewAuthor")
+  moderatedReviews            Review[]                @relation("ReviewModerator")
+  moderationLogs              ModerationLog[]         @relation("ModerationActor")
+  accessRequestsSubmitted     AccessRequest[]         @relation("AccessRequestApplicant")
+  accessRequestsReviewed      AccessRequest[]         @relation("AccessRequestReviewer")
+  eventTeamMemberships        EventTeamMember[]       @relation("EventTeamMemberUser")
+  eventTeamInvitesSent        EventTeamMember[]       @relation("EventTeamMemberInvitedBy")
+  eventSuggestionsSubmitted   EventSuggestion[]       @relation("EventSuggestionSubmitter")
+  eventSuggestionsReviewed    EventSuggestion[]       @relation("EventSuggestionReviewer")
+  eventRegistrationsCheckedIn EventRegistration[]     @relation("EventRegistrationCheckedInBy")
+  ticketsIssued               Ticket[]                @relation("TicketIssuedBy")
+  passTemplatesCreated        PassTemplate[]          @relation("PassTemplateCreatedBy")
   festivalQuestionsModerated  FestivalGuestQuestion[] @relation("FestivalGuestQuestionModerator")
   festivalQuestionsAnswered   FestivalGuestQuestion[] @relation("FestivalGuestQuestionAnswerer")
+  // Commerce Engine v1 (2026-09-17) — см. комментарий у моделей Order/Payment/
+  // Refund/TicketCheckIn.
+  ordersCreated               Order[]                 @relation("OrderCreatedBy")
+  paymentsRecorded            Payment[]               @relation("PaymentRecordedBy")
+  refundsRecorded             Refund[]                @relation("RefundRecordedBy")
+  ticketCheckInsPerformed     TicketCheckIn[]         @relation("TicketCheckedInBy")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -572,12 +578,16 @@ model Event {
   tickets                Ticket[]
   promoCodes             PromoCode[]
   media                  EventMedia[]
+  // Commerce Engine v1 (см. комментарий у модели Product/Order) — обратные
+  // связи для Product.event/Order.event.
+  products               Product[]
+  orders                 Order[]
   // Обратная связь для ProgramItem.linkedEvent ниже — отдельное
   // "настоящее" событие (party/workshop/contest) со своей публичной
   // страницей, на которое ссылается пункт программы фестиваля. Не путать с
   // festival выше — то событие ЯВЛЯЕТСЯ bridge фестиваля, это — событие, НА
   // КОТОРОЕ ссылается программа чужого фестиваля.
-  linkedFromProgramItems ProgramItem[]  @relation("ProgramItemLinkedEvent")
+  linkedFromProgramItems ProgramItem[]       @relation("ProgramItemLinkedEvent")
 
   @@unique([seriesId, occurrenceDate]) // идемпотентность генератора — NULL/NULL (обычные разовые события) не конфликтуют между собой в Postgres
   @@index([cityId, startsAt])
@@ -709,6 +719,8 @@ model TicketType {
   updatedAt    DateTime   @updatedAt
 
   tickets Ticket[]
+  // Commerce Engine v1 — обратная связь для Product.ticketType.
+  product Product?
 
   @@index([eventId])
   @@index([eventId, status])
@@ -781,26 +793,26 @@ enum PassRefundPolicy {
 }
 
 model Pass {
-  id                 String     @id @default(cuid())
+  id                 String           @id @default(cuid())
   eventId            String
-  event              Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event              Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   name               String
   description        String?
   type               PassType
   // null — цена ещё не назначена организатором либо type = FREE_PASS.
-  price              Decimal?   @db.Decimal(10, 2)
+  price              Decimal?         @db.Decimal(10, 2)
   currency           String? // свободный текст, как EventPriceOption.currency ("BYN", "EUR", ...)
   quantity           Int? // null — без ограничения мест
   // Пишется только будущим Ticket-сервисом при продаже/выдаче билета —
   // сегодня ни один код это поле не меняет, стартует с 0.
-  soldQuantity       Int        @default(0)
+  soldQuantity       Int              @default(0)
   salesStartAt       DateTime?
   salesEndAt         DateTime?
   validFrom          DateTime?
   validUntil         DateTime?
-  status             PassStatus @default(DRAFT)
-  sortOrder          Int        @default(0)
-  isActive           Boolean    @default(true)
+  status             PassStatus       @default(DRAFT)
+  sortOrder          Int              @default(0)
+  isActive           Boolean          @default(true)
   // Обложка предложения (публичная страница/попап покупки) — обычная
   // ссылка, как Event.photoUrl, без отдельной галереи (Pass — не Event,
   // одно изображение достаточно).
@@ -809,18 +821,21 @@ model Pass {
   // см. комментарий у Ticket) — Full Pass обычно можно проходить много раз
   // за фестиваль, Party Pass на конкретный вечер — как правило один раз.
   // Поле заведено заранее, реальная проверка появится вместе с check-in.
-  allowMultipleEntry Boolean    @default(true)
+  allowMultipleEntry Boolean          @default(true)
   // Условия возврата (2026-09-17) — см. комментарий у enum PassRefundPolicy.
   refundPolicy       PassRefundPolicy @default(NONE)
   refundDeadline     DateTime?
-  refundFeePercent   Decimal?   @db.Decimal(5, 2)
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  refundFeePercent   Decimal?         @db.Decimal(5, 2)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   tickets         Ticket[]
   priceTiers      PassPriceTier[]
   accessGrants    PassAccessGrant[]
   promoCodePasses PromoCodePass[]
+  // Commerce Engine v1 — обратные связи для Product.pass/UserPass.pass.
+  product         Product?
+  userPasses      UserPass[]
 
   @@index([eventId])
   @@index([eventId, status])
@@ -874,6 +889,9 @@ model PassPriceTier {
   sortOrder  Int       @default(0)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+
+  // Commerce Engine v1 — обратная связь для OrderItem.passPriceTier.
+  orderItems OrderItem[]
 
   @@index([passId])
 }
@@ -930,6 +948,8 @@ model PromoCode {
 
   passes  PromoCodePass[]
   tickets Ticket[]
+  // Commerce Engine v1 — обратная связь для Order.promoCode.
+  orders  Order[]
 
   @@unique([eventId, code])
   @@index([eventId])
@@ -1079,6 +1099,25 @@ model Ticket {
   // Ticket_dancerId_eventId_no_product_key, см. migration.sql, его здесь нет
   // — Prisma DSL не поддерживает partial unique index. CHECK-constraint
   // "не оба одновременно" — тоже только в migration.sql, той же причине.)
+  // ---------------------------------------------------------------------------
+  // Commerce Engine v1 (2026-09-17) — Phase 1, ТОЛЬКО схема, аддитивно.
+  // orderItemId/userPassId — новые, необязательные связи с Order/OrderItem/
+  // UserPass ниже (см. комментарий у Product/Order/OrderItem/UserPass). Пока
+  // NULLABLE и НЕ backfill'ены (Phase 2, отдельный шаг) — существующий код
+  // (ticket-service.ts) продолжает писать passId/ticketTypeId/price/isPaid
+  // напрямую как раньше, ничего не сломано. После того как сервисный слой
+  // перейдёт на createOrder()/fulfillOrder() (Phase 3-4), passId/ticketTypeId/
+  // price/currency/isPaid/paidAt/promoCodeId/discountAmount/referralCode* здесь
+  // станут избыточны (их роль переходит к OrderItem/Payment/UserPass) и будут
+  // удалены отдельным cleanup-шагом (Phase 9) — не раньше, чем весь читающий
+  // их код будет переведён (CLAUDE.md §16/§51: не удалять то, на что ещё
+  // ссылаются).
+  orderItemId String?
+  orderItem   OrderItem?     @relation(fields: [orderItemId], references: [id])
+  userPassId  String?
+  userPass    UserPass?      @relation(fields: [userPassId], references: [id])
+  checkIn     TicketCheckIn?
+
   @@unique([dancerId, passId, eventId])
   @@unique([dancerId, ticketTypeId])
   @@index([eventId])
@@ -1089,6 +1128,292 @@ model Ticket {
   @@index([passId, status])
   @@index([ticketTypeId, status])
   @@index([referralCodeId])
+  @@index([orderItemId])
+  @@index([userPassId])
+}
+
+// ---------------------------------------------------------------------------
+// Commerce Engine v1 (2026-09-17, Phase 1 — только схема, см. docs/00_DECISIONS.md
+// решение по итогам аудита Ticket/Pass/Commerce). Три развилки, подтверждённые
+// пользователем перед этой миграцией:
+// 1. Product — ТОНКАЯ обёртка над уже существующими Pass/TicketType (НЕ слияние
+//    их в одну таблицу — вчерашнее решение D10 "TicketType и Pass — разные
+//    сущности" НЕ отменяется). У Product НЕТ ни одного коммерческого поля
+//    (ни price, ни quantity) — это чистый идентификатор "что именно продаётся",
+//    цена/остаток мест остаются ЕДИНСТВЕННО в Pass(+PassPriceTier)/TicketType,
+//    как и раньше. Без этого через полгода Product.price и TicketType.price
+//    неизбежно разъехались бы.
+// 2. Payment.provider — сегодня ТОЛЬКО MANUAL (организатор вручную подтверждает
+//    получение денег, как и сейчас через Ticket.isPaid). Реальный онлайн-
+//    эквайринг — отдельная, ещё не начатая задача (см. docs/audit_report.md
+//    §8, PAY-001) с отдельным выбором провайдера/юрисдикции; вебхуки/их
+//    идемпотентность здесь не реализуются, пока провайдера нет.
+// 3. Self-checkout (танцор сам покупает и платит онлайн, корзина из нескольких
+//    продуктов) — НЕ в этом заходе. Order/OrderItem/Payment/Refund формализуют
+//    СУЩЕСТВУЮЩИЙ процесс (организатор вручную регистрирует продажу и
+//    получение денег) в правильную структуру, а не добавляют новый публичный
+//    UI покупки.
+// Дополнительно (прямое требование пользователя при ревью этого плана):
+// - OrderItem.passPriceTierId — снимок, какой именно ценовой тир Pass
+//   (Early Bird/Regular/Late) действовал в момент покупки — отдельно от самой
+//   суммы (unitPriceSnapshot), которая не пересчитывается, если тир потом
+//   изменят/удалят.
+// - Order.dancerId — ОДИН человек одновременно и платит, и получает доступ
+//   (по прямому решению пользователя: покупка для других людей в рамках
+//   одного заказа сознательно НЕ реализуется сейчас — "пока только себе
+//   можно покупать", как и сегодня работает issueTicket()). Ticket.dancerId/
+//   UserPass.dancerId при fulfillment всегда равны Order.dancerId.
+// ---------------------------------------------------------------------------
+
+enum ProductType {
+  PASS
+  EVENT_TICKET
+}
+
+// Идентификатор "что продаётся" для Order/OrderItem — ровно одно из
+// passId/ticketTypeId заполнено (CHECK-constraint в migration.sql, Prisma DSL
+// не поддерживает декларативный CHECK, тот же приём, что и у PassAccessGrant).
+// НЕ хранит price/currency/quantity/soldQuantity — единственный источник
+// этих значений остаётся Pass(+PassPriceTier)/TicketType, как и сегодня.
+model Product {
+  id           String      @id @default(cuid())
+  eventId      String
+  event        Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type         ProductType
+  passId       String?     @unique
+  pass         Pass?       @relation(fields: [passId], references: [id], onDelete: Cascade)
+  ticketTypeId String?     @unique
+  ticketType   TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+
+  orderItems OrderItem[]
+
+  @@index([eventId])
+  @@index([eventId, type])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
+  CANCELLED
+}
+
+// Заказ — что купили и для кого (dancerId), сколько (subtotal/discount/
+// total). НЕ то же самое, что Payment (факт перевода денег) и НЕ то же самое,
+// что Ticket/UserPass (сам факт выданного доступа — см. комментарий у
+// OrderItem/Ticket.dancerId выше). eventId — Order создаётся в контексте
+// ОДНОГО события (как и сегодня Pass/TicketType); "корзина" из товаров разных
+// событий одного фестиваля — вне рамок self-checkout, см. решение 3 выше.
+//
+// dancerId — ОДИН И ТОТ ЖЕ человек одновременно и платит, и получает доступ
+// (по прямому решению пользователя, 2026-09-17: "покупка для друзей" —
+// другой человек-получатель на каждый Ticket/UserPass в рамках одного заказа —
+// сознательно НЕ реализуется в этом заходе, только "купил сам себе", как и
+// сегодня работает issueTicket()). Ticket.dancerId/UserPass.dancerId при
+// fulfillment всегда равны Order.dancerId — отдельного "получателя" на уровне
+// OrderItem/quantity в этой версии нет.
+model Order {
+  id             String                @id @default(cuid())
+  eventId        String
+  event          Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  dancerId       String
+  dancer         Dancer                @relation(fields: [dancerId], references: [id])
+  status         OrderStatus           @default(PENDING)
+  currency       String?
+  subtotal       Decimal               @default(0) @db.Decimal(10, 2)
+  discount       Decimal               @default(0) @db.Decimal(10, 2)
+  total          Decimal               @default(0) @db.Decimal(10, 2)
+  promoCodeId    String?
+  promoCode      PromoCode?            @relation(fields: [promoCodeId], references: [id])
+  referralCodeId String?
+  referralCode   FestivalReferralCode? @relation(fields: [referralCodeId], references: [id])
+  // Кто провёл продажу в системе (организатор/член команды) — тот же смысл,
+  // что и Ticket.issuedById сегодня.
+  createdById    String
+  createdBy      User                  @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  items    OrderItem[]
+  payments Payment[]
+  refunds  Refund[]
+
+  @@index([eventId])
+  @@index([dancerId])
+  @@index([eventId, status])
+}
+
+// Строка заказа — снимок цены/названия НА МОМЕНТ покупки (не пересчитывается
+// задним числом при изменении Product/Pass/TicketType, тот же принцип
+// неизменности истории, что уже применяется к Result/Points в Competition
+// Engine). quantity > 1 — несколько единиц одного Product в одной строке;
+// все выданные единицы (Ticket.dancerId/UserPass.dancerId) принадлежат ТОМУ
+// ЖЕ человеку, что и Order.dancerId (см. комментарий у Order — покупка для
+// других людей сейчас не реализуется).
+model OrderItem {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  // Только для productId → Pass с ценовыми тирами — какой именно тир
+  // действовал в момент покупки (см. решение 4 выше). НЕ влияет на расчёт
+  // (unitPriceSnapshot уже содержит итоговую сумму) — чисто для аудита/показа
+  // "купил по Early Bird".
+  passPriceTierId String?
+  passPriceTier   PassPriceTier? @relation(fields: [passPriceTierId], references: [id])
+
+  nameSnapshot      String
+  unitPriceSnapshot Decimal? @db.Decimal(10, 2) // null — бесплатный Product
+  currencySnapshot  String?
+  quantity          Int      @default(1)
+  discountAmount    Decimal? @db.Decimal(10, 2)
+  total             Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt         DateTime @default(now())
+
+  tickets    Ticket[]
+  userPasses UserPass[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([passPriceTierId])
+}
+
+enum PaymentProvider {
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+// Факт движения денег по Order — сегодня ВСЕГДА provider=MANUAL (см. решение
+// 2 выше). providerPaymentId — задел под будущий реальный эквайринг, сегодня
+// не используется. Один Order может иметь НЕСКОЛЬКО Payment (частичная
+// предоплата в будущем) — намеренно не Order.paymentId.
+model Payment {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  provider          PaymentProvider @default(MANUAL)
+  providerPaymentId String?         @unique
+  amount            Decimal         @db.Decimal(10, 2)
+  currency          String?
+  status            PaymentStatus   @default(PENDING)
+  paidAt            DateTime?
+  failureReason     String?
+
+  // Кто отметил оплату (организатор/член команды) — при provider=MANUAL это
+  // обязательный человек-подтверждающий; для будущего онлайн-провайдера этот
+  // же принцип не подходит (вебхук не от лица пользователя) — тогда поле
+  // станет nullable отдельной миграцией, не сейчас.
+  recordedById String
+  recordedBy   User     @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refunds Refund[]
+
+  @@index([orderId])
+  @@index([orderId, status])
+}
+
+enum RefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Один Payment может иметь НЕСКОЛЬКО Refund (частичный возврат нескольких
+// позиций заказа по отдельности) — см. Scenario 4 задачи. status=COMPLETED
+// сразу при создании для MANUAL-провайдера (организатор возвращает деньги сам,
+// вне системы, и фиксирует это одним действием) — PENDING/FAILED зарезервированы
+// под будущий реальный эквайринг.
+model Refund {
+  id        String  @id @default(cuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+
+  amount   Decimal      @db.Decimal(10, 2)
+  currency String?
+  reason   String
+  status   RefundStatus @default(COMPLETED)
+
+  recordedById String
+  recordedBy   User      @relation("RefundRecordedBy", fields: [recordedById], references: [id])
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  @@index([paymentId])
+  @@index([orderId])
+}
+
+enum UserPassStatus {
+  ACTIVE
+  REVOKED
+}
+
+// Конкретное право конкретного танцора на конкретный Pass — Pass остаётся
+// "предложением" (определением), UserPass — тем, что реально получил ОДИН
+// человек после оплаты. orderItemId nullable: производные/подарочные UserPass
+// без отдельной покупки (будущее расширение) технически возможны, сегодня
+// сервисный слой всегда создаёт вместе с OrderItem.
+model UserPass {
+  id          String         @id @default(cuid())
+  dancerId    String
+  dancer      Dancer         @relation(fields: [dancerId], references: [id])
+  passId      String
+  pass        Pass           @relation(fields: [passId], references: [id])
+  orderItemId String?
+  orderItem   OrderItem?     @relation(fields: [orderItemId], references: [id])
+  status      UserPassStatus @default(ACTIVE)
+  validFrom   DateTime?
+  validUntil  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Входы, материализованные по этому Pass — прямой (на событии, где Pass
+  // куплен) и производные (на дочерних событиях фестиваля, см. комментарий
+  // у Ticket выше про issueFestivalPassEntry).
+  tickets Ticket[]
+
+  @@unique([dancerId, passId])
+  @@index([passId])
+}
+
+enum CheckInMethod {
+  QR
+  MANUAL
+  ADMIN
+}
+
+// Факт явки ПО КОНКРЕТНОМУ Ticket — отдельно от EventRegistration.checkedInAt
+// (явка на само событие вообще, другой домен) и от Competition Engine CheckIn
+// (JNJ, модель с ТАКИМ ЖЕ именем уже существует ниже для другого домена —
+// поэтому здесь TicketCheckIn, а не CheckIn, во избежание конфликта имён).
+// Один Ticket — максимум один TicketCheckIn (allowMultipleEntry Pass с
+// несколькими проходами — будущее расширение, сегодня не реализуется, см.
+// комментарий у Pass.allowMultipleEntry).
+model TicketCheckIn {
+  id            String        @id @default(cuid())
+  ticketId      String        @unique
+  ticket        Ticket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  checkedInAt   DateTime      @default(now())
+  checkedInById String
+  checkedInBy   User          @relation("TicketCheckedInBy", fields: [checkedInById], references: [id])
+  method        CheckInMethod @default(MANUAL)
+  createdAt     DateTime      @default(now())
 }
 
 // 1:1 к Event — заполняется только когда Event.format = PARTY.
@@ -1204,22 +1529,22 @@ enum FestivalProgramItemType {
 }
 
 model ProgramItem {
-  id         String                  @id @default(cuid())
-  festivalId String
-  festival   Festival                @relation(fields: [festivalId], references: [id], onDelete: Cascade)
-  title      String
-  type       FestivalProgramItemType
-  startTime  DateTime
-  endTime    DateTime?
-  teacherId  String?
-  teacher    Teacher?                @relation(fields: [teacherId], references: [id])
+  id            String                  @id @default(cuid())
+  festivalId    String
+  festival      Festival                @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+  title         String
+  type          FestivalProgramItemType
+  startTime     DateTime
+  endTime       DateTime?
+  teacherId     String?
+  teacher       Teacher?                @relation(fields: [teacherId], references: [id])
   // Опциональная ссылка на дочернее "настоящее" событие со своей публичной
   // страницей (party/workshop как отдельный Event, или CONTEST — у которого,
   // в свою очередь, уже есть Event.competition, см. D3) — не заводим
   // отдельный linkedCompetitionId, Event уже покрывает оба случая.
   linkedEventId String?
-  linkedEvent   Event?                @relation("ProgramItemLinkedEvent", fields: [linkedEventId], references: [id])
-  order         Int                   @default(0)
+  linkedEvent   Event?                  @relation("ProgramItemLinkedEvent", fields: [linkedEventId], references: [id])
+  order         Int                     @default(0)
 
   // Лимит мест (2026-09-17, план docs/FESTIVAL_UI_TO_DB_PLAN.md) —
   // ограничивает запись именно на этот пункт программы, отдельно от того,
@@ -1255,18 +1580,18 @@ model FestivalSponsor {
   name       String
   // Свободный текст (организатор печатает сам, напр. "Генеральный
   // спонсор") — сознательно не enum, см. docs/FESTIVAL_UI_TO_DB_PLAN.md §2.5.
-  tier        String
-  logoUrl     String?
-  websiteUrl  String?
+  tier       String
+  logoUrl    String?
+  websiteUrl String?
   // Сумма денежного взноса (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md
   // §2.2) — попадает в «Доход» вкладки «Бюджет» (прямое решение
   // пользователя). Nullable — спонсор может быть бартерным/информационным,
   // без денежного взноса вообще.
-  amount      Decimal? @db.Decimal(10, 2)
-  currency    String?
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  amount     Decimal? @db.Decimal(10, 2)
+  currency   String?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([festivalId])
 }
@@ -1387,6 +1712,8 @@ model FestivalReferralCode {
   updatedAt       DateTime               @updatedAt
 
   tickets Ticket[]
+  // Commerce Engine v1 — обратная связь для Order.referralCode.
+  orders  Order[]
 
   @@unique([festivalId, code])
   @@index([festivalId])
@@ -1472,6 +1799,9 @@ model Dancer {
   eventRegistrations EventRegistration[] // Events Engine: регистрации на обычные события (НЕ путать с Registration выше — другой домен, см. комментарий у модели)
   // СЛОЙ 2 — купленные/выданные Pass (см. комментарий у модели Ticket).
   tickets            Ticket[]
+  // Commerce Engine v1 — обратные связи для Order.dancer/UserPass.dancer.
+  orders             Order[]
+  userPasses         UserPass[]
 
   @@index([cityId])
 }

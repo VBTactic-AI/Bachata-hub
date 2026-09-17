@@ -36,11 +36,124 @@ async function requireAccessForTicketType(ticketTypeId: string, user: User) {
   return tt;
 }
 
-async function requireAccessForTicket(ticketId: string, user: User) {
+// Экспортирована — переиспользуется ticket-checkin-service.ts (тот же
+// owner-check, что и остальная повседневная работа с билетами).
+export async function requireAccessForTicket(ticketId: string, user: User) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId }, include: { event: true } });
   if (!ticket) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(ticket.event, user))) throw new RegistrationForbiddenError("forbidden");
   return ticket;
+}
+
+// ---------------------------------------------------------------------------
+// Commerce Engine v1 (2026-09-17) — Phase 3. Формализует РУЧНУЮ выдачу
+// (issueTicket/issueTicketForType уже требуют организатора/член команды,
+// деньги получены вне системы) в Order/OrderItem/Payment(provider=MANUAL),
+// не меняя сигнатуры/поведение существующих функций и не трогая старые поля
+// Ticket (price/isPaid/paidAt и т.д. остаются как есть, для обратной
+// совместимости читающего кода — см. docs/00_DECISIONS.md, Commerce Engine
+// v1). Self-checkout/реальный эквайринг — вне рамок этой правки.
+// ---------------------------------------------------------------------------
+
+async function findOrCreateUserPassInTx(tx: Prisma.TransactionClient, dancerId: string, passId: string) {
+  return tx.userPass.upsert({
+    where: { dancerId_passId: { dancerId, passId } },
+    update: {},
+    create: { dancerId, passId, status: "ACTIVE" },
+  });
+}
+
+type ManualOrderArgs = {
+  eventId: string;
+  dancerId: string;
+  productId: string;
+  nameSnapshot: string;
+  price: number | null;
+  currency: string | null;
+  discountAmount: number | null;
+  promoCodeId: string | null;
+  referralCodeId: string | null;
+  isPaid: boolean;
+  paidAt: Date | null;
+  issuedById: string;
+  issuedAt: Date;
+};
+
+// Создаёт Order(1 позиция)+OrderItem+Payment(MANUAL) одной группой внутри уже
+// открытой транзакции — снимок цены/названия на момент выдачи (CLAUDE.md
+// §50-51: исторические данные не пересчитываются при изменении Pass/
+// TicketType). quantity всегда 1 — issueTicket/issueTicketForType выдают
+// ровно один билет за вызов, как и раньше.
+async function recordManualOrderInTx(tx: Prisma.TransactionClient, args: ManualOrderArgs): Promise<{ orderId: string; orderItemId: string }> {
+  const subtotal = args.price ?? 0;
+  const discount = args.discountAmount ?? 0;
+  const total = Math.max(subtotal - discount, 0);
+
+  const order = await tx.order.create({
+    data: {
+      eventId: args.eventId,
+      dancerId: args.dancerId,
+      status: args.isPaid ? "PAID" : "PENDING",
+      currency: args.currency,
+      subtotal,
+      discount,
+      total,
+      promoCodeId: args.promoCodeId,
+      referralCodeId: args.referralCodeId,
+      createdById: args.issuedById,
+      createdAt: args.issuedAt,
+    },
+  });
+  const item = await tx.orderItem.create({
+    data: {
+      orderId: order.id,
+      productId: args.productId,
+      nameSnapshot: args.nameSnapshot,
+      unitPriceSnapshot: args.price,
+      currencySnapshot: args.currency,
+      quantity: 1,
+      discountAmount: args.discountAmount,
+      total,
+      createdAt: args.issuedAt,
+    },
+  });
+  await tx.payment.create({
+    data: {
+      orderId: order.id,
+      provider: "MANUAL",
+      amount: total,
+      currency: args.currency,
+      status: args.isPaid ? "PAID" : "PENDING",
+      paidAt: args.paidAt,
+      recordedById: args.issuedById,
+      createdAt: args.issuedAt,
+    },
+  });
+  return { orderId: order.id, orderItemId: item.id };
+}
+
+// Находит Order, к которому фактически привязана оплата ЭТОГО Ticket — через
+// прямой OrderItem (TicketType-билет) либо через UserPass.orderItemId
+// (Pass-билет — ТОЛЬКО если это оригинальная покупка, а не "производный"
+// вход на дочернее событие фестиваля без собственной оплаты, см. комментарий
+// у issueFestivalPassEntry). Возвращает null, если для этого конкретного
+// Ticket нет отдельного Order — тогда cancelTicket/refundTicket не трогают
+// Commerce-таблицы, ровно как и раньше не трогали ничего, кроме самого Ticket.
+async function findOrderIdForTicketInTx(
+  tx: Prisma.TransactionClient,
+  ticket: { orderItemId: string | null; userPassId: string | null }
+): Promise<string | null> {
+  if (ticket.orderItemId) {
+    const item = await tx.orderItem.findUnique({ where: { id: ticket.orderItemId }, select: { orderId: true } });
+    return item?.orderId ?? null;
+  }
+  if (ticket.userPassId) {
+    const userPass = await tx.userPass.findUnique({ where: { id: ticket.userPassId }, select: { orderItemId: true } });
+    if (!userPass?.orderItemId) return null;
+    const item = await tx.orderItem.findUnique({ where: { id: userPass.orderItemId }, select: { orderId: true } });
+    return item?.orderId ?? null;
+  }
+  return null;
 }
 
 function assertOnSale(pass: { status: string; salesStartAt: Date | null; salesEndAt: Date | null }): void {
@@ -138,6 +251,36 @@ export async function issueTicket(
       referralCode = candidate;
     }
 
+    // Commerce Engine v1 — Order/OrderItem/Payment(MANUAL) + UserPass рядом с
+    // самим Ticket, той же транзакцией (см. комментарий у recordManualOrderInTx
+    // выше). Product Pass'а обязан существовать (createPass() создаёт его сама,
+    // старые Pass перенесены backfill'ом Phase 2) — отсутствие означает
+    // рассинхронизацию данных, а не штатный случай, поэтому явная ошибка, а не
+    // молчаливый пропуск бухгалтерии.
+    const product = await tx.product.findUnique({ where: { passId } });
+    if (!product) throw new Error(`Product не найден для Pass ${passId} — рассинхронизация Commerce Engine.`);
+    const userPass = await findOrCreateUserPassInTx(tx, dancerId, passId);
+    const isPaidNow = isFree || Boolean(options.markPaid);
+    const paidAtNow = isFree || options.markPaid ? new Date() : null;
+    const { orderItemId } = await recordManualOrderInTx(tx, {
+      eventId: current.eventId,
+      dancerId,
+      productId: product.id,
+      nameSnapshot: current.name,
+      price: effective.price,
+      currency: effective.currency,
+      discountAmount: null,
+      promoCodeId: null,
+      referralCodeId: referralCode?.id ?? null,
+      isPaid: isPaidNow,
+      paidAt: paidAtNow,
+      issuedById: user.id,
+      issuedAt: new Date(),
+    });
+    if (!userPass.orderItemId) {
+      await tx.userPass.update({ where: { id: userPass.id }, data: { orderItemId } });
+    }
+
     let ticket: Ticket;
     try {
       ticket = await tx.ticket.create({
@@ -147,12 +290,13 @@ export async function issueTicket(
           dancerId,
           price: effective.price,
           currency: effective.currency,
-          isPaid: isFree || Boolean(options.markPaid),
-          paidAt: isFree || options.markPaid ? new Date() : null,
+          isPaid: isPaidNow,
+          paidAt: paidAtNow,
           issuedById: user.id,
           referralCodeId: referralCode?.id ?? null,
           referralDiscountAmount: referralCode?.discountValue ?? null,
           referralCommissionAmount: referralCode?.commissionValue ?? null,
+          userPassId: userPass.id,
         },
       });
     } catch (err) {
@@ -206,6 +350,29 @@ export async function issueTicketForType(
     const price = current.price == null ? null : Number(current.price);
     const isFree = price == null || price === 0;
 
+    // Commerce Engine v1 — см. комментарий в issueTicket() выше. TicketType не
+    // имеет понятия UserPass (это не Pass) — Order/OrderItem привязываются к
+    // Ticket напрямую через orderItemId.
+    const product = await tx.product.findUnique({ where: { ticketTypeId } });
+    if (!product) throw new Error(`Product не найден для TicketType ${ticketTypeId} — рассинхронизация Commerce Engine.`);
+    const isPaidNow = isFree || Boolean(options.markPaid);
+    const paidAtNow = isFree || options.markPaid ? new Date() : null;
+    const { orderItemId } = await recordManualOrderInTx(tx, {
+      eventId: current.eventId,
+      dancerId,
+      productId: product.id,
+      nameSnapshot: current.name,
+      price,
+      currency: current.currency,
+      discountAmount: null,
+      promoCodeId: null,
+      referralCodeId: null,
+      isPaid: isPaidNow,
+      paidAt: paidAtNow,
+      issuedById: user.id,
+      issuedAt: new Date(),
+    });
+
     let ticket: Ticket;
     try {
       ticket = await tx.ticket.create({
@@ -215,9 +382,10 @@ export async function issueTicketForType(
           dancerId,
           price,
           currency: current.currency,
-          isPaid: isFree || Boolean(options.markPaid),
-          paidAt: isFree || options.markPaid ? new Date() : null,
+          isPaid: isPaidNow,
+          paidAt: paidAtNow,
           issuedById: user.id,
+          orderItemId,
         },
       });
     } catch (err) {
@@ -262,6 +430,56 @@ async function releaseSlot(tx: Prisma.TransactionClient, ticket: { passId: strin
   else if (ticket.ticketTypeId) await releaseTicketTypeSlot(tx, ticket.ticketTypeId);
 }
 
+// Commerce Engine v1 — CANCELLED (перед оплатой, деньги не двигались):
+// снимает статус с Order, если для этого конкретного Ticket он вообще есть
+// (см. findOrderIdForTicketInTx — "производные" входы на дочерние события
+// фестиваля своего Order не имеют, отменять нечего). Отзывает UserPass —
+// покупка, которая стояла за этим доступом, больше не действует.
+async function cancelCommerceOrderInTx(tx: Prisma.TransactionClient, ticket: { orderItemId: string | null; userPassId: string | null }): Promise<void> {
+  const orderId = await findOrderIdForTicketInTx(tx, ticket);
+  if (!orderId) return;
+  await tx.order.update({ where: { id: orderId }, data: { status: "CANCELLED" } });
+  if (ticket.userPassId) {
+    await tx.userPass.update({ where: { id: ticket.userPassId }, data: { status: "REVOKED" } });
+  }
+}
+
+// Commerce Engine v1 — REFUNDED (деньги уже получены, теперь возвращаются):
+// создаёт Refund на реально существующий Payment этого Order (CLAUDE.md §29 —
+// возврат обязан быть явной, аудируемой операцией, не просто сменой статуса)
+// и переводит UserPass в REVOKED (задача, §21 — "после полного возврата
+// UserPass → REVOKED"). Причина возврата сегодня фиксированная строка —
+// параметризованный reason(actor) для refundTicket() уже задел на будущее,
+// не обязателен для текущего объёма задачи.
+async function refundCommerceOrderInTx(
+  tx: Prisma.TransactionClient,
+  ticket: { orderItemId: string | null; userPassId: string | null },
+  recordedById: string
+): Promise<void> {
+  const orderId = await findOrderIdForTicketInTx(tx, ticket);
+  if (!orderId) return;
+  const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { payments: true } });
+  const payment = order.payments.find((p) => p.status === "PAID") ?? order.payments[0];
+  if (payment) {
+    await tx.refund.create({
+      data: {
+        paymentId: payment.id,
+        orderId: order.id,
+        amount: payment.amount,
+        currency: payment.currency,
+        reason: "Возврат билета (refundTicket)",
+        status: "COMPLETED",
+        recordedById,
+        completedAt: new Date(),
+      },
+    });
+  }
+  await tx.order.update({ where: { id: orderId }, data: { status: "REFUNDED" } });
+  if (ticket.userPassId) {
+    await tx.userPass.update({ where: { id: ticket.userPassId }, data: { status: "REVOKED" } });
+  }
+}
+
 export async function cancelTicket(ticketId: string, user: User): Promise<Ticket> {
   const ticket = await requireAccessForTicket(ticketId, user);
   if (ticket.status !== "ISSUED") return ticket; // идемпотентно
@@ -269,6 +487,7 @@ export async function cancelTicket(ticketId: string, user: User): Promise<Ticket
   return prisma.$transaction(async (tx) => {
     const updated = await tx.ticket.update({ where: { id: ticketId }, data: { status: "CANCELLED", cancelledAt: new Date() } });
     await releaseSlot(tx, ticket);
+    await cancelCommerceOrderInTx(tx, ticket);
     return updated;
   });
 }
@@ -286,6 +505,7 @@ export async function refundTicket(ticketId: string, user: User): Promise<Ticket
   return prisma.$transaction(async (tx) => {
     const updated = await tx.ticket.update({ where: { id: ticketId }, data: { status: "REFUNDED", cancelledAt: new Date() } });
     await releaseSlot(tx, ticket);
+    await refundCommerceOrderInTx(tx, ticket, user.id);
     return updated;
   });
 }
@@ -337,6 +557,10 @@ export type DancerTicketInfo = {
   ticketTypeId: string | null;
   ticketTypeName: string | null;
   isPaid: boolean;
+  // TicketCheckIn (Commerce Engine v1, 2026-09-17) — явка по этому конкретному
+  // билету (см. ticket-checkin-service.ts). Отдельно от isPaid — оплаченный
+  // билет ещё не обязательно предъявлен на входе.
+  checkedIn: boolean;
 };
 
 // Только ISSUED — отменённые/возвращённые билеты не участвуют в подсчёте
@@ -347,7 +571,7 @@ export async function listTicketsByDancerForEvent(eventId: string, dancerIds: st
 
   const tickets = await prisma.ticket.findMany({
     where: { eventId, dancerId: { in: dancerIds }, status: "ISSUED" },
-    include: { pass: { select: { name: true } }, ticketType: { select: { name: true } } },
+    include: { pass: { select: { name: true } }, ticketType: { select: { name: true } }, checkIn: { select: { id: true } } },
     orderBy: { createdAt: "asc" },
   });
   for (const t of tickets) {
@@ -359,6 +583,7 @@ export async function listTicketsByDancerForEvent(eventId: string, dancerIds: st
       ticketTypeId: t.ticketTypeId,
       ticketTypeName: t.ticketType?.name ?? null,
       isPaid: t.isPaid,
+      checkedIn: t.checkIn != null,
     });
     map.set(t.dancerId, list);
   }
@@ -447,26 +672,39 @@ export async function listTicketsForRegistration(registrationId: string, user: U
   return byDancer.get(registration.dancerId) ?? [];
 }
 
-// Выручка по Pass-билетам события (KPI вкладки "Билеты") — сумма цены
-// оплаченных, действующих (ISSUED) билетов, привязанных к Pass. Passless
-// билеты сюда не входят — у события без Pass нет вкладки "Билеты" вообще.
+// Commerce Engine v1 (2026-09-17) — доход считается ЧЕРЕЗ Order/OrderItem/
+// Refund (CLAUDE.md §33: "Revenue = Ticket count × текущая цена" — прямо
+// запрещённое упрощение; здесь доход — снимок исторических OrderItem.total,
+// за вычетом реально оформленных Refund, а не пересчёт по сегодняшней цене
+// Pass/TicketType). ПРОИЗВОДНЫЕ Ticket фестиваля (issueFestivalPassEntry) не
+// имеют своего OrderItem вообще — не попадают сюда естественным образом, без
+// отдельного условия (см. комментарий у issueFestivalPassEntry) — Revenue
+// считает только сам факт продажи Pass, не каждое посещение по нему (см.
+// Attendance — getEventPassAttendanceCount).
 //
-// ВАЖНО (этап 3, межсобытийный Pass фестиваля) — этот запрос сознательно НЕ
-// требует price > 0, только price IS NOT NULL. "Производные" Ticket с
-// дочерних событий фестиваля (см. resolveFestivalPassEntry ниже) имеют
-// price = null именно для того, чтобы НЕ попадать сюда повторно — Revenue
-// считает только сам факт продажи Pass (один раз, на событии фестиваля), не
-// каждое посещение по нему (см. Attendance — getEventPassAttendanceCount).
+// Возвращаемое число — уже ЧИСТЫЙ доход (net: продажи минус возвраты), не
+// "gross" — сегодня в проекте нет отдельного отображения gross/refunds по
+// отдельности, это тот же смысл, что и раньше было у "выручки" через Ticket.
+async function computeNetProductRevenue(eventId: string, productType: "PASS" | "EVENT_TICKET"): Promise<number> {
+  const items = await prisma.orderItem.findMany({
+    where: {
+      product: { eventId, type: productType },
+      order: { status: { in: ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"] } },
+    },
+    select: { total: true, order: { select: { refunds: { where: { status: "COMPLETED" }, select: { amount: true } } } } },
+  });
+  return items.reduce((sum, item) => {
+    const refunded = item.order.refunds.reduce((r, refund) => r + Number(refund.amount), 0);
+    return sum + Math.max(Number(item.total) - refunded, 0);
+  }, 0);
+}
+
+// Выручка по Pass-билетам события (KPI вкладки "Билеты").
 export async function getEventPassRevenue(eventId: string, user: User): Promise<number> {
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
-
-  const paid = await prisma.ticket.findMany({
-    where: { eventId, passId: { not: null }, isPaid: true, status: "ISSUED" },
-    select: { price: true },
-  });
-  return paid.reduce((sum, t) => sum + (t.price == null ? 0 : Number(t.price)), 0);
+  return computeNetProductRevenue(eventId, "PASS");
 }
 
 // Выручка по TicketType события (KPI вкладки "Билеты и Pass" → под-вкладка
@@ -476,12 +714,7 @@ export async function getEventTicketTypeRevenue(eventId: string, user: User): Pr
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new RegistrationNotFoundError();
   if (!(await hasEventAccess(event, user))) throw new RegistrationForbiddenError("forbidden");
-
-  const paid = await prisma.ticket.findMany({
-    where: { eventId, ticketTypeId: { not: null }, isPaid: true, status: "ISSUED" },
-    select: { price: true },
-  });
-  return paid.reduce((sum, t) => sum + (t.price == null ? 0 : Number(t.price)), 0);
+  return computeNetProductRevenue(eventId, "EVENT_TICKET");
 }
 
 // ---------------------------------------------------------------------------
@@ -570,6 +803,15 @@ export async function issueFestivalPassEntry(eventId: string, dancerId: string, 
   });
   if (existing) return existing;
 
+  // Commerce Engine v1 — производный вход ссылается на ТОТ ЖЕ UserPass, что и
+  // оригинальная покупка (findFestivalPassForEvent уже требует существующий
+  // оплаченный Ticket по этому Pass — значит UserPass для него должен
+  // существовать, если не сам issueTicket его завёл, то backfill Phase 2).
+  // Не найден — не блокируем материализацию входа (это не денежная операция),
+  // просто оставляем userPassId пустым: событие всё равно физически пускает
+  // человека, бухгалтерская связка — не то, ради чего организатор жмёт кнопку.
+  const userPass = await prisma.userPass.findUnique({ where: { dancerId_passId: { dancerId, passId: match.passId } } });
+
   return prisma.ticket.create({
     data: {
       eventId,
@@ -580,6 +822,7 @@ export async function issueFestivalPassEntry(eventId: string, dancerId: string, 
       isPaid: true,
       paidAt: new Date(),
       issuedById: user.id,
+      userPassId: userPass?.id ?? null,
     },
   });
 }

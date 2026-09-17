@@ -15,6 +15,14 @@ const ticketTypeUpdate = vi.fn();
 const ticketTypeDelete = vi.fn();
 const ticketCount = vi.fn();
 const eventTeamMemberFindUnique = vi.fn();
+// Commerce Engine v1 (2026-09-17) — createTicketType() создаёt Product рядом
+// с TicketType в одной транзакции (см. комментарий в ticket-type-service.ts).
+const productCreate = vi.fn();
+
+const fakeTx = {
+  ticketType: { create: (...a: unknown[]) => ticketTypeCreate(...a) },
+  product: { create: (...a: unknown[]) => productCreate(...a) },
+};
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -28,6 +36,7 @@ vi.mock("@/lib/prisma", () => ({
     },
     ticket: { count: (...a: unknown[]) => ticketCount(...a) },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
+    $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
@@ -90,6 +99,7 @@ beforeEach(() => {
   ticketTypeDelete.mockReset().mockResolvedValue({});
   ticketCount.mockReset().mockResolvedValue(0);
   eventTeamMemberFindUnique.mockReset().mockResolvedValue(null);
+  productCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "product1", ...args.data }));
 });
 
 describe("createTicketType()", () => {

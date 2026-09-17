@@ -81,18 +81,25 @@ export async function createTicketType(eventId: string, user: User, input: Ticke
   await requireOwnerOrAdminEvent(eventId, user);
   validateCommon(input);
 
-  return prisma.ticketType.create({
-    data: {
-      eventId,
-      name: input.name.trim(),
-      description: input.description?.trim() || null,
-      price: input.price ?? null,
-      currency: input.currency?.trim() || null,
-      quantity: input.quantity ?? null,
-      salesStartAt: input.salesStartAt ?? null,
-      salesEndAt: input.salesEndAt ?? null,
-      sortOrder: input.sortOrder ?? 0,
-    },
+  // Commerce Engine v1 (2026-09-17) — см. комментарий у createPass()
+  // в pass-service.ts: каждый TicketType сразу получает свой Product в той
+  // же транзакции.
+  return prisma.$transaction(async (tx) => {
+    const tt = await tx.ticketType.create({
+      data: {
+        eventId,
+        name: input.name.trim(),
+        description: input.description?.trim() || null,
+        price: input.price ?? null,
+        currency: input.currency?.trim() || null,
+        quantity: input.quantity ?? null,
+        salesStartAt: input.salesStartAt ?? null,
+        salesEndAt: input.salesEndAt ?? null,
+        sortOrder: input.sortOrder ?? 0,
+      },
+    });
+    await tx.product.create({ data: { eventId, type: "EVENT_TICKET", ticketTypeId: tt.id } });
+    return tt;
   });
 }
 

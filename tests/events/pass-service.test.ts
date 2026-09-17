@@ -28,8 +28,13 @@ const promoCodeCreate = vi.fn();
 const promoCodeFindMany = vi.fn();
 const promoCodeFindUnique = vi.fn();
 const promoCodeUpdate = vi.fn();
+// Commerce Engine v1 (2026-09-17) — createPass() создаёт Product рядом с
+// Pass в одной транзакции (см. комментарий в pass-service.ts).
+const productCreate = vi.fn();
 
-const fakeAccessGrantTx = {
+const fakeTx = {
+  pass: { create: (...a: unknown[]) => passCreate(...a) },
+  product: { create: (...a: unknown[]) => productCreate(...a) },
   passAccessGrant: { deleteMany: txPassAccessGrantDeleteMany, createMany: txPassAccessGrantCreateMany, findMany: txPassAccessGrantFindMany },
 };
 
@@ -59,7 +64,7 @@ vi.mock("@/lib/prisma", () => ({
       update: (...a: unknown[]) => promoCodeUpdate(...a),
     },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
-    $transaction: (fn: (tx: typeof fakeAccessGrantTx) => unknown) => fn(fakeAccessGrantTx),
+    $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
 
@@ -153,6 +158,7 @@ beforeEach(() => {
   promoCodeFindMany.mockReset().mockResolvedValue([]);
   promoCodeFindUnique.mockReset();
   promoCodeUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: "promo1", ...args.data }));
+  productCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "product1", ...args.data }));
 });
 
 describe("createPass()", () => {

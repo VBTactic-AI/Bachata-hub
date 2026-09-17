@@ -12,6 +12,8 @@ export type TicketPaymentInfo = {
   ticketTypeId: string | null;
   ticketTypeName: string | null;
   isPaid: boolean;
+  // TicketCheckIn (Commerce Engine v1, 2026-09-17) — явка по этому билету.
+  checkedIn: boolean;
 };
 export type AssignablePassOption = { id: string; name: string };
 export type AssignableTicketTypeOption = { id: string; name: string };
@@ -191,6 +193,40 @@ export function TicketPaymentCell({
     router.refresh();
   }
 
+  // TicketCheckIn (Commerce Engine v1, 2026-09-17) — отметка явки по билету,
+  // независимая от оплаты. Тумблер: клик отмечает явку (POST), повторный клик
+  // отменяет ошибочную отметку (DELETE) — тот же принцип "клик переключает",
+  // что и у toggleOne/toggleSimple выше.
+  async function toggleCheckIn(ticketId: string, nextCheckedIn: boolean) {
+    setLoading(true);
+    setError(null);
+    const res = await fetch(`/api/events/${eventSlug}/tickets/${ticketId}/check-in`, {
+      method: nextCheckedIn ? "POST" : "DELETE",
+      headers: nextCheckedIn ? { "Content-Type": "application/json" } : undefined,
+      body: nextCheckedIn ? JSON.stringify({ method: "MANUAL" }) : undefined,
+    });
+    setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.message || data.error || "Не удалось изменить отметку явки.");
+      return;
+    }
+    router.refresh();
+  }
+
+  function CheckInToggle({ ticket }: { ticket: TicketPaymentInfo }) {
+    return (
+      <button
+        type="button"
+        disabled={loading}
+        onClick={() => toggleCheckIn(ticket.id, !ticket.checkedIn)}
+        className="disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <StatusBadge label={ticket.checkedIn ? "Явка ✓" : "Не пришёл"} variant={ticket.checkedIn ? "success" : "neutral"} />
+      </button>
+    );
+  }
+
   function ticketLabel(t: TicketPaymentInfo): string {
     return t.passName ?? t.ticketTypeName ?? "Входной билет";
   }
@@ -221,6 +257,7 @@ export function TicketPaymentCell({
         >
           <StatusBadge label={isPaid ? "Оплачено" : "Не оплачено"} variant={isPaid ? "success" : "danger"} />
         </button>
+        {tickets[0] && <CheckInToggle ticket={tickets[0]} />}
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
@@ -300,6 +337,7 @@ export function TicketPaymentCell({
         >
           <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
         </button>
+        <CheckInToggle ticket={t} />
         {issuePicker}
         {issueTicketTypePicker}
         {festivalPassButton}
@@ -339,14 +377,17 @@ export function TicketPaymentCell({
               {tickets.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-admin-card2">
                   <span className="truncate text-sm font-semibold text-night-text">{ticketLabel(t)}</span>
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => toggleOne(t.id, !t.isPaid)}
-                    className="shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
-                  </button>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => toggleOne(t.id, !t.isPaid)}
+                      className="disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
+                    </button>
+                    <CheckInToggle ticket={t} />
+                  </span>
                 </div>
               ))}
             </div>

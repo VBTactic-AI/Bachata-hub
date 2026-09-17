@@ -137,24 +137,34 @@ export async function createPass(eventId: string, user: User, input: PassInput):
   validateCommon(input);
   const refundFields = deriveRefundFields(input);
 
-  return prisma.pass.create({
-    data: {
-      eventId,
-      name: input.name.trim(),
-      description: input.description?.trim() || null,
-      type: input.type,
-      price: input.price ?? null,
-      currency: input.currency?.trim() || null,
-      quantity: input.quantity ?? null,
-      salesStartAt: input.salesStartAt ?? null,
-      salesEndAt: input.salesEndAt ?? null,
-      validFrom: input.validFrom ?? null,
-      validUntil: input.validUntil ?? null,
-      sortOrder: input.sortOrder ?? 0,
-      imageUrl: input.imageUrl?.trim() || null,
-      allowMultipleEntry: input.allowMultipleEntry ?? true,
-      ...refundFields,
-    },
+  // Commerce Engine v1 (2026-09-17) — каждый Pass сразу получает свой
+  // Product (тонкая обёртка для Order/OrderItem, см. комментарий у модели
+  // Product в schema.prisma) в ОДНОЙ транзакции с созданием самого Pass —
+  // без этого Product пришлось бы backfill'ить отдельно, а окно между
+  // созданием Pass и Product означало бы, что билет на него нельзя
+  // сформировать как Order (нет Product, на который сослаться).
+  return prisma.$transaction(async (tx) => {
+    const pass = await tx.pass.create({
+      data: {
+        eventId,
+        name: input.name.trim(),
+        description: input.description?.trim() || null,
+        type: input.type,
+        price: input.price ?? null,
+        currency: input.currency?.trim() || null,
+        quantity: input.quantity ?? null,
+        salesStartAt: input.salesStartAt ?? null,
+        salesEndAt: input.salesEndAt ?? null,
+        validFrom: input.validFrom ?? null,
+        validUntil: input.validUntil ?? null,
+        sortOrder: input.sortOrder ?? 0,
+        imageUrl: input.imageUrl?.trim() || null,
+        allowMultipleEntry: input.allowMultipleEntry ?? true,
+        ...refundFields,
+      },
+    });
+    await tx.product.create({ data: { eventId, type: "PASS", passId: pass.id } });
+    return pass;
   });
 }
 

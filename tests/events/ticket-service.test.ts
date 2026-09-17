@@ -17,6 +17,8 @@ const ticketCount = vi.fn(); // getEventPassAttendanceCount
 const programItemFindFirst = vi.fn(); // findFestivalPassForEvent
 const eventRegistrationFindUnique = vi.fn(); // markRegistrationPayment/listTicketsForRegistration
 const eventTeamMemberFindUnique = vi.fn(); // hasEventAccess
+const userPassFindUnique = vi.fn(); // issueFestivalPassEntry (вне транзакции)
+const orderItemFindMany = vi.fn(); // computeNetProductRevenue (getEventPassRevenue/getEventTicketTypeRevenue)
 
 const executeRaw = vi.fn().mockResolvedValue(0);
 const txPassFindUniqueOrThrow = vi.fn();
@@ -29,6 +31,19 @@ const txTicketFindFirst = vi.fn();
 const txPassPriceTierFindMany = vi.fn();
 const txFestivalFindUnique = vi.fn(); // referralCode — festival() bridge lookup внутри issueTicket
 const txReferralCodeFindUnique = vi.fn();
+// Commerce Engine v1 (2026-09-17) — Order/OrderItem/Payment/Refund/UserPass/
+// Product внутри той же транзакции, что и сам Ticket (см. ticket-service.ts).
+const txProductFindUnique = vi.fn();
+const txUserPassUpsert = vi.fn();
+const txUserPassUpdate = vi.fn();
+const txUserPassFindUnique = vi.fn();
+const txOrderCreate = vi.fn();
+const txOrderUpdate = vi.fn();
+const txOrderFindUniqueOrThrow = vi.fn();
+const txOrderItemCreate = vi.fn();
+const txOrderItemFindUnique = vi.fn();
+const txPaymentCreate = vi.fn();
+const txRefundCreate = vi.fn();
 
 const fakeTx = {
   $executeRaw: executeRaw,
@@ -38,6 +53,12 @@ const fakeTx = {
   passPriceTier: { findMany: txPassPriceTierFindMany },
   festival: { findUnique: txFestivalFindUnique },
   festivalReferralCode: { findUnique: txReferralCodeFindUnique },
+  product: { findUnique: txProductFindUnique },
+  userPass: { upsert: txUserPassUpsert, update: txUserPassUpdate, findUnique: txUserPassFindUnique },
+  order: { create: txOrderCreate, update: txOrderUpdate, findUniqueOrThrow: txOrderFindUniqueOrThrow },
+  orderItem: { create: txOrderItemCreate, findUnique: txOrderItemFindUnique },
+  payment: { create: txPaymentCreate },
+  refund: { create: txRefundCreate },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -56,6 +77,8 @@ vi.mock("@/lib/prisma", () => ({
     programItem: { findFirst: (...a: unknown[]) => programItemFindFirst(...a) },
     eventRegistration: { findUnique: (...a: unknown[]) => eventRegistrationFindUnique(...a) },
     eventTeamMember: { findUnique: (...a: unknown[]) => eventTeamMemberFindUnique(...a) },
+    userPass: { findUnique: (...a: unknown[]) => userPassFindUnique(...a) },
+    orderItem: { findMany: (...a: unknown[]) => orderItemFindMany(...a) },
     $transaction: (fn: (tx: typeof fakeTx) => unknown) => fn(fakeTx),
   },
 }));
@@ -72,6 +95,7 @@ const {
   markRegistrationPayment,
   listTicketsForRegistration,
   getEventTicketTypeRevenue,
+  getEventPassRevenue,
   findFestivalPassForEvent,
   issueFestivalPassEntry,
   getEventPassAttendanceCount,
@@ -103,6 +127,7 @@ const owner = makeUser();
 const activePass = {
   id: "pass1",
   eventId: "event1",
+  name: "Full Pass",
   status: "ACTIVE" as const,
   price: 120,
   currency: "BYN",
@@ -114,6 +139,7 @@ const activePass = {
 const activeTicketType = {
   id: "tt1",
   eventId: "event1",
+  name: "Dancer",
   status: "ACTIVE" as const,
   price: 15,
   currency: "BYN",
@@ -150,6 +176,26 @@ beforeEach(() => {
   txTicketFindFirst.mockReset().mockResolvedValue(null);
   txFestivalFindUnique.mockReset().mockResolvedValue(null);
   txReferralCodeFindUnique.mockReset().mockResolvedValue(null);
+  // Commerce Engine v1 — дефолты для нового Order/OrderItem/Payment/Refund/
+  // UserPass/Product слоя (см. ticket-service.ts). Тесты cancelTicket/
+  // refundTicket, чьи ticket-моки не задают orderItemId/userPassId, вообще не
+  // достают до этих вызовов (findOrderIdForTicketInTx возвращает null раньше).
+  txProductFindUnique.mockReset().mockResolvedValue({ id: "product1" });
+  txUserPassUpsert.mockReset().mockResolvedValue({ id: "userpass1", orderItemId: null });
+  txUserPassUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data }));
+  txUserPassFindUnique.mockReset().mockResolvedValue(null);
+  txOrderCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "order1", ...args.data }));
+  txOrderUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data }));
+  txOrderFindUniqueOrThrow.mockReset().mockResolvedValue({
+    id: "order1",
+    payments: [{ id: "payment1", amount: 120, currency: "BYN", status: "PAID" }],
+  });
+  txOrderItemCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "orderitem1", ...args.data }));
+  txOrderItemFindUnique.mockReset().mockResolvedValue(null);
+  txPaymentCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "payment1", ...args.data }));
+  txRefundCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "refund1", ...args.data }));
+  userPassFindUnique.mockReset().mockResolvedValue(null);
+  orderItemFindMany.mockReset().mockResolvedValue([]);
 });
 
 describe("issueTicket()", () => {
@@ -444,11 +490,11 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
       expect.objectContaining({ where: { eventId: "event1", dancerId: { in: ["d1", "d2"] }, status: "ISSUED" } })
     );
     expect(result.get("d1")).toEqual([
-      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true },
-      { id: "t2", passId: "p2", passName: "VIP Pass", ticketTypeId: null, ticketTypeName: null, isPaid: false },
+      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false },
+      { id: "t2", passId: "p2", passName: "VIP Pass", ticketTypeId: null, ticketTypeName: null, isPaid: false, checkedIn: false },
     ]);
     expect(result.get("d2")).toEqual([
-      { id: "t3", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true },
+      { id: "t3", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false },
     ]);
   });
 
@@ -460,7 +506,19 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
     const result = await listTicketsByDancerForEvent("event1", ["d1"]);
 
     expect(result.get("d1")).toEqual([
-      { id: "t1", passId: null, passName: null, ticketTypeId: "tt1", ticketTypeName: "Dancer", isPaid: true },
+      { id: "t1", passId: null, passName: null, ticketTypeId: "tt1", ticketTypeName: "Dancer", isPaid: true, checkedIn: false },
+    ]);
+  });
+
+  it("билет с TicketCheckIn — checkedIn: true", async () => {
+    ticketFindMany.mockResolvedValue([
+      { id: "t1", dancerId: "d1", passId: "p1", ticketTypeId: null, isPaid: true, pass: { name: "Full Pass" }, checkIn: { id: "checkin1" } },
+    ]);
+
+    const result = await listTicketsByDancerForEvent("event1", ["d1"]);
+
+    expect(result.get("d1")).toEqual([
+      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: true },
     ]);
   });
 
@@ -470,20 +528,24 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
   });
 
   it("summarizePayment: все оплачены — PAID", () => {
-    expect(summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true }])).toBe("PAID");
+    expect(
+      summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false }])
+    ).toBe("PAID");
   });
 
   it("summarizePayment: часть оплачена — PARTIAL", () => {
     expect(
       summarizePayment([
-        { id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true },
-        { id: "2", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false },
+        { id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false },
+        { id: "2", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false, checkedIn: false },
       ])
     ).toBe("PARTIAL");
   });
 
   it("summarizePayment: ничего не оплачено — UNPAID", () => {
-    expect(summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false }])).toBe("UNPAID");
+    expect(
+      summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false, checkedIn: false }])
+    ).toBe("UNPAID");
   });
 });
 
@@ -565,7 +627,7 @@ describe("listTicketsForRegistration()", () => {
 
     const result = await listTicketsForRegistration("reg1", owner);
 
-    expect(result).toEqual([{ id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true }]);
+    expect(result).toEqual([{ id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false }]);
   });
 });
 
@@ -664,15 +726,39 @@ describe("cancelTicket() / refundTicket() — билет по TicketType", () =>
   });
 });
 
-describe("getEventTicketTypeRevenue()", () => {
-  it("суммирует price только оплаченных ISSUED билетов с ticketTypeId", async () => {
-    ticketFindMany.mockResolvedValue([{ price: "15" }, { price: "10" }]);
+describe("getEventPassRevenue() / getEventTicketTypeRevenue() — Commerce Engine v1 (2026-09-17)", () => {
+  it("getEventTicketTypeRevenue — суммирует OrderItem.total оплаченных заказов с productType=EVENT_TICKET", async () => {
+    orderItemFindMany.mockResolvedValue([
+      { total: 15, order: { refunds: [] } },
+      { total: 10, order: { refunds: [] } },
+    ]);
     const result = await getEventTicketTypeRevenue("event1", owner);
     expect(result).toBe(25);
-    expect(ticketFindMany).toHaveBeenCalledWith({
-      where: { eventId: "event1", ticketTypeId: { not: null }, isPaid: true, status: "ISSUED" },
-      select: { price: true },
+    expect(orderItemFindMany).toHaveBeenCalledWith({
+      where: { product: { eventId: "event1", type: "EVENT_TICKET" }, order: { status: { in: ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"] } } },
+      select: { total: true, order: { select: { refunds: { where: { status: "COMPLETED" }, select: { amount: true } } } } },
     });
+  });
+
+  it("getEventPassRevenue — тот же принцип, но productType=PASS", async () => {
+    orderItemFindMany.mockResolvedValue([{ total: 120, order: { refunds: [] } }]);
+    const result = await getEventPassRevenue("event1", owner);
+    expect(result).toBe(120);
+    expect(orderItemFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ product: { eventId: "event1", type: "PASS" } }) })
+    );
+  });
+
+  it("вычитает суммы COMPLETED Refund — чистый (net) доход, не gross", async () => {
+    orderItemFindMany.mockResolvedValue([{ total: 100, order: { refunds: [{ amount: 30 }] } }]);
+    const result = await getEventPassRevenue("event1", owner);
+    expect(result).toBe(70);
+  });
+
+  it("полностью возвращённый заказ — вклад в выручку 0, не отрицательное число", async () => {
+    orderItemFindMany.mockResolvedValue([{ total: 100, order: { refunds: [{ amount: 100 }] } }]);
+    const result = await getEventPassRevenue("event1", owner);
+    expect(result).toBe(0);
   });
 
   it("чужое событие — RegistrationForbiddenError", async () => {
@@ -794,5 +880,128 @@ describe("getEventPassAttendanceCount()", () => {
   it("чужое событие — RegistrationForbiddenError", async () => {
     eventFindUnique.mockResolvedValue({ id: "event1", createdById: "someone-else" });
     await expect(getEventPassAttendanceCount("event1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+  });
+});
+
+describe("Commerce Engine v1 (2026-09-17) — Order/OrderItem/Payment/Refund/UserPass рядом с Ticket", () => {
+  it("issueTicket — создаёт Order(PENDING)+OrderItem+Payment(PENDING) и UserPass(ACTIVE), связывает Ticket.userPassId", async () => {
+    await issueTicket("pass1", "dancer1", owner);
+
+    expect(txProductFindUnique).toHaveBeenCalledWith({ where: { passId: "pass1" } });
+    expect(txUserPassUpsert).toHaveBeenCalledWith({
+      where: { dancerId_passId: { dancerId: "dancer1", passId: "pass1" } },
+      update: {},
+      create: { dancerId: "dancer1", passId: "pass1", status: "ACTIVE" },
+    });
+    expect(txOrderCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ eventId: "event1", dancerId: "dancer1", status: "PENDING", subtotal: 120, total: 120, createdById: "owner1" }),
+    });
+    expect(txOrderItemCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ orderId: "order1", productId: "product1", nameSnapshot: "Full Pass", unitPriceSnapshot: 120, quantity: 1 }),
+    });
+    expect(txPaymentCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ orderId: "order1", provider: "MANUAL", amount: 120, status: "PENDING", recordedById: "owner1" }),
+    });
+    // orderItemId ещё не был проставлен у UserPass (orderItemId: null по умолчанию) — значит обновляем.
+    expect(txUserPassUpdate).toHaveBeenCalledWith({ where: { id: "userpass1" }, data: { orderItemId: "orderitem1" } });
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ userPassId: "userpass1" }) });
+  });
+
+  it("issueTicket, markPaid=true — Order/Payment сразу PAID", async () => {
+    await issueTicket("pass1", "dancer1", owner, { markPaid: true });
+
+    expect(txOrderCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "PAID" }) });
+    expect(txPaymentCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "PAID", paidAt: expect.any(Date) }) });
+  });
+
+  it("issueTicket — UserPass уже привязан к другому OrderItem (повторный вызов) — orderItemId не перезаписывается", async () => {
+    txUserPassUpsert.mockResolvedValue({ id: "userpass1", orderItemId: "existing-item" });
+
+    await issueTicket("pass1", "dancer1", owner);
+
+    expect(txUserPassUpdate).not.toHaveBeenCalled();
+  });
+
+  it("issueTicketForType — создаёт Order/OrderItem/Payment, связывает Ticket.orderItemId (без UserPass — TicketType не Pass)", async () => {
+    await issueTicketForType("tt1", "dancer1", owner, { markPaid: true });
+
+    expect(txProductFindUnique).toHaveBeenCalledWith({ where: { ticketTypeId: "tt1" } });
+    expect(txUserPassUpsert).not.toHaveBeenCalled();
+    expect(txOrderItemCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ productId: "product1", nameSnapshot: "Dancer", unitPriceSnapshot: 15 }),
+    });
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ orderItemId: "orderitem1" }) });
+  });
+
+  it("cancelTicket — Ticket без Commerce-связей (старые данные) — Order/UserPass не трогаются", async () => {
+    ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", passId: "pass1", event });
+    txTicketUpdate.mockResolvedValue({ id: "ticket1", status: "CANCELLED" });
+
+    await cancelTicket("ticket1", owner);
+
+    expect(txOrderUpdate).not.toHaveBeenCalled();
+    expect(txUserPassUpdate).not.toHaveBeenCalled();
+  });
+
+  it("cancelTicket — Ticket с userPassId — Order → CANCELLED, UserPass → REVOKED", async () => {
+    ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", passId: "pass1", userPassId: "userpass1", event });
+    txTicketUpdate.mockResolvedValue({ id: "ticket1", status: "CANCELLED" });
+    txUserPassFindUnique.mockResolvedValue({ orderItemId: "orderitem1" });
+    txOrderItemFindUnique.mockResolvedValue({ orderId: "order1" });
+
+    await cancelTicket("ticket1", owner);
+
+    expect(txOrderUpdate).toHaveBeenCalledWith({ where: { id: "order1" }, data: { status: "CANCELLED" } });
+    expect(txUserPassUpdate).toHaveBeenCalledWith({ where: { id: "userpass1" }, data: { status: "REVOKED" } });
+  });
+
+  it("refundTicket — Ticket с orderItemId (TicketType) — создаёт Refund, Order → REFUNDED", async () => {
+    ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", isPaid: true, passId: null, ticketTypeId: "tt1", orderItemId: "orderitem1", event });
+    txTicketUpdate.mockResolvedValue({ id: "ticket1", status: "REFUNDED" });
+    txOrderItemFindUnique.mockResolvedValue({ orderId: "order1" });
+
+    await refundTicket("ticket1", owner);
+
+    expect(txRefundCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ paymentId: "payment1", orderId: "order1", amount: 120, currency: "BYN", status: "COMPLETED", recordedById: "owner1" }),
+    });
+    expect(txOrderUpdate).toHaveBeenCalledWith({ where: { id: "order1" }, data: { status: "REFUNDED" } });
+  });
+
+  it("refundTicket — Ticket с userPassId — дополнительно отзывает UserPass (REVOKED)", async () => {
+    ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", isPaid: true, passId: "pass1", userPassId: "userpass1", event });
+    txTicketUpdate.mockResolvedValue({ id: "ticket1", status: "REFUNDED" });
+    txUserPassFindUnique.mockResolvedValue({ orderItemId: "orderitem1" });
+    txOrderItemFindUnique.mockResolvedValue({ orderId: "order1" });
+
+    await refundTicket("ticket1", owner);
+
+    expect(txUserPassUpdate).toHaveBeenCalledWith({ where: { id: "userpass1" }, data: { status: "REVOKED" } });
+  });
+
+  it("refundTicket — производный вход (UserPass без orderItemId, нет своего Payment) — Refund не создаётся", async () => {
+    ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", isPaid: true, passId: "pass1", userPassId: "userpass1", event });
+    txTicketUpdate.mockResolvedValue({ id: "ticket1", status: "REFUNDED" });
+    txUserPassFindUnique.mockResolvedValue({ orderItemId: null });
+
+    await refundTicket("ticket1", owner);
+
+    expect(txRefundCreate).not.toHaveBeenCalled();
+    expect(txOrderUpdate).not.toHaveBeenCalled();
+    // Сам UserPass revoke тоже не должен произойти — findOrderIdForTicketInTx
+    // не нашёл Order (нет прямой оплаты у этого производного входа).
+    expect(txUserPassUpdate).not.toHaveBeenCalled();
+  });
+
+  it("issueFestivalPassEntry — связывает производный Ticket с существующим UserPass оригинальной покупки", async () => {
+    programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
+    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
+    ticketFindUnique.mockResolvedValue(null);
+    userPassFindUnique.mockResolvedValue({ id: "userpass1" });
+
+    await issueFestivalPassEntry("child-event", "dancer1", owner);
+
+    expect(userPassFindUnique).toHaveBeenCalledWith({ where: { dancerId_passId: { dancerId: "dancer1", passId: "pass1" } } });
+    expect(ticketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ userPassId: "userpass1" }) });
   });
 });

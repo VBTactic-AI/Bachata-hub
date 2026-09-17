@@ -21,6 +21,7 @@ export function EventDashboardTabs({ eventId, canManageTeam }: { eventId: string
     { href: base, label: "Обзор", exact: true },
     { href: `${base}/registrations`, label: "Участники", exact: false },
     { href: `${base}/passes`, label: "Билеты и Pass", exact: false },
+    { href: `${base}/orders`, label: "Заказы", exact: false },
     { href: `${base}/statistics`, label: "Статистика", exact: false },
     ...(canManageTeam ? [{ href: `${base}/team`, label: "Команда", exact: false }] : []),
   ];
