@@ -147,43 +147,45 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
         ratingLabel={avgRating ? `★ ${avgRating.toFixed(1)}` : null}
       />
 
-      <div className="flex flex-col items-start gap-2">
-        <VerificationBadge status={school.verificationStatus} />
-        <h1 className="m-0 font-night text-2xl font-extrabold tracking-tight text-night-text">{school.name}</h1>
-        <p className="m-0 text-sm text-night-muted">{school.city.nameRu}</p>
-        {avgRating && (
-          <p className="m-0 flex items-center gap-1.5 text-sm text-night-muted">
-            <span className="tracking-wide text-night-pink">{"★".repeat(Math.round(avgRating))}</span>
-            <span className="font-bold text-night-text">{avgRating.toFixed(1)}</span>
-            <span>
-              · {publicReviews.length} {t.school.reviews.toLowerCase()}
-            </span>
-          </p>
-        )}
-        <div className="flex flex-wrap items-center gap-3">
-          <FollowButton
-            type="SCHOOL"
-            targetId={school.id}
-            loggedIn={!!user}
-            initialSubscriptionId={existingSubscription?.id ?? null}
-          />
-          {subscriberCount > 0 && (
-            <span className="text-xs font-semibold text-night-muted">
-              {subscriberCount} {pluralizeRu(subscriberCount, t.school.subscribersCount)}
-            </span>
+      <div className="relative overflow-hidden rounded-app border border-night-border bg-gradient-night-hero p-5 sm:p-8">
+        <div className="flex flex-col items-start gap-2">
+          <VerificationBadge status={school.verificationStatus} />
+          <h1 className="m-0 font-night text-2xl font-extrabold tracking-tight text-night-text sm:text-3xl">{school.name}</h1>
+          <p className="m-0 text-sm text-night-muted">{school.city.nameRu}</p>
+          {avgRating && (
+            <p className="m-0 flex items-center gap-1.5 text-sm text-night-muted">
+              <span className="tracking-wide text-night-pink">{"★".repeat(Math.round(avgRating))}</span>
+              <span className="font-bold text-night-text">{avgRating.toFixed(1)}</span>
+              <span>
+                · {publicReviews.length} {t.school.reviews.toLowerCase()}
+              </span>
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <FollowButton
+              type="SCHOOL"
+              targetId={school.id}
+              loggedIn={!!user}
+              initialSubscriptionId={existingSubscription?.id ?? null}
+            />
+            {subscriberCount > 0 && (
+              <span className="text-xs font-semibold text-night-muted">
+                {subscriberCount} {pluralizeRu(subscriberCount, t.school.subscribersCount)}
+              </span>
+            )}
+          </div>
+
+          {school.directions.length > 0 && (
+            <div className="mt-1">
+              {school.directions.map((d) => (
+                <Tag key={d} className="border border-white/10 bg-white/5 text-night-pink">
+                  {d}
+                </Tag>
+              ))}
+            </div>
           )}
         </div>
       </div>
-
-      {school.directions.length > 0 && (
-        <div>
-          {school.directions.map((d) => (
-            <Tag key={d} className="bg-night-card2 text-night-pink">
-              {d}
-            </Tag>
-          ))}
-        </div>
-      )}
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <div className="rounded-app-sm border border-night-border bg-night-card px-2 py-3 text-center">
@@ -215,9 +217,9 @@ export default async function SchoolPage({ params }: { params: Promise<{ slug: s
           {school.teachers.length > 0 && (
             <div>
               <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">{t.school.teachers}</h2>
-              <div className="flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4">
+              <div className="flex gap-3 overflow-x-auto pb-1 lg:grid lg:grid-cols-4 lg:overflow-visible">
                 {school.teachers.map((teacher) => (
-                  <Card key={teacher.id} className="w-[150px] shrink-0 border-night-border bg-night-card sm:w-auto">
+                  <Card key={teacher.id} className="w-[150px] shrink-0 border-night-border bg-night-card lg:w-auto">
                     {teacher.photoUrl ? (
                       <img
                         src={teacher.photoUrl}
