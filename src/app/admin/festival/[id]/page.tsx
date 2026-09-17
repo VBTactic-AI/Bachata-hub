@@ -35,6 +35,23 @@ export default async function FestivalOverviewPage({ params }: { params: Promise
   const status = computeFestivalStatus(festival);
   const canManage = isOwnerOrAdminFestival(festival, user);
 
+  // Чек-лист готовности (2026-09-17, Stage UI-4) — ТОЛЬКО информационный,
+  // ничего не блокирует: единственное реальное условие публикации проверяет
+  // сервер (publishFestival в festival-service.ts — хотя бы один Pass), эти
+  // пункты просто помогают организатору не забыть заполнить остальное перед
+  // тем, как звать гостей на страницу.
+  const [sponsorsCount, faqCount, passesCount] = await Promise.all([
+    prisma.festivalSponsor.count({ where: { festivalId: festival.id } }),
+    prisma.festivalFaqItem.count({ where: { festivalId: festival.id } }),
+    festival.eventId ? prisma.pass.count({ where: { eventId: festival.eventId } }) : Promise.resolve(0),
+  ]);
+  const checklist = [
+    { label: "Программа заполнена", done: programItemsCount > 0 },
+    { label: "Хотя бы один Pass создан", done: passesCount > 0 },
+    { label: "Спонсоры добавлены", done: sponsorsCount > 0 },
+    { label: "FAQ заполнен", done: faqCount > 0 },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -53,6 +70,20 @@ export default async function FestivalOverviewPage({ params }: { params: Promise
         }}
         cities={cities}
       />
+
+      {canManage && status !== "PUBLISHED" && (
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Готовность к публикации</h2>
+          <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-sm">
+            {checklist.map((c) => (
+              <li key={c.label} className="flex items-center gap-2">
+                <span className={c.done ? "text-night-success" : "text-admin-muted"}>{c.done ? "✓" : "○"}</span>
+                <span className={c.done ? "text-night-text" : "text-admin-muted"}>{c.label}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {canManage && (
         <div className="rounded-app border border-admin-border bg-admin-card p-4">

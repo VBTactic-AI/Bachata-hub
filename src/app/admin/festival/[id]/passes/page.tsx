@@ -14,6 +14,7 @@ import { PromoCodeManager } from "@/components/admin/events/PromoCodeManager";
 import type { AccessTargetOption } from "@/components/admin/events/PassFormModal";
 import { FestivalFirstPassForm } from "@/components/admin/festival/FestivalFirstPassForm";
 import { FestivalReferralCodeManager, type ReferralOwnerOption } from "@/components/admin/festival/FestivalReferralCodeManager";
+import { FestivalPassBroadcastPanel } from "@/components/admin/festival/FestivalPassBroadcastPanel";
 
 // Вкладка «Пассы» консоли фестиваля (перенос UI, docs/PROGRESS.md — Festival
 // Engine UI transfer, продолжение Stage UI-1). Ключевая архитектурная
@@ -162,6 +163,8 @@ export default async function FestivalPassesPage({ params }: { params: Promise<{
         teachers={teacherOptions}
         schools={schoolOptions}
       />
+
+      <FestivalPassBroadcastPanel festivalId={festival.id} passes={passRows.map((p) => ({ id: p.id, name: p.name }))} />
     </div>
   );
 }
