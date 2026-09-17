@@ -10,6 +10,9 @@ export const DARK_ROUTE_PREFIXES = [
   "/profile",
   "/dancers",
   "/events",
+  // Festival Engine, Stage UI-5 (2026-09-17) — публичная страница фестиваля
+  // использует ту же тёмную вёрстку, что и /events/[slug].
+  "/festivals",
   "/admin",
   "/rating",
   "/become-organizer",

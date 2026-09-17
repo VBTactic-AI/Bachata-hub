@@ -70,6 +70,7 @@ const {
   archivePass,
   syncPassLifecycle,
   listPassesForEvent,
+  listPublicPassesForEvent,
   getPass,
   createPriceTier,
   updatePriceTier,
@@ -423,6 +424,19 @@ describe("listPassesForEvent() / getPass() — availableQuantity", () => {
     passFindUnique.mockResolvedValue({ ...basePass, quantity: 5, soldQuantity: 5, event });
     const result = await getPass("pass1", owner);
     expect(result.availableQuantity).toBe(0);
+  });
+});
+
+describe("listPublicPassesForEvent() — Stage UI-5, без RBAC", () => {
+  it("не требует пользователя, фильтрует только ACTIVE/SOLD_OUT", async () => {
+    passFindMany.mockResolvedValue([{ ...basePass, status: "ACTIVE" }]);
+    const result = await listPublicPassesForEvent("event1");
+    expect(passFindMany).toHaveBeenCalledWith({
+      where: { eventId: "event1", status: { in: ["ACTIVE", "SOLD_OUT"] } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    expect(result).toHaveLength(1);
+    expect(eventFindUnique).not.toHaveBeenCalled();
   });
 });
 

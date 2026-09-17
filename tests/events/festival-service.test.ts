@@ -279,6 +279,10 @@ describe("createFestivalPass() — ленивое создание bridge-Event"
           status: "DRAFT",
           createdById: "owner1",
           title: "Bachata Sensation Fest",
+          // Без этого гость не смог бы зарегистрироваться на bridge-Event
+          // публично — issueTicket() требует существующую регистрацию до
+          // выдачи Pass (найдено при переносе UI, Stage UI-5).
+          registrationEnabled: true,
         }),
       })
     );

@@ -291,6 +291,19 @@ export async function listPassesForEvent(eventId: string, user: User): Promise<P
   return synced.map(withAvailability);
 }
 
+// Публичная — без RBAC (перенос UI, Stage UI-5: первая публичная страница,
+// которая вообще показывает Pass гостям — /festivals/[slug]). Только
+// ACTIVE/SOLD_OUT — DRAFT/PAUSED/ARCHIVED/ENDED организатор ещё не готов
+// либо больше не хочет показывать посетителям.
+export async function listPublicPassesForEvent(eventId: string): Promise<PassWithAvailability[]> {
+  const passes = await prisma.pass.findMany({
+    where: { eventId, status: { in: ["ACTIVE", "SOLD_OUT"] } },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
+  const synced = await Promise.all(passes.map((p) => syncPassLifecycle(p)));
+  return synced.map(withAvailability);
+}
+
 export async function getPass(passId: string, user: User): Promise<PassWithAvailability> {
   const pass = await requireEventAccessForPass(passId, user);
   const synced = await syncPassLifecycle(pass);

@@ -73,3 +73,9 @@ export async function listFestivalFaqItems(festivalId: string, user: User): Prom
   await requireFestivalAccess(festivalId, user);
   return prisma.festivalFaqItem.findMany({ where: { festivalId }, orderBy: { sortOrder: "asc" } });
 }
+
+// Публичная — без RBAC (перенос UI, Stage UI-5), тот же принцип, что и у
+// listPublicFestivalReviews/listPublicGuestQuestions.
+export async function listPublicFestivalFaqItems(festivalId: string): Promise<FestivalFaqItem[]> {
+  return prisma.festivalFaqItem.findMany({ where: { festivalId }, orderBy: { sortOrder: "asc" } });
+}

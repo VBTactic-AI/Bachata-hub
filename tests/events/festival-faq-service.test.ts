@@ -28,6 +28,7 @@ const {
   updateFestivalFaqItem,
   deleteFestivalFaqItem,
   listFestivalFaqItems,
+  listPublicFestivalFaqItems,
   FestivalFaqItemValidationError,
 } = await import("@/server/events/festival-faq-service");
 const { RegistrationForbiddenError, RegistrationNotFoundError } = await import("@/server/events/registration-service");
@@ -100,6 +101,15 @@ describe("listFestivalFaqItems()", () => {
   it("сортирует по sortOrder", async () => {
     faqFindMany.mockResolvedValue([baseItem]);
     const result = await listFestivalFaqItems("fest1", owner);
+    expect(faqFindMany).toHaveBeenCalledWith({ where: { festivalId: "fest1" }, orderBy: { sortOrder: "asc" } });
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("listPublicFestivalFaqItems() — Stage UI-5, без RBAC", () => {
+  it("не требует пользователя, возвращает все вопросы фестиваля", async () => {
+    faqFindMany.mockResolvedValue([baseItem]);
+    const result = await listPublicFestivalFaqItems("fest1");
     expect(faqFindMany).toHaveBeenCalledWith({ where: { festivalId: "fest1" }, orderBy: { sortOrder: "asc" } });
     expect(result).toHaveLength(1);
   });

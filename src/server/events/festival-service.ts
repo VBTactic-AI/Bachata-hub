@@ -102,6 +102,7 @@ export async function getFestivalBySlug(slug: string) {
   return prisma.festival.findUnique({
     where: { slug },
     include: {
+      city: true,
       event: true,
       programItems: { orderBy: { order: "asc" }, include: { teacher: true, linkedEvent: true } },
     },
@@ -203,6 +204,17 @@ export async function createFestivalPass(festivalId: string, user: User, input: 
           description: festival.description,
           status: "DRAFT",
           createdById: festival.createdById,
+          // Без этого гость не может зарегистрироваться на bridge-Event
+          // публично (Event.registrationEnabled по умолчанию false) — а
+          // issueTicket() требует существующую EventRegistration ДО выдачи
+          // Pass ("сначала регистрация, потом Pass", 2026-09-16). Bridge
+          // создаётся автоматически, организатор никогда не видит форму
+          // редактирования этого служебного Event, чтобы включить это
+          // вручную — без явного true поток "гость видит фестиваль,
+          // регистрируется, организатор выдаёт Pass" был бы недостижим ни
+          // при каких действиях организатора (найдено при переносе UI,
+          // Stage UI-5, при проектировании публичной страницы).
+          registrationEnabled: true,
         },
       });
 

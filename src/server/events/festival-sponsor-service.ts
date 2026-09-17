@@ -92,3 +92,11 @@ export async function listFestivalSponsors(festivalId: string, user: User): Prom
   await requireFestivalAccess(festivalId, user);
   return prisma.festivalSponsor.findMany({ where: { festivalId }, orderBy: { sortOrder: "asc" } });
 }
+
+// Публичная — без RBAC (перенос UI, Stage UI-5: спонсоры — маркетинговый
+// блок публичной страницы, видимость самой страницы решает вызывающий код
+// через computeFestivalStatus, не эта функция — тот же принцип, что и у
+// listPublicFestivalReviews/listPublicGuestQuestions).
+export async function listPublicFestivalSponsors(festivalId: string): Promise<FestivalSponsor[]> {
+  return prisma.festivalSponsor.findMany({ where: { festivalId }, orderBy: { sortOrder: "asc" } });
+}

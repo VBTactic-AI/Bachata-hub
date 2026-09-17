@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
-  const [events, schools] = await Promise.all([
+  const [events, schools, festivals] = await Promise.all([
     prisma.event.findMany({
       // status: "PUBLISHED" — не индексировать черновики Event Wizard'а.
       where: { status: "PUBLISHED", moderationStatus: "APPROVED", isArchived: false },
@@ -12,6 +12,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }),
     prisma.school.findMany({
       where: { isActive: true },
+      select: { slug: true, updatedAt: true },
+    }),
+    // Festival Engine, Stage UI-5 (2026-09-17, docs/FESTIVAL_ENGINE_ER.md —
+    // видимость решает статус bridge-Event, тот же принцип, что и у самой
+    // публичной страницы /festivals/[slug]).
+    prisma.festival.findMany({
+      where: { event: { status: "PUBLISHED", moderationStatus: "APPROVED" } },
       select: { slug: true, updatedAt: true },
     }),
   ]);
@@ -31,6 +38,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: s.updatedAt,
       changeFrequency: "weekly" as const,
       priority: 0.6,
+    })),
+    ...festivals.map((f) => ({
+      url: `${siteUrl}/festivals/${f.slug}`,
+      lastModified: f.updatedAt,
+      changeFrequency: "daily" as const,
+      priority: 0.7,
     })),
   ];
 }

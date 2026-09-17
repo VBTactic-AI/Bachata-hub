@@ -28,6 +28,7 @@ const {
   updateFestivalSponsor,
   deleteFestivalSponsor,
   listFestivalSponsors,
+  listPublicFestivalSponsors,
   FestivalSponsorValidationError,
 } = await import("@/server/events/festival-sponsor-service");
 const { RegistrationForbiddenError, RegistrationNotFoundError } = await import("@/server/events/registration-service");
@@ -111,6 +112,15 @@ describe("listFestivalSponsors()", () => {
   it("сортирует по sortOrder", async () => {
     sponsorFindMany.mockResolvedValue([baseSponsor]);
     const result = await listFestivalSponsors("fest1", owner);
+    expect(sponsorFindMany).toHaveBeenCalledWith({ where: { festivalId: "fest1" }, orderBy: { sortOrder: "asc" } });
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("listPublicFestivalSponsors() — Stage UI-5, без RBAC", () => {
+  it("не требует пользователя, возвращает всех спонсоров фестиваля", async () => {
+    sponsorFindMany.mockResolvedValue([baseSponsor]);
+    const result = await listPublicFestivalSponsors("fest1");
     expect(sponsorFindMany).toHaveBeenCalledWith({ where: { festivalId: "fest1" }, orderBy: { sortOrder: "asc" } });
     expect(result).toHaveLength(1);
   });
