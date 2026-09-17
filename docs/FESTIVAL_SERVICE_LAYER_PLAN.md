@@ -4,7 +4,10 @@
 `docs/FESTIVAL_ENGINE_ER.md`, `docs/FESTIVAL_UI_TO_DB_PLAN.md` (схема уже
 реализована и применена к реальной БД).
 
-**Статус: Stage 1 и Stage 2 реализованы** (2026-09-17).
+**Статус: Stage 1-7 реализованы** (2026-09-17). Подробности каждого стейджа
+— в `docs/PROGRESS.md` (не в git, локальный журнал), здесь только сводка +
+решения. Перенос самого UI (`/admin/festival`, публичная страница) —
+следующий, отдельно запрошенный этап, ещё не начат.
 
 Stage 1 — `festival-service.ts`, `program-item-service.ts`, RBAC
 (`isOwnerOrAdminFestival`/`hasFestivalAccess` в `access.ts`), ленивое
@@ -27,10 +30,45 @@ Stage 3 — `festival-review-service.ts` (отзыв о фестивале — �
 `20260917020000_festival_guest_question_ip`, `submitterIp`+индекс; две
 независимые оси — `moderationStatus` и `answer`), 5 API-роутов.
 
-`tsc`/`vitest` (1455 тестов, +97 с начала сервисного слоя)/`next build` —
-зелёные (build дважды словил транзиентный обрыв сети до Supabase на
-`/sitemap.xml`, не связано с кодом — прошло чисто при повторе). Stage 4-7
-— см. ниже, не начаты.
+Между Stage 3 и Stage 4 отдельным коммитом (не Stage) закрыт незакоммиченный
+рефакторинг с предыдущей сессии: общий `EventsValidationError`, фикс гонки
+в `createFestivalPass()` (атомарный `updateMany` вместо read-then-write
+`eventId`), perf-фикс на `/events/[slug]` (один `Dancer` + `Promise.all`).
+
+Stage 4 — `festival-referral-code-service.ts` (create/list/setActive/
+getReferralCodeStats — зеркалит уже существующий `PromoCode`, без
+произвольного update и без физического удаления, т.к. код уже может быть
+привязан к `Ticket`), `issueTicket()` в `ticket-service.ts` расширен
+`options.referralCode` (привязка+снимок `discountValue`/`commissionValue`
+БЕЗ расчёта скидки на чекауте — тот же принцип, что и у `PromoCode`), 3
+API-роута.
+
+Stage 5 — `festival-broadcast-service.ts` (`sendFestivalPassBroadcast`, RBAC
+строго `isOwnerOrAdminFestival`, НЕ через сайтовый `BroadcastComposer.tsx`),
+ветка `PASS` в `resolveAudience()`/`resolveTargetLabels()`
+(`broadcast.ts`/`control-center.ts` — аудитория из держателей `Ticket`, не
+из `Subscription`), 1 API-роут.
+
+Stage 6 — `festival-member-service.ts` (`getMyFestivalAccess`, читает уже
+существующие `Ticket`/`Pass`/`PassAccessGrant`, `isProgramItemAccessibleByGrants`
+вынесена из `findFestivalPassForEvent` как общий предикат),
+`/profile/festivals/[slug]` (личный кабинет участника). Библиотека `qrcode`
+из плана **не установлена** — npm registry устойчиво недоступен через
+прокси окружения сессии (см. `docs/PROGRESS.md`, раздел Stage 6-7) —
+реальный QR остаётся открытым пунктом, вместо него текстовый код.
+
+Stage 7 — `refundPolicy`/`refundDeadline`/`refundFeePercent` (уже были в
+схеме `Pass`) подключены к `PassInput`/CRUD (`pass-service.ts`,
+`deriveRefundFields`/`validateRefundPolicy`) и к Zod-схемам трёх роутов
+создания/редактирования Pass. Публичного API, специально показывающего
+условия покупателю, в проекте пока нет вообще (Pass выдаётся организатором
+вручную) — поля уже отдаются в существующих ответах без доп. кода.
+
+`tsc`/`vitest` (1519 тестов, было 1358 до старта сервисного слоя)/`next
+build` — зелёные на каждом стейдже (иногда с повторным прогоном build из-за
+транзиентных сетевых обрывов до Supabase на `/sitemap.xml`, не связано с
+кодом). **С коммита Stage 6-7 включительно `git push` не выполняется — по
+прямому запросу пользователя, коммитит и пушит дальше он сам.**
 
 Важное исправление в процессе реализации: `createFestivalDraft` изначально
 планировался под `canCreateEvents` — оказалось, в проекте уже есть ОТДЕЛЬНЫЙ,
@@ -104,7 +142,9 @@ Stage 3 — `festival-review-service.ts` (отзыв о фестивале — �
     уже существует) полностью сохраняется и не зависит от способа
     появления bridge — он работает от `Pass.id`/`ProgramItem.linkedEventId`,
     а `Festival.eventId` для него просто "на каком событии куплен Pass".
-- Zod-схемы: `src/server/events/festival-schemas.ts`.
+- Zod-схемы: **по факту реализации — инлайн в каждом API-роуте** (тот же
+  паттерн, что уже был у Pass/PromoCode до Festival Engine), не отдельный
+  `festival-schemas.ts` — такого файла в репозитории нет, не искать.
 - API: `/api/festivals`, `/api/festivals/[id]`, `/api/festivals/[id]/
   program-items`, `/api/festivals/[id]/program-items/[itemId]`.
 - Тесты: `tests/events/festival-service.test.ts`,
