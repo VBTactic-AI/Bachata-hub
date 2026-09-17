@@ -1296,6 +1296,13 @@ model FestivalGuestQuestion {
   festival         Festival         @relation(fields: [festivalId], references: [id], onDelete: Cascade)
   askerName        String?
   question         String
+  // Анти-спам (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md, решение
+  // "нужна защита без авторизации") — форма анонимная, авторизация не
+  // требуется, поэтому лимит по IP: не больше N вопросов с одного IP на
+  // один фестиваль за короткое окно (см. submitGuestQuestion в
+  // festival-guest-question-service.ts). Не хеш — просто текст, как и
+  // остальные "технические" поля в проекте.
+  submitterIp      String?
   moderationStatus ModerationStatus @default(PENDING)
   moderatedById    String?
   moderatedBy      User?            @relation("FestivalGuestQuestionModerator", fields: [moderatedById], references: [id])
@@ -1308,6 +1315,7 @@ model FestivalGuestQuestion {
 
   @@index([festivalId])
   @@index([moderationStatus])
+  @@index([festivalId, submitterIp, createdAt])
 }
 
 enum FestivalExpenseCategory {

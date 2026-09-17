@@ -19,8 +19,18 @@ Stage 2 — `festival-sponsor-service.ts`, `festival-faq-service.ts`,
 общего `requireFestivalAccess` из `festival-service.ts` (переиспользован
 program-item-service.ts вместо дублирования).
 
-`tsc`/`vitest` (1429 тестов, +71 с начала сервисного слоя)/`next build` —
-зелёные. Stage 3-7 — см. ниже, не начаты.
+Stage 3 — `festival-review-service.ts` (отзыв о фестивале — РАСШИРЕНИЕ уже
+существующего `Review`, требует логин, как и отзывы школ; модератор —
+организатор фестиваля, не сайтовый модератор; переиспользован общий
+`logModeration()`/entity `"REVIEW"`), `festival-guest-question-service.ts`
+(анонимная форма без логина + анти-спам лимит по IP — доп-миграция
+`20260917020000_festival_guest_question_ip`, `submitterIp`+индекс; две
+независимые оси — `moderationStatus` и `answer`), 5 API-роутов.
+
+`tsc`/`vitest` (1455 тестов, +97 с начала сервисного слоя)/`next build` —
+зелёные (build дважды словил транзиентный обрыв сети до Supabase на
+`/sitemap.xml`, не связано с кодом — прошло чисто при повторе). Stage 4-7
+— см. ниже, не начаты.
 
 Важное исправление в процессе реализации: `createFestivalDraft` изначально
 планировался под `canCreateEvents` — оказалось, в проекте уже есть ОТДЕЛЬНЫЙ,
