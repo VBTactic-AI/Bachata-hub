@@ -19,3 +19,27 @@ export async function hasEventAccess(event: { id: string; createdById: string },
   });
   return !!membership;
 }
+
+// Festival Engine (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md) — тот же
+// принцип, что и isOwnerOrAdmin/hasEventAccess выше, но для Festival:
+// createdById или ADMIN — всегда.
+export function isOwnerOrAdminFestival(festival: { createdById: string }, user: User): boolean {
+  return festival.createdById === user.id || user.role === "ADMIN";
+}
+
+// До появления bridge-Event (Festival.eventId == null) команда недоступна
+// вообще — только владелец+ADMIN, осознанное ограничение черновика (см.
+// docs/FESTIVAL_ENGINE_ER.md, раздел "вне скоупа"). После — как и у Event,
+// через EventTeamMember УЖЕ СУЩЕСТВУЮЩЕГО bridge-события — Festival не
+// заводит собственную FestivalTeamMember.
+export async function hasFestivalAccess(
+  festival: { id: string; createdById: string; eventId: string | null },
+  user: User
+): Promise<boolean> {
+  if (isOwnerOrAdminFestival(festival, user)) return true;
+  if (!festival.eventId) return false;
+  const membership = await prisma.eventTeamMember.findUnique({
+    where: { eventId_userId: { eventId: festival.eventId, userId: user.id } },
+  });
+  return !!membership;
+}

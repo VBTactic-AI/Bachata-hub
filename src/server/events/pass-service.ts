@@ -71,7 +71,10 @@ export type PassInput = {
   allowMultipleEntry?: boolean;
 };
 
-function validateCommon(input: Partial<PassInput>): void {
+// Экспортирована (2026-09-17) — переиспользуется festival-service.ts
+// (createFestivalPass) для валидации Pass, создаваемого в контексте
+// фестиваля, без дублирования правил.
+export function validateCommon(input: Partial<PassInput>): void {
   if (input.name !== undefined && !input.name.trim()) {
     throw new PassValidationError("name_required", "Название обязательно.");
   }
