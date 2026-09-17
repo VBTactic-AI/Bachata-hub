@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { publishFestival, FestivalValidationError } from "@/server/events/festival-service";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/events/registration-service";
+import { publishFestival } from "@/server/events/festival-service";
+import { respondToEventsError } from "@/server/events/http";
 
 // POST /api/festivals/[id]/publish — отдельное действие, не PATCH со
 // status в теле (CLAUDE.md §45: сервер сам проверяет условия перехода, а
@@ -15,9 +15,6 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     const event = await publishFestival(id, user);
     return NextResponse.json({ ok: true, event });
   } catch (e) {
-    if (e instanceof RegistrationForbiddenError) return NextResponse.json({ error: e.code }, { status: 403 });
-    if (e instanceof RegistrationNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    if (e instanceof FestivalValidationError) return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });
-    throw e;
+    return respondToEventsError(e);
   }
 }

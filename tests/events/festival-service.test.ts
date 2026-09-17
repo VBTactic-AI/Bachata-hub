@@ -31,7 +31,9 @@ const eventUpdate = vi.fn();
 // набор моков, что и вне транзакции (для теста этого достаточно — важен сам
 // факт вызова в правильном порядке, не изоляция соединений).
 const txEventCreate = vi.fn();
-const txFestivalUpdate = vi.fn();
+const txEventDelete = vi.fn();
+const txFestivalUpdateMany = vi.fn();
+const txFestivalFindUniqueOrThrow = vi.fn();
 const txPassCreate = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -47,8 +49,11 @@ vi.mock("@/lib/prisma", () => ({
     event: { update: (...a: unknown[]) => eventUpdate(...a) },
     $transaction: async (fn: (tx: unknown) => unknown) =>
       fn({
-        event: { create: (...a: unknown[]) => txEventCreate(...a) },
-        festival: { update: (...a: unknown[]) => txFestivalUpdate(...a) },
+        event: { create: (...a: unknown[]) => txEventCreate(...a), delete: (...a: unknown[]) => txEventDelete(...a) },
+        festival: {
+          updateMany: (...a: unknown[]) => txFestivalUpdateMany(...a),
+          findUniqueOrThrow: (...a: unknown[]) => txFestivalFindUniqueOrThrow(...a),
+        },
         pass: { create: (...a: unknown[]) => txPassCreate(...a) },
       }),
   },
@@ -114,6 +119,7 @@ beforeEach(() => {
   festivalUpdate.mockImplementation((args) => Promise.resolve({ ...baseFestival, ...args.data }));
   festivalFindUniqueOrThrow.mockResolvedValue({ ...baseFestival, event: { id: "event1", status: "ARCHIVED" } });
   eventUpdate.mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data }));
+  txFestivalUpdateMany.mockResolvedValue({ count: 1 }); // по умолчанию — выиграли гонку за bridge
 });
 
 describe("computeFestivalStatus()", () => {
@@ -276,7 +282,10 @@ describe("createFestivalPass() — ленивое создание bridge-Event"
         }),
       })
     );
-    expect(txFestivalUpdate).toHaveBeenCalledWith({ where: { id: "fest1" }, data: { eventId: "new-event-1" } });
+    expect(txFestivalUpdateMany).toHaveBeenCalledWith({
+      where: { id: "fest1", eventId: null },
+      data: { eventId: "new-event-1" },
+    });
     expect(txPassCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventId: "new-event-1", name: "Full Pass" }) }));
   });
 
@@ -287,8 +296,25 @@ describe("createFestivalPass() — ленивое создание bridge-Event"
     await createFestivalPass("fest1", owner, passInput);
 
     expect(txEventCreate).not.toHaveBeenCalled();
-    expect(txFestivalUpdate).not.toHaveBeenCalled();
+    expect(txFestivalUpdateMany).not.toHaveBeenCalled();
     expect(txPassCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventId: "existing-event" }) }));
+  });
+
+  it("проигранная гонка за bridge — использует чужой eventId, удаляет свой лишний Event", async () => {
+    // Найдено при ревью (2026-09-17): festival.eventId читается ДО транзакции,
+    // поэтому два параллельных вызова для одного ещё безбриджевого фестиваля
+    // могли бы оба создать свой bridge. Атомарный updateMany(eventId: null)
+    // ловит проигравшего — count=0 означает "кто-то другой уже записал своё
+    // значение первым".
+    txEventCreate.mockResolvedValue({ id: "my-event" });
+    txFestivalUpdateMany.mockResolvedValue({ count: 0 });
+    txFestivalFindUniqueOrThrow.mockResolvedValue({ ...baseFestival, eventId: "winner-event" });
+    txPassCreate.mockResolvedValue({ id: "pass3" });
+
+    await createFestivalPass("fest1", owner, passInput);
+
+    expect(txEventDelete).toHaveBeenCalledWith({ where: { id: "my-event" } });
+    expect(txPassCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventId: "winner-event" }) }));
   });
 });
 

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
-import { createFestivalPass, FestivalValidationError } from "@/server/events/festival-service";
-import { PassValidationError } from "@/server/events/pass-service";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/events/registration-service";
+import { createFestivalPass } from "@/server/events/festival-service";
+import { respondToEventsError } from "@/server/events/http";
 
 const PASS_TYPES = ["FULL_PASS", "PARTY_PASS", "WORKSHOP_PASS", "DAY_PASS", "COMPETITION_PASS", "VIP_PASS", "FREE_PASS", "CUSTOM"] as const;
 
@@ -47,10 +46,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
     return NextResponse.json({ ok: true, pass });
   } catch (e) {
-    if (e instanceof RegistrationForbiddenError) return NextResponse.json({ error: e.code }, { status: 403 });
-    if (e instanceof RegistrationNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    if (e instanceof PassValidationError) return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });
-    if (e instanceof FestivalValidationError) return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });
-    throw e;
+    return respondToEventsError(e);
   }
 }

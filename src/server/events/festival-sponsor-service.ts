@@ -2,21 +2,14 @@ import type { FestivalSponsor, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireFestivalAccess } from "./festival-service";
 import { hasFestivalAccess } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — Stage 2 (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md).
 // Спонсоры/партнёры фестиваля — привязаны напрямую к Festival, не к
 // bridge-Event (маркетинговый блок публичной страницы, не билетная
 // инфраструктура). RBAC — тот же hasFestivalAccess, что и у Festival/ProgramItem.
 
-export class FestivalSponsorValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+export class FestivalSponsorValidationError extends EventsValidationError {}
 
 export type FestivalSponsorInput = {
   name: string;

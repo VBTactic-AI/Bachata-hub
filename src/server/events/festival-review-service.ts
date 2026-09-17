@@ -2,7 +2,7 @@ import type { Review, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logModeration } from "@/lib/moderation";
 import { hasFestivalAccess } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — Stage 3 (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md).
 // Отзыв о фестивале — РАСШИРЕНИЕ уже существующей модели Review (не
@@ -14,14 +14,7 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registr
 // hasFestivalAccess), а не сайтовый MODERATOR/ADMIN — прямое решение
 // пользователя (см. план, раздел 2, решение №3).
 
-export class FestivalReviewValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+export class FestivalReviewValidationError extends EventsValidationError {}
 
 export type FestivalReviewInput = {
   rating: number;

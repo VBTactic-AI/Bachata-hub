@@ -6,7 +6,7 @@ import { shouldAutoApproveEvent } from "@/lib/events/moderation";
 import { decidePublishModeration } from "./event-service";
 import { validateCommon as validatePassInput, type PassInput } from "./pass-service";
 import { isOwnerOrAdminFestival, hasFestivalAccess } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — сервисный слой (2026-09-17, план
 // docs/FESTIVAL_SERVICE_LAYER_PLAN.md, Stage 1). До этой правки сервисного
@@ -16,14 +16,10 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registr
 // состояние вычисляется из bridge-Event (computeFestivalStatus ниже),
 // ровно как решено в docs/FESTIVAL_ENGINE_ER.md.
 
-export class FestivalValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+// FINDING API-002 (2026-09-17) — наследуется от общего EventsValidationError
+// (registration-service.ts), чтобы respondToEventsError() ловил все
+// *ValidationError домена одним instanceof, не по отдельности.
+export class FestivalValidationError extends EventsValidationError {}
 
 export type FestivalComputedStatus = "DRAFT" | "LINKED" | "PUBLISHED";
 
@@ -208,8 +204,28 @@ export async function createFestivalPass(festivalId: string, user: User, input: 
           createdById: festival.createdById,
         },
       });
-      eventId = bridgeEvent.id;
-      await tx.festival.update({ where: { id: festival.id }, data: { eventId } });
+
+      // Гонка (найдено при ревью, 2026-09-17): `festival.eventId` выше
+      // прочитан ДО транзакции — если createFestivalPass вызван дважды
+      // параллельно для одного и того же ещё безбриджевого фестиваля, обе
+      // попытки увидят eventId=null и обе создадут свой bridge-Event.
+      // updateMany с условием "eventId ещё null" — атомарная защита:
+      // Postgres не даст второй конкурентной UPDATE увидеть устаревшее
+      // null после того, как первая уже закоммитила своё значение. Кто
+      // проиграл гонку — использует ЧУЖОЙ (уже записанный) bridge и удаляет
+      // свой лишний, чтобы не копить сиротские черновики Event.
+      const claim = await tx.festival.updateMany({
+        where: { id: festival.id, eventId: null },
+        data: { eventId: bridgeEvent.id },
+      });
+
+      if (claim.count === 0) {
+        await tx.event.delete({ where: { id: bridgeEvent.id } });
+        const winner = await tx.festival.findUniqueOrThrow({ where: { id: festival.id } });
+        eventId = winner.eventId!;
+      } else {
+        eventId = bridgeEvent.id;
+      }
     }
 
     return tx.pass.create({

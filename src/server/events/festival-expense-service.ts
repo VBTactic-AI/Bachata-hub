@@ -2,21 +2,14 @@ import type { FestivalExpense, FestivalExpenseCategory, FestivalExpenseStatus, U
 import { prisma } from "@/lib/prisma";
 import { requireFestivalAccess } from "./festival-service";
 import { hasFestivalAccess } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — Stage 2 (2026-09-17). Статьи расходов для вкладки
 // «Бюджет» — доход считается отдельно, из уже существующих Ticket/Pass/
 // FestivalSponsor (см. festival-budget-service.ts), здесь только расходы,
 // которые организатор вводит вручную.
 
-export class FestivalExpenseValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+export class FestivalExpenseValidationError extends EventsValidationError {}
 
 export type FestivalExpenseInput = {
   title: string;

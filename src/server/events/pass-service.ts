@@ -1,7 +1,7 @@
 import type { Pass, PassAccessGrant, PassPriceTier, PassStatus, PassType, PromoCode, PromoDiscountType, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess, isOwnerOrAdmin } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Ticket Engine — Pass CRUD (2026-09-16). Управлять предложениями доступа
 // (создавать/редактировать/менять статус/ценовые периоды/доступ/промокоды)
@@ -10,14 +10,7 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registr
 // команды события). Читать список Pass может любой член команды (hasEventAccess)
 // — им это нужно, чтобы выдавать билеты (см. ticket-service.ts).
 
-export class PassValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+export class PassValidationError extends EventsValidationError {}
 
 // Организатор вручную переключает только эти четыре значения. SOLD_OUT/ENDED
 // вычисляются сервером (см. syncPassLifecycle) — тот же принцип, что и

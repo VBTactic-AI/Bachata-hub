@@ -2,21 +2,14 @@ import type { FestivalProgramItemType, ProgramItem, User } from "@prisma/client"
 import { prisma } from "@/lib/prisma";
 import { hasFestivalAccess } from "./access";
 import { requireFestivalAccess } from "./festival-service";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — CRUD пунктов программы (2026-09-17, план
 // docs/FESTIVAL_SERVICE_LAYER_PLAN.md, Stage 1). RBAC — тот же
 // hasFestivalAccess, что и у самого Festival (владелец/ADMIN, плюс команда
 // bridge-Event, когда она уже есть).
 
-export class ProgramItemValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+export class ProgramItemValidationError extends EventsValidationError {}
 
 export type ProgramItemInput = {
   title: string;

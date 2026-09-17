@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
-import { updateProgramItem, deleteProgramItem, ProgramItemValidationError } from "@/server/events/program-item-service";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/events/registration-service";
+import { updateProgramItem, deleteProgramItem } from "@/server/events/program-item-service";
+import { respondToEventsError } from "@/server/events/http";
 
 const PROGRAM_ITEM_TYPES = ["WORKSHOP", "PARTY", "COMPETITION", "OTHER"] as const;
 
@@ -35,10 +35,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
     return NextResponse.json({ ok: true, item });
   } catch (e) {
-    if (e instanceof RegistrationForbiddenError) return NextResponse.json({ error: e.code }, { status: 403 });
-    if (e instanceof RegistrationNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    if (e instanceof ProgramItemValidationError) return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });
-    throw e;
+    return respondToEventsError(e);
   }
 }
 
@@ -51,8 +48,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await deleteProgramItem(itemId, user);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    if (e instanceof RegistrationForbiddenError) return NextResponse.json({ error: e.code }, { status: 403 });
-    if (e instanceof RegistrationNotFoundError) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    throw e;
+    return respondToEventsError(e);
   }
 }

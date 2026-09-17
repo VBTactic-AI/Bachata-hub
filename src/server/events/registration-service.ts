@@ -16,6 +16,22 @@ export class RegistrationForbiddenError extends Error {
   }
 }
 export class RegistrationNotFoundError extends Error {}
+
+// Общий базовый класс для *ValidationError по всему домену Events/Festival
+// (2026-09-17, FINDING API-002) — каждый сервис заводил СВОЙ класс
+// (FestivalValidationError, ProgramItemValidationError, ...), одинаковый по
+// форме (code + message), но без общего предка их нельзя было поймать одним
+// instanceof в общем HTTP-обработчике (respondToEventsError, см. ./http.ts).
+// Существующие классы теперь просто наследуются от этого, не меняя своей
+// сигнатуры конструктора и, значит, ни одного места, где их создают.
+export class EventsValidationError extends Error {
+  constructor(
+    public code: string,
+    message?: string
+  ) {
+    super(message ?? code);
+  }
+}
 export class NoDancerProfileError extends Error {}
 export class RegistrationClosedError extends Error {}
 // QA BUG-004 — переполнение вместимости при переводе WAITLIST -> REGISTERED/

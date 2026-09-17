@@ -2,20 +2,13 @@ import type { FestivalFaqItem, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireFestivalAccess } from "./festival-service";
 import { hasFestivalAccess } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — Stage 2 (2026-09-17). FAQ, который ведёт организатор —
 // показывается аккордеоном на публичной странице фестиваля. НЕ то же самое,
 // что FestivalGuestQuestion (вопросы от гостей, отдельный сервис, Stage 3).
 
-export class FestivalFaqItemValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+export class FestivalFaqItemValidationError extends EventsValidationError {}
 
 export type FestivalFaqItemInput = {
   question: string;

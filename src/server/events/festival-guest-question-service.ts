@@ -2,7 +2,7 @@ import type { FestivalGuestQuestion, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireFestivalAccess } from "./festival-service";
 import { hasFestivalAccess } from "./access";
-import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — Stage 3 (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md).
 // Вопрос гостя — АНОНИМНАЯ форма (без авторизации, решение пользователя),
@@ -17,14 +17,7 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registr
 // Вопрос может быть APPROVED, но без ответа ("Ожидает ответа" в UI);
 // PENDING/REJECTED не показывается публично вне зависимости от ответа.
 
-export class FestivalGuestQuestionValidationError extends Error {
-  constructor(
-    public code: string,
-    message?: string
-  ) {
-    super(message ?? code);
-  }
-}
+export class FestivalGuestQuestionValidationError extends EventsValidationError {}
 
 export class FestivalGuestQuestionRateLimitError extends Error {
   constructor(message = "Слишком много вопросов подряд — попробуйте позже.") {

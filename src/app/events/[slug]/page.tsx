@@ -132,45 +132,38 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
   if (!event || (!isEventDirectlyVisible(event) && !isOwnerOrAdmin)) {
     notFound();
   }
-  const attendance = user
-    ? await prisma.dancer
-        .findUnique({ where: { userId: user.id } })
-        .then((dancer) =>
-          dancer
-            ? prisma.attendance.findUnique({
-                where: { dancerId_eventId: { dancerId: dancer.id, eventId: event.id } },
-              })
-            : null
-        )
-    : null;
+  // PERF-001 (2026-09-17) — раньше Dancer запрашивался дважды (отдельно для
+  // attendance и для myRegistration), и все 4 запроса ниже шли строго
+  // последовательно один за другим (до 5 круговых поездок к remote-БД на
+  // serverless подряд). Dancer теперь один на все нужды страницы, а
+  // независимые друг от друга запросы (attendance/registration/обе
+  // подписки) идут параллельно одним Promise.all — не зависят друг от
+  // друга по данным, зависят только от dancer/event/user, которые уже
+  // известны на этот момент.
+  const dancer = user ? await prisma.dancer.findUnique({ where: { userId: user.id } }) : null;
 
-  // Events Engine, этап 4 — своя регистрация участника, независимая от
-  // Attendance (RSVP) выше. Тот же паттерн запроса (через Dancer.userId).
-  const myRegistration = user
-    ? await prisma.dancer
-        .findUnique({ where: { userId: user.id } })
-        .then((dancer) =>
-          dancer
-            ? prisma.eventRegistration.findUnique({
-                where: { eventId_dancerId: { eventId: event.id, dancerId: dancer.id } },
-              })
-            : null
-        )
-    : null;
-
-  const existingSubscription = user
-    ? await prisma.subscription.findUnique({
-        where: { userId_type_targetId: { userId: user.id, type: "EVENT", targetId: event.id } },
-      })
-    : null;
-
-  // NOTIF-001 — подписка "на организатора" (Event.createdById), отдельно от
-  // подписки на конкретное событие выше.
-  const existingOrganizerSubscription = user
-    ? await prisma.subscription.findUnique({
-        where: { userId_type_targetId: { userId: user.id, type: "ORGANIZER", targetId: event.createdById } },
-      })
-    : null;
+  const [attendance, myRegistration, existingSubscription, existingOrganizerSubscription] = await Promise.all([
+    dancer
+      ? prisma.attendance.findUnique({ where: { dancerId_eventId: { dancerId: dancer.id, eventId: event.id } } })
+      : Promise.resolve(null),
+    // Events Engine, этап 4 — своя регистрация участника, независимая от
+    // Attendance (RSVP) выше.
+    dancer
+      ? prisma.eventRegistration.findUnique({ where: { eventId_dancerId: { eventId: event.id, dancerId: dancer.id } } })
+      : Promise.resolve(null),
+    user
+      ? prisma.subscription.findUnique({
+          where: { userId_type_targetId: { userId: user.id, type: "EVENT", targetId: event.id } },
+        })
+      : Promise.resolve(null),
+    // NOTIF-001 — подписка "на организатора" (Event.createdById), отдельно
+    // от подписки на конкретное событие выше.
+    user
+      ? prisma.subscription.findUnique({
+          where: { userId_type_targetId: { userId: user.id, type: "ORGANIZER", targetId: event.createdById } },
+        })
+      : Promise.resolve(null),
+  ]);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const pageUrl = `${siteUrl}/events/${event.slug}`;
