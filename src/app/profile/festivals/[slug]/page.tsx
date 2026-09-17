@@ -4,19 +4,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
 import { getMyFestivalAccess } from "@/server/events/festival-member-service";
 import { Card } from "@/components/ui/card";
+import { FestivalPassQrCode } from "@/components/festival/FestivalPassQrCode";
 
 // Festival Engine — Stage 6 (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md).
 // Личный кабинет участника фестиваля: свой Pass + расписание, доступное
 // именно этому Pass (PassAccessGrant). Бизнес-логика — целиком в
 // getMyFestivalAccess() (festival-member-service.ts), здесь только вёрстка.
-//
-// QR-код (2026-09-17): библиотека `qrcode` из плана НЕ установлена в этом
-// заходе — npm registry оказался недоступен через прокси окружения сессии
-// (устойчивый 503 на нескольких повторных попытках, не временный сбой).
-// Ticket.id показан как обычный код на входе (staff может ввести его
-// вручную) — как только `qrcode` можно будет установить, этот блок
-// заменяется на реальный QR-image (client-компонент, qrcode.toDataURL),
-// сама передача ticket.id уже готова и не потребует изменений.
+// QR (2026-09-17, следующий заход) — FestivalPassQrCode.tsx, генерируется на
+// клиенте из ticket.id (библиотека `qrcode` установлена пользователем
+// вручную — npm registry был недоступен через прокси предыдущей сессии).
 
 const PROGRAM_ITEM_TYPE_LABELS: Record<string, string> = {
   WORKSHOP: "Мастер-класс",
@@ -73,10 +69,11 @@ export default async function MyFestivalPage({ params }: { params: Promise<{ slu
           <Card className="flex flex-col items-center gap-3 border-night-border bg-night-card py-6 text-center">
             <span className="text-xs font-semibold uppercase tracking-wide text-night-muted">Мой Pass</span>
             <strong className="font-night text-lg text-night-text">{ticket.passName}</strong>
-            <div className="rounded-app-sm border border-night-border bg-night-bg px-4 py-3 font-mono text-sm tracking-widest text-night-text">
+            <FestivalPassQrCode value={ticket.id} />
+            <div className="rounded-app-sm border border-night-border bg-night-bg px-4 py-3 font-mono text-xs tracking-widest text-night-text">
               {ticket.id}
             </div>
-            <span className="text-xs text-night-muted">Покажите этот код на входе</span>
+            <span className="text-xs text-night-muted">Покажите QR или код на входе</span>
           </Card>
 
           <div>
