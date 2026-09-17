@@ -65,3 +65,25 @@ export function TicketIcon({ size = 15 }: IconProps) {
     </svg>
   );
 }
+
+export function PhoneIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M4.5 3h2.6l1.2 3.4L7 8c.7 1.8 2 3.1 3.8 3.8l1.6-1.3 3.4 1.2v2.6c0 1-.8 1.8-1.8 1.7C8.4 15.4 4.6 11.6 4 6.1c-.1-1 .7-1.8 1.7-1.8Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function MailIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="2.5" y="5" width="15" height="10" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3.3 6l6.7 5 6.7-5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

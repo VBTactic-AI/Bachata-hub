@@ -238,21 +238,45 @@ model School {
   eventTemplates        EventTemplate[]
   eventSeries           EventSeries[]
   festivalReferralCodes FestivalReferralCode[]
+  faqItems              SchoolFaqItem[]
 
   @@index([cityId])
   @@index([verificationStatus])
   @@index([ownerUserId])
 }
 
+model SchoolFaqItem {
+  // FAQ карточки школы — по образцу FestivalFaqItem (docs/00_DECISIONS.md,
+  // Festival Engine Stage 2): ведёт владелец школы (School.ownerUserId),
+  // показывается аккордеоном на публичной странице /schools/[slug].
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
 model SchoolBranch {
   // «Филиалы (адреса)» школы — вынесено отдельной таблицей, т.к. филиалов
   // может быть несколько на школу.
-  id       String  @id @default(cuid())
-  schoolId String
-  school   School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  address  String
-  cityId   String? // филиал может быть в другом городе, чем головная школа
-  city     City?   @relation(fields: [cityId], references: [id])
+  id        String  @id @default(cuid())
+  schoolId  String
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  address   String
+  cityId    String? // филиал может быть в другом городе, чем головная школа
+  city      City?   @relation(fields: [cityId], references: [id])
+  // Координаты — необязательные (2026-09-17, перенос публичной страницы
+  // школы): пока владелец школы не проставил их через свой CRM (см.
+  // src/server/schools/update-branches.ts), публичная страница просто
+  // показывает адрес текстом без карты — координаты не подставляются
+  // автоматически и не выдумываются на фронтенде.
+  latitude  Float?
+  longitude Float?
 
   @@index([schoolId])
   @@index([cityId])

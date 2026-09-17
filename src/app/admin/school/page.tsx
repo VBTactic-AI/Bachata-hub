@@ -1,9 +1,12 @@
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { t } from "@/lib/i18n/dictionary";
+import { getActiveCities } from "@/lib/cities";
 import { StatCard } from "@/components/admin/StatCard";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { SchoolProfileForm } from "@/components/admin/school/SchoolProfileForm";
+import { SchoolBranchesManager } from "@/components/admin/school/SchoolBranchesManager";
+import { SchoolFaqManager } from "@/components/admin/school/SchoolFaqManager";
 
 // CRM своей школы — первая версия (docs/00_DECISIONS.md, 2026-09-14):
 // базовая статистика + редактирование карточки. Branches/Teachers/Schedule
@@ -13,16 +16,20 @@ export default async function SchoolAdminPage() {
   const user = await getCurrentUser();
   if (!user) return null; // layout уже отредиректил бы раньше
 
-  const school = await prisma.school.findFirst({
-    where: { ownerUserId: user.id },
-    include: {
-      city: true,
-      branches: { include: { city: true } },
-      teachers: true,
-      schedules: { include: { teacher: true }, orderBy: { weekday: "asc" } },
-      _count: { select: { reviews: true, events: true } },
-    },
-  });
+  const [school, cities] = await Promise.all([
+    prisma.school.findFirst({
+      where: { ownerUserId: user.id },
+      include: {
+        city: true,
+        branches: { include: { city: true } },
+        teachers: true,
+        schedules: { include: { teacher: true }, orderBy: { weekday: "asc" } },
+        faqItems: { orderBy: { sortOrder: "asc" } },
+        _count: { select: { reviews: true, events: true } },
+      },
+    }),
+    getActiveCities(),
+  ]);
   if (!school) return null; // layout уже отредиректил бы раньше
 
   return (
@@ -55,6 +62,17 @@ export default async function SchoolAdminPage() {
           }}
         />
       </div>
+
+      <SchoolBranchesManager
+        schoolSlug={school.slug}
+        items={school.branches.map((b) => ({ id: b.id, address: b.address, cityId: b.cityId, latitude: b.latitude, longitude: b.longitude }))}
+        cities={cities.map((c) => ({ id: c.id, nameRu: c.nameRu }))}
+      />
+
+      <SchoolFaqManager
+        schoolSlug={school.slug}
+        items={school.faqItems.map((f) => ({ id: f.id, question: f.question, answer: f.answer }))}
+      />
 
       <div className="rounded-app border border-admin-border bg-admin-card p-4">
         <h2 className="m-0 mb-3 font-night text-base font-bold text-night-text">Преподаватели</h2>
