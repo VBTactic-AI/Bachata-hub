@@ -47,6 +47,16 @@ export type PassFormValue = {
   validUntil: string | null;
   imageUrl: string | null;
   allowMultipleEntry: boolean;
+  refundPolicy: string;
+  refundDeadline: string | null;
+  refundFeePercent: number | null;
+};
+
+const REFUND_POLICY_LABELS: Record<string, string> = {
+  NONE: "Без возврата",
+  UNTIL_DATE: "Возврат до даты",
+  PARTIAL: "Частичный возврат (с комиссией)",
+  FULL: "Полный возврат в любой момент",
 };
 
 function toLocalInput(iso: string | null): string {
@@ -92,6 +102,9 @@ export function PassFormModal({
   const [validUntil, setValidUntil] = useState(toLocalInput(initial?.validUntil ?? null));
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
   const [allowMultipleEntry, setAllowMultipleEntry] = useState(initial?.allowMultipleEntry ?? true);
+  const [refundPolicy, setRefundPolicy] = useState(initial?.refundPolicy ?? "NONE");
+  const [refundDeadline, setRefundDeadline] = useState(toLocalInput(initial?.refundDeadline ?? null));
+  const [refundFeePercent, setRefundFeePercent] = useState(initial?.refundFeePercent != null ? String(initial.refundFeePercent) : "");
   const [earlyBirdEnabled, setEarlyBirdEnabled] = useState(false);
   const [earlyBirdPrice, setEarlyBirdPrice] = useState("");
   const [earlyBirdUntil, setEarlyBirdUntil] = useState("");
@@ -170,6 +183,9 @@ export function PassFormModal({
       validUntil: validUntil ? new Date(validUntil).toISOString() : null,
       imageUrl: imageUrl.trim() || null,
       allowMultipleEntry,
+      refundPolicy,
+      refundDeadline: refundPolicy === "UNTIL_DATE" && refundDeadline ? new Date(refundDeadline).toISOString() : null,
+      refundFeePercent: refundPolicy === "PARTIAL" && refundFeePercent ? Number(refundFeePercent) : null,
     };
 
     const url = mode === "create" ? `/api/events/${eventSlug}/passes` : `/api/events/${eventSlug}/passes/${initial!.id}`;
@@ -396,6 +412,39 @@ export function PassFormModal({
               />
               Разрешить повторный вход
             </label>
+
+            <div className="rounded-app-sm border border-admin-border p-3">
+              <Label className="text-admin-muted">
+                Условия возврата
+                <Select value={refundPolicy} onChange={(e) => setRefundPolicy(e.target.value)} className={FIELD_CLASS}>
+                  {Object.entries(REFUND_POLICY_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </Label>
+              {refundPolicy === "UNTIL_DATE" && (
+                <Label className="mt-2 text-admin-muted">
+                  Возврат возможен до
+                  <DateTimeField value={refundDeadline} onChange={setRefundDeadline} className={FIELD_CLASS} />
+                </Label>
+              )}
+              {refundPolicy === "PARTIAL" && (
+                <Label className="mt-2 text-admin-muted">
+                  Комиссия за возврат, %
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={refundFeePercent}
+                    onChange={(e) => setRefundFeePercent(e.target.value)}
+                    className={FIELD_CLASS}
+                  />
+                </Label>
+              )}
+            </div>
 
             {accessOptions.length > 0 && (
               <div className="rounded-app-sm border border-admin-border p-3">

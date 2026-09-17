@@ -67,8 +67,7 @@ export default async function FestivalOverviewPage({ params }: { params: Promise
           ) : (
             <div className="flex flex-col gap-2">
               <p className="m-0 text-sm text-admin-muted">
-                Чтобы опубликовать фестиваль, сначала создайте хотя бы один Pass — вкладка «Пассы» появится в одном из следующих
-                обновлений консоли.
+                Чтобы опубликовать фестиваль, сначала создайте хотя бы один Pass — вкладка «Пассы».
               </p>
               <div>
                 <FestivalDeleteButton festivalId={festival.id} name={festival.name} />
