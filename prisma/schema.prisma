@@ -1258,6 +1258,12 @@ model FestivalSponsor {
   tier        String
   logoUrl     String?
   websiteUrl  String?
+  // Сумма денежного взноса (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md
+  // §2.2) — попадает в «Доход» вкладки «Бюджет» (прямое решение
+  // пользователя). Nullable — спонсор может быть бартерным/информационным,
+  // без денежного взноса вообще.
+  amount      Decimal? @db.Decimal(10, 2)
+  currency    String?
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

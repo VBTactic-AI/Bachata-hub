@@ -4,11 +4,23 @@
 `docs/FESTIVAL_ENGINE_ER.md`, `docs/FESTIVAL_UI_TO_DB_PLAN.md` (схема уже
 реализована и применена к реальной БД).
 
-**Статус: Stage 1 реализован** (2026-09-17) — `festival-service.ts`,
-`program-item-service.ts`, RBAC (`isOwnerOrAdminFestival`/
-`hasFestivalAccess` в `access.ts`), ленивое создание bridge-Event,
-`publishFestival`, 6 API-роутов `/api/festivals/*`. `tsc`/`vitest`
-(1403 тестов, +45)/`next build` — зелёные. Stage 2-7 — см. ниже, не начаты.
+**Статус: Stage 1 и Stage 2 реализованы** (2026-09-17).
+
+Stage 1 — `festival-service.ts`, `program-item-service.ts`, RBAC
+(`isOwnerOrAdminFestival`/`hasFestivalAccess` в `access.ts`), ленивое
+создание bridge-Event, `publishFestival`, 6 API-роутов `/api/festivals/*`.
+
+Stage 2 — `festival-sponsor-service.ts`, `festival-faq-service.ts`,
+`festival-expense-service.ts`, `festival-budget-service.ts`
+(`getFestivalBudgetSummary` — выручка Pass на bridge-Event +
+взносы спонсоров - расходы), небольшая доп-миграция
+`20260917010000_festival_sponsor_amount` (`FestivalSponsor.amount`/
+`currency` — решение №2, применена к реальной БД), 8 API-роутов, экспорт
+общего `requireFestivalAccess` из `festival-service.ts` (переиспользован
+program-item-service.ts вместо дублирования).
+
+`tsc`/`vitest` (1429 тестов, +71 с начала сервисного слоя)/`next build` —
+зелёные. Stage 3-7 — см. ниже, не начаты.
 
 Важное исправление в процессе реализации: `createFestivalDraft` изначально
 планировался под `canCreateEvents` — оказалось, в проекте уже есть ОТДЕЛЬНЫЙ,

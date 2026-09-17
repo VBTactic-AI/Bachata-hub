@@ -78,6 +78,16 @@ export async function createFestivalDraft(user: User, input: FestivalDraftInput)
   });
 }
 
+// Переиспользуется Stage 2 сервисами (спонсоры/FAQ/расходы/бюджет) — общая
+// проверка "фестиваль существует и у пользователя есть доступ", без
+// дублирования в каждом файле.
+export async function requireFestivalAccess(festivalId: string, user: User): Promise<Festival> {
+  const festival = await prisma.festival.findUnique({ where: { id: festivalId } });
+  if (!festival) throw new RegistrationNotFoundError();
+  if (!(await hasFestivalAccess(festival, user))) throw new RegistrationForbiddenError("forbidden");
+  return festival;
+}
+
 export async function getFestivalForEdit(festivalId: string, user: User) {
   const festival = await prisma.festival.findUnique({
     where: { id: festivalId },

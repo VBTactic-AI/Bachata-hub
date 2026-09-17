@@ -1,6 +1,7 @@
 import type { FestivalProgramItemType, ProgramItem, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasFestivalAccess } from "./access";
+import { requireFestivalAccess } from "./festival-service";
 import { RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
 
 // Festival Engine — CRUD пунктов программы (2026-09-17, план
@@ -42,13 +43,6 @@ function validateProgramItemInput(input: Partial<ProgramItemInput>): void {
   if (input.capacity != null && (!Number.isInteger(input.capacity) || input.capacity <= 0)) {
     throw new ProgramItemValidationError("invalid_capacity", "Вместимость должна быть положительным целым числом.");
   }
-}
-
-async function requireFestivalAccess(festivalId: string, user: User) {
-  const festival = await prisma.festival.findUnique({ where: { id: festivalId } });
-  if (!festival) throw new RegistrationNotFoundError();
-  if (!(await hasFestivalAccess(festival, user))) throw new RegistrationForbiddenError("forbidden");
-  return festival;
 }
 
 async function requireAccessForItem(itemId: string, user: User) {
