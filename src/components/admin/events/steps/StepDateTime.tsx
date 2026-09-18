@@ -41,8 +41,10 @@ export function StepDateTime({ draft, onChange }: { draft: WizardDraft; onChange
 
       <div className="grid gap-3.5 sm:grid-cols-2">
         <Label className="text-admin-muted">
-          {t.event.date} / {t.event.time} — начало
-          <RequiredMark />
+          <span>
+            {t.event.date} / {t.event.time} — начало
+            <RequiredMark />
+          </span>
           <DateTimeField required value={draft.startsAt} onChange={handleStartsAtChange} theme="admin" className={fieldClass} />
         </Label>
 

@@ -41,8 +41,10 @@ export function StepBasic({
       <div className={groupClass}>
         <p className={groupLabelClass}>Основное</p>
         <Label className="text-admin-muted">
-          {t.event.addEventForm.titleField}
-          <RequiredMark />
+          <span>
+            {t.event.addEventForm.titleField}
+            <RequiredMark />
+          </span>
           <Input required value={draft.title} onChange={(e) => onChange({ title: e.target.value })} className={fieldClass} />
         </Label>
         <Label className="text-admin-muted">
@@ -65,8 +67,10 @@ export function StepBasic({
             </Select>
           </Label>
           <Label className="text-admin-muted">
-            {t.event.city}
-            <RequiredMark />
+            <span>
+              {t.event.city}
+              <RequiredMark />
+            </span>
             <Select required value={draft.cityId} onChange={(e) => onChange({ cityId: e.target.value })} className={fieldClass}>
               <option value="">—</option>
               {cities.map((c) => (
@@ -79,8 +83,10 @@ export function StepBasic({
         </div>
         <div className="grid gap-3.5 sm:grid-cols-2">
           <Label className="text-admin-muted">
-            {t.event.place}
-            <RequiredMark />
+            <span>
+              {t.event.place}
+              <RequiredMark />
+            </span>
             <Input required value={draft.venueName} onChange={(e) => onChange({ venueName: e.target.value })} className={fieldClass} />
           </Label>
           <Label className="text-admin-muted">
