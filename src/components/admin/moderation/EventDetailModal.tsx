@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { t } from "@/lib/i18n/dictionary";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatEventDateRange } from "@/lib/format";
 import { Tag } from "@/components/ui/tag";
 import { DetailModal } from "./DetailModal";
 
@@ -55,8 +55,7 @@ export function EventDetailModal({ event, actions, trigger }: { event: Moderatio
         </div>
 
         <Field label={t.event.date}>
-          {formatDateTime(new Date(event.startsAt))}
-          {event.endsAt ? ` — ${formatDateTime(new Date(event.endsAt))}` : ""}
+          {formatEventDateRange(new Date(event.startsAt), event.endsAt ? new Date(event.endsAt) : null)}
         </Field>
 
         <Field label={t.event.place}>

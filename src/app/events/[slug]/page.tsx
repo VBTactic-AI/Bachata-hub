@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { isEventDirectlyVisible } from "@/lib/events";
 import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n/dictionary";
-import { formatDateTime, formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
+import { formatEventDate, formatEventDateRange, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
 import { EVENT_FORMAT_COLOR } from "@/lib/event-format-colors";
 import { safeJsonLd } from "@/lib/json-ld";
 import { COMPETITION_STATUS_LABELS } from "@/lib/competition-labels";
@@ -333,8 +333,7 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
             </span>
           )}
           <span className="font-semibold tabular-nums text-night-text">
-            {formatDateTime(event.startsAt)}
-            {event.endsAt ? ` — ${formatDateTime(event.endsAt)}` : ""}
+            {formatEventDateRange(event.startsAt, event.endsAt)}
           </span>
           {!isPast && <EventCountdown startsAt={event.startsAt.toISOString()} />}
           {event.certainty === "TENTATIVE" && (

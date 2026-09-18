@@ -3,6 +3,10 @@ const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
   month: "long",
   weekday: "short",
 });
+const dateOnlyFormatter = new Intl.DateTimeFormat("ru-RU", {
+  day: "2-digit",
+  month: "long",
+});
 const timeFormatter = new Intl.DateTimeFormat("ru-RU", {
   hour: "2-digit",
   minute: "2-digit",
@@ -18,6 +22,22 @@ export function formatEventTime(date: Date) {
 
 export function formatDateTime(date: Date) {
   return `${formatEventDate(date)}, ${formatEventTime(date)}`;
+}
+
+// Диапазон дат/времени события (карточка модерации + публичная страница
+// события) — если начало и конец в один календарный день, дата не
+// дублируется и день недели не показывается (он и так виден рядом отдельной
+// плашкой "Сегодня"/"Завтра"): "21 сентября, 17:00–22:00" вместо нечитаемого
+// "пн, 21 сентября, 17:00 — пн, 21 сентября, 22:00" (по прямому запросу
+// пользователя, 2026-09-18). Событие через полночь на следующий день — редкий
+// случай, там оставляем полный формат с обеих сторон, иначе потеряется дата
+// окончания.
+export function formatEventDateRange(start: Date, end: Date | null): string {
+  if (!end) return formatDateTime(start);
+  const sameDay =
+    start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth() && start.getDate() === end.getDate();
+  if (!sameDay) return `${formatDateTime(start)} — ${formatDateTime(end)}`;
+  return `${dateOnlyFormatter.format(start)}, ${formatEventTime(start)}–${formatEventTime(end)}`;
 }
 
 // Короткий "плашечный" лейбл для карточки события ("сегодня", "завтра",
