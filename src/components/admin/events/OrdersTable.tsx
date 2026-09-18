@@ -20,6 +20,10 @@ export type OrderRow = {
   paymentStatus: string | null;
   paymentMethod: string | null;
   refundedTotal: number;
+  // "Продажа на входе" (2026-09-18) — анонимная запись без Order/Dancer, см.
+  // door-sale-service.ts. dancerName для таких строк — не настоящее имя, а
+  // плейсхолдер ("Без регистрации"); эта пометка отличает их визуально.
+  isDoorSale?: boolean;
 };
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -75,7 +79,14 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
           {orders.map((o) => (
             <tr key={o.id} className="border-t border-admin-border">
               <td className="px-3 py-3 align-middle whitespace-nowrap text-admin-muted">{formatDate(o.createdAt)}</td>
-              <td className="px-3 py-3 align-middle font-medium text-night-text">{o.dancerName}</td>
+              <td className="px-3 py-3 align-middle font-medium text-night-text">
+                {o.dancerName}
+                {o.isDoorSale && (
+                  <span className="ml-1.5 rounded-full border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-admin-disabled">
+                    вход
+                  </span>
+                )}
+              </td>
               <td className="px-3 py-3 align-middle text-admin-muted">
                 <span className="max-w-[220px] truncate">{o.itemNames.join(", ") || "—"}</span>
                 {(o.promoCode || o.referralCode) && (

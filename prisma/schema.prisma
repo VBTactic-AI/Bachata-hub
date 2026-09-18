@@ -121,6 +121,8 @@ model User {
   paymentsRecorded            Payment[]               @relation("PaymentRecordedBy")
   refundsRecorded             Refund[]                @relation("RefundRecordedBy")
   ticketCheckInsPerformed     TicketCheckIn[]         @relation("TicketCheckedInBy")
+  // "Продажа на входе" (2026-09-18) — см. комментарий у модели DoorSale.
+  doorSalesRecorded           DoorSale[]              @relation("DoorSaleRecordedBy")
 
   // --- Слой 3: движок соревнований Jack & Jill (RBAC + аудит) ---
   // Отдельная система прав от layer-1 UserRole выше (см. docs/00_DECISIONS.md, D2):
@@ -606,6 +608,7 @@ model Event {
   // связи для Product.event/Order.event.
   products               Product[]
   orders                 Order[]
+  doorSales              DoorSale[]
   // Обратная связь для ProgramItem.linkedEvent ниже — отдельное
   // "настоящее" событие (party/workshop/contest) со своей публичной
   // страницей, на которое ссылается пункт программы фестиваля. Не путать с
@@ -1232,6 +1235,7 @@ model Product {
   createdAt    DateTime    @default(now())
 
   orderItems OrderItem[]
+  doorSales  DoorSale[]
 
   @@index([eventId])
   @@index([eventId, type])
@@ -1415,6 +1419,51 @@ model Refund {
 
   @@index([paymentId])
   @@index([orderId])
+}
+
+// "Продажа на входе" (2026-09-18, по прямому запросу пользователя) —
+// анонимный приём оплаты за Pass/TicketType от человека без аккаунта на
+// сайте (иностранец, случайный гость и т.п.), когда организатору важен
+// только общий оборот, а не то, кто именно это был. НАМЕРЕННО отдельная,
+// самодостаточная модель — не переиспользует Order/Payment/Ticket:
+// - Order.dancerId/Ticket.dancerId обязательны (NOT NULL) и завязаны на
+//   Dancer, у которого обязателен свой User (@unique userId) — создавать
+//   "танцора" без реального человека означало бы заводить мусорные
+//   User/Dancer записи только ради бухгалтерии.
+// - Ticket дополнительно подчиняется assertSingleAdmissionPerEvent (см.
+//   ticket-service.ts) — "максимум один билет допуска на танцора на
+//   событие"; один общий "фейковый" танцор на всех анонимных гостей упёрся
+//   бы в это правило уже на второй продаже.
+// Доступна для ЛЮБОГО события без отдельного переключателя — пользоваться
+// или нет, решает сам организатор в моменте (кнопка "Продажа на входе" на
+// вкладке "Заказы").
+// Не участвует в "Участниках" (не создаёт EventRegistration) и не занимает
+// capacity самого события, но ЗАНИМАЕТ инвентарь конкретного Pass/TicketType
+// (soldQuantity), как и обычный Ticket — иначе лимит "мест" по этому
+// продукту молча бы нарушался анонимными продажами.
+model DoorSale {
+  id        String  @id @default(cuid())
+  eventId   String
+  event     Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  // Снимок названия/цены НА МОМЕНТ продажи — тот же принцип неизменности
+  // истории, что и у OrderItem.nameSnapshot/unitPriceSnapshot.
+  nameSnapshot String
+  amount       Decimal       @db.Decimal(10, 2)
+  currency     String?
+  method       PaymentMethod
+  // Необязательная заметка организатора ("иностранец", "друг DJ") — чисто
+  // для памяти, ни на что не влияет.
+  note String?
+
+  recordedById String
+  recordedBy   User     @relation("DoorSaleRecordedBy", fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([productId])
 }
 
 enum UserPassStatus {

@@ -2,10 +2,12 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { listOrdersForEvent, listProductsForEvent } from "@/server/events/order-service";
+import { listDoorSalesForEvent, listSellableProductsForEvent } from "@/server/events/door-sale-service";
 import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/events/registration-service";
 import { StatCard } from "@/components/admin/StatCard";
 import { CardIcon, PeopleIcon, AlertIcon } from "@/components/admin/icons";
 import { OrdersTable, type OrderRow } from "@/components/admin/events/OrdersTable";
+import { DoorSalePanel } from "@/components/admin/events/DoorSalePanel";
 import { Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 
@@ -47,10 +49,14 @@ export default async function EventOrdersPage({
 
   let orders;
   let products;
+  let doorSales;
+  let sellableProducts;
   try {
-    [orders, products] = await Promise.all([
+    [orders, products, doorSales, sellableProducts] = await Promise.all([
       listOrdersForEvent(event.id, user, { productId: sp.product, paymentMethod }),
       listProductsForEvent(event.id, user),
+      listDoorSalesForEvent(event.id, user),
+      listSellableProductsForEvent(event.id, user),
     ]);
   } catch (e) {
     if (e instanceof RegistrationForbiddenError) redirect("/admin/content");
@@ -58,7 +64,7 @@ export default async function EventOrdersPage({
     throw e;
   }
 
-  const rows: OrderRow[] = orders.map((o) => {
+  const orderRows: OrderRow[] = orders.map((o) => {
     const latestPayment = o.payments[0] ?? null;
     const refundedTotal = o.refunds.filter((r) => r.status === "COMPLETED").reduce((sum, r) => sum + Number(r.amount), 0);
     return {
@@ -77,6 +83,31 @@ export default async function EventOrdersPage({
       refundedTotal,
     };
   });
+
+  // "Продажа на входе" (2026-09-18) — те же фильтры по товару/способу
+  // оплаты, что и у обычных Order выше (sp.product здесь — Product.id, тот
+  // же, что и DoorSale.productId, см. door-sale-service.ts).
+  const doorSaleRows: OrderRow[] = doorSales
+    .filter((s) => !sp.product || s.productId === sp.product)
+    .filter((s) => !paymentMethod || s.method === paymentMethod)
+    .map((s) => ({
+      id: `door:${s.id}`,
+      createdAt: s.createdAt.toISOString(),
+      status: "PAID",
+      currency: s.currency,
+      total: Number(s.amount),
+      discount: 0,
+      dancerName: s.note ? `Без регистрации (${s.note})` : "Без регистрации",
+      itemNames: [s.nameSnapshot],
+      promoCode: null,
+      referralCode: null,
+      paymentStatus: "PAID",
+      paymentMethod: s.method,
+      refundedTotal: 0,
+      isDoorSale: true,
+    }));
+
+  const rows: OrderRow[] = [...orderRows, ...doorSaleRows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const currency = rows.find((r) => r.currency)?.currency ?? "BYN";
   const netRevenue = (r: OrderRow) => (r.status === "PENDING" || r.status === "CANCELLED" ? 0 : r.total - r.refundedTotal);
@@ -117,6 +148,8 @@ export default async function EventOrdersPage({
       <p className="m-0 text-xs text-admin-muted">
         Чистая выручка (все способы оплаты): {totalRevenue} {currency}
       </p>
+
+      <DoorSalePanel eventSlug={event.slug} products={sellableProducts} />
 
       {products.length > 0 && (
         <form method="get" className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
