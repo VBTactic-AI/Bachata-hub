@@ -25,9 +25,21 @@ export const EVENT_REGISTRATION_STATUS_VALUES = Object.keys(EVENT_REGISTRATION_S
 // "use client"-файла превращалась в клиентскую ссылку в RSC и возвращала
 // undefined) — этот модуль специально без "use client", безопасен для обеих
 // сторон.
-export function myEventStatusLabel(status: EventStatus, moderationStatus: ModerationStatus): string {
+// isArchived (2026-09-19, по прямому запросу пользователя) — "просроченные
+// события уходят из ленты, но не удаляются" (см. комментарий у поля Event.
+// isArchived в schema.prisma — задумано для этого с самого начала, но до
+// archiveDueEvents() ничего не выставляло его в true). НЕ путать с
+// status="ARCHIVED" (терминальный переход, до которого ведёт только ручная
+// отмена организатором, cancelEvent()) — оба в "Мои события" помечаются
+// одинаковой плашкой "В архиве" (организатору без разницы, событие отменили
+// руками или оно само прошло по времени — в обоих случаях оно больше не
+// активно), но НЕ меняют status/moderationStatus самого Event: страница
+// события по прямой ссылке продолжает открываться всем (см. комментарий у
+// isEventDirectlyVisible в lib/events.ts), только пропадает из активных
+// лент/календаря/sitemap (activeEventFilter() уже проверяет isArchived).
+export function myEventStatusLabel(status: EventStatus, moderationStatus: ModerationStatus, isArchived = false): string {
+  if (status === "ARCHIVED" || isArchived) return "В архиве";
   if (status === "DRAFT") return "Черновик";
-  if (status === "ARCHIVED") return "В архиве";
   if (moderationStatus === "APPROVED") return "Опубликовано";
   if (moderationStatus === "REJECTED") return "Отклонено модератором";
   return "На модерации";
@@ -38,10 +50,10 @@ export function myEventStatusLabel(status: EventStatus, moderationStatus: Modera
 // (admin/content/page.tsx) и карточка события считали цвет одинаково, не
 // дублируя тернарник в двух местах.
 export type MyEventStatusVariant = "success" | "danger" | "warning" | "neutral";
-export function myEventStatusVariant(status: EventStatus, moderationStatus: ModerationStatus): MyEventStatusVariant {
+export function myEventStatusVariant(status: EventStatus, moderationStatus: ModerationStatus, isArchived = false): MyEventStatusVariant {
+  if (status === "ARCHIVED" || isArchived) return "neutral";
   if (status === "PUBLISHED" && moderationStatus === "APPROVED") return "success";
   if (moderationStatus === "REJECTED") return "danger";
-  if (status === "ARCHIVED") return "neutral";
   return "neutral";
 }
 
@@ -49,7 +61,10 @@ export function myEventStatusVariant(status: EventStatus, moderationStatus: Mode
 // категорий из myEventStatusLabel(), сведённые в explicit where-условие
 // (не голый `status`/`moderationStatus` — их комбинация нетривиальна, см.
 // myEventStatusLabel() выше). "" (по умолчанию) = всё, кроме архива, то же
-// поведение, что и раньше было жёстко зашито в page.tsx.
+// поведение, что и раньше было жёстко зашито в page.tsx. Каждая НЕ-архивная
+// ветка дополнительно исключает isArchived:true — иначе просроченное
+// (авто-заархивированное по времени) событие, у которого status всё ещё
+// PUBLISHED, продолжало бы считаться и попадать в фильтр "Опубликовано".
 export type MyEventStatusFilter = "DRAFT" | "PENDING" | "PUBLISHED" | "REJECTED" | "ARCHIVED";
 export const MY_EVENT_STATUS_FILTER_OPTIONS: { value: MyEventStatusFilter; label: string }[] = [
   { value: "DRAFT", label: "Черновик" },
@@ -61,18 +76,19 @@ export const MY_EVENT_STATUS_FILTER_OPTIONS: { value: MyEventStatusFilter; label
 export function myEventStatusFilterWhere(filter?: string) {
   switch (filter as MyEventStatusFilter | undefined) {
     case "DRAFT":
-      return { status: "DRAFT" as const };
+      return { status: "DRAFT" as const, isArchived: false };
     case "PUBLISHED":
-      return { status: "PUBLISHED" as const, moderationStatus: "APPROVED" as const };
+      return { status: "PUBLISHED" as const, moderationStatus: "APPROVED" as const, isArchived: false };
     case "REJECTED":
-      return { status: { not: "ARCHIVED" as const }, moderationStatus: "REJECTED" as const };
+      return { status: { not: "ARCHIVED" as const }, moderationStatus: "REJECTED" as const, isArchived: false };
     case "PENDING":
-      return { status: { notIn: ["DRAFT", "ARCHIVED"] as EventStatus[] }, moderationStatus: "PENDING" as const };
+      return { status: { notIn: ["DRAFT", "ARCHIVED"] as EventStatus[] }, moderationStatus: "PENDING" as const, isArchived: false };
     case "ARCHIVED":
-      return { status: "ARCHIVED" as const };
+      return { OR: [{ status: "ARCHIVED" as const }, { isArchived: true }] };
     default:
-      // По умолчанию — как и раньше: всё, кроме архива.
-      return { status: { not: "ARCHIVED" as const } };
+      // По умолчанию — как и раньше: всё, кроме архива (в любом из двух
+      // смыслов — ручного или по времени).
+      return { status: { not: "ARCHIVED" as const }, isArchived: false };
   }
 }
 

@@ -6,6 +6,9 @@ import {
   computePublishChecklist,
   isChecklistComplete,
   getEventTypeConfig,
+  myEventStatusLabel,
+  myEventStatusVariant,
+  myEventStatusFilterWhere,
 } from "@/lib/events/event-type-registry";
 
 describe("EVENT_TYPE_REGISTRY", () => {
@@ -48,6 +51,38 @@ describe("EVENT_TYPE_REGISTRY", () => {
   it("gives Masterclass a sessions step (each session carries its own teacher)", () => {
     expect(EVENT_TYPE_REGISTRY.MASTERCLASS.steps).toContain("sessions");
     expect(EVENT_TYPE_REGISTRY.MASTERCLASS.steps).toContain("details");
+  });
+});
+
+// 2026-09-19, по прямому запросу пользователя — прошедшие события авто-
+// архивируются по времени (archiveDueEvents(), event-archival.ts) через
+// isArchived=true, НЕ через status="ARCHIVED" (та терминальная стадия
+// остаётся только за ручной отменой организатора, cancelEvent()). Оба
+// случая в "Мои события" должны выглядеть одинаково — организатору без
+// разницы, событие отменили руками или оно само прошло по времени.
+describe("myEventStatusLabel/Variant/FilterWhere — isArchived (авто-архивация по времени)", () => {
+  it("помечает 'В архиве' и по status=ARCHIVED (ручная отмена), и по isArchived=true (авто по времени)", () => {
+    expect(myEventStatusLabel("ARCHIVED", "APPROVED")).toBe("В архиве");
+    expect(myEventStatusLabel("PUBLISHED", "APPROVED", true)).toBe("В архиве");
+    expect(myEventStatusVariant("ARCHIVED", "APPROVED")).toBe("neutral");
+    expect(myEventStatusVariant("PUBLISHED", "APPROVED", true)).toBe("neutral");
+  });
+
+  it("PUBLISHED+APPROVED без isArchived по-прежнему 'Опубликовано'/success (авто-архивация не трогает status)", () => {
+    expect(myEventStatusLabel("PUBLISHED", "APPROVED", false)).toBe("Опубликовано");
+    expect(myEventStatusVariant("PUBLISHED", "APPROVED", false)).toBe("success");
+  });
+
+  it("фильтр 'ARCHIVED' захватывает оба случая через OR", () => {
+    expect(myEventStatusFilterWhere("ARCHIVED")).toEqual({ OR: [{ status: "ARCHIVED" }, { isArchived: true }] });
+  });
+
+  it("фильтры 'не архив' (по умолчанию и каждый конкретный статус) дополнительно исключают isArchived=true", () => {
+    expect(myEventStatusFilterWhere(undefined)).toMatchObject({ isArchived: false });
+    expect(myEventStatusFilterWhere("PUBLISHED")).toMatchObject({ isArchived: false });
+    expect(myEventStatusFilterWhere("DRAFT")).toMatchObject({ isArchived: false });
+    expect(myEventStatusFilterWhere("PENDING")).toMatchObject({ isArchived: false });
+    expect(myEventStatusFilterWhere("REJECTED")).toMatchObject({ isArchived: false });
   });
 });
 

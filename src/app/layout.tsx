@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { t } from "@/lib/i18n/dictionary";
 import { Header } from "@/components/Header";
 import { FooterVisibility } from "@/components/FooterVisibility";
+import { BodyBackgroundSync } from "@/components/BodyBackgroundSync";
 import { PerformanceDebugPanel } from "@/components/admin/PerformanceDebugPanel";
 import "./globals.css";
 
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ru" className={`${displayFont.variable} ${nightFont.variable}`}>
       <body>
+        <BodyBackgroundSync />
         <Header />
         <main className="container py-6">
           {children}

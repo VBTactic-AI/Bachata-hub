@@ -57,7 +57,7 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
         ...(sp.q ? { title: { contains: sp.q, mode: "insensitive" } } : {}),
       },
       orderBy: { updatedAt: "desc" },
-      select: { id: true, title: true, format: true, status: true, moderationStatus: true },
+      select: { id: true, title: true, format: true, status: true, moderationStatus: true, isArchived: true },
     }),
     prisma.event.count({ where: myEventStatusFilterWhere(undefined) }),
     prisma.event.count({ where: { status: { not: "ARCHIVED" }, startsAt: { gte: new Date() } } }),
@@ -183,7 +183,7 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
                       {EVENT_TYPE_REGISTRY[e.format].icon} {EVENT_TYPE_REGISTRY[e.format].label}
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={myEventStatusVariant(e.status, e.moderationStatus)} />
+                      <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus, e.isArchived)} variant={myEventStatusVariant(e.status, e.moderationStatus, e.isArchived)} />
                     </td>
                     <td className="px-3 py-2 align-top">
                       <div className="flex items-center gap-1">
@@ -221,7 +221,7 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
                   {EVENT_TYPE_REGISTRY[e.format].icon} {EVENT_TYPE_REGISTRY[e.format].label}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={myEventStatusVariant(e.status, e.moderationStatus)} />
+                  <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus, e.isArchived)} variant={myEventStatusVariant(e.status, e.moderationStatus, e.isArchived)} />
                   <a href={`/admin/content/${e.id}`} className="text-xs font-semibold text-admin-primaryHover hover:underline">
                     Управление →
                   </a>

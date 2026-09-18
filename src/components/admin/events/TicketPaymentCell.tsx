@@ -282,11 +282,14 @@ export function TicketPaymentCell({
   // Commerce Engine v1 (2026-09-18) — название + сумма, зачёркнутая исходная
   // цена при скидке по промокоду ("15 ~~перечёркнуто~~ 13", по прямому
   // запросу пользователя, чтобы было наглядно видно применённый промокод).
+  // В одну строку (2026-09-19, по прямому запросу пользователя — раньше
+  // название и цена стояли друг под другом, из-за чего строка участника
+  // становилась заметно выше остальных).
   function TicketPriceLabel({ t, nameClassName }: { t: TicketPaymentInfo; nameClassName: string }) {
     const hasDiscount = t.price != null && t.discountAmount != null && t.discountAmount > 0;
     const original = hasDiscount ? t.price! + t.discountAmount! : null;
     return (
-      <span className="flex flex-col">
+      <span className="flex flex-wrap items-baseline gap-x-1.5">
         <span className={nameClassName}>{ticketLabel(t)}</span>
         <span className="text-xs text-admin-muted">
           {original != null && <span className="mr-1 text-admin-disabled line-through">{formatMoney(original, t.currency)}</span>}

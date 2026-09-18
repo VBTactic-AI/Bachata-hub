@@ -3,6 +3,7 @@ import { processDueNotificationJobs, processDueDeliveries } from "@/server/notif
 import { processDueEventReminders } from "@/server/notifications/reminders";
 import { generateDueSeriesOccurrences } from "@/server/events/series-generation";
 import { publishDueSeriesOccurrences } from "@/server/events/series-publish";
+import { archiveDueEvents } from "@/server/events/event-archival";
 
 // Notification & Subscription Engine — retry sweep (Phase 5, ТЗ §12/§20).
 // Подхватывает то, что after() не успел/не смог обработать сразу: свежие
@@ -51,6 +52,9 @@ async function runSweep(req: NextRequest) {
   // наступил (маловероятно при обычных горизонтах, но не мешает).
   const { seriesProcessed, occurrencesCreated, ended } = await generateDueSeriesOccurrences();
   const { published: occurrencesPublished } = await publishDueSeriesOccurrences();
+  // Авто-архивация прошедших событий (2026-09-19) — независима от
+  // серий/реминдеров/job'ов выше и ниже, порядок относительно них не важен.
+  const { archived: eventsArchived } = await archiveDueEvents();
 
   // NOTIF-001 — реминдеры (processDueEventReminders) идут ДО общего sweep'а
   // (не параллельно), потому что сами создают/апсертят NotificationJob'ы
@@ -65,6 +69,7 @@ async function runSweep(req: NextRequest) {
     occurrencesCreated,
     seriesEnded: ended,
     occurrencesPublished,
+    eventsArchived,
     remindersEmitted,
     jobsProcessed,
     deliveriesRetried,

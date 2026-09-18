@@ -1,7 +1,7 @@
 import Image from "next/image";
 import type { EventFormat, DanceLevel } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
-import { formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
+import { formatEventDate, formatEventTime, formatEventDateRange, formatRelativeDayLabel } from "@/lib/format";
 import { CalendarIcon, PinIcon, TicketIcon } from "./Icon";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
@@ -16,11 +16,22 @@ export type EventCardPreviewData = {
   // "YYYY-MM-DDTHH:mm" (тот же формат, что отдаёт DateTimeField) или "" —
   // ещё не выбрано.
   startsAt: string;
+  // Необязательно — то же самое для времени/даты окончания (2026-09-19, по
+  // прямому запросу пользователя: раньше превью карточки НИГДЕ не показывало
+  // окончание, даже когда организатор его уже заполнил). Опущено — компонент
+  // просто не показывает диапазон, ведёт себя как раньше.
+  endsAt?: string;
   cityName: string;
   organizerLabel: string;
   photoUrl: string;
   price: string | null;
 };
+
+function parseValidDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 // Живой предпросмотр карточки события прямо в форме создания (2026-09-12, по
 // прямому запросу пользователя) — та же вёрстка, что и у настоящей
@@ -31,8 +42,8 @@ export type EventCardPreviewData = {
 // (CLAUDE.md §19) — это только визуальная подсказка организатору, как оно
 // будет выглядеть, ничего не сохраняет и не считает самостоятельно.
 export function EventCardPreview({ data }: { data: EventCardPreviewData }) {
-  const parsedDate = data.startsAt ? new Date(data.startsAt) : null;
-  const validDate = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null;
+  const validDate = parseValidDate(data.startsAt);
+  const validEndDate = parseValidDate(data.endsAt);
   const relativeDay = validDate ? formatRelativeDayLabel(validDate) : null;
 
   return (
@@ -63,7 +74,13 @@ export function EventCardPreview({ data }: { data: EventCardPreviewData }) {
 
           <div className="mt-1 flex items-center gap-1.5 text-[0.87rem] text-night-muted [&_svg]:shrink-0 [&_svg]:text-night-primary">
             <CalendarIcon />
-            <span>{validDate ? `${formatEventDate(validDate)}, ${formatEventTime(validDate)}` : "Дата и время не выбраны"}</span>
+            <span>
+              {validDate
+                ? validEndDate
+                  ? formatEventDateRange(validDate, validEndDate)
+                  : `${formatEventDate(validDate)}, ${formatEventTime(validDate)}`
+                : "Дата и время не выбраны"}
+            </span>
           </div>
           <div className="mb-3 mt-1 flex items-center gap-1.5 text-[0.87rem] text-night-muted [&_svg]:shrink-0 [&_svg]:text-night-primary">
             <PinIcon />

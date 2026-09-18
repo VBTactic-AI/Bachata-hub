@@ -160,6 +160,7 @@ export function CreateCompetitionForm({ cities }: { cities: City[] }) {
             format: "CONTEST",
             level,
             startsAt: startAt,
+            endsAt: endAt,
             cityName,
             organizerLabel: organizerName,
             photoUrl: "",

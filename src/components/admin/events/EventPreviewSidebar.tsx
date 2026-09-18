@@ -43,6 +43,7 @@ export function EventPreviewSidebar({
           format: draft.format,
           level: draft.level,
           startsAt: draft.startsAt,
+          endsAt: draft.endsAt,
           cityName,
           organizerLabel,
           photoUrl: mainImage?.url ?? "",

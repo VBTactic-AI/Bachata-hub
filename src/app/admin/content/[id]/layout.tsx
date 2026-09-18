@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasEventAccess, isOwnerOrAdmin } from "@/server/events/access";
-import { EVENT_TYPE_REGISTRY, myEventStatusLabel } from "@/lib/events/event-type-registry";
+import { EVENT_TYPE_REGISTRY, myEventStatusLabel, myEventStatusVariant } from "@/lib/events/event-type-registry";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { EventDashboardTabs } from "@/components/admin/events/EventDashboardTabs";
 import { buttonVariants } from "@/components/ui/button";
@@ -41,6 +41,7 @@ export default async function EventDashboardLayout({
       createdById: true,
       status: true,
       moderationStatus: true,
+      isArchived: true,
       certainty: true,
       format: true,
       photoUrl: true,
@@ -77,8 +78,8 @@ export default async function EventDashboardLayout({
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">{event.title || "Без названия"}</h1>
               <StatusBadge
-                label={myEventStatusLabel(event.status, event.moderationStatus)}
-                variant={isLive ? "success" : event.moderationStatus === "REJECTED" ? "danger" : "neutral"}
+                label={myEventStatusLabel(event.status, event.moderationStatus, event.isArchived)}
+                variant={myEventStatusVariant(event.status, event.moderationStatus, event.isArchived)}
               />
               {event.certainty === "TENTATIVE" && <StatusBadge label="Дата уточняется" variant="warning" />}
             </div>

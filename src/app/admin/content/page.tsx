@@ -149,6 +149,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
         format: true,
         status: true,
         moderationStatus: true,
+        isArchived: true,
         photoUrl: true,
         startsAt: true,
         endsAt: true,
@@ -326,7 +327,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
               </thead>
               <tbody>
                 {events.map((e) => {
-                  const variant = myEventStatusVariant(e.status, e.moderationStatus);
+                  const variant = myEventStatusVariant(e.status, e.moderationStatus, e.isArchived);
                   return (
                     <tr key={e.id} className={cn("border-t border-l-[3px] border-admin-border hover:bg-admin-card2/50", ROW_BORDER_CLASS[variant])}>
                       <td className="px-3 py-2 align-top">
@@ -368,7 +369,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                         {EVENT_TYPE_REGISTRY[e.format].icon} {EVENT_TYPE_REGISTRY[e.format].label}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={variant} />
+                        <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus, e.isArchived)} variant={variant} />
                       </td>
                       <td className="px-3 py-2 align-top">
                         <div className="flex items-center gap-1">
@@ -405,7 +406,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
           {/* Mobile — карточки вместо широкой таблицы. */}
           <div className="flex flex-col gap-2 sm:hidden">
             {events.map((e) => {
-              const variant = myEventStatusVariant(e.status, e.moderationStatus);
+              const variant = myEventStatusVariant(e.status, e.moderationStatus, e.isArchived);
               return (
                 <div key={e.id} className={cn("rounded-app-sm border border-l-[3px] border-admin-border bg-admin-card p-3", ROW_BORDER_CLASS[variant])}>
                   <div className="flex items-start gap-2.5">
@@ -433,7 +434,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                     </div>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus)} variant={variant} />
+                    <StatusBadge label={myEventStatusLabel(e.status, e.moderationStatus, e.isArchived)} variant={variant} />
                     {e.seriesId && (
                       <a
                         href={`/admin/content/series/${e.seriesId}`}
