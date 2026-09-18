@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { City, Event, EventPriceOption, School } from "@prisma/client";
 import { t } from "@/lib/i18n/dictionary";
-import { formatEventDate, formatEventTime, formatRelativeDayLabel } from "@/lib/format";
+import { formatEventDateRange, formatRelativeDayLabel } from "@/lib/format";
 import { formatEventCardPrice } from "@/lib/event-price";
 import { CalendarIcon, PinIcon, TicketIcon } from "./Icon";
 import { Card } from "@/components/ui/card";
@@ -67,9 +67,7 @@ export function EventCard({ event }: { event: EventWithRelations }) {
 
         <div className="mt-1 flex items-center gap-1.5 text-[0.87rem] text-night-muted [&_svg]:shrink-0 [&_svg]:text-night-primary">
           <CalendarIcon />
-          <span>
-            {formatEventDate(event.startsAt)}, {formatEventTime(event.startsAt)}
-          </span>
+          <span>{formatEventDateRange(event.startsAt, event.endsAt)}</span>
         </div>
         <div className="mb-3 mt-1 flex items-center gap-1.5 text-[0.87rem] text-night-muted [&_svg]:shrink-0 [&_svg]:text-night-primary">
           <PinIcon />
