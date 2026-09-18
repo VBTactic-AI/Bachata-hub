@@ -176,6 +176,41 @@ function assertOnSale(pass: { status: string; salesStartAt: Date | null; salesEn
   }
 }
 
+// Commerce Engine v1 (2026-09-18) — применение скидки PromoCode. Раньше
+// PromoCode существовал только как схема + CRUD (pass-service.ts) — ни один
+// код скидку не считал (прямое решение пользователя в более ранней сессии:
+// "не обязательно делать прямо сейчас"). Реализовано только для Pass —
+// PromoCodePass, единственная связь, которая вообще существует в схеме;
+// TicketType намеренно проще и промокодов не поддерживает (docs/
+// 00_DECISIONS.md, D10 — TicketType и Pass разные сущности, не сужаем одно
+// под другое задним числом).
+function isPromoCodeCurrentlyValid(
+  code: { isActive: boolean; validFrom: Date | null; validUntil: Date | null; maxUses: number | null; usedCount: number },
+  now: Date = new Date()
+): boolean {
+  if (!code.isActive) return false;
+  if (code.validFrom && code.validFrom > now) return false;
+  if (code.validUntil && code.validUntil < now) return false;
+  if (code.maxUses != null && code.usedCount >= code.maxUses) return false;
+  return true;
+}
+
+// Пустой список passes у PromoCode = применим к любому Pass события (тот же
+// принцип "пусто — без ограничений", что и у PassAccessGrant).
+function isPromoCodeApplicableToPass(code: { passes: { passId: string }[] }, passId: string): boolean {
+  if (code.passes.length === 0) return true;
+  return code.passes.some((p) => p.passId === passId);
+}
+
+// Скидка не уводит цену в минус и не превышает саму цену. Бесплатный Pass
+// (price=null/0) — скидывать нечего, 0. Экспортирована — переиспользуется
+// в тестах отдельно от issueTicket (чистая функция, без БД).
+export function computePromoDiscount(price: number | null, discountType: "PERCENT" | "FIXED_AMOUNT", discountValue: number): number {
+  if (price == null || price <= 0) return 0;
+  const raw = discountType === "PERCENT" ? price * (Number(discountValue) / 100) : Number(discountValue);
+  return Math.min(Math.max(raw, 0), price);
+}
+
 // Выдача билета на конкретный Pass — сегодня единственный способ (organizer/
 // ADMIN/член команды вручную, см. комментарий у Ticket в schema.prisma про
 // будущий онлайн-эквайринг/дистрибьюторов). markPaid — организатор уже
@@ -193,7 +228,7 @@ export async function issueTicket(
   passId: string,
   dancerId: string,
   user: User,
-  options: { markPaid?: boolean; referralCode?: string } = {}
+  options: { markPaid?: boolean; referralCode?: string; promoCode?: string } = {}
 ): Promise<Ticket> {
   const pass = await requireAccessForPass(passId, user);
   const dancer = await prisma.dancer.findUnique({ where: { id: dancerId } });
@@ -226,7 +261,29 @@ export async function issueTicket(
     // статус определились бы по устаревшим данным.
     const tiers = await tx.passPriceTier.findMany({ where: { passId } });
     const effective = getCurrentPassPrice(current, tiers);
-    const isFree = effective.price == null || effective.price === 0;
+
+    // PromoCode (2026-09-18) — см. комментарий у computePromoDiscount выше.
+    // Цена/скидка читаются ВНУТРИ транзакции, тем же принципом, что и Pass —
+    // organizer не может провести оплату по цене, посчитанной ДО начала
+    // транзакции.
+    let promoCode: Prisma.PromoCodeGetPayload<{ include: { passes: true } }> | null = null;
+    let discountAmount = 0;
+    if (options.promoCode) {
+      const candidate = await tx.promoCode.findUnique({
+        where: { eventId_code: { eventId: current.eventId, code: options.promoCode.trim().toUpperCase() } },
+        include: { passes: true },
+      });
+      if (!candidate || !isPromoCodeCurrentlyValid(candidate) || !isPromoCodeApplicableToPass(candidate, passId)) {
+        throw new TicketValidationError(
+          "invalid_promo_code",
+          "Промокод недействителен, неактивен, истёк, исчерпан лимит использований или не подходит для этого Pass."
+        );
+      }
+      promoCode = candidate;
+      discountAmount = computePromoDiscount(effective.price, candidate.discountType, Number(candidate.discountValue));
+    }
+    const finalPrice = effective.price == null ? null : Math.max(effective.price - discountAmount, 0);
+    const isFree = finalPrice == null || finalPrice === 0;
 
     // Реферальный код артиста/школы (2026-09-17, Stage 4 плана Festival
     // Engine, docs/FESTIVAL_SERVICE_LAYER_PLAN.md) — привязка+снимок ТОЛЬКО,
@@ -269,8 +326,8 @@ export async function issueTicket(
       nameSnapshot: current.name,
       price: effective.price,
       currency: effective.currency,
-      discountAmount: null,
-      promoCodeId: null,
+      discountAmount: discountAmount > 0 ? discountAmount : null,
+      promoCodeId: promoCode?.id ?? null,
       referralCodeId: referralCode?.id ?? null,
       isPaid: isPaidNow,
       paidAt: paidAtNow,
@@ -288,11 +345,13 @@ export async function issueTicket(
           eventId: current.eventId,
           passId,
           dancerId,
-          price: effective.price,
+          price: finalPrice,
           currency: effective.currency,
           isPaid: isPaidNow,
           paidAt: paidAtNow,
           issuedById: user.id,
+          promoCodeId: promoCode?.id ?? null,
+          discountAmount: discountAmount > 0 ? discountAmount : null,
           referralCodeId: referralCode?.id ?? null,
           referralDiscountAmount: referralCode?.discountValue ?? null,
           referralCommissionAmount: referralCode?.commissionValue ?? null,
@@ -304,6 +363,12 @@ export async function issueTicket(
         throw new DuplicateTicketError();
       }
       throw err;
+    }
+
+    // Лимит использований (maxUses) считается только по успешно созданным
+    // билетам — попытка, упавшая на P2002 выше, до этой строки не доходит.
+    if (promoCode) {
+      await tx.promoCode.update({ where: { id: promoCode.id }, data: { usedCount: { increment: 1 } } });
     }
 
     const updated = await tx.pass.update({ where: { id: passId }, data: { soldQuantity: { increment: 1 } } });

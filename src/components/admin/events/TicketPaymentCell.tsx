@@ -80,6 +80,10 @@ export function TicketPaymentCell({
   const [open, setOpen] = useState(false);
   const [selectedPassId, setSelectedPassId] = useState("");
   const [selectedTicketTypeId, setSelectedTicketTypeId] = useState("");
+  // Commerce Engine v1 (2026-09-18) — промокод применяется только к Pass
+  // (PromoCodePass — единственная связь в схеме, TicketType промокодов не
+  // поддерживает, см. комментарий у issueTicket в ticket-service.ts).
+  const [promoCodeInput, setPromoCodeInput] = useState("");
 
   // Pass/TicketType, которые этот танцор ещё не получал — сравниваем с уже
   // имеющимися билетами (см. комментарий у функции выше про регрессию).
@@ -111,7 +115,7 @@ export function TicketPaymentCell({
     const res = await fetch(`/api/events/${eventSlug}/passes/${effectivePassId}/tickets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dancerId, markPaid: true }),
+      body: JSON.stringify({ dancerId, markPaid: true, promoCode: promoCodeInput.trim() || undefined }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -119,6 +123,7 @@ export function TicketPaymentCell({
       setError(data.message || data.error || "Не удалось выдать Pass.");
       return;
     }
+    setPromoCodeInput("");
     router.refresh();
   }
 
@@ -278,6 +283,14 @@ export function TicketPaymentCell({
           </option>
         ))}
       </select>
+      <input
+        type="text"
+        value={promoCodeInput}
+        onChange={(e) => setPromoCodeInput(e.target.value)}
+        disabled={loading}
+        placeholder="Промокод (необязательно)"
+        className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text placeholder:text-admin-disabled"
+      />
       <button
         type="button"
         disabled={loading}

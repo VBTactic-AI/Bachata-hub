@@ -8,6 +8,7 @@ const issueSchema = z.object({
   dancerId: z.string().min(1),
   markPaid: z.boolean().optional(),
   referralCode: z.string().min(1).optional(),
+  promoCode: z.string().min(1).optional(),
 });
 
 // Билеты одного Pass — GET список держателей, POST выдать новый билет
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const ticket = await issueTicket(id, parsed.data.dancerId, user, {
       markPaid: parsed.data.markPaid,
       referralCode: parsed.data.referralCode,
+      promoCode: parsed.data.promoCode,
     });
     return NextResponse.json({ ok: true, ticket });
   } catch (e) {

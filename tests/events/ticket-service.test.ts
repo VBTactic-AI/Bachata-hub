@@ -44,6 +44,10 @@ const txOrderItemCreate = vi.fn();
 const txOrderItemFindUnique = vi.fn();
 const txPaymentCreate = vi.fn();
 const txRefundCreate = vi.fn();
+// Commerce Engine v1 (2026-09-18) — применение скидки PromoCode внутри
+// issueTicket (см. ticket-service.ts).
+const txPromoCodeFindUnique = vi.fn();
+const txPromoCodeUpdate = vi.fn();
 
 const fakeTx = {
   $executeRaw: executeRaw,
@@ -59,6 +63,7 @@ const fakeTx = {
   orderItem: { create: txOrderItemCreate, findUnique: txOrderItemFindUnique },
   payment: { create: txPaymentCreate },
   refund: { create: txRefundCreate },
+  promoCode: { findUnique: txPromoCodeFindUnique, update: txPromoCodeUpdate },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -102,6 +107,7 @@ const {
   isProgramItemAccessibleByGrants,
   TicketValidationError,
   DuplicateTicketError,
+  computePromoDiscount,
 } = await import("@/server/events/ticket-service");
 const { RegistrationForbiddenError, RegistrationNotFoundError } = await import("@/server/events/registration-service");
 
@@ -196,6 +202,8 @@ beforeEach(() => {
   txRefundCreate.mockReset().mockImplementation((args) => Promise.resolve({ id: "refund1", ...args.data }));
   userPassFindUnique.mockReset().mockResolvedValue(null);
   orderItemFindMany.mockReset().mockResolvedValue([]);
+  txPromoCodeFindUnique.mockReset().mockResolvedValue(null);
+  txPromoCodeUpdate.mockReset().mockImplementation((args) => Promise.resolve({ id: args.where.id, ...args.data }));
 });
 
 describe("issueTicket()", () => {
@@ -1003,5 +1011,118 @@ describe("Commerce Engine v1 (2026-09-17) — Order/OrderItem/Payment/Refund/Use
 
     expect(userPassFindUnique).toHaveBeenCalledWith({ where: { dancerId_passId: { dancerId: "dancer1", passId: "pass1" } } });
     expect(ticketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ userPassId: "userpass1" }) });
+  });
+});
+
+describe("computePromoDiscount() — чистая функция", () => {
+  it("FIXED_AMOUNT в пределах цены — вычитается как есть", () => {
+    expect(computePromoDiscount(15, "FIXED_AMOUNT", 2)).toBe(2);
+  });
+
+  it("FIXED_AMOUNT больше цены — скидка не может превышать саму цену", () => {
+    expect(computePromoDiscount(5, "FIXED_AMOUNT", 20)).toBe(5);
+  });
+
+  it("PERCENT — доля от цены", () => {
+    expect(computePromoDiscount(100, "PERCENT", 20)).toBe(20);
+  });
+
+  it("бесплатный Pass (price=null) — скидывать нечего, 0", () => {
+    expect(computePromoDiscount(null, "FIXED_AMOUNT", 2)).toBe(0);
+  });
+
+  it("price=0 — тоже 0, без отрицательных значений", () => {
+    expect(computePromoDiscount(0, "PERCENT", 50)).toBe(0);
+  });
+});
+
+describe("issueTicket() — применение скидки PromoCode (Commerce Engine v1, 2026-09-18)", () => {
+  const activePromoCode = {
+    id: "promo1",
+    eventId: "event1",
+    code: "DANCEFOREVER",
+    discountType: "FIXED_AMOUNT" as const,
+    discountValue: 2,
+    validFrom: null as Date | null,
+    validUntil: null as Date | null,
+    maxUses: null as number | null,
+    usedCount: 0,
+    isActive: true,
+    passes: [] as { passId: string }[],
+  };
+
+  it("действующий код без ограничений по Pass — цена уменьшается, Order/OrderItem/Payment/Ticket отражают скидку", async () => {
+    txPromoCodeFindUnique.mockResolvedValue(activePromoCode);
+
+    const ticket = await issueTicket("pass1", "dancer1", owner, { promoCode: "danceforever" });
+
+    expect(txPromoCodeFindUnique).toHaveBeenCalledWith({
+      where: { eventId_code: { eventId: "event1", code: "DANCEFOREVER" } },
+      include: { passes: true },
+    });
+    // effective price 120 - discount 2 = 118.
+    expect(txOrderCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ subtotal: 120, discount: 2, total: 118 }) });
+    expect(txOrderItemCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ unitPriceSnapshot: 120, discountAmount: 2, total: 118 }),
+    });
+    expect(txPaymentCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: 118 }) });
+    expect(txTicketCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ price: 118, promoCodeId: "promo1", discountAmount: 2 }),
+    });
+    expect(txPromoCodeUpdate).toHaveBeenCalledWith({ where: { id: "promo1" }, data: { usedCount: { increment: 1 } } });
+    expect(ticket).toBeDefined();
+  });
+
+  it("код не найден — TicketValidationError('invalid_promo_code'), билет не создаётся", async () => {
+    txPromoCodeFindUnique.mockResolvedValue(null);
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "MISSING" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+    expect(txPromoCodeUpdate).not.toHaveBeenCalled();
+  });
+
+  it("код неактивен (isActive=false) — invalid_promo_code", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, isActive: false });
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+  });
+
+  it("код ещё не начал действовать (validFrom в будущем) — invalid_promo_code", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, validFrom: new Date(Date.now() + 86_400_000) });
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+  });
+
+  it("код уже истёк (validUntil в прошлом) — invalid_promo_code", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, validUntil: new Date(Date.now() - 86_400_000) });
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+  });
+
+  it("лимит использований исчерпан (usedCount >= maxUses) — invalid_promo_code", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, maxUses: 5, usedCount: 5 });
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+  });
+
+  it("код привязан к ДРУГОМУ Pass (PromoCodePass не включает pass1) — invalid_promo_code", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, passes: [{ passId: "other-pass" }] });
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+  });
+
+  it("код привязан именно к этому Pass (passes включает pass1) — применяется", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, passes: [{ passId: "pass1" }] });
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).resolves.toBeDefined();
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ discountAmount: 2 }) });
+  });
+
+  it("скидка съедает всю цену (price=0 после скидки) — билет сразу оплачен, как бесплатный Pass", async () => {
+    txPassFindUniqueOrThrow.mockResolvedValue({ ...activePass, price: 2 });
+    txPromoCodeFindUnique.mockResolvedValue(activePromoCode);
+
+    await issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER", markPaid: false });
+
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ price: 0, isPaid: true, paidAt: expect.any(Date) }) });
+  });
+
+  it("код не передан — промокод вообще не запрашивается, старое поведение без изменений", async () => {
+    await issueTicket("pass1", "dancer1", owner);
+    expect(txPromoCodeFindUnique).not.toHaveBeenCalled();
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ promoCodeId: null, discountAmount: null }) });
   });
 });
