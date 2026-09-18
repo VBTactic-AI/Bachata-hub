@@ -19,9 +19,11 @@ import { Button } from "@/components/ui/button";
 //
 // Recurring Events v2 — "?templateId=" (кнопка "Создать событие" на карточке
 // шаблона, /admin/content/templates) предзаполняет форму настройками
-// шаблона. Дата/время НЕ предзаполняются (шаблон хранит только "HH:mm" без
-// даты, см. EventTemplate.defaultStartTime) — организатор выбирает
-// конкретную дату сам на шаге "Дата и время".
+// шаблона. Время предзаполняется (шаблон хранит только "HH:mm" без даты,
+// см. EventTemplate.defaultStartTime/defaultEndTime) — дата подставляется
+// сегодняшняя как временное значение, организатор всё равно выбирает
+// настоящую дату сам на шаге "Дата и время" (2026-09-18: раньше время
+// вообще не переносилось — найдено вживую пользователем).
 //
 // Выбор шаблона прямо здесь (2026-09-18, по прямому запросу пользователя)
 // — раньше единственный путь начать "по шаблону" был через отдельную
@@ -62,16 +64,27 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
   // (первая, если их несколько), иначе — отображаемое имя танцора из профиля
   // (см. StepBasic.tsx — поле больше не редактируется в самом мастере).
   const base = emptyWizardDraft(template?.cityId || cities[0]?.id || "");
+  // Сегодняшняя дата (локальная) + время шаблона (2026-09-18, по прямому
+  // запросу пользователя — "время не переносится") — шаблон хранит только
+  // "HH:mm" без даты (EventTemplate.defaultStartTime/defaultEndTime), сама
+  // дата организатору всё равно нужно выбрать заново на шаге "Дата и время"
+  // (см. комментарий выше про templateId), но время хотя бы не приходится
+  // вводить вручную ещё раз.
+  const today = new Date();
+  const todayLocalDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   const initialDraft: WizardDraft = template
     ? {
         ...base,
         format: template.format,
         level: template.level,
         title: template.name,
+        description: template.description || "",
         schoolId: template.schoolId || ownedSchools[0]?.id || "",
         organizerName: !template.schoolId && ownedSchools.length === 0 ? (dancer?.displayName ?? "") : "",
         venueName: template.venueName || "",
         venueAddress: template.venueAddress || "",
+        startsAt: template.defaultStartTime ? `${todayLocalDate}T${template.defaultStartTime}` : "",
+        endsAt: template.defaultEndTime ? `${todayLocalDate}T${template.defaultEndTime}` : "",
         capacity: template.capacity != null ? String(template.capacity) : "",
         registrationEnabled: template.registrationEnabled,
         ticketingMode: template.ticketingMode,
