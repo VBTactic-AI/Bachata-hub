@@ -1123,6 +1123,21 @@ model Ticket {
   // Ticket_dancerId_eventId_no_product_key, см. migration.sql, его здесь нет
   // — Prisma DSL не поддерживает partial unique index. CHECK-constraint
   // "не оба одновременно" — тоже только в migration.sql, той же причине.)
+  //
+  // ВАЖНО (2026-09-18, исправление бага "не могу выдать билет повторно после
+  // возврата"): все три уникальных индекса Ticket (эти два ниже —
+  // Ticket_dancerId_passId_eventId_key/Ticket_dancerId_ticketTypeId_key — и
+  // no_product_key выше) теперь PARTIAL, с условием WHERE status = 'ISSUED'
+  // (см. migration.sql, 20260918010000_ticket_reissue_after_refund). Раньше
+  // они были безусловными и считали дубликатом любую пару
+  // (dancerId, passId/ticketTypeId, eventId), даже когда старая запись уже
+  // CANCELLED/REFUNDED — из-за этого refundTicket() освобождал место
+  // допуска (assertSingleAdmissionPerEvent видит только status='ISSUED'), но
+  // повторная выдача того же Pass/TicketType падала в P2002 раньше, чем
+  // вообще доходило до этой проверки. Именно поэтому @@unique ниже
+  // ЗАКОММЕНТИРОВАНЫ, а не активны — Prisma DSL не поддерживает partial
+  // unique index, а объявленный здесь как обычный @@unique уводил бы
+  // реальную БД в рассинхронизацию при следующем migrate diff.
   // ---------------------------------------------------------------------------
   // Commerce Engine v1 (2026-09-17) — Phase 1, ТОЛЬКО схема, аддитивно.
   // orderItemId/userPassId — новые, необязательные связи с Order/OrderItem/
@@ -1142,8 +1157,14 @@ model Ticket {
   userPass    UserPass?      @relation(fields: [userPassId], references: [id])
   checkIn     TicketCheckIn?
 
-  @@unique([dancerId, passId, eventId])
-  @@unique([dancerId, ticketTypeId])
+  // @@unique([dancerId, passId, eventId]) и @@unique([dancerId, ticketTypeId])
+  // ЗАКОММЕНТИРОВАНЫ (2026-09-18) — в реальной БД это теперь partial unique
+  // index (WHERE status = 'ISSUED', см. комментарий выше и migration.sql
+  // 20260918010000_ticket_reissue_after_refund), которые Prisma DSL выразить
+  // не может. Оставлять их активными здесь означало бы, что следующий
+  // `prisma migrate dev`/`db push` попытается "исправить" реальную БД,
+  // заменив partial index на обычный — тем самым вернув баг "нельзя выдать
+  // билет повторно после возврата".
   @@index([eventId])
   @@index([eventId, dancerId])
   @@index([passId])
