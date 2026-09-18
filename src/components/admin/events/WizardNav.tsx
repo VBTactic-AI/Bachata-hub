@@ -19,6 +19,12 @@ const STEP_LABELS: Record<EventStepId, string> = {
 // колонку-навигацию. "basic" теперь называется "Тип и основное", потому что
 // внутри этого шага живёт и выбор типа события, и место проведения (см.
 // комментарий у EventStepId) — раньше это были три отдельных шага.
+//
+// Свободная навигация (2026-09-18, по прямому запросу пользователя) —
+// раньше шаг впереди текущего был disabled, пока не помечен "done"
+// (заполнен); теперь кликабельны все шаги в любой момент — это черновик,
+// прыжок вперёд/назад ничего не портит, doneMap используется только для
+// визуальной галочки/подсветки, не для блокировки.
 export function WizardNav({
   steps,
   currentIndex,
@@ -35,15 +41,13 @@ export function WizardNav({
       {steps.map((step, i) => {
         const active = i === currentIndex;
         const done = doneMap[step] && !active;
-        const reachable = i <= currentIndex || doneMap[step];
         return (
           <div key={step} className="flex shrink-0 items-center gap-1.5">
             {i > 0 && <span className="h-px w-5 shrink-0 bg-admin-border" aria-hidden="true" />}
             <button
               type="button"
-              disabled={!reachable}
               onClick={() => onSelect(i)}
-              className="flex shrink-0 items-center gap-2 rounded-app-sm px-1 py-1 text-left transition duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex shrink-0 items-center gap-2 rounded-app-sm px-1 py-1 text-left transition duration-150 ease-out"
             >
               <span
                 className={cn(
