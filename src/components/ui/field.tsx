@@ -21,6 +21,19 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
   return <label className={cn("flex flex-col gap-1.5 text-[0.9rem] font-semibold", className)} {...props} />;
 }
 
+// Пометка обязательного поля (2026-09-18, мастер событий) — звёздочка рядом
+// с подписью Label, привязана к реально обязательным полям
+// (computePublishChecklist в event-type-registry.ts), а не ко всем полям с
+// HTML `required` подряд.
+export function RequiredMark() {
+  return (
+    <span className="text-red-400" aria-hidden="true">
+      {" "}
+      *
+    </span>
+  );
+}
+
 export function FormRoot({ className, ...props }: React.FormHTMLAttributes<HTMLFormElement>) {
   return <form className={cn("flex max-w-[480px] flex-col gap-3.5", className)} {...props} />;
 }

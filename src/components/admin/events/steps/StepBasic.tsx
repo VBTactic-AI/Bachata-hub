@@ -1,7 +1,7 @@
 "use client";
 
 import { t } from "@/lib/i18n/dictionary";
-import { Input, Label, Select, Textarea } from "@/components/ui/field";
+import { Input, Label, RequiredMark, Select, Textarea } from "@/components/ui/field";
 import { EventMediaManager } from "../EventMediaManager";
 import type { WizardDraft, WizardMediaItem } from "../wizard-types";
 
@@ -42,6 +42,7 @@ export function StepBasic({
         <p className={groupLabelClass}>Основное</p>
         <Label className="text-admin-muted">
           {t.event.addEventForm.titleField}
+          <RequiredMark />
           <Input required value={draft.title} onChange={(e) => onChange({ title: e.target.value })} className={fieldClass} />
         </Label>
         <Label className="text-admin-muted">
@@ -65,7 +66,8 @@ export function StepBasic({
           </Label>
           <Label className="text-admin-muted">
             {t.event.city}
-            <Select value={draft.cityId} onChange={(e) => onChange({ cityId: e.target.value })} className={fieldClass}>
+            <RequiredMark />
+            <Select required value={draft.cityId} onChange={(e) => onChange({ cityId: e.target.value })} className={fieldClass}>
               <option value="">—</option>
               {cities.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -78,6 +80,7 @@ export function StepBasic({
         <div className="grid gap-3.5 sm:grid-cols-2">
           <Label className="text-admin-muted">
             {t.event.place}
+            <RequiredMark />
             <Input required value={draft.venueName} onChange={(e) => onChange({ venueName: e.target.value })} className={fieldClass} />
           </Label>
           <Label className="text-admin-muted">

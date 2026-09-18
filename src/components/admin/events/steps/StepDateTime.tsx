@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { t } from "@/lib/i18n/dictionary";
-import { Label } from "@/components/ui/field";
+import { Label, RequiredMark } from "@/components/ui/field";
 import { DateTimeField } from "@/components/ui/DateTimeField";
 import type { WizardDraft } from "../wizard-types";
 
@@ -42,6 +42,7 @@ export function StepDateTime({ draft, onChange }: { draft: WizardDraft; onChange
       <div className="grid gap-3.5 sm:grid-cols-2">
         <Label className="text-admin-muted">
           {t.event.date} / {t.event.time} — начало
+          <RequiredMark />
           <DateTimeField required value={draft.startsAt} onChange={handleStartsAtChange} theme="admin" className={fieldClass} />
         </Label>
 
