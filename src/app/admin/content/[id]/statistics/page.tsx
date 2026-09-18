@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getEventRegistrationStatistics } from "@/server/events/registration-statistics";
+import { getTicketDistributionForEvent } from "@/server/events/event-statistics";
+import { listOrdersForEvent } from "@/server/events/order-service";
+import { listDoorSalesForEvent } from "@/server/events/door-sale-service";
 import { RegistrationForbiddenError } from "@/server/events/registration-service";
 import { EVENT_REGISTRATION_STATUS_LABELS, EVENT_REGISTRATION_STATUS_VALUES } from "@/lib/events/event-type-registry";
-import { formatEventDate } from "@/lib/format";
+import { DonutChart, HorizontalBarChart, VerticalBarChart, RadialProgress } from "@/components/admin/charts/StatCharts";
 
 // §19 ТЗ (Event Statistics) — полноценное представление вместо 4 инлайн-
 // плиток "Обзора" (StatCard там остаётся — это разные вещи: "Обзор" даёт
@@ -11,21 +14,19 @@ import { formatEventDate } from "@/lib/format";
 // Доступ — тот же hasEventAccess, что и у "Обзора"/"Участников" (проверен в
 // layout.tsx рядом, здесь — повторно внутри getEventRegistrationStatistics,
 // то же defense-in-depth, что и на остальных вкладках).
+//
+// Графики (2026-09-18, по прямому запросу пользователя — "некрасивые
+// полоски" заменены на донат/бар/кольцо-чарты, см. StatCharts.tsx) —
+// "Нал/Безнал" отдельно, isOwnerOrAdmin (тот же уровень доступа, что и
+// вкладка "Заказы" — это финансовая детализация, не просто счётчик):
+// listOrdersForEvent/listDoorSalesForEvent брошены в try/catch, при
+// RegistrationForbiddenError блок просто не рендерится, а не рушит всю
+// страницу — остальная статистика (hasEventAccess) видна любому члену
+// команды события.
 
-function Bar({ label, count, total, tone = "primary" }: { label: string; count: number; total: number; tone?: "primary" | "success" | "danger" }) {
-  const pct = total === 0 ? 0 : Math.round((count / total) * 100);
-  const barColor = tone === "success" ? "bg-night-success" : tone === "danger" ? "bg-red-400" : "bg-admin-primary";
-  return (
-    <div className="flex items-center gap-3">
-      <span className="w-36 shrink-0 text-sm text-admin-muted">{label}</span>
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-admin-card2">
-        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-night-text">
-        {count} ({pct}%)
-      </span>
-    </div>
-  );
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export default async function EventStatisticsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -34,76 +35,134 @@ export default async function EventStatisticsPage({ params }: { params: Promise<
   if (!user) redirect("/login");
 
   let stats;
+  let ticketDistribution;
   try {
-    stats = await getEventRegistrationStatistics(id, user);
+    [stats, ticketDistribution] = await Promise.all([getEventRegistrationStatistics(id, user), getTicketDistributionForEvent(id, user)]);
   } catch (e) {
     if (e instanceof RegistrationForbiddenError) redirect("/admin/content");
     throw e;
   }
 
+  // Нал/безнал — только для владельца/ADMIN (см. комментарий выше). Чистая
+  // выручка по методу — тот же расчёт, что и на вкладке "Заказы"
+  // (orders/page.tsx): total заказа минус завершённые возвраты, метод берём
+  // с последнего Payment; DoorSale всегда полностью оплачена своим методом
+  // в момент создания.
+  let paymentSplit: { cash: number; transfer: number; unspecified: number; currency: string } | null = null;
+  try {
+    const [orders, doorSales] = await Promise.all([listOrdersForEvent(id, user), listDoorSalesForEvent(id, user)]);
+    let cash = 0;
+    let transfer = 0;
+    let unspecified = 0;
+    let currency = "BYN";
+    for (const o of orders) {
+      if (o.status === "PENDING" || o.status === "CANCELLED") continue;
+      const refundedTotal = o.refunds.filter((r) => r.status === "COMPLETED").reduce((sum, r) => sum + Number(r.amount), 0);
+      const net = Number(o.total) - refundedTotal;
+      if (net <= 0) continue;
+      if (o.currency) currency = o.currency;
+      const method = o.payments[0]?.method ?? null;
+      if (method === "CASH") cash += net;
+      else if (method === "TRANSFER") transfer += net;
+      else unspecified += net;
+    }
+    for (const s of doorSales) {
+      if (s.currency) currency = s.currency;
+      if (s.method === "CASH") cash += Number(s.amount);
+      else transfer += Number(s.amount);
+    }
+    paymentSplit = { cash, transfer, unspecified, currency };
+  } catch (e) {
+    if (!(e instanceof RegistrationForbiddenError)) throw e;
+  }
+
   const notPaidCount = stats.totalOverall - stats.paidCount;
-  const maxDayCount = Math.max(1, ...stats.registrationsByDay.map((d) => d.count));
+  const totalTickets = ticketDistribution.reduce((sum, d) => sum + d.count, 0);
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Распределение по билетам</h2>
+          {totalTickets === 0 ? (
+            <p className="m-0 text-sm text-admin-muted">Пока не выдано ни одного билета.</p>
+          ) : (
+            <DonutChart
+              segments={ticketDistribution.map((d) => ({ label: d.name, value: d.count }))}
+              centerLabel={totalTickets}
+              centerSubLabel="билетов"
+            />
+          )}
+        </div>
+
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Оплата</h2>
+          {stats.totalOverall === 0 ? (
+            <p className="m-0 text-sm text-admin-muted">Пока никто не зарегистрировался.</p>
+          ) : (
+            <DonutChart
+              segments={[
+                { label: "Оплачено", value: stats.paidCount, color: "#37d67a" },
+                { label: "Не оплачено", value: notPaidCount, color: "#ff2d8a" },
+              ]}
+              centerLabel={stats.totalOverall}
+              centerSubLabel="участников"
+            />
+          )}
+        </div>
+      </div>
+
+      {paymentSplit && (paymentSplit.cash > 0 || paymentSplit.transfer > 0 || paymentSplit.unspecified > 0) && (
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Наличные / Б/н</h2>
+          <DonutChart
+            segments={[
+              { label: "Наличные", value: paymentSplit.cash, color: "#37d67a" },
+              { label: "Б/н (перевод)", value: paymentSplit.transfer, color: "#a78bfa" },
+              ...(paymentSplit.unspecified > 0 ? [{ label: "Способ не указан", value: paymentSplit.unspecified, color: "#94a3b8" }] : []),
+            ]}
+            centerLabel={`${paymentSplit.cash + paymentSplit.transfer + paymentSplit.unspecified}`}
+            centerSubLabel={paymentSplit.currency}
+          />
+        </div>
+      )}
+
       <div className="rounded-app border border-admin-border bg-admin-card p-4">
         <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Воронка по статусам</h2>
         {stats.totalOverall === 0 ? (
           <p className="m-0 text-sm text-admin-muted">Пока никто не зарегистрировался.</p>
         ) : (
-          <div className="flex flex-col gap-2">
-            {EVENT_REGISTRATION_STATUS_VALUES.map((s) => (
-              <Bar key={s} label={EVENT_REGISTRATION_STATUS_LABELS[s]} count={stats.byStatus[s]} total={stats.totalOverall} />
-            ))}
-          </div>
+          <HorizontalBarChart
+            items={EVENT_REGISTRATION_STATUS_VALUES.map((s) => ({ label: EVENT_REGISTRATION_STATUS_LABELS[s], value: stats.byStatus[s] }))}
+            maxValue={stats.totalOverall}
+          />
         )}
       </div>
 
-      <div className="rounded-app border border-admin-border bg-admin-card p-4">
-        <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Оплата</h2>
-        {stats.totalOverall === 0 ? (
-          <p className="m-0 text-sm text-admin-muted">Пока никто не зарегистрировался.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <Bar label="Оплачено" count={stats.paidCount} total={stats.totalOverall} tone="success" />
-            <Bar label="Не оплачено" count={notPaidCount} total={stats.totalOverall} tone="danger" />
-          </div>
-        )}
-      </div>
+      <div className="grid gap-4 lg:grid-cols-[auto_1fr]">
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Неявка</h2>
+          {stats.noShowRate === null ? (
+            <p className="m-0 max-w-[240px] text-sm text-admin-muted">Пока нет ни одного участника с подтверждённым местом.</p>
+          ) : (
+            <div className="flex items-center gap-4">
+              <RadialProgress percent={Math.round(stats.noShowRate * 100)} color="#ff2d8a" />
+              <p className="m-0 max-w-[220px] text-xs text-admin-muted">
+                {stats.byStatus.NO_SHOW} из {stats.byStatus.REGISTERED + stats.byStatus.CONFIRMED + stats.byStatus.NO_SHOW} человек с подтверждённым
+                местом отмечены как "не пришёл".
+              </p>
+            </div>
+          )}
+        </div>
 
-      <div className="rounded-app border border-admin-border bg-admin-card p-4">
-        <h2 className="m-0 mb-1 text-sm font-semibold uppercase tracking-wide text-admin-muted">Неявка</h2>
-        {stats.noShowRate === null ? (
-          <p className="m-0 text-sm text-admin-muted">Пока нет ни одного участника с подтверждённым местом.</p>
-        ) : (
-          <>
-            <p className="m-0 text-2xl font-extrabold text-night-text">{Math.round(stats.noShowRate * 100)}%</p>
-            <p className="m-0 mt-1 text-xs text-admin-muted">
-              {stats.byStatus.NO_SHOW} из {stats.byStatus.REGISTERED + stats.byStatus.CONFIRMED + stats.byStatus.NO_SHOW} человек, у которых было
-              подтверждённое место (зарегистрирован/подтверждён/не пришёл) — организатор отметил как "не пришёл". Не считает тех, кто был в листе
-              ожидания, отклонён или отменил регистрацию сам — у них не было шанса прийти.
-            </p>
-          </>
-        )}
-      </div>
-
-      <div className="rounded-app border border-admin-border bg-admin-card p-4">
-        <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Регистрации по дням</h2>
-        {stats.registrationsByDay.length === 0 ? (
-          <p className="m-0 text-sm text-admin-muted">Пока никто не зарегистрировался.</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {stats.registrationsByDay.map((d) => (
-              <div key={d.date} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 text-sm tabular-nums text-admin-muted">{formatEventDate(new Date(d.date))}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-admin-card2">
-                  <div className="h-full rounded-full bg-admin-primary" style={{ width: `${(d.count / maxDayCount) * 100}%` }} />
-                </div>
-                <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums text-night-text">{d.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="rounded-app border border-admin-border bg-admin-card p-4">
+          <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Регистрации по дням</h2>
+          {stats.registrationsByDay.length === 0 ? (
+            <p className="m-0 text-sm text-admin-muted">Пока никто не зарегистрировался.</p>
+          ) : (
+            <VerticalBarChart items={stats.registrationsByDay.map((d) => ({ label: shortDate(d.date), value: d.count }))} />
+          )}
+        </div>
       </div>
     </div>
   );
