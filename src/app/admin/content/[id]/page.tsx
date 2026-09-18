@@ -124,7 +124,7 @@ export default async function EventOverviewPage({ params }: { params: Promise<{ 
             icon={<CardIcon />}
             tone="success"
             percent={pct(paymentCounts.paidCount)}
-            href={`${basePath}/registrations`}
+            href={`${basePath}/registrations?paid=paid`}
           />
           <StatCard
             label="Не оплачено"
@@ -132,7 +132,7 @@ export default async function EventOverviewPage({ params }: { params: Promise<{ 
             icon={<AlertIcon />}
             tone="danger"
             percent={pct(paymentCounts.unpaidCount)}
-            href={`${basePath}/registrations`}
+            href={`${basePath}/registrations?paid=unpaid`}
           />
           <StatCard
             label="Лист ожидания"
