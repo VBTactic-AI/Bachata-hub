@@ -95,7 +95,7 @@ export function DivisionsOverviewTable({
           </div>
           {panel === null && (
             <Button type="button" size="sm" variant="admin" onClick={() => setPanel({ mode: "add" })}>
-              + Добавить категорию
+              Добавить категорию
             </Button>
           )}
         </div>

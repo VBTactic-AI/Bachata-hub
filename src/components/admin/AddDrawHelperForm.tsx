@@ -125,7 +125,7 @@ export function AddDrawHelperForm({
         className="border-night-warning/50 bg-night-warning/10 text-night-warning hover:border-night-warning hover:bg-night-warning/15 hover:text-night-warning"
         onClick={() => setOpen(true)}
       >
-        + Помощник ({ROLE_LABELS[role] ?? role})
+        Помощник ({ROLE_LABELS[role] ?? role})
       </Button>
 
       {open && (

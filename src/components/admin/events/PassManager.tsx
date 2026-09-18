@@ -122,7 +122,7 @@ export function PassManager({
           {passes.length} {pluralizeTypes(passes.length)} доступа для этого события.
         </p>
         <Button type="button" variant="admin" size="sm" onClick={() => setModal({ mode: "create" })}>
-          + Создать Pass
+          Создать Pass
         </Button>
       </div>
 

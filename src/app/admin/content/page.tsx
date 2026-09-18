@@ -104,7 +104,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
           <p className="m-0 mt-1 text-sm text-admin-muted">Вечеринки, мастер-классы, соревнования — всё, что вы создали.</p>
         </div>
         <a href="/admin/content/new" className={cn(buttonVariants({ variant: "admin", size: "sm" }), "no-underline")}>
-          + Создать новое событие
+          Создать новое событие
         </a>
       </div>
 

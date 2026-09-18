@@ -50,7 +50,7 @@ export default async function SystemEventsPage({ searchParams }: { searchParams:
           <p className="m-0 mt-1 text-sm text-admin-muted">Мониторинг — видны и редактируемы ВСЕ события всех организаторов.</p>
         </div>
         <a href="/admin/system/events/new" className={cn(buttonVariants({ variant: "admin", size: "sm" }), "no-underline")}>
-          + Создать событие
+          Создать событие
         </a>
       </div>
 

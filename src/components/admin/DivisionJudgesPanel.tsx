@@ -250,7 +250,7 @@ export function DivisionJudgesPanel({
                 onClick={() => setOpenAdd(group.role)}
                 className="w-full rounded-app-sm border border-dashed border-admin-border px-3 py-2 text-sm text-night-text transition-colors hover:border-admin-primary hover:text-admin-primary"
               >
-                + Добавить
+                Добавить
               </button>
             )}
           </div>

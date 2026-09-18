@@ -36,7 +36,7 @@ export default async function CompetitionsPage() {
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-3xl">Соревнования</h1>
         {isSuperAdmin && (
           <Link href="/admin/competitions/new" className={cn(buttonVariants({ variant: "admin" }), "no-underline")}>
-            + Новое соревнование
+            Новое соревнование
           </Link>
         )}
       </div>

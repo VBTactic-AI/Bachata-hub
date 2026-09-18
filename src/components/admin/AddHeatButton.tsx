@@ -44,7 +44,7 @@ export function AddHeatButton({ roundId }: { roundId: string }) {
         disabled={loading}
         onClick={onClick}
       >
-        + Заход
+        Заход
       </Button>
     </span>
   );

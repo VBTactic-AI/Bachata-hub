@@ -31,7 +31,7 @@ export function FestivalExpenseManager({ festivalId, expenses }: { festivalId: s
       <div className="flex items-center justify-between gap-2">
         <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-admin-muted">Расходы</h2>
         <Button type="button" variant="adminOutline" size="sm" onClick={() => setModal({ mode: "create" })}>
-          + Статья расходов
+          Статья расходов
         </Button>
       </div>
 

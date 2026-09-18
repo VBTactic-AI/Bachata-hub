@@ -76,7 +76,7 @@ export function AddJudgesDanceHelperForm({ heatId, roleLabel }: { heatId: string
   return (
     <>
       <Button type="button" size="sm" variant="adminOutline" className="border-night-warning/50 bg-night-warning/10 text-night-warning hover:border-night-warning hover:bg-night-warning/15 hover:text-night-warning" onClick={() => setOpen(true)}>
-        + Судья на помощь
+        Судья на помощь
       </Button>
 
       {open && (

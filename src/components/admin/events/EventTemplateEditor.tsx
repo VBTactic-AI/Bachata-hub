@@ -255,7 +255,7 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
         <div className="flex items-center justify-between">
           <p className={groupLabelClass}>Тикеты по умолчанию</p>
           <Button type="button" variant="adminOutline" size="sm" onClick={() => setTicketTypes((prev) => [...prev, toTicketForm()])}>
-            + Добавить тикет
+            Добавить тикет
           </Button>
         </div>
         {ticketTypes.length === 0 && <p className="m-0 text-xs text-admin-muted">Событие, созданное из шаблона, не получит ни одного тикета автоматически.</p>}
@@ -289,7 +289,7 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
         <div className="flex items-center justify-between">
           <p className={groupLabelClass}>Pass по умолчанию</p>
           <Button type="button" variant="adminOutline" size="sm" onClick={() => setPasses((prev) => [...prev, toPassForm()])}>
-            + Добавить Pass
+            Добавить Pass
           </Button>
         </div>
         {passes.length === 0 && <p className="m-0 text-xs text-admin-muted">Событие, созданное из шаблона, не получит ни одного Pass автоматически.</p>}

@@ -38,7 +38,7 @@ export function SchoolBranchesManager({
       <div className="flex items-center justify-between gap-2">
         <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-admin-muted">Филиалы</h2>
         <Button type="button" variant="adminOutline" size="sm" onClick={() => setModal({ mode: "create" })}>
-          + Филиал
+          Филиал
         </Button>
       </div>
 

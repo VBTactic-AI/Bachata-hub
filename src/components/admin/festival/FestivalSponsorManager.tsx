@@ -30,7 +30,7 @@ export function FestivalSponsorManager({ festivalId, sponsors }: { festivalId: s
       <div className="flex items-center justify-between gap-2">
         <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-admin-muted">Спонсоры</h2>
         <Button type="button" variant="adminOutline" size="sm" onClick={() => setModal({ mode: "create" })}>
-          + Спонсор
+          Спонсор
         </Button>
       </div>
 

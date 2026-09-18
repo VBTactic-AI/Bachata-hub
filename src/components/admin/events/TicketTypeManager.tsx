@@ -91,7 +91,7 @@ export function TicketTypeManager({
       <div className="flex items-center justify-between gap-2">
         <p className="m-0 text-sm text-admin-muted">{ticketTypes.length} билетов для этого события.</p>
         <Button type="button" variant="admin" size="sm" onClick={() => setModal({ mode: "create" })}>
-          + Добавить билет
+          Добавить билет
         </Button>
       </div>
 

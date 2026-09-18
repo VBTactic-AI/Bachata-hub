@@ -97,7 +97,7 @@ export function AddCompetitionJudgeForm({ competitionId }: { competitionId: stri
             </Select>
           ))}
         <Button type="button" size="sm" variant="admin" disabled={!selectedId || adding} onClick={onAdd}>
-          + Добавить
+          Добавить
         </Button>
       </div>
       {error && <span className="text-sm text-red-400">{error}</span>}

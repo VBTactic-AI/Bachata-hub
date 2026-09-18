@@ -72,7 +72,7 @@ export function PromoCodeManager({ eventSlug, initialCodes }: { eventSlug: strin
       <div className="flex items-center justify-between gap-2">
         <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-admin-muted">Промокоды</h2>
         <Button type="button" variant="adminOutline" size="sm" onClick={() => setOpen((v) => !v)}>
-          {open ? "Отмена" : "+ Код"}
+          {open ? "Отмена" : "Код"}
         </Button>
       </div>
 

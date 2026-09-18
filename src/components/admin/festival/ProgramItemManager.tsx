@@ -70,7 +70,7 @@ export function ProgramItemManager({
           {items.length} {pluralizeItems(items.length)} программы.
         </p>
         <Button type="button" variant="admin" size="sm" onClick={() => setModal({ mode: "create" })}>
-          + Добавить пункт
+          Добавить пункт
         </Button>
       </div>
 

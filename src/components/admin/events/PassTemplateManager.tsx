@@ -213,7 +213,7 @@ export function PassTemplateManager({ templates: initialTemplates }: { templates
     <div className="flex flex-col gap-3">
       <div className="flex justify-end">
         {!creating && <Button type="button" variant="admin" size="sm" onClick={startCreate}>
-          + Новый шаблон
+          Новый шаблон
         </Button>}
       </div>
 

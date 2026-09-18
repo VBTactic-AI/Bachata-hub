@@ -32,7 +32,7 @@ export default async function FestivalHubPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">Фестивали</h1>
         <Link href="/admin/festival/new" className={cn(buttonVariants({ variant: "admin" }), "no-underline")}>
-          + Создать фестиваль
+          Создать фестиваль
         </Link>
       </div>
 
