@@ -44,7 +44,13 @@ const STATUS_VARIANTS: Record<string, StatusBadgeVariant> = {
   ARCHIVED: "neutral",
 };
 
+// id переопределён как обязательный (2026-09-18) — PassFormValue.id стал
+// optional, когда PassFormModal научился работать в scope="template" (там
+// строка ещё не сохранена и id не существует), но реальный Pass из БД
+// (PassRow — только для этого места, "настоящие" Pass события) id всегда
+// имеет.
 export type PassRow = PassFormValue & {
+  id: string;
   status: string;
   soldQuantity: number;
   availableQuantity: number | null;

@@ -33,23 +33,42 @@ export type PassTemplateOption = {
 
 export type AccessTargetOption = { id: string; label: string; kind: "programItem" | "masterclassSession" };
 
+// salesStartAt/salesEndAt/validFrom/validUntil/refundPolicy/refundDeadline/
+// refundFeePercent — необязательны (2026-09-18): у шаблона (scope="template",
+// см. комментарий у PassFormModal ниже) этих данных физически нет, initial
+// для него собирается из EventTemplatePass/PassTemplate, у которых этих
+// полей нет вовсе. id тоже необязателен — у шаблонной строки в локальном
+// массиве id нет (используется только для API-запросов реального Pass).
 export type PassFormValue = {
-  id: string;
+  id?: string;
   name: string;
   description: string | null;
   type: string;
   price: number | null;
   currency: string | null;
   quantity: number | null;
-  salesStartAt: string | null;
-  salesEndAt: string | null;
-  validFrom: string | null;
-  validUntil: string | null;
+  salesStartAt?: string | null;
+  salesEndAt?: string | null;
+  validFrom?: string | null;
+  validUntil?: string | null;
   imageUrl: string | null;
   allowMultipleEntry: boolean;
-  refundPolicy: string;
-  refundDeadline: string | null;
-  refundFeePercent: number | null;
+  refundPolicy?: string;
+  refundDeadline?: string | null;
+  refundFeePercent?: number | null;
+};
+
+// Общая (применимая везде, включая шаблоны) форма Pass — то, что реально
+// передаётся наружу через onSubmit в scope="template".
+export type PassCommonFormValues = {
+  name: string;
+  description: string | null;
+  type: string;
+  price: number | null;
+  currency: string | null;
+  quantity: number | null;
+  imageUrl: string | null;
+  allowMultipleEntry: boolean;
 };
 
 const REFUND_POLICY_LABELS: Record<string, string> = {
@@ -70,22 +89,37 @@ function toLocalInput(iso: string | null): string {
 // UI, backend уже поддерживает несколько), количество/период продаж, доступ
 // к пунктам программы/сессиям (только если у события они есть), обложка,
 // повторный вход. "Начать из шаблона" — только в режиме создания.
+//
+// scope="template" (2026-09-18, по прямому запросу пользователя — "везде
+// один и тот же экран") — этот же компонент переиспользован в
+// EventTemplateEditor.tsx ("Добавить Pass") и PassTemplateManager.tsx
+// ("Шаблоны Pass"): скрывает секции, которых у шаблона физически не может
+// быть (даты продаж/действия, условия возврата, Early Bird, доступ к
+// программе — привязаны к конкретной дате конкретного события, у шаблона
+// её ещё нет), и вместо fetch на events API вызывает переданный onSubmit с
+// только применимыми полями (PassCommonFormValues) — сохранение решает
+// вызывающий код (локальный state шаблона события или свой API-роут
+// PassTemplate).
 export function PassFormModal({
   eventSlug,
   mode,
   initial,
-  templates,
-  accessOptions,
+  templates = [],
+  accessOptions = [],
   initialAccessTargetIds,
   onClose,
+  scope = "event",
+  onSubmit,
 }: {
-  eventSlug: string;
+  eventSlug?: string;
   mode: "create" | "edit";
   initial?: PassFormValue;
-  templates: PassTemplateOption[];
-  accessOptions: AccessTargetOption[];
+  templates?: PassTemplateOption[];
+  accessOptions?: AccessTargetOption[];
   initialAccessTargetIds?: string[];
   onClose: () => void;
+  scope?: "event" | "template";
+  onSubmit?: (values: PassCommonFormValues) => void | Promise<void>;
 }) {
   const router = useRouter();
   const [name, setName] = useState(initial?.name ?? "");
@@ -96,6 +130,15 @@ export function PassFormModal({
   const [currency, setCurrency] = useState(initial?.currency ?? "BYN");
   const [unlimited, setUnlimited] = useState(initial ? initial.quantity == null : true);
   const [quantity, setQuantity] = useState(initial?.quantity != null ? String(initial.quantity) : "");
+  // Без ограничений по времени продажи (2026-09-18, по прямому запросу
+  // пользователя) — блок из 4 дат раньше был виден всегда, даже когда
+  // организатору вообще не нужны временные рамки (самый частый случай).
+  // По умолчанию true, если ни одна из 4 дат ещё не задана — при
+  // редактировании Pass, у которого хоть одна дата уже стоит, чекбокс сразу
+  // снят и блок открыт, чтобы существующие значения не терялись из виду.
+  const [noSalesWindow, setNoSalesWindow] = useState(
+    !(initial?.salesStartAt || initial?.salesEndAt || initial?.validFrom || initial?.validUntil)
+  );
   const [salesStartAt, setSalesStartAt] = useState(toLocalInput(initial?.salesStartAt ?? null));
   const [salesEndAt, setSalesEndAt] = useState(toLocalInput(initial?.salesEndAt ?? null));
   const [validFrom, setValidFrom] = useState(toLocalInput(initial?.validFrom ?? null));
@@ -115,9 +158,10 @@ export function PassFormModal({
   const [error, setError] = useState<string | null>(null);
 
   // Редактирование — подтягиваем уже существующий Early Bird тир (если есть),
-  // берём первый (см. комментарий класса выше про упрощение UI).
+  // берём первый (см. комментарий класса выше про упрощение UI). Только для
+  // scope="event" — у шаблона Early Bird не бывает вовсе.
   useEffect(() => {
-    if (mode !== "edit" || !initial) return;
+    if (scope !== "event" || mode !== "edit" || !initial) return;
     fetch(`/api/events/${eventSlug}/passes/${initial.id}/price-tiers`)
       .then((r) => r.json())
       .then((data) => {
@@ -170,19 +214,42 @@ export function PassFormModal({
     setLoading(true);
     setError(null);
 
-    const passBody = {
+    const commonBody: PassCommonFormValues = {
       name: name.trim(),
       description: description.trim() || null,
       type,
       price: isFree ? null : price ? Number(price) : null,
       currency: isFree ? null : currency || null,
       quantity: unlimited ? null : quantity ? Number(quantity) : null,
-      salesStartAt: salesStartAt ? new Date(salesStartAt).toISOString() : null,
-      salesEndAt: salesEndAt ? new Date(salesEndAt).toISOString() : null,
-      validFrom: validFrom ? new Date(validFrom).toISOString() : null,
-      validUntil: validUntil ? new Date(validUntil).toISOString() : null,
       imageUrl: imageUrl.trim() || null,
       allowMultipleEntry,
+    };
+
+    // scope="template" — сохранение решает вызывающий код (локальный state
+    // шаблона события/свой API-роут PassTemplate), никакого fetch на events
+    // API здесь не происходит (даты продаж/возврат/Early Bird/доступ к
+    // программе у шаблона нет — см. комментарий у PassFormModal выше).
+    // onSubmit может бросить Error (например, PassTemplateManager делает
+    // реальный fetch на /api/pass-templates) — модалка не закрывается и
+    // показывает сообщение, тем же способом, что и обычный event-путь ниже.
+    if (onSubmit) {
+      try {
+        await onSubmit(commonBody);
+        setLoading(false);
+        onClose();
+      } catch (e) {
+        setLoading(false);
+        setError(e instanceof Error ? e.message : "Не удалось сохранить.");
+      }
+      return;
+    }
+
+    const passBody = {
+      ...commonBody,
+      salesStartAt: !noSalesWindow && salesStartAt ? new Date(salesStartAt).toISOString() : null,
+      salesEndAt: !noSalesWindow && salesEndAt ? new Date(salesEndAt).toISOString() : null,
+      validFrom: !noSalesWindow && validFrom ? new Date(validFrom).toISOString() : null,
+      validUntil: !noSalesWindow && validUntil ? new Date(validUntil).toISOString() : null,
       refundPolicy,
       refundDeadline: refundPolicy === "UNTIL_DATE" && refundDeadline ? new Date(refundDeadline).toISOString() : null,
       refundFeePercent: refundPolicy === "PARTIAL" && refundFeePercent ? Number(refundFeePercent) : null,
@@ -337,7 +404,7 @@ export function PassFormModal({
                 </div>
               )}
 
-              {!isFree && (
+              {scope === "event" && !isFree && (
                 <div className="mt-3 border-t border-admin-border pt-3">
                   <label className="flex items-center gap-2 text-sm text-night-text">
                     <input
@@ -384,24 +451,34 @@ export function PassFormModal({
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Label className="text-admin-muted">
-                Начало продаж
-                <DateTimeField value={salesStartAt} onChange={setSalesStartAt} className={FIELD_CLASS} />
-              </Label>
-              <Label className="text-admin-muted">
-                Окончание продаж
-                <DateTimeField value={salesEndAt} onChange={setSalesEndAt} className={FIELD_CLASS} />
-              </Label>
-              <Label className="text-admin-muted">
-                Действует с
-                <DateTimeField value={validFrom} onChange={setValidFrom} className={FIELD_CLASS} />
-              </Label>
-              <Label className="text-admin-muted">
-                Действует до
-                <DateTimeField value={validUntil} onChange={setValidUntil} className={FIELD_CLASS} />
-              </Label>
-            </div>
+            {scope === "event" && (
+              <div className="rounded-app-sm border border-admin-border p-3">
+                <label className="flex items-center gap-2 text-sm text-night-text">
+                  <input type="checkbox" checked={noSalesWindow} onChange={(e) => setNoSalesWindow(e.target.checked)} className="accent-admin-primary" />
+                  Без ограничений по времени продажи
+                </label>
+                {!noSalesWindow && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Label className="text-admin-muted">
+                      Начало продаж
+                      <DateTimeField value={salesStartAt} onChange={setSalesStartAt} className={FIELD_CLASS} />
+                    </Label>
+                    <Label className="text-admin-muted">
+                      Окончание продаж
+                      <DateTimeField value={salesEndAt} onChange={setSalesEndAt} className={FIELD_CLASS} />
+                    </Label>
+                    <Label className="text-admin-muted">
+                      Действует с
+                      <DateTimeField value={validFrom} onChange={setValidFrom} className={FIELD_CLASS} />
+                    </Label>
+                    <Label className="text-admin-muted">
+                      Действует до
+                      <DateTimeField value={validUntil} onChange={setValidUntil} className={FIELD_CLASS} />
+                    </Label>
+                  </div>
+                )}
+              </div>
+            )}
 
             <label className="flex items-center gap-2 text-sm text-night-text">
               <input
@@ -413,38 +490,40 @@ export function PassFormModal({
               Разрешить повторный вход
             </label>
 
-            <div className="rounded-app-sm border border-admin-border p-3">
-              <Label className="text-admin-muted">
-                Условия возврата
-                <Select value={refundPolicy} onChange={(e) => setRefundPolicy(e.target.value)} className={FIELD_CLASS}>
-                  {Object.entries(REFUND_POLICY_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              </Label>
-              {refundPolicy === "UNTIL_DATE" && (
-                <Label className="mt-2 text-admin-muted">
-                  Возврат возможен до
-                  <DateTimeField value={refundDeadline} onChange={setRefundDeadline} className={FIELD_CLASS} />
+            {scope === "event" && (
+              <div className="rounded-app-sm border border-admin-border p-3">
+                <Label className="text-admin-muted">
+                  Условия возврата
+                  <Select value={refundPolicy} onChange={(e) => setRefundPolicy(e.target.value)} className={FIELD_CLASS}>
+                    {Object.entries(REFUND_POLICY_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </Select>
                 </Label>
-              )}
-              {refundPolicy === "PARTIAL" && (
-                <Label className="mt-2 text-admin-muted">
-                  Комиссия за возврат, %
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={refundFeePercent}
-                    onChange={(e) => setRefundFeePercent(e.target.value)}
-                    className={FIELD_CLASS}
-                  />
-                </Label>
-              )}
-            </div>
+                {refundPolicy === "UNTIL_DATE" && (
+                  <Label className="mt-2 text-admin-muted">
+                    Возврат возможен до
+                    <DateTimeField value={refundDeadline} onChange={setRefundDeadline} className={FIELD_CLASS} />
+                  </Label>
+                )}
+                {refundPolicy === "PARTIAL" && (
+                  <Label className="mt-2 text-admin-muted">
+                    Комиссия за возврат, %
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={refundFeePercent}
+                      onChange={(e) => setRefundFeePercent(e.target.value)}
+                      className={FIELD_CLASS}
+                    />
+                  </Label>
+                )}
+              </div>
+            )}
 
             {accessOptions.length > 0 && (
               <div className="rounded-app-sm border border-admin-border p-3">
@@ -471,7 +550,7 @@ export function PassFormModal({
         {error && <p className="m-0 px-5 py-2 text-xs text-red-400">{error}</p>}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-admin-border px-5 py-4">
-          {mode === "edit" && (
+          {scope === "event" && mode === "edit" && (
             <Button type="button" size="sm" variant="adminOutline" disabled={loading} onClick={saveAsTemplate}>
               Сохранить как шаблон
             </Button>

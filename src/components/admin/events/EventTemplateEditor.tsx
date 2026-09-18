@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n/dictionary";
 import { Input, Label, Select, Textarea } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { TimeField } from "@/components/ui/TimeField";
+import { PassFormModal } from "./PassFormModal";
 import { EVENT_TYPE_REGISTRY, WIZARD_SELECTABLE_EVENT_FORMATS } from "@/lib/events/event-type-registry";
 
 const fieldClass = "border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
@@ -47,21 +48,22 @@ export type EventTemplateDetail = {
   passes: EventTemplatePassRow[];
 };
 
-// Строковое представление формы — тот же приём, что и у WizardDraft
-// (wizard-types.ts): числа/массивы как строки, сериализация в правильные
-// типы происходит один раз перед PATCH.
+// Строковое представление формы билета — тот же приём, что и у WizardDraft
+// (wizard-types.ts): числа как строки, сериализация в правильные типы
+// происходит один раз перед PATCH. Pass больше не имеет своей строковой
+// формы здесь — PassFormModal (scope="template") сам отдаёт готовый
+// EventTemplatePassRow-совместимый объект через onSubmit, см. ниже.
 type TicketForm = { name: string; description: string; price: string; currency: string; quantity: string };
-type PassForm = TicketForm & { type: string; imageUrl: string; allowMultipleEntry: boolean };
 
 function toTicketForm(t?: EventTemplateTicketRow): TicketForm {
   return { name: t?.name ?? "", description: t?.description ?? "", price: t?.price != null ? String(t.price) : "", currency: t?.currency ?? "BYN", quantity: t?.quantity != null ? String(t.quantity) : "" };
 }
-function toPassForm(p?: EventTemplatePassRow): PassForm {
-  return { ...toTicketForm(p), type: p?.type ?? "FULL_PASS", imageUrl: p?.imageUrl ?? "", allowMultipleEntry: p?.allowMultipleEntry ?? true };
-}
 
 function formatMoney(price: string, currency: string): string {
   return price ? `${price} ${currency}` : "Бесплатно";
+}
+function formatMoneyNum(price: number | null, currency: string | null): string {
+  return price != null ? `${price} ${currency ?? ""}`.trim() : "Бесплатно";
 }
 
 // Попап добавления/редактирования билета (2026-09-18, по прямому запросу
@@ -150,111 +152,6 @@ function EventTemplateTicketModal({ initial, onSave, onClose }: { initial: Ticke
   );
 }
 
-// Попап добавления/редактирования Pass — зеркалит EventTemplateTicketModal выше,
-// плюс поля, специфичные для Pass (тип, обложка, повторный вход).
-function EventTemplatePassModal({ initial, onSave, onClose }: { initial: PassForm | null; onSave: (form: PassForm) => void; onClose: () => void }) {
-  const [form, setForm] = useState<PassForm>(initial ?? toPassForm());
-  const [unlimited, setUnlimited] = useState(!initial || !initial.quantity);
-  const [isFree, setIsFree] = useState(!initial || !initial.price);
-  const [error, setError] = useState<string | null>(null);
-
-  function save() {
-    if (!form.name.trim()) {
-      setError("Название обязательно.");
-      return;
-    }
-    onSave({ ...form, price: isFree ? "" : form.price, quantity: unlimited ? "" : form.quantity });
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={onClose} role="presentation">
-      <div
-        className="flex max-h-[90vh] w-full max-w-[440px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="template-pass-form-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="border-b border-admin-border px-5 py-4">
-          <h3 id="template-pass-form-title" className="m-0 text-[17px] font-extrabold text-night-text">
-            {initial ? "Изменить Pass" : "Новый Pass"}
-          </h3>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="flex flex-col gap-3.5">
-            <Label className="text-admin-muted">
-              Название
-              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={fieldClass} placeholder="Full Pass" />
-            </Label>
-            <Label className="text-admin-muted">
-              Описание
-              <Textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className={fieldClass} rows={2} />
-            </Label>
-            <Label className="text-admin-muted">
-              Тип
-              <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))} className={fieldClass}>
-                {Object.entries(PASS_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-            </Label>
-            <Label className="text-admin-muted">
-              Обложка (ссылка на изображение)
-              <Input value={form.imageUrl} onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))} className={fieldClass} placeholder="https://…" />
-            </Label>
-            <label className="flex items-center gap-2 text-sm text-admin-muted">
-              <input type="checkbox" checked={isFree} onChange={(e) => setIsFree(e.target.checked)} className="accent-admin-primary" />
-              Бесплатный
-            </label>
-            {!isFree && (
-              <div className="grid grid-cols-2 gap-3">
-                <Label className="text-admin-muted">
-                  Цена
-                  <Input type="number" min="0" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} className={fieldClass} />
-                </Label>
-                <Label className="text-admin-muted">
-                  Валюта
-                  <Input value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))} className={fieldClass} />
-                </Label>
-              </div>
-            )}
-            <label className="flex items-center gap-2 text-sm text-admin-muted">
-              <input type="checkbox" checked={unlimited} onChange={(e) => setUnlimited(e.target.checked)} className="accent-admin-primary" />
-              Без ограничения мест
-            </label>
-            {!unlimited && (
-              <Label className="text-admin-muted">
-                Мест
-                <Input type="number" min="1" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} className={fieldClass} />
-              </Label>
-            )}
-            <label className="flex items-center gap-2 text-sm text-admin-muted">
-              <input
-                type="checkbox"
-                checked={form.allowMultipleEntry}
-                onChange={(e) => setForm((f) => ({ ...f, allowMultipleEntry: e.target.checked }))}
-                className="accent-admin-primary"
-              />
-              Повторный вход разрешён
-            </label>
-            {error && <p className="m-0 text-sm text-red-400">{error}</p>}
-          </div>
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
-          <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button type="button" size="sm" variant="admin" onClick={save}>
-            Сохранить
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Экран шаблона (Recurring Events v2, по прямому запросу пользователя) —
 // ОДНА страница без степпера (в отличие от EventWizard): у шаблона нет
 // собственной даты/публикации, тащить туда весь мастер избыточно (см.
@@ -279,7 +176,7 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
   const [externalLinkUrl, setExternalLinkUrl] = useState(template.externalLinkUrl ?? "");
   const [tags, setTags] = useState(template.tags.join(", "));
   const [ticketTypes, setTicketTypes] = useState<TicketForm[]>(template.ticketTypes.map(toTicketForm));
-  const [passes, setPasses] = useState<PassForm[]>(template.passes.map(toPassForm));
+  const [passes, setPasses] = useState<EventTemplatePassRow[]>(template.passes);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -329,12 +226,12 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
         })),
         passes: passes.map((p) => ({
           name: p.name.trim(),
-          description: p.description.trim() || null,
+          description: p.description,
           type: p.type,
-          price: p.price ? Number(p.price) : null,
-          currency: p.price ? p.currency || null : null,
-          quantity: p.quantity ? Number(p.quantity) : null,
-          imageUrl: p.imageUrl.trim() || null,
+          price: p.price,
+          currency: p.currency,
+          quantity: p.quantity,
+          imageUrl: p.imageUrl,
           allowMultipleEntry: p.allowMultipleEntry,
         })),
       }),
@@ -491,7 +388,7 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
             <div className="min-w-0">
               <p className="m-0 truncate text-sm font-semibold text-night-text">{row.name || "Без названия"}</p>
               <p className="m-0 text-xs text-admin-muted">
-                {PASS_TYPE_LABELS[row.type] ?? row.type} · {formatMoney(row.price, row.currency)}
+                {PASS_TYPE_LABELS[row.type] ?? row.type} · {formatMoneyNum(row.price, row.currency)}
                 {row.quantity ? ` · ${row.quantity} мест` : ""}
               </p>
             </div>
@@ -531,12 +428,13 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
         />
       )}
       {editingPass !== null && (
-        <EventTemplatePassModal
-          initial={editingPass === "new" ? null : passes[editingPass]}
+        <PassFormModal
+          mode={editingPass === "new" ? "create" : "edit"}
+          scope="template"
+          initial={editingPass === "new" ? undefined : passes[editingPass]}
           onClose={() => setEditingPass(null)}
-          onSave={(form) => {
-            setPasses((prev) => (editingPass === "new" ? [...prev, form] : prev.map((row, idx) => (idx === editingPass ? form : row))));
-            setEditingPass(null);
+          onSubmit={(values) => {
+            setPasses((prev) => (editingPass === "new" ? [...prev, values] : prev.map((row, idx) => (idx === editingPass ? values : row))));
           }}
         />
       )}
