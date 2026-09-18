@@ -161,7 +161,10 @@ async function findOrderIdForTicketInTx(
   return null;
 }
 
-function assertOnSale(pass: { status: string; salesStartAt: Date | null; salesEndAt: Date | null }): void {
+// Экспортирована (2026-09-18) — переиспользуется door-sale-service.ts
+// (та же проверка "Pass/TicketType сейчас в продаже", что и при обычной
+// выдаче билета).
+export function assertOnSale(pass: { status: string; salesStartAt: Date | null; salesEndAt: Date | null }): void {
   const now = new Date();
   // SOLD_OUT — отдельная, более конкретная причина отказа, чем общее
   // "не в продаже": к моменту следующей попытки выдачи статус уже
@@ -914,12 +917,17 @@ export async function issueFestivalPassEntry(eventId: string, dancerId: string, 
     throw new TicketValidationError("no_festival_pass", "У танцора нет действующего Pass фестиваля, дающего доступ к этому событию.");
   }
 
-  // Уникальность теперь включает eventId (@@unique([dancerId, passId,
-  // eventId]), см. schema.prisma) — именно поэтому один и тот же Pass может
+  // Уникальность включает eventId (partial unique index WHERE status =
+  // 'ISSUED' — см. комментарий у @@unique в schema.prisma, закомментирован
+  // там же после 2026-09-18) — именно поэтому один и тот же Pass может
   // иметь отдельный Ticket на событии фестиваля (реальная покупка) И
   // отдельный производный Ticket здесь, на дочернем событии, не конфликтуя.
-  const existing = await prisma.ticket.findUnique({
-    where: { dancerId_passId_eventId: { dancerId, passId: match.passId, eventId } },
+  // findFirst + явный status: "ISSUED" (не findUnique по composite key —
+  // Prisma DSL для partial unique index типа не генерирует) — тот же смысл,
+  // что и у самого индекса: отменённый/возвращённый производный вход не
+  // считается "уже существующим", материализуем новый.
+  const existing = await prisma.ticket.findFirst({
+    where: { dancerId, passId: match.passId, eventId, status: "ISSUED" },
   });
   if (existing) return existing;
 

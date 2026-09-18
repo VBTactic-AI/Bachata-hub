@@ -846,8 +846,14 @@ describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсоб
 
   it("issueFestivalPassEntry — уже материализован (идемпотентно) — возвращает существующий, не создаёт новый", async () => {
     programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
-    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
-    ticketFindUnique.mockResolvedValue({ id: "existing-derived", eventId: "child-event", passId: "pass1", dancerId: "dancer1" });
+    // Первый вызов ticket.findFirst — внутри findFestivalPassForEvent (поиск
+    // оригинальной покупки Pass на фестивале), второй — существующий
+    // производный Ticket на ЭТОМ (дочернем) событии (2026-09-18, findUnique
+    // по composite key заменён на findFirst + status: "ISSUED", см.
+    // комментарий у issueFestivalPassEntry в ticket-service.ts).
+    ticketFindFirst
+      .mockResolvedValueOnce({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } })
+      .mockResolvedValueOnce({ id: "existing-derived", eventId: "child-event", passId: "pass1", dancerId: "dancer1" });
 
     const result = await issueFestivalPassEntry("child-event", "dancer1", owner);
 
@@ -857,8 +863,7 @@ describe("findFestivalPassForEvent() / issueFestivalPassEntry() — межсоб
 
   it("issueFestivalPassEntry — создаёт производный Ticket с price=null, isPaid=true", async () => {
     programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
-    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
-    ticketFindUnique.mockResolvedValue(null);
+    ticketFindFirst.mockResolvedValueOnce({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } }).mockResolvedValueOnce(null);
 
     await issueFestivalPassEntry("child-event", "dancer1", owner);
 
@@ -1025,8 +1030,7 @@ describe("Commerce Engine v1 (2026-09-17) — Order/OrderItem/Payment/Refund/Use
 
   it("issueFestivalPassEntry — связывает производный Ticket с существующим UserPass оригинальной покупки", async () => {
     programItemFindFirst.mockResolvedValue({ id: "item1", festival: { eventId: "festival1" } });
-    ticketFindFirst.mockResolvedValue({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } });
-    ticketFindUnique.mockResolvedValue(null);
+    ticketFindFirst.mockResolvedValueOnce({ pass: { id: "pass1", name: "Full Pass", accessGrants: [] } }).mockResolvedValueOnce(null);
     userPassFindUnique.mockResolvedValue({ id: "userpass1" });
 
     await issueFestivalPassEntry("child-event", "dancer1", owner);
