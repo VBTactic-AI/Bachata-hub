@@ -292,6 +292,31 @@ export function TicketPaymentCell({
     );
   }
 
+  // Единая кнопка "Выдать билет"/"Вернуть билет" (2026-09-18, по прямому
+  // запросу пользователя — раньше это были ДВЕ отдельные вещи: кликабельный
+  // StatusBadge "Оплачено"/"Не оплачено" (toggleOne — просто флажок isPaid) и
+  // отдельная текстовая ссылка "Вернуть оплату" рядом (refundOne — настоящий
+  // возврат с Refund/аудитом, см. комментарий у refundOne выше). Теперь это
+  // ОДНА кнопка того же кликабельного-StatusBadge стиля, что и везде в
+  // проекте (EventRegistrationCheckInToggle, CheckInToggle): неоплаченный
+  // билет — "Выдать билет" (клик = toggleOne/toggleSimple, отмечает
+  // оплаченным); оплаченный — "Вернуть билет" (клик = refundOne, тот же
+  // настоящий возврат с подтверждением, что и раньше — семантика не
+  // изменилась, изменилось только то, что это теперь одна кнопка вместо
+  // двух).
+  function PaymentToggleButton({ isPaid, onIssue, onRefund }: { isPaid: boolean; onIssue: () => void; onRefund: () => void }) {
+    return (
+      <button
+        type="button"
+        disabled={loading}
+        onClick={isPaid ? onRefund : onIssue}
+        className="disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <StatusBadge label={isPaid ? "Вернуть билет" : "Выдать билет"} variant={isPaid ? "success" : "danger"} />
+      </button>
+    );
+  }
+
   // Пикер "Использовать Pass фестиваля" — отдельная кнопка, не смешивается с
   // обычным пикером Pass этого события (это ЧУЖОЙ Pass, купленный на
   // фестивале, не Pass самого этого события).
@@ -311,24 +336,11 @@ export function TicketPaymentCell({
     const isPaid = soleTicket?.isPaid ?? false;
     return (
       <span className="inline-flex flex-col items-start gap-1">
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => toggleSimple(soleTicket, !isPaid)}
-          className="disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <StatusBadge label={isPaid ? "Оплачено" : "Не оплачено"} variant={isPaid ? "success" : "danger"} />
-        </button>
-        {isPaid && soleTicket && (
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => refundOne(soleTicket.id)}
-            className="text-xs text-red-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Вернуть оплату
-          </button>
-        )}
+        <PaymentToggleButton
+          isPaid={isPaid}
+          onIssue={() => toggleSimple(soleTicket, true)}
+          onRefund={() => soleTicket && refundOne(soleTicket.id)}
+        />
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
@@ -416,33 +428,15 @@ export function TicketPaymentCell({
     const t = tickets[0];
     // Commerce Engine v1 (2026-09-18) — у танцора уже есть один билет
     // допуска на ЭТО событие, второй сервер всё равно не выдаст
-    // (already_has_admission, см. ticket-service.ts) — пикер прячем ЗДЕСЬ
-    // же, а не оставляем висеть кнопку, которая гарантированно упадёт в
-    // ошибку. Показываем короткую подсказку вместо неё, только если второй
-    // вариант вообще существовал бы (иначе после "—" пусто и так понятно).
-    const hadOtherOption = issueOptions.length > 0;
+    // (already_has_admission, см. ticket-service.ts) — пикер на ещё один
+    // билет здесь просто не рендерится (issuePicker не используется в этой
+    // ветке). Поясняющая подпись про "второй билет не выдаётся" убрана
+    // (2026-09-18, по прямому запросу пользователя) — сама единая кнопка
+    // ниже уже однозначно показывает, что можно сделать с ЭТИМ билетом.
     return (
       <span className="inline-flex flex-col items-start gap-1">
         <TicketPriceLabel t={t} nameClassName="text-xs text-admin-muted" />
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => toggleOne(t.id, !t.isPaid)}
-          className="disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
-        </button>
-        {t.isPaid && (
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => refundOne(t.id)}
-            className="text-xs text-red-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Вернуть оплату
-          </button>
-        )}
-        {hadOtherOption && <span className="text-xs text-admin-disabled">Второй билет на это событие не выдаётся</span>}
+        <PaymentToggleButton isPaid={t.isPaid} onIssue={() => toggleOne(t.id, true)} onRefund={() => refundOne(t.id)} />
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
@@ -480,25 +474,8 @@ export function TicketPaymentCell({
               {tickets.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-admin-card2">
                   <TicketPriceLabel t={t} nameClassName="truncate text-sm font-semibold text-night-text" />
-                  <span className="flex shrink-0 flex-col items-end gap-1">
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => toggleOne(t.id, !t.isPaid)}
-                      className="disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
-                    </button>
-                    {t.isPaid && (
-                      <button
-                        type="button"
-                        disabled={loading}
-                        onClick={() => refundOne(t.id)}
-                        className="text-xs text-red-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Вернуть оплату
-                      </button>
-                    )}
+                  <span className="shrink-0">
+                    <PaymentToggleButton isPaid={t.isPaid} onIssue={() => toggleOne(t.id, true)} onRefund={() => refundOne(t.id)} />
                   </span>
                 </div>
               ))}
