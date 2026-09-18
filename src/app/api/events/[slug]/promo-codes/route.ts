@@ -13,6 +13,7 @@ const createSchema = z.object({
   validUntil: z.coerce.date().optional().nullable(),
   maxUses: z.number().int().positive().optional().nullable(),
   passIds: z.array(z.string()).optional(),
+  ticketTypeIds: z.array(z.string()).optional(),
 });
 
 async function getEventBySlug(slug: string) {

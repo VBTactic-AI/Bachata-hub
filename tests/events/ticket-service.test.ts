@@ -735,6 +735,67 @@ describe("issueTicketForType() — Ticket Engine v2 (2026-09-16)", () => {
   });
 });
 
+describe("issueTicketForType() — применение скидки PromoCode (2026-09-18, промокод независим от Pass)", () => {
+  const activePromoCode = {
+    id: "promo1",
+    eventId: "event1",
+    code: "DANCEFOREVER",
+    discountType: "FIXED_AMOUNT" as const,
+    discountValue: 2,
+    validFrom: null as Date | null,
+    validUntil: null as Date | null,
+    maxUses: null as number | null,
+    usedCount: 0,
+    isActive: true,
+    passes: [] as { passId: string }[],
+    ticketTypes: [] as { ticketTypeId: string }[],
+  };
+
+  it("действующий код без ограничений — цена уменьшается, Ticket/Order отражают скидку", async () => {
+    txPromoCodeFindUnique.mockResolvedValue(activePromoCode);
+
+    await issueTicketForType("tt1", "dancer1", owner, { promoCode: "danceforever" });
+
+    expect(txPromoCodeFindUnique).toHaveBeenCalledWith({
+      where: { eventId_code: { eventId: "event1", code: "DANCEFOREVER" } },
+      include: { passes: true, ticketTypes: true },
+    });
+    // price 15 - discount 2 = 13.
+    expect(txTicketCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ price: 13, promoCodeId: "promo1", discountAmount: 2 }),
+    });
+    expect(txPromoCodeUpdate).toHaveBeenCalledWith({ where: { id: "promo1" }, data: { usedCount: { increment: 1 } } });
+  });
+
+  it("код не найден — invalid_promo_code, билет не создаётся", async () => {
+    txPromoCodeFindUnique.mockResolvedValue(null);
+    await expect(issueTicketForType("tt1", "dancer1", owner, { promoCode: "MISSING" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("код привязан ТОЛЬКО к Pass (passes непусто, ticketTypes пусто) — не применяется к TicketType", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, passes: [{ passId: "pass1" }] });
+    await expect(issueTicketForType("tt1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+  });
+
+  it("код привязан именно к этому TicketType (ticketTypes включает tt1) — применяется", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, ticketTypes: [{ ticketTypeId: "tt1" }] });
+    await expect(issueTicketForType("tt1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).resolves.toBeDefined();
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ discountAmount: 2 }) });
+  });
+
+  it("код привязан к ДРУГОМУ TicketType — invalid_promo_code", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, ticketTypes: [{ ticketTypeId: "other-tt" }] });
+    await expect(issueTicketForType("tt1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
+  });
+
+  it("код не передан — промокод вообще не запрашивается", async () => {
+    await issueTicketForType("tt1", "dancer1", owner);
+    expect(txPromoCodeFindUnique).not.toHaveBeenCalled();
+    expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ promoCodeId: null, discountAmount: null }) });
+  });
+});
+
 describe("cancelTicket() / refundTicket() — билет по TicketType", () => {
   it("cancelTicket — ISSUED с TicketType — освобождает место через ticketType, не через pass", async () => {
     ticketFindUnique.mockResolvedValue({ id: "ticket1", status: "ISSUED", passId: null, ticketTypeId: "tt1", event });
@@ -1075,6 +1136,7 @@ describe("issueTicket() — применение скидки PromoCode (Commerc
     usedCount: 0,
     isActive: true,
     passes: [] as { passId: string }[],
+    ticketTypes: [] as { ticketTypeId: string }[],
   };
 
   it("действующий код без ограничений по Pass — цена уменьшается, Order/OrderItem/Payment/Ticket отражают скидку", async () => {
@@ -1084,7 +1146,7 @@ describe("issueTicket() — применение скидки PromoCode (Commerc
 
     expect(txPromoCodeFindUnique).toHaveBeenCalledWith({
       where: { eventId_code: { eventId: "event1", code: "DANCEFOREVER" } },
-      include: { passes: true },
+      include: { passes: true, ticketTypes: true },
     });
     // effective price 120 - discount 2 = 118.
     expect(txOrderCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ subtotal: 120, discount: 2, total: 118 }) });
@@ -1135,6 +1197,15 @@ describe("issueTicket() — применение скидки PromoCode (Commerc
     txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, passes: [{ passId: "pass1" }] });
     await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).resolves.toBeDefined();
     expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ discountAmount: 2 }) });
+  });
+
+  // 2026-09-18, по прямому запросу пользователя — "скидка может
+  // существовать вне зависимости от pass билета": у кода ЕСТЬ привязка
+  // (пусть даже к TicketType, не к Pass) — он больше НЕ считается
+  // "без ограничений" и не применяется молча ко всем Pass события.
+  it("код привязан ТОЛЬКО к TicketType (ticketTypes непусто, passes пусто) — не применяется к Pass", async () => {
+    txPromoCodeFindUnique.mockResolvedValue({ ...activePromoCode, ticketTypes: [{ ticketTypeId: "tt1" }] });
+    await expect(issueTicket("pass1", "dancer1", owner, { promoCode: "DANCEFOREVER" })).rejects.toMatchObject({ code: "invalid_promo_code" });
   });
 
   it("скидка съедает всю цену (price=0 после скидки) — билет сразу оплачен, как бесплатный Pass", async () => {

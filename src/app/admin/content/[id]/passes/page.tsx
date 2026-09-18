@@ -16,11 +16,14 @@ import { PromoCodeManager } from "@/components/admin/events/PromoCodeManager";
 import type { AccessTargetOption } from "@/components/admin/events/PassFormModal";
 import { isOwnerOrAdmin } from "@/server/events/access";
 
-// "🎟 Билеты и Pass" — вкладка Event Dashboard (2026-09-16, Ticket Engine v2:
-// TicketType — простой билет на ОДНО событие — добавлен РЯДОМ с уже
-// существующим Pass, две независимые под-вкладки одной страницы, см.
-// комментарий у моделей в schema.prisma и TicketsAndPassesTabs.tsx). Owner-
-// check делает listPassesForEvent/listTicketTypesForEvent (hasEventAccess —
+// "🎟 Билеты" (переименовано из "Билеты и Pass", 2026-09-18, по прямому
+// запросу пользователя) — вкладка Event Dashboard (2026-09-16, Ticket
+// Engine v2: TicketType — простой билет на ОДНО событие — добавлен РЯДОМ с
+// уже существующим Pass). ТРИ независимые суб-вкладки одной страницы
+// (Билеты/Промокоды/Pass, см. TicketsAndPassesTabs.tsx) — промокоды
+// вынесены отдельно, т.к. теперь применимы и к Pass, и к TicketType (см.
+// комментарий у моделей в schema.prisma). Owner-check делает
+// listPassesForEvent/listTicketTypesForEvent (hasEventAccess —
 // любой член команды видит каталог, чтобы выдавать билеты); создание/
 // редактирование сами PassManager/TicketTypeManager делают через API-роуты,
 // которые уже проверяют isOwnerOrAdmin.
@@ -161,7 +164,9 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
       <TicketsAndPassesTabs
         ticketsCount={ticketTypes.length}
         passesCount={passes.length}
+        promoCodesCount={promoCodes.length}
         showPasses={event.format === "FESTIVAL" || passes.length > 0}
+        showPromoCodes={canManagePasses}
         ticketsPanel={
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -171,6 +176,20 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
             </div>
             <TicketTypeManager eventSlug={event.slug} registrationsPath={registrationsPath} ticketTypes={ticketTypeRows} />
           </div>
+        }
+        promoCodesPanel={
+          <PromoCodeManager
+            eventSlug={event.slug}
+            initialCodes={promoCodes.map((c) => ({
+              id: c.id,
+              code: c.code,
+              discountType: c.discountType,
+              discountValue: Number(c.discountValue),
+              usedCount: c.usedCount,
+              maxUses: c.maxUses,
+              isActive: c.isActive,
+            }))}
+          />
         }
         passesPanel={
           <div className="flex flex-col gap-4">
@@ -187,20 +206,6 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
               templates={templateOptions}
               accessOptions={accessOptions}
             />
-            {canManagePasses && (
-              <PromoCodeManager
-                eventSlug={event.slug}
-                initialCodes={promoCodes.map((c) => ({
-                  id: c.id,
-                  code: c.code,
-                  discountType: c.discountType,
-                  discountValue: Number(c.discountValue),
-                  usedCount: c.usedCount,
-                  maxUses: c.maxUses,
-                  isActive: c.isActive,
-                }))}
-              />
-            )}
           </div>
         }
       />

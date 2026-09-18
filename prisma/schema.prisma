@@ -745,9 +745,11 @@ model TicketType {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  tickets Ticket[]
+  tickets    Ticket[]
   // Commerce Engine v1 — обратная связь для Product.ticketType.
-  product Product?
+  product    Product?
+  // Обратная связь для PromoCode.ticketTypes (2026-09-18).
+  promoCodes PromoCodeTicketType[]
 
   @@index([eventId])
   @@index([eventId, status])
@@ -973,10 +975,19 @@ model PromoCode {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
-  passes  PromoCodePass[]
-  tickets Ticket[]
+  passes      PromoCodePass[]
+  // Применимость к TicketType (2026-09-18, по прямому запросу пользователя
+  // — "скидка/промокод может существовать вне зависимости от Pass") — тот
+  // же принцип "пусто = применим к любому", что и у passes, но раздельно по
+  // осям: если у кода есть ХОТЯ БЫ одна привязка (passes ИЛИ ticketTypes),
+  // он ограничен только явно перечисленными продуктами того типа, к
+  // которому привязан; если нет ни одной привязки — применим к любому
+  // Pass/TicketType события (см. isPromoCodeApplicableToProduct в
+  // ticket-service.ts).
+  ticketTypes PromoCodeTicketType[]
+  tickets     Ticket[]
   // Commerce Engine v1 — обратная связь для Order.promoCode.
-  orders  Order[]
+  orders      Order[]
 
   @@unique([eventId, code])
   @@index([eventId])
@@ -991,6 +1002,18 @@ model PromoCodePass {
 
   @@unique([promoCodeId, passId])
   @@index([passId])
+}
+
+// Зеркалит PromoCodePass выше, для TicketType вместо Pass (2026-09-18).
+model PromoCodeTicketType {
+  id           String     @id @default(cuid())
+  promoCodeId  String
+  promoCode    PromoCode  @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([promoCodeId, ticketTypeId])
+  @@index([ticketTypeId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1456,7 +1479,7 @@ model DoorSale {
   method       PaymentMethod
   // Необязательная заметка организатора ("иностранец", "друг DJ") — чисто
   // для памяти, ни на что не влияет.
-  note String?
+  note         String?
 
   recordedById String
   recordedBy   User     @relation("DoorSaleRecordedBy", fields: [recordedById], references: [id])

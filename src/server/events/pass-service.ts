@@ -483,6 +483,10 @@ export type PromoCodeInput = {
   validUntil?: Date | null;
   maxUses?: number | null;
   passIds?: string[]; // пусто/не передано — применим к любому Pass события
+  // Независимая ось от passIds (2026-09-18, по прямому запросу пользователя
+  // — "скидка/промокод может существовать вне зависимости от Pass") — тот
+  // же принцип "пусто = применим к любому TicketType события".
+  ticketTypeIds?: string[];
 };
 
 function validatePromoCodeInput(input: Partial<PromoCodeInput>): void {
@@ -515,6 +519,9 @@ export async function createPromoCode(eventId: string, user: User, input: PromoC
         validUntil: input.validUntil ?? null,
         maxUses: input.maxUses ?? null,
         ...(input.passIds && input.passIds.length > 0 ? { passes: { create: input.passIds.map((passId) => ({ passId })) } } : {}),
+        ...(input.ticketTypeIds && input.ticketTypeIds.length > 0
+          ? { ticketTypes: { create: input.ticketTypeIds.map((ticketTypeId) => ({ ticketTypeId })) } }
+          : {}),
       },
     });
   } catch (err) {
@@ -527,7 +534,7 @@ export async function createPromoCode(eventId: string, user: User, input: PromoC
 
 export async function listPromoCodesForEvent(eventId: string, user: User): Promise<PromoCode[]> {
   await requireOwnerOrAdminEvent(eventId, user);
-  return prisma.promoCode.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, include: { passes: true } });
+  return prisma.promoCode.findMany({ where: { eventId }, orderBy: { createdAt: "desc" }, include: { passes: true, ticketTypes: true } });
 }
 
 export async function setPromoCodeActive(promoCodeId: string, user: User, isActive: boolean): Promise<PromoCode> {
@@ -543,6 +550,7 @@ export type ActivePromoCodeOption = {
   discountType: PromoDiscountType;
   discountValue: number;
   passIds: string[]; // пусто — применим к любому Pass события
+  ticketTypeIds: string[]; // пусто — применим к любому TicketType события (2026-09-18)
 };
 
 // Commerce Engine v1 (2026-09-18) — для попапа "Билеты участника": организатор
@@ -563,7 +571,7 @@ export async function listActivePromoCodesForEvent(eventId: string, user: User):
       isActive: true,
       OR: [{ validFrom: null }, { validFrom: { lte: now } }],
     },
-    include: { passes: true },
+    include: { passes: true, ticketTypes: true },
     orderBy: { code: "asc" },
   });
   return codes
@@ -574,5 +582,6 @@ export async function listActivePromoCodesForEvent(eventId: string, user: User):
       discountType: c.discountType,
       discountValue: Number(c.discountValue),
       passIds: c.passes.map((p) => p.passId),
+      ticketTypeIds: c.ticketTypes.map((t) => t.ticketTypeId),
     }));
 }

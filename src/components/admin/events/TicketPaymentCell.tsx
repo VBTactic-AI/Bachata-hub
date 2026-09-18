@@ -29,6 +29,7 @@ export type AssignablePromoCodeOption = {
   discountType: "PERCENT" | "FIXED_AMOUNT";
   discountValue: number;
   passIds: string[]; // пусто — применим к любому Pass события
+  ticketTypeIds: string[]; // пусто — применим к любому TicketType события (2026-09-18)
 };
 export type FestivalPassMatch = { passId: string; passName: string };
 
@@ -85,8 +86,8 @@ export function TicketPaymentCell({
   // Действующие промокоды события (2026-09-18) — организатор выбирает из
   // списка, не вводит руками (см. комментарий у listActivePromoCodesForEvent
   // в pass-service.ts — "это для клиентов, для админа просто выбор того, что
-  // сказал танцор"). Применимость к конкретному Pass фильтруется на клиенте
-  // по passIds (пусто = применим к любому).
+  // сказал танцор"). Применимость к конкретному Pass/TicketType фильтруется
+  // на клиенте по passIds/ticketTypeIds (оба пусты = применим к любому).
   assignablePromoCodes: AssignablePromoCodeOption[];
   // Этап 3 — действующий Pass фестиваля (см. findFestivalPassForEvent в
   // ticket-service.ts), дающий доступ ИМЕННО к этому (дочернему) событию,
@@ -111,11 +112,11 @@ export function TicketPaymentCell({
   // оба варианта сразу и путался, какую кнопку жать). selectedOption — ключ
   // вида "pass:ID" / "tickettype:ID" по обеим таблицам сразу.
   const [selectedOption, setSelectedOption] = useState("");
-  // Промокод применяется только к Pass (PromoCodePass — единственная связь в
-  // схеме, TicketType промокодов не поддерживает, см. issueTicket в
-  // ticket-service.ts) — выбор из списка (id промокода), а не ручной ввод:
-  // "это для клиентов, для админа — просто выбор того, что сказал танцор"
-  // (прямые слова пользователя, 2026-09-18).
+  // Промокод — выбор из списка (id промокода), а не ручной ввод: "это для
+  // клиентов, для админа — просто выбор того, что сказал танцор" (прямые
+  // слова пользователя, 2026-09-18). Применяется и к Pass, и к TicketType
+  // (PromoCodePass/PromoCodeTicketType — промокод независим от типа
+  // продукта, по прямому запросу пользователя того же дня).
   const [selectedPromoCodeId, setSelectedPromoCodeId] = useState("");
   // Способ расчёта (2026-09-18) — наличные/безнал, по умолчанию "Наличные"
   // (самый частый случай на входе на вечеринку).
@@ -145,12 +146,17 @@ export function TicketPaymentCell({
   // выбор больше не входит в актуальный список, тихо откатываемся на первый
   // доступный вариант.
   const effectiveOption = issueOptions.find((o) => o.key === selectedOption) ?? issueOptions[0] ?? null;
-  // Промокоды, применимые к ВЫБРАННОМУ прямо сейчас Pass — пусто у кода =
-  // применим к любому Pass события (см. listActivePromoCodesForEvent).
-  const applicablePromoCodes =
-    effectiveOption?.kind === "pass"
-      ? assignablePromoCodes.filter((c) => c.passIds.length === 0 || c.passIds.includes(effectiveOption.id))
-      : [];
+  // Промокоды, применимые к ВЫБРАННОМУ прямо сейчас товару — если у кода
+  // вообще нет привязок (ни к Pass, ни к TicketType), он применим к любому
+  // товару события; если привязки есть — только к явно перечисленным (см.
+  // isPromoCodeApplicableToProduct в ticket-service.ts, та же логика
+  // продублирована здесь для мгновенного фильтра в UI).
+  const applicablePromoCodes = assignablePromoCodes.filter((c) => {
+    const hasAnyRestriction = c.passIds.length > 0 || c.ticketTypeIds.length > 0;
+    if (!hasAnyRestriction) return true;
+    if (!effectiveOption) return false;
+    return effectiveOption.kind === "pass" ? c.passIds.includes(effectiveOption.id) : c.ticketTypeIds.includes(effectiveOption.id);
+  });
   const effectivePromoCode = applicablePromoCodes.find((c) => c.id === selectedPromoCodeId) ?? null;
   const hasFestivalPassEntry = festivalPassMatch != null && tickets.some((t) => t.passId === festivalPassMatch.passId);
 
@@ -174,10 +180,7 @@ export function TicketPaymentCell({
       effectiveOption.kind === "pass"
         ? `/api/events/${eventSlug}/passes/${effectiveOption.id}/tickets`
         : `/api/events/${eventSlug}/ticket-types/${effectiveOption.id}/tickets`;
-    const body =
-      effectiveOption.kind === "pass"
-        ? { dancerId, markPaid: true, promoCode: effectivePromoCode?.code, paymentMethod }
-        : { dancerId, markPaid: true, paymentMethod };
+    const body = { dancerId, markPaid: true, promoCode: effectivePromoCode?.code, paymentMethod };
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setLoading(false);
     if (!res.ok) {
@@ -389,7 +392,7 @@ export function TicketPaymentCell({
           )}
         </select>
       )}
-      {effectiveOption?.kind === "pass" && applicablePromoCodes.length > 0 && (
+      {applicablePromoCodes.length > 0 && (
         <select
           value={selectedPromoCodeId}
           onChange={(e) => setSelectedPromoCodeId(e.target.value)}

@@ -223,11 +223,10 @@ async function assertSingleAdmissionPerEvent(
 // Commerce Engine v1 (2026-09-18) — применение скидки PromoCode. Раньше
 // PromoCode существовал только как схема + CRUD (pass-service.ts) — ни один
 // код скидку не считал (прямое решение пользователя в более ранней сессии:
-// "не обязательно делать прямо сейчас"). Реализовано только для Pass —
-// PromoCodePass, единственная связь, которая вообще существует в схеме;
-// TicketType намеренно проще и промокодов не поддерживает (docs/
-// 00_DECISIONS.md, D10 — TicketType и Pass разные сущности, не сужаем одно
-// под другое задним числом).
+// "не обязательно делать прямо сейчас"). Сначала реализовано только для
+// Pass, затем (тем же днём, по прямому запросу пользователя — "скидка
+// может существовать вне зависимости от pass билета") распространено и на
+// TicketType — PromoCodeTicketType зеркалит PromoCodePass.
 function isPromoCodeCurrentlyValid(
   code: { isActive: boolean; validFrom: Date | null; validUntil: Date | null; maxUses: number | null; usedCount: number },
   now: Date = new Date()
@@ -239,11 +238,21 @@ function isPromoCodeCurrentlyValid(
   return true;
 }
 
-// Пустой список passes у PromoCode = применим к любому Pass события (тот же
-// принцип "пусто — без ограничений", что и у PassAccessGrant).
-function isPromoCodeApplicableToPass(code: { passes: { passId: string }[] }, passId: string): boolean {
-  if (code.passes.length === 0) return true;
-  return code.passes.some((p) => p.passId === passId);
+// Применимость к конкретному Pass/TicketType. Если у кода НЕТ вообще ни
+// одной привязки (ни passes, ни ticketTypes) — применим к любому продукту
+// события (тот же принцип "пусто — без ограничений", что и у
+// PassAccessGrant). Если привязка ЕСТЬ хотя бы к чему-то — код ограничен
+// ТОЛЬКО явно перечисленными продуктами (какого угодно типа), а не
+// внезапно становится применим ко всем TicketType только потому, что у
+// него не было привязок к TicketType конкретно.
+function isPromoCodeApplicableToProduct(
+  code: { passes: { passId: string }[]; ticketTypes: { ticketTypeId: string }[] },
+  target: { passId: string; ticketTypeId?: undefined } | { passId?: undefined; ticketTypeId: string }
+): boolean {
+  const hasAnyRestriction = code.passes.length > 0 || code.ticketTypes.length > 0;
+  if (!hasAnyRestriction) return true;
+  if (target.passId != null) return code.passes.some((p) => p.passId === target.passId);
+  return code.ticketTypes.some((t) => t.ticketTypeId === target.ticketTypeId);
 }
 
 // Скидка не уводит цену в минус и не превышает саму цену. Бесплатный Pass
@@ -311,14 +320,14 @@ export async function issueTicket(
     // Цена/скидка читаются ВНУТРИ транзакции, тем же принципом, что и Pass —
     // organizer не может провести оплату по цене, посчитанной ДО начала
     // транзакции.
-    let promoCode: Prisma.PromoCodeGetPayload<{ include: { passes: true } }> | null = null;
+    let promoCode: Prisma.PromoCodeGetPayload<{ include: { passes: true; ticketTypes: true } }> | null = null;
     let discountAmount = 0;
     if (options.promoCode) {
       const candidate = await tx.promoCode.findUnique({
         where: { eventId_code: { eventId: current.eventId, code: options.promoCode.trim().toUpperCase() } },
-        include: { passes: true },
+        include: { passes: true, ticketTypes: true },
       });
-      if (!candidate || !isPromoCodeCurrentlyValid(candidate) || !isPromoCodeApplicableToPass(candidate, passId)) {
+      if (!candidate || !isPromoCodeCurrentlyValid(candidate) || !isPromoCodeApplicableToProduct(candidate, { passId })) {
         throw new TicketValidationError(
           "invalid_promo_code",
           "Промокод недействителен, неактивен, истёк, исчерпан лимит использований или не подходит для этого Pass."
@@ -434,7 +443,7 @@ export async function issueTicketForType(
   ticketTypeId: string,
   dancerId: string,
   user: User,
-  options: { markPaid?: boolean; paymentMethod?: "CASH" | "TRANSFER" } = {}
+  options: { markPaid?: boolean; promoCode?: string; paymentMethod?: "CASH" | "TRANSFER" } = {}
 ): Promise<Ticket> {
   const ticketType = await requireAccessForTicketType(ticketTypeId, user);
   const dancer = await prisma.dancer.findUnique({ where: { id: dancerId } });
@@ -459,7 +468,28 @@ export async function issueTicketForType(
     if (current.quantity != null && current.soldQuantity >= current.quantity) {
       throw new TicketValidationError("sold_out", "Свободных мест по этому билету больше нет.");
     }
-    const price = current.price == null ? null : Number(current.price);
+    const basePrice = current.price == null ? null : Number(current.price);
+
+    // PromoCode (2026-09-18, по прямому запросу пользователя — "скидка
+    // может существовать вне зависимости от pass билета") — тот же расчёт,
+    // что и в issueTicket() выше, теперь и для TicketType.
+    let promoCode: Prisma.PromoCodeGetPayload<{ include: { passes: true; ticketTypes: true } }> | null = null;
+    let discountAmount = 0;
+    if (options.promoCode) {
+      const candidate = await tx.promoCode.findUnique({
+        where: { eventId_code: { eventId: current.eventId, code: options.promoCode.trim().toUpperCase() } },
+        include: { passes: true, ticketTypes: true },
+      });
+      if (!candidate || !isPromoCodeCurrentlyValid(candidate) || !isPromoCodeApplicableToProduct(candidate, { ticketTypeId })) {
+        throw new TicketValidationError(
+          "invalid_promo_code",
+          "Промокод недействителен, неактивен, истёк, исчерпан лимит использований или не подходит для этого билета."
+        );
+      }
+      promoCode = candidate;
+      discountAmount = computePromoDiscount(basePrice, candidate.discountType, Number(candidate.discountValue));
+    }
+    const price = basePrice == null ? null : Math.max(basePrice - discountAmount, 0);
     const isFree = price == null || price === 0;
 
     // Commerce Engine v1 — см. комментарий в issueTicket() выше. TicketType не
@@ -474,10 +504,10 @@ export async function issueTicketForType(
       dancerId,
       productId: product.id,
       nameSnapshot: current.name,
-      price,
+      price: basePrice,
       currency: current.currency,
-      discountAmount: null,
-      promoCodeId: null,
+      discountAmount: discountAmount > 0 ? discountAmount : null,
+      promoCodeId: promoCode?.id ?? null,
       referralCodeId: null,
       isPaid: isPaidNow,
       paidAt: paidAtNow,
@@ -498,6 +528,8 @@ export async function issueTicketForType(
           isPaid: isPaidNow,
           paidAt: paidAtNow,
           issuedById: user.id,
+          promoCodeId: promoCode?.id ?? null,
+          discountAmount: discountAmount > 0 ? discountAmount : null,
           orderItemId,
         },
       });
@@ -506,6 +538,12 @@ export async function issueTicketForType(
         throw new DuplicateTicketError();
       }
       throw err;
+    }
+
+    // Лимит использований (maxUses) считается только по успешно созданным
+    // билетам — та же логика, что и в issueTicket() выше.
+    if (promoCode) {
+      await tx.promoCode.update({ where: { id: promoCode.id }, data: { usedCount: { increment: 1 } } });
     }
 
     const updated = await tx.ticketType.update({ where: { id: ticketTypeId }, data: { soldQuantity: { increment: 1 } } });

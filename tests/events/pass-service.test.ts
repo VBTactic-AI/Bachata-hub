@@ -648,12 +648,15 @@ describe("listActivePromoCodesForEvent() — Commerce Engine v1 (2026-09-18)", (
     usedCount: 0,
     isActive: true,
     passes: [] as { passId: string }[],
+    ticketTypes: [] as { ticketTypeId: string }[],
   };
 
   it("владелец — видит действующие коды, discountValue приведён к числу", async () => {
     promoCodeFindMany.mockResolvedValue([activeCode]);
     const result = await listActivePromoCodesForEvent("event1", owner);
-    expect(result).toEqual([{ id: "promo1", code: "DANCEFOREVER", discountType: "FIXED_AMOUNT", discountValue: 2, passIds: [] }]);
+    expect(result).toEqual([
+      { id: "promo1", code: "DANCEFOREVER", discountType: "FIXED_AMOUNT", discountValue: 2, passIds: [], ticketTypeIds: [] },
+    ]);
   });
 
   it("доступ через hasEventAccess (член команды), а не только владелец — в отличие от listPromoCodesForEvent", async () => {
@@ -685,5 +688,11 @@ describe("listActivePromoCodesForEvent() — Commerce Engine v1 (2026-09-18)", (
     promoCodeFindMany.mockResolvedValue([{ ...activeCode, passes: [{ passId: "pass1" }, { passId: "pass2" }] }]);
     const result = await listActivePromoCodesForEvent("event1", owner);
     expect(result[0].passIds).toEqual(["pass1", "pass2"]);
+  });
+
+  it("код привязан к конкретным TicketType — ticketTypeIds заполнен (2026-09-18, промокод независим от Pass)", async () => {
+    promoCodeFindMany.mockResolvedValue([{ ...activeCode, ticketTypes: [{ ticketTypeId: "tt1" }] }]);
+    const result = await listActivePromoCodesForEvent("event1", owner);
+    expect(result[0].ticketTypeIds).toEqual(["tt1"]);
   });
 });

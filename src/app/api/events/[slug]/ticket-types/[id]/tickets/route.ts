@@ -7,6 +7,7 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/
 const issueSchema = z.object({
   dancerId: z.string().min(1),
   markPaid: z.boolean().optional(),
+  promoCode: z.string().min(1).optional(),
   paymentMethod: z.enum(["CASH", "TRANSFER"]).optional(),
 });
 
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const ticket = await issueTicketForType(id, parsed.data.dancerId, user, {
       markPaid: parsed.data.markPaid,
+      promoCode: parsed.data.promoCode,
       paymentMethod: parsed.data.paymentMethod,
     });
     return NextResponse.json({ ok: true, ticket });
