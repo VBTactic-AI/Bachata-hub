@@ -413,13 +413,8 @@ export function TicketPaymentCell({
         <option value="CASH">Наличные</option>
         <option value="TRANSFER">Б/н (перевод)</option>
       </select>
-      <button
-        type="button"
-        disabled={loading}
-        onClick={issueSelected}
-        className="text-xs text-admin-primaryHover hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Выдать
+      <button type="button" disabled={loading} onClick={issueSelected} className="disabled:cursor-not-allowed disabled:opacity-50">
+        <StatusBadge label="Выдать" variant="success" />
       </button>
     </span>
   );
