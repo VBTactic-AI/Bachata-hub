@@ -352,33 +352,43 @@ export function TicketPaymentCell({
   // сгруппированы подписями) и одна кнопка "Выдать", а не два параллельных
   // пикера с отдельными кнопками "Выдать Pass"/"Выдать билет". Промокод
   // показывается только когда выбран именно Pass.
+  // Если выдать можно только ОДИН вариант — не показываем выпадающий список
+  // на единственный пункт (2026-09-18, по прямому запросу пользователя), а
+  // сразу пишем название и сумму текстом; effectiveOption уже и так
+  // указывает на этот единственный вариант (issueOptions[0] ?? null).
   const issuePicker = issueOptions.length > 0 && (
     <span className="inline-flex flex-col items-start gap-1">
-      <select
-        value={effectiveOption?.key ?? ""}
-        onChange={(e) => setSelectedOption(e.target.value)}
-        disabled={loading}
-        className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
-      >
-        {availableToIssue.length > 0 && (
-          <optgroup label="Pass">
-            {availableToIssue.map((p) => (
-              <option key={`pass:${p.id}`} value={`pass:${p.id}`}>
-                {p.name} — {formatMoney(p.price, p.currency)}
-              </option>
-            ))}
-          </optgroup>
-        )}
-        {availableTicketTypesToIssue.length > 0 && (
-          <optgroup label="Билет">
-            {availableTicketTypesToIssue.map((t) => (
-              <option key={`tickettype:${t.id}`} value={`tickettype:${t.id}`}>
-                {t.name} — {formatMoney(t.price, t.currency)}
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
+      {issueOptions.length === 1 ? (
+        <span className="text-xs font-semibold text-night-text">
+          {issueOptions[0].name} — {formatMoney(issueOptions[0].price, issueOptions[0].currency)}
+        </span>
+      ) : (
+        <select
+          value={effectiveOption?.key ?? ""}
+          onChange={(e) => setSelectedOption(e.target.value)}
+          disabled={loading}
+          className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
+        >
+          {availableToIssue.length > 0 && (
+            <optgroup label="Pass">
+              {availableToIssue.map((p) => (
+                <option key={`pass:${p.id}`} value={`pass:${p.id}`}>
+                  {p.name} — {formatMoney(p.price, p.currency)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {availableTicketTypesToIssue.length > 0 && (
+            <optgroup label="Билет">
+              {availableTicketTypesToIssue.map((t) => (
+                <option key={`tickettype:${t.id}`} value={`tickettype:${t.id}`}>
+                  {t.name} — {formatMoney(t.price, t.currency)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      )}
       {effectiveOption?.kind === "pass" && applicablePromoCodes.length > 0 && (
         <select
           value={selectedPromoCodeId}
