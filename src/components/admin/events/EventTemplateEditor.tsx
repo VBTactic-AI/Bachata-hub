@@ -44,9 +44,16 @@ export type EventTemplateDetail = {
   priceText: string | null;
   externalLinkUrl: string | null;
   tags: string[];
+  // Json-поле, содержательно используется только для format="MASTERCLASS"
+  // (стиль/формат/нужен партнёр) — тот же принцип, что и у typeDetails на
+  // самом Event (см. StepMasterclassDetails.tsx), теперь и у шаблона
+  // (2026-09-18, по прямому запросу пользователя).
+  typeDetails: unknown;
   ticketTypes: EventTemplateTicketRow[];
   passes: EventTemplatePassRow[];
 };
+
+type MasterclassTypeDetails = { style?: string; format?: string; partnerRequired?: boolean };
 
 // Строковое представление формы билета — тот же приём, что и у WizardDraft
 // (wizard-types.ts): числа как строки, сериализация в правильные типы
@@ -175,6 +182,10 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
   const [priceText, setPriceText] = useState(template.priceText ?? "");
   const [externalLinkUrl, setExternalLinkUrl] = useState(template.externalLinkUrl ?? "");
   const [tags, setTags] = useState(template.tags.join(", "));
+  const initialMasterclass = (template.typeDetails ?? {}) as MasterclassTypeDetails;
+  const [mcStyle, setMcStyle] = useState(initialMasterclass.style ?? "");
+  const [mcFormat, setMcFormat] = useState(initialMasterclass.format ?? "");
+  const [mcPartnerRequired, setMcPartnerRequired] = useState(initialMasterclass.partnerRequired ?? false);
   const [ticketTypes, setTicketTypes] = useState<TicketForm[]>(template.ticketTypes.map(toTicketForm));
   const [passes, setPasses] = useState<EventTemplatePassRow[]>(template.passes);
   const [saving, setSaving] = useState(false);
@@ -217,6 +228,10 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
         priceText: priceText.trim() || null,
         externalLinkUrl: externalLinkUrl.trim() || null,
         tags: tags.split(",").map((x) => x.trim()).filter(Boolean),
+        typeDetails:
+          format === "MASTERCLASS"
+            ? { style: mcStyle.trim() || undefined, format: mcFormat.trim() || undefined, partnerRequired: mcPartnerRequired }
+            : undefined,
         ticketTypes: ticketTypes.map((t) => ({
           name: t.name.trim(),
           description: t.description.trim() || null,
@@ -340,6 +355,36 @@ export function EventTemplateEditor({ template, cities }: { template: EventTempl
           <Input value={tags} onChange={(e) => setTags(e.target.value)} className={fieldClass} />
         </Label>
       </div>
+
+      {format === "MASTERCLASS" && (
+        <div className={groupClass}>
+          <p className={groupLabelClass}>Детали мастер-класса</p>
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <Label className="text-admin-muted">
+              Стиль
+              <Input value={mcStyle} onChange={(e) => setMcStyle(e.target.value)} className={fieldClass} />
+            </Label>
+            <Label className="text-admin-muted">
+              Формат
+              <Input
+                placeholder="Интенсив / цикл занятий / …"
+                value={mcFormat}
+                onChange={(e) => setMcFormat(e.target.value)}
+                className={fieldClass}
+              />
+            </Label>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-admin-muted">
+            <input
+              type="checkbox"
+              checked={mcPartnerRequired}
+              onChange={(e) => setMcPartnerRequired(e.target.checked)}
+              className="accent-admin-primary"
+            />
+            Нужен партнёр
+          </label>
+        </div>
+      )}
 
       <div className={groupClass}>
         <div className="flex items-center justify-between">

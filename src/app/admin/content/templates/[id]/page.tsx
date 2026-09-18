@@ -57,6 +57,7 @@ export default async function EventTemplateDetailPage({ params }: { params: Prom
           priceText: template.priceText,
           externalLinkUrl: template.externalLinkUrl,
           tags: template.tags,
+          typeDetails: template.typeDetails,
           ticketTypes: template.ticketTypes.map((t) => ({ name: t.name, description: t.description, price: t.price == null ? null : Number(t.price), currency: t.currency, quantity: t.quantity })),
           passes: template.passes.map((p) => ({
             name: p.name,

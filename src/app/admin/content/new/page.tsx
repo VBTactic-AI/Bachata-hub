@@ -104,6 +104,20 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
                 artists: ((template.typeDetails as { artists?: string[] })?.artists ?? []).join(", "),
               }
             : base.party,
+        // Детали мастер-класса (2026-09-18, по прямому запросу пользователя
+        // — "настройки MASTERCLASS нужно добавить") — тот же приём, что и у
+        // party выше; sessions НЕ переносятся из шаблона (у EventTemplate их
+        // физически нет, это конкретное расписание с реальными датами/
+        // временем, а не то, что имеет смысл хранить как заготовку).
+        masterclass:
+          template.format === "MASTERCLASS" && template.typeDetails
+            ? {
+                ...base.masterclass,
+                style: (template.typeDetails as { style?: string })?.style ?? "",
+                format: (template.typeDetails as { format?: string })?.format ?? "",
+                partnerRequired: (template.typeDetails as { partnerRequired?: boolean })?.partnerRequired ?? false,
+              }
+            : base.masterclass,
       }
     : {
         ...base,
