@@ -4,9 +4,12 @@ import { getDancerByUserId } from "@/lib/dancer";
 import { prisma } from "@/lib/prisma";
 import { getActor } from "@/server/rbac/actor";
 import { can } from "@/server/rbac/authorize";
-import { getEventTemplate } from "@/server/events/event-template-service";
+import { getEventTemplate, listEventTemplatesForUser } from "@/server/events/event-template-service";
 import { EventWizard } from "@/components/admin/events/EventWizard";
 import { emptyWizardDraft, type WizardDraft } from "@/components/admin/events/wizard-types";
+import { EVENT_TYPE_REGISTRY } from "@/lib/events/event-type-registry";
+import { Select } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
 
 // "Создать новое событие" — отдельная страница (редизайн 2026-09-16, по
 // прямому запросу пользователя): раньше это была ветка без `?draft=` на
@@ -19,6 +22,13 @@ import { emptyWizardDraft, type WizardDraft } from "@/components/admin/events/wi
 // шаблона. Дата/время НЕ предзаполняются (шаблон хранит только "HH:mm" без
 // даты, см. EventTemplate.defaultStartTime) — организатор выбирает
 // конкретную дату сам на шаге "Дата и время".
+//
+// Выбор шаблона прямо здесь (2026-09-18, по прямому запросу пользователя)
+// — раньше единственный путь начать "по шаблону" был через отдельную
+// страницу /admin/content/templates; организатор, попавший сюда напрямую
+// (кнопка "Создать событие" на /admin/content), шаблоны вообще не видел.
+// Простая GET-форма — выбор перезагружает страницу с ?templateId=, вся
+// логика предзаполнения уже была реализована ниже.
 export default async function NewEventPage({ searchParams }: { searchParams: Promise<{ templateId?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -26,7 +36,7 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
 
   const { templateId } = await searchParams;
 
-  const [cities, ownedSchoolsRaw, teachers, actor, dancer, template] = await Promise.all([
+  const [cities, ownedSchoolsRaw, teachers, actor, dancer, template, availableTemplates] = await Promise.all([
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     user.role === "SCHOOL_REP"
       ? prisma.school.findMany({ where: { ownerUserId: user.id }, orderBy: { name: "asc" } })
@@ -35,6 +45,14 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
     getActor(),
     getDancerByUserId(user.id),
     templateId ? getEventTemplate(templateId, user).catch(() => null) : Promise.resolve(null),
+    // "Создать по шаблону" прямо на старте визарда (2026-09-18, по прямому
+    // запросу пользователя) — раньше этот выбор был доступен ТОЛЬКО с
+    // отдельной страницы /admin/content/templates ("Создать событие" на
+    // карточке шаблона); организатор, попавший сюда напрямую кнопкой
+    // "Создать событие" на /admin/content, шаблоны вообще не видел. Список
+    // не нужен, когда шаблон уже выбран (?templateId=) — черновик и так уже
+    // предзаполнен им.
+    templateId ? Promise.resolve([]) : listEventTemplatesForUser(user),
   ]);
 
   const ownedSchools = ownedSchoolsRaw.map((s) => ({ id: s.id, name: s.name, verificationStatus: s.verificationStatus }));
@@ -81,14 +99,39 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
       };
 
   return (
-    <EventWizard
-      cities={cities}
-      ownedSchools={ownedSchools}
-      teachers={teachers}
-      canCreateCompetition={canCreateCompetition}
-      isVerifiedEventOrganizer={user.role === "ADMIN" || user.isVerifiedEventOrganizer}
-      initialDraft={initialDraft}
-      basePath="/admin/content"
-    />
+    <div className="flex flex-col gap-4">
+      {availableTemplates.length > 0 && (
+        <form method="get" className="flex flex-wrap items-end gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
+          <label className="flex flex-col gap-1 text-xs text-admin-muted">
+            Создать по шаблону
+            <Select
+              name="templateId"
+              defaultValue=""
+              className="min-w-[220px] border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text focus:border-admin-primary focus:ring-admin-primary/20"
+            >
+              <option value="">— с нуля —</option>
+              {availableTemplates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {EVENT_TYPE_REGISTRY[t.format].icon} {t.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <Button type="submit" size="sm" variant="adminOutline">
+            Применить
+          </Button>
+        </form>
+      )}
+
+      <EventWizard
+        cities={cities}
+        ownedSchools={ownedSchools}
+        teachers={teachers}
+        canCreateCompetition={canCreateCompetition}
+        isVerifiedEventOrganizer={user.role === "ADMIN" || user.isVerifiedEventOrganizer}
+        initialDraft={initialDraft}
+        basePath="/admin/content"
+      />
+    </div>
   );
 }
