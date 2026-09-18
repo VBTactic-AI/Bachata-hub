@@ -31,14 +31,17 @@ export type FestivalPassMatch = { passId: string; passName: string };
 // - несколько билетов (танцор купил несколько разных Pass/TicketType) —
 //   агрегат (Оплачено/Частично оплачено/Не оплачено) + попап со списком
 //   билетов и отдельным тумблером на каждый.
-// Независимо от ветки, ДОПОЛНИТЕЛЬНО рендерятся пикеры "Выдать Pass"/"Выдать
-// билет" (см. issuePicker/issueTicketTypePicker ниже), если есть хотя бы
-// один вариант, который танцор ещё не получал — раньше пикер показывался
-// ТОЛЬКО при полном отсутствии билетов, из-за чего танцор с уже
-// существующим passless-билетом (заведённым до появления каталога на
-// событии) навсегда терял возможность получить Pass через этот экран
-// (найдено вживую пользователем 2026-09-16: "есть Pass, но в участниках я
-// его не вижу").
+// Независимо от ветки, ДОПОЛНИТЕЛЬНО рендерится единый пикер "Выдать" (см.
+// issuePicker ниже — один <select> сразу со всеми доступными Pass и
+// TicketType, одна кнопка, а не два параллельных пикера с отдельными
+// кнопками, см. 2026-09-18), если есть хотя бы один вариант, который танцор
+// ещё не получал — раньше пикер показывался ТОЛЬКО при полном отсутствии
+// билетов, из-за чего танцор с уже существующим passless-билетом (заведённым
+// до появления каталога на событии) навсегда терял возможность получить Pass
+// через этот экран (найдено вживую пользователем 2026-09-16: "есть Pass, но
+// в участниках я его не вижу"). После того как танцор получил один билет —
+// пикер скрывается (Commerce Engine v1: максимум один билет допуска на
+// событие, второй сервер не выдаст).
 export function TicketPaymentCell({
   eventSlug,
   registrationId,
@@ -78,11 +81,15 @@ export function TicketPaymentCell({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [selectedPassId, setSelectedPassId] = useState("");
-  const [selectedTicketTypeId, setSelectedTicketTypeId] = useState("");
-  // Commerce Engine v1 (2026-09-18) — промокод применяется только к Pass
-  // (PromoCodePass — единственная связь в схеме, TicketType промокодов не
-  // поддерживает, см. комментарий у issueTicket в ticket-service.ts).
+  // Commerce Engine v1 (2026-09-18, по прямому запросу пользователя) — ОДИН
+  // выбор вместо двух параллельных пикеров (Pass/TicketType раньше выдавались
+  // через два независимых <select>+кнопка, из-за чего организатор не видел
+  // оба варианта сразу и путался, какую кнопку жать). selectedOption — ключ
+  // вида "pass:ID" / "tickettype:ID" по обеим таблицам сразу.
+  const [selectedOption, setSelectedOption] = useState("");
+  // Промокод применяется только к Pass (PromoCodePass — единственная связь в
+  // схеме, TicketType промокодов не поддерживает, см. issueTicket в
+  // ticket-service.ts) — показывается, только когда выбран именно Pass.
   const [promoCodeInput, setPromoCodeInput] = useState("");
 
   // Pass/TicketType, которые этот танцор ещё не получал — сравниваем с уже
@@ -91,58 +98,46 @@ export function TicketPaymentCell({
   const ownedTicketTypeIds = new Set(tickets.map((t) => t.ticketTypeId).filter((id): id is string => id != null));
   const availableToIssue = assignablePasses.filter((p) => !ownedPassIds.has(p.id));
   const availableTicketTypesToIssue = assignableTicketTypes.filter((t) => !ownedTicketTypeIds.has(t.id));
-  // НЕ полагаться на selected*Id как на единственный источник истины (тот же
-  // класс бага, что и с initialTickets/useState выше) — если сохранённый
+
+  type IssueOption = { key: string; kind: "pass" | "tickettype"; id: string; name: string };
+  const issueOptions: IssueOption[] = [
+    ...availableToIssue.map((p) => ({ key: `pass:${p.id}`, kind: "pass" as const, id: p.id, name: p.name })),
+    ...availableTicketTypesToIssue.map((t) => ({ key: `tickettype:${t.id}`, kind: "tickettype" as const, id: t.id, name: t.name })),
+  ];
+  // НЕ полагаться на selectedOption как на единственный источник истины (тот
+  // же класс бага, что и с initialTickets/useState выше) — если сохранённый
   // выбор больше не входит в актуальный список, тихо откатываемся на первый
   // доступный вариант.
-  const effectivePassId = availableToIssue.some((p) => p.id === selectedPassId) ? selectedPassId : (availableToIssue[0]?.id ?? "");
-  const effectiveTicketTypeId = availableTicketTypesToIssue.some((t) => t.id === selectedTicketTypeId)
-    ? selectedTicketTypeId
-    : (availableTicketTypesToIssue[0]?.id ?? "");
+  const effectiveOption = issueOptions.find((o) => o.key === selectedOption) ?? issueOptions[0] ?? null;
   const hasFestivalPassEntry = festivalPassMatch != null && tickets.some((t) => t.passId === festivalPassMatch.passId);
 
-  // Выдать танцору конкретный Pass (2026-09-16, по прямому запросу
-  // пользователя — иначе на событии с Pass в принципе не появлялось ни
-  // одного Ticket с passId, из-за чего "Продано"/"Выручка" на вкладке
-  // "Билеты" оставались 0 навсегда). Сразу отмечаем оплаченным — тот же
-  // принцип, что и у простого passless-тумблера ("организатор уже получил
-  // деньги в момент выдачи"); если это не так, оплату можно снять сразу
-  // после через обычный тумблер этой же ячейки.
-  async function issuePass() {
-    if (!effectivePassId) return;
+  // Выдать танцору выбранный товар — Pass или TicketType, определяется по
+  // effectiveOption.kind (2026-09-16, по прямому запросу пользователя —
+  // иначе на событии с Pass в принципе не появлялось ни одного Ticket с
+  // passId, из-за чего "Продано"/"Выручка" на вкладке "Билеты" оставались 0
+  // навсегда). Сразу отмечаем оплаченным — организатор уже получил деньги в
+  // момент выдачи; если это не так, оплату можно снять сразу после через
+  // обычный тумблер этой же ячейки.
+  async function issueSelected() {
+    if (!effectiveOption) return;
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/events/${eventSlug}/passes/${effectivePassId}/tickets`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dancerId, markPaid: true, promoCode: promoCodeInput.trim() || undefined }),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.message || data.error || "Не удалось выдать Pass.");
-      return;
-    }
-    setPromoCodeInput("");
-    router.refresh();
-  }
-
-  // Выдать TicketType — зеркалит issuePass() выше, для простого билета.
-  async function issueTicketType() {
-    if (!effectiveTicketTypeId) return;
-    setLoading(true);
-    setError(null);
-    const res = await fetch(`/api/events/${eventSlug}/ticket-types/${effectiveTicketTypeId}/tickets`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dancerId, markPaid: true }),
-    });
+    const url =
+      effectiveOption.kind === "pass"
+        ? `/api/events/${eventSlug}/passes/${effectiveOption.id}/tickets`
+        : `/api/events/${eventSlug}/ticket-types/${effectiveOption.id}/tickets`;
+    const body =
+      effectiveOption.kind === "pass"
+        ? { dancerId, markPaid: true, promoCode: promoCodeInput.trim() || undefined }
+        : { dancerId, markPaid: true };
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.message || data.error || "Не удалось выдать билет.");
       return;
     }
+    setPromoCodeInput("");
     router.refresh();
   }
 
@@ -198,39 +193,14 @@ export function TicketPaymentCell({
     router.refresh();
   }
 
-  // TicketCheckIn (Commerce Engine v1, 2026-09-17) — отметка явки по билету,
-  // независимая от оплаты. Тумблер: клик отмечает явку (POST), повторный клик
-  // отменяет ошибочную отметку (DELETE) — тот же принцип "клик переключает",
-  // что и у toggleOne/toggleSimple выше.
-  async function toggleCheckIn(ticketId: string, nextCheckedIn: boolean) {
-    setLoading(true);
-    setError(null);
-    const res = await fetch(`/api/events/${eventSlug}/tickets/${ticketId}/check-in`, {
-      method: nextCheckedIn ? "POST" : "DELETE",
-      headers: nextCheckedIn ? { "Content-Type": "application/json" } : undefined,
-      body: nextCheckedIn ? JSON.stringify({ method: "MANUAL" }) : undefined,
-    });
-    setLoading(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.message || data.error || "Не удалось изменить отметку явки.");
-      return;
-    }
-    router.refresh();
-  }
-
-  function CheckInToggle({ ticket }: { ticket: TicketPaymentInfo }) {
-    return (
-      <button
-        type="button"
-        disabled={loading}
-        onClick={() => toggleCheckIn(ticket.id, !ticket.checkedIn)}
-        className="disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <StatusBadge label={ticket.checkedIn ? "Явка ✓" : "Не пришёл"} variant={ticket.checkedIn ? "success" : "neutral"} />
-      </button>
-    );
-  }
+  // TicketCheckIn-тумблер здесь убран (2026-09-18, по прямому решению
+  // пользователя): раз на событие теперь максимум один билет допуска
+  // (Commerce Engine v1, assertSingleAdmissionPerEvent), явка по билету и
+  // явка на само событие (колонка "CHECK-IN" в таблице участников,
+  // EventRegistration.checkedInAt) стали одним и тем же фактом — держать
+  // оба было бы дублированием. Backend (ticket-checkin-service.ts, роут
+  // .../tickets/[id]/check-in) не удалён — точка расширения на случай, если
+  // понадобится (например, отдельный QR-сканер на входе).
 
   function ticketLabel(t: TicketPaymentInfo): string {
     return t.passName ?? t.ticketTypeName ?? "Входной билет";
@@ -262,67 +232,61 @@ export function TicketPaymentCell({
         >
           <StatusBadge label={isPaid ? "Оплачено" : "Не оплачено"} variant={isPaid ? "success" : "danger"} />
         </button>
-        {tickets[0] && <CheckInToggle ticket={tickets[0]} />}
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
     );
   }
 
-  const issuePicker = availableToIssue.length > 0 && (
+  // Единый пикер (2026-09-18, по прямому запросу пользователя) — один
+  // <select> со всеми доступными вариантами (Pass и TicketType вперемешку,
+  // сгруппированы подписями) и одна кнопка "Выдать", а не два параллельных
+  // пикера с отдельными кнопками "Выдать Pass"/"Выдать билет". Промокод
+  // показывается только когда выбран именно Pass.
+  const issuePicker = issueOptions.length > 0 && (
     <span className="inline-flex flex-col items-start gap-1">
       <select
-        value={effectivePassId}
-        onChange={(e) => setSelectedPassId(e.target.value)}
+        value={effectiveOption?.key ?? ""}
+        onChange={(e) => setSelectedOption(e.target.value)}
         disabled={loading}
         className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
       >
-        {availableToIssue.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
+        {availableToIssue.length > 0 && (
+          <optgroup label="Pass">
+            {availableToIssue.map((p) => (
+              <option key={`pass:${p.id}`} value={`pass:${p.id}`}>
+                {p.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {availableTicketTypesToIssue.length > 0 && (
+          <optgroup label="Билет">
+            {availableTicketTypesToIssue.map((t) => (
+              <option key={`tickettype:${t.id}`} value={`tickettype:${t.id}`}>
+                {t.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
-      <input
-        type="text"
-        value={promoCodeInput}
-        onChange={(e) => setPromoCodeInput(e.target.value)}
-        disabled={loading}
-        placeholder="Промокод (необязательно)"
-        className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text placeholder:text-admin-disabled"
-      />
+      {effectiveOption?.kind === "pass" && (
+        <input
+          type="text"
+          value={promoCodeInput}
+          onChange={(e) => setPromoCodeInput(e.target.value)}
+          disabled={loading}
+          placeholder="Промокод (необязательно)"
+          className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text placeholder:text-admin-disabled"
+        />
+      )}
       <button
         type="button"
         disabled={loading}
-        onClick={issuePass}
+        onClick={issueSelected}
         className="text-xs text-admin-primaryHover hover:underline disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Выдать Pass
-      </button>
-    </span>
-  );
-
-  const issueTicketTypePicker = availableTicketTypesToIssue.length > 0 && (
-    <span className="inline-flex flex-col items-start gap-1">
-      <select
-        value={effectiveTicketTypeId}
-        onChange={(e) => setSelectedTicketTypeId(e.target.value)}
-        disabled={loading}
-        className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
-      >
-        {availableTicketTypesToIssue.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        disabled={loading}
-        onClick={issueTicketType}
-        className="text-xs text-admin-primaryHover hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Выдать билет
+        Выдать
       </button>
     </span>
   );
@@ -330,7 +294,7 @@ export function TicketPaymentCell({
   if (tickets.length === 0) {
     return (
       <span className="inline-flex flex-col items-start gap-1">
-        {issuePicker || issueTicketTypePicker || <span className="text-sm text-admin-muted">—</span>}
+        {issuePicker || <span className="text-sm text-admin-muted">—</span>}
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
@@ -339,6 +303,13 @@ export function TicketPaymentCell({
 
   if (tickets.length === 1) {
     const t = tickets[0];
+    // Commerce Engine v1 (2026-09-18) — у танцора уже есть один билет
+    // допуска на ЭТО событие, второй сервер всё равно не выдаст
+    // (already_has_admission, см. ticket-service.ts) — пикер прячем ЗДЕСЬ
+    // же, а не оставляем висеть кнопку, которая гарантированно упадёт в
+    // ошибку. Показываем короткую подсказку вместо неё, только если второй
+    // вариант вообще существовал бы (иначе после "—" пусто и так понятно).
+    const hadOtherOption = issueOptions.length > 0;
     return (
       <span className="inline-flex flex-col items-start gap-1">
         <span className="text-xs text-admin-muted">{ticketLabel(t)}</span>
@@ -350,9 +321,7 @@ export function TicketPaymentCell({
         >
           <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
         </button>
-        <CheckInToggle ticket={t} />
-        {issuePicker}
-        {issueTicketTypePicker}
+        {hadOtherOption && <span className="text-xs text-admin-disabled">Второй билет на это событие не выдаётся</span>}
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
@@ -390,27 +359,23 @@ export function TicketPaymentCell({
               {tickets.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-admin-card2">
                   <span className="truncate text-sm font-semibold text-night-text">{ticketLabel(t)}</span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => toggleOne(t.id, !t.isPaid)}
-                      className="disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
-                    </button>
-                    <CheckInToggle ticket={t} />
-                  </span>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => toggleOne(t.id, !t.isPaid)}
+                    className="shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
+                  </button>
                 </div>
               ))}
             </div>
-            {(issuePicker || issueTicketTypePicker || festivalPassButton) && (
-              <div className="flex flex-col gap-2 border-t border-admin-border px-5 py-3">
-                {issuePicker}
-                {issueTicketTypePicker}
-                {festivalPassButton}
-              </div>
-            )}
+            {/* Commerce Engine v1 — у танцора уже больше одного билета на
+                событие (сюда попадают только легаси-случаи до введения
+                правила "один билет на событие", см. tickets.length === 1
+                выше) — пикеры на ЕЩЁ один билет не показываем, третий сервер
+                тоже не выдаст. */}
+            {festivalPassButton && <div className="flex flex-col gap-2 border-t border-admin-border px-5 py-3">{festivalPassButton}</div>}
             {error && <p className="m-0 px-5 py-2 text-xs text-red-400">{error}</p>}
             <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
               <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
