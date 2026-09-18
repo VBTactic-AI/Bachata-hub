@@ -8,7 +8,7 @@ import { listTeamMembers } from "@/server/events/team-service";
 import { EVENT_TYPE_REGISTRY } from "@/lib/events/event-type-registry";
 import { StatCard } from "@/components/admin/StatCard";
 import { PeopleIcon, CardIcon, AlertIcon, GearIcon } from "@/components/admin/icons";
-import { formatDateTime } from "@/lib/format";
+import { formatEventDateRange } from "@/lib/format";
 
 // §12 ТЗ (Event Dashboard) — вкладка "Обзор", дефолтная страница единой
 // оболочки события (см. layout.tsx рядом — там же заголовок/бейджи/вкладки
@@ -72,15 +72,9 @@ export default async function EventOverviewPage({ params }: { params: Promise<{ 
               <dd className="m-0 font-medium text-night-text">{event.venueName}</dd>
             </div>
             <div className="flex justify-between gap-2 sm:justify-start">
-              <dt className="text-admin-muted">Начало</dt>
-              <dd className="m-0 font-medium text-night-text">{formatDateTime(event.startsAt)}</dd>
+              <dt className="text-admin-muted">Когда</dt>
+              <dd className="m-0 font-medium text-night-text">{formatEventDateRange(event.startsAt, event.endsAt)}</dd>
             </div>
-            {event.endsAt && (
-              <div className="flex justify-between gap-2 sm:justify-start">
-                <dt className="text-admin-muted">Окончание</dt>
-                <dd className="m-0 font-medium text-night-text">{formatDateTime(event.endsAt)}</dd>
-              </div>
-            )}
             <div className="flex justify-between gap-2 sm:justify-start">
               <dt className="text-admin-muted">Вместимость</dt>
               <dd className="m-0 font-medium text-night-text">{event.capacity ?? "без ограничения"}</dd>

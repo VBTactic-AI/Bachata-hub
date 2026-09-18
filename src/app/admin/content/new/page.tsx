@@ -2,8 +2,6 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, canCreateEvents } from "@/lib/auth";
 import { getDancerByUserId } from "@/lib/dancer";
 import { prisma } from "@/lib/prisma";
-import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
 import { getEventTemplate, listEventTemplatesForUser } from "@/server/events/event-template-service";
 import { EventWizard } from "@/components/admin/events/EventWizard";
 import { emptyWizardDraft, type WizardDraft } from "@/components/admin/events/wizard-types";
@@ -38,13 +36,12 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
 
   const { templateId } = await searchParams;
 
-  const [cities, ownedSchoolsRaw, teachers, actor, dancer, template, availableTemplates] = await Promise.all([
+  const [cities, ownedSchoolsRaw, teachers, dancer, template, availableTemplates] = await Promise.all([
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     user.role === "SCHOOL_REP"
       ? prisma.school.findMany({ where: { ownerUserId: user.id }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
     prisma.teacher.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    getActor(),
     getDancerByUserId(user.id),
     templateId ? getEventTemplate(templateId, user).catch(() => null) : Promise.resolve(null),
     // "Создать по шаблону" прямо на старте визарда (2026-09-18, по прямому
@@ -58,7 +55,6 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
   ]);
 
   const ownedSchools = ownedSchoolsRaw.map((s) => ({ id: s.id, name: s.name, verificationStatus: s.verificationStatus }));
-  const canCreateCompetition = can(actor, "competition:create");
 
   // "Организатор" подтягивается автоматически: своя школа, если она есть
   // (первая, если их несколько), иначе — отображаемое имя танцора из профиля
@@ -154,7 +150,6 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
         cities={cities}
         ownedSchools={ownedSchools}
         teachers={teachers}
-        canCreateCompetition={canCreateCompetition}
         isVerifiedEventOrganizer={user.role === "ADMIN" || user.isVerifiedEventOrganizer}
         initialDraft={initialDraft}
         basePath="/admin/content"

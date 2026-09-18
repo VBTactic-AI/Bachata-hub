@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EVENT_TYPE_REGISTRY,
   FEATURED_EVENT_FORMATS,
+  WIZARD_SELECTABLE_EVENT_FORMATS,
   computePublishChecklist,
   isChecklistComplete,
   getEventTypeConfig,
@@ -22,8 +23,19 @@ describe("EVENT_TYPE_REGISTRY", () => {
     }
   });
 
-  it("features exactly Party/Masterclass/Contest as the wizard's first-screen cards", () => {
-    expect(FEATURED_EVENT_FORMATS).toEqual(["PARTY", "MASTERCLASS", "CONTEST"]);
+  it("features exactly Party/Masterclass as the wizard's first-screen cards", () => {
+    expect(FEATURED_EVENT_FORMATS).toEqual(["PARTY", "MASTERCLASS"]);
+  });
+
+  // 2026-09-18, по прямому запросу пользователя — конкурс (Jack & Jill) и его
+  // Competition теперь заводятся только вместе, одним действием на
+  // /admin/competitions/new (см. createCompetition()); общий Event Wizard
+  // больше не предлагает формат CONTEST при СОЗДАНИИ нового события (уже
+  // существующие CONTEST-события по-прежнему открываются в этом же мастере
+  // для правки остальных полей — см. EventTypeSelector.tsx).
+  it("excludes CONTEST from the formats selectable in the general Event Wizard", () => {
+    expect(WIZARD_SELECTABLE_EVENT_FORMATS).not.toContain("CONTEST");
+    expect(WIZARD_SELECTABLE_EVENT_FORMATS).not.toContain("FESTIVAL");
   });
 
   it("gives JNJ (CONTEST) a shorter path — no Categories/Rounds/Judges/Scoring/Final/Rematch steps here, those live in the existing Competition admin", () => {

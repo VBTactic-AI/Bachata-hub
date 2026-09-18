@@ -112,6 +112,73 @@ beforeEach(() => {
   templateProductCreate.mockReset();
 });
 
+// 2026-09-18, по прямому запросу пользователя — конкурс (Jack & Jill) и его
+// Competition теперь заводятся только вместе, одним действием на
+// /admin/competitions/new (createCompetition()); общий Event Wizard
+// (upsertEventDraft) больше не создаёт события формата CONTEST и не даёт
+// переключить в него уже существующее событие другого формата. Правка
+// остальных полей уже существующего CONTEST-события (заведено раньше) — по-
+// прежнему разрешена, формат в этом случае просто не меняется.
+describe("upsertEventDraft() — конкурс (JNJ) больше не создаётся этим сервисом", () => {
+  it("отклоняет создание НОВОГО события формата CONTEST", async () => {
+    await expect(upsertEventDraft(baseInput({ format: "CONTEST" }), user)).rejects.toMatchObject({
+      code: "forbidden_contest_via_wizard",
+    });
+    expect(eventCreate).not.toHaveBeenCalled();
+  });
+
+  it("отклоняет переключение УЖЕ существующего события другого формата в CONTEST", async () => {
+    eventFindUnique.mockResolvedValue({
+      id: "event5",
+      createdById: "creator1",
+      status: "DRAFT",
+      format: "PARTY",
+      moderationStatus: "PENDING",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Old venue",
+      venueAddress: null,
+    });
+
+    await expect(upsertEventDraft(baseInput({ format: "CONTEST" }), user, "event5")).rejects.toMatchObject({
+      code: "forbidden_contest_via_wizard",
+    });
+    expect(eventUpdate).not.toHaveBeenCalled();
+  });
+
+  it("разрешает править остальные поля УЖЕ существующего CONTEST-события (формат не меняется)", async () => {
+    // eventFindUnique мокает ОБА вызова prisma.event.findUnique() внутри
+    // upsertEventDraft для этой ветки: проверку владельца (существующий
+    // event) и последующую реконсиляцию Competition (см. комментарий
+    // "Competition создаётся ВНЕ транзакции Event" в event-service.ts) — тут
+    // competition уже привязан, поэтому createCompetition() вызываться не
+    // должен.
+    eventFindUnique.mockResolvedValue({
+      id: "event6",
+      createdById: "creator1",
+      status: "PUBLISHED",
+      format: "CONTEST",
+      moderationStatus: "APPROVED",
+      startsAt: new Date("2026-09-01T00:00:00.000Z"),
+      venueName: "Old venue",
+      venueAddress: null,
+      competition: { id: "comp1" },
+    });
+    eventUpdate.mockResolvedValue({
+      id: "event6",
+      slug: "contest-slug",
+      title: "Jack & Jill Open",
+      cityId: "city1",
+      format: "CONTEST",
+      schoolId: null,
+      startsAt: new Date("2026-09-20T18:00:00.000Z"),
+      updatedAt: new Date(),
+    });
+
+    await expect(upsertEventDraft(baseInput({ format: "CONTEST" }), user, "event6")).resolves.toBeDefined();
+    expect(eventUpdate).toHaveBeenCalled();
+  });
+});
+
 describe("upsertEventDraft() — EVENT_PUBLISHED (Notification & Subscription Engine, Phase 6)", () => {
   it("новое событие сразу PUBLISHED + autoApprove — эмитит EVENT_PUBLISHED", async () => {
     eventCreate.mockResolvedValue({

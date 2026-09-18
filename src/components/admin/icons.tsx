@@ -245,6 +245,19 @@ export function BellIcon() {
 
 // Recurring Events v2 — действия над сериями (Пауза/Возобновить) и шаблонами
 // (Дублировать/Архивировать) — тот же нейтральный контурный стиль.
+// "Актуальные" на "Мои события" (2026-09-18) — тот же значок, что и
+// CalendarIcon публичного сайта (src/components/Icon.tsx), но в 16×16 стиле
+// остального набора admin-иконок, не смешиваем модули.
+export function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.5 9.5h17" strokeLinecap="round" />
+      <path d="M8 3v3.5M16 3v3.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function PauseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

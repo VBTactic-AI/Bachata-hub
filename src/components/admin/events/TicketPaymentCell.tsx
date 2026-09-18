@@ -189,6 +189,7 @@ export function TicketPaymentCell({
       return;
     }
     setSelectedPromoCodeId("");
+    setOpen(false);
     router.refresh();
   }
 
@@ -350,84 +351,123 @@ export function TicketPaymentCell({
     );
   }
 
-  // Единый пикер (2026-09-18, по прямому запросу пользователя) — один
-  // <select> со всеми доступными вариантами (Pass и TicketType вперемешку,
-  // сгруппированы подписями) и одна кнопка "Выдать", а не два параллельных
-  // пикера с отдельными кнопками "Выдать Pass"/"Выдать билет". Промокод
-  // показывается только когда выбран именно Pass.
-  // Если выдать можно только ОДИН вариант — не показываем выпадающий список
-  // на единственный пункт (2026-09-18, по прямому запросу пользователя), а
-  // сразу пишем название и сумму текстом; effectiveOption уже и так
-  // указывает на этот единственный вариант (issueOptions[0] ?? null).
-  const issuePicker = issueOptions.length > 0 && (
-    <span className="inline-flex flex-col items-start gap-1">
+  // Форма выдачи билета (2026-09-18, по прямому запросу пользователя — раньше
+  // весь этот блок (пикер товара + промокод + способ оплаты + кнопка) всегда
+  // разворачивался ПРЯМО В ЯЧЕЙКЕ таблицы для любого ещё не получившего
+  // билет участника — одна такая строка становилась заметно выше и "богаче"
+  // остальных, ломая визуальный ритм таблицы. Теперь это содержимое модалки
+  // (см. кнопку-триггер "Выдать билет" в ветке tickets.length === 0 ниже) —
+  // тот же приём, что уже применялся к списку из нескольких билетов дальше в
+  // файле, просто теперь единообразно для любого количества билетов.
+  const issueForm = issueOptions.length > 0 && (
+    <div className="flex flex-col gap-3 px-5 py-4">
       {issueOptions.length === 1 ? (
-        <span className="text-xs font-semibold text-night-text">
+        <p className="m-0 text-sm font-semibold text-night-text">
           {issueOptions[0].name} — {formatMoney(issueOptions[0].price, issueOptions[0].currency)}
-        </span>
+        </p>
       ) : (
-        <select
-          value={effectiveOption?.key ?? ""}
-          onChange={(e) => setSelectedOption(e.target.value)}
-          disabled={loading}
-          className="rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
-        >
-          {availableToIssue.length > 0 && (
-            <optgroup label="Pass">
-              {availableToIssue.map((p) => (
-                <option key={`pass:${p.id}`} value={`pass:${p.id}`}>
-                  {p.name} — {formatMoney(p.price, p.currency)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {availableTicketTypesToIssue.length > 0 && (
-            <optgroup label="Билет">
-              {availableTicketTypesToIssue.map((t) => (
-                <option key={`tickettype:${t.id}`} value={`tickettype:${t.id}`}>
-                  {t.name} — {formatMoney(t.price, t.currency)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Что выдать
+          <select
+            value={effectiveOption?.key ?? ""}
+            onChange={(e) => setSelectedOption(e.target.value)}
+            disabled={loading}
+            className="rounded-app-sm border border-admin-border bg-admin-card2 px-2 py-1.5 text-sm text-night-text"
+          >
+            {availableToIssue.length > 0 && (
+              <optgroup label="Pass">
+                {availableToIssue.map((p) => (
+                  <option key={`pass:${p.id}`} value={`pass:${p.id}`}>
+                    {p.name} — {formatMoney(p.price, p.currency)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {availableTicketTypesToIssue.length > 0 && (
+              <optgroup label="Билет">
+                {availableTicketTypesToIssue.map((t) => (
+                  <option key={`tickettype:${t.id}`} value={`tickettype:${t.id}`}>
+                    {t.name} — {formatMoney(t.price, t.currency)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </label>
       )}
       {applicablePromoCodes.length > 0 && (
-        <select
-          value={selectedPromoCodeId}
-          onChange={(e) => setSelectedPromoCodeId(e.target.value)}
-          disabled={loading}
-          className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
-        >
-          <option value="">Без промокода</option>
-          {applicablePromoCodes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {promoCodeLabel(c)}
-            </option>
-          ))}
-        </select>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          Промокод
+          <select
+            value={selectedPromoCodeId}
+            onChange={(e) => setSelectedPromoCodeId(e.target.value)}
+            disabled={loading}
+            className="rounded-app-sm border border-admin-border bg-admin-card2 px-2 py-1.5 text-sm text-night-text"
+          >
+            <option value="">Без промокода</option>
+            {applicablePromoCodes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {promoCodeLabel(c)}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
-      <select
-        value={paymentMethod}
-        onChange={(e) => setPaymentMethod(e.target.value as "CASH" | "TRANSFER")}
-        disabled={loading}
-        className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
-      >
-        <option value="CASH">Наличные</option>
-        <option value="TRANSFER">Б/н (перевод)</option>
-      </select>
-      <button type="button" disabled={loading} onClick={issueSelected} className="disabled:cursor-not-allowed disabled:opacity-50">
-        <StatusBadge label="Выдать" variant="success" />
-      </button>
-    </span>
+      <label className="flex flex-col gap-1 text-xs text-admin-muted">
+        Способ оплаты
+        <select
+          value={paymentMethod}
+          onChange={(e) => setPaymentMethod(e.target.value as "CASH" | "TRANSFER")}
+          disabled={loading}
+          className="rounded-app-sm border border-admin-border bg-admin-card2 px-2 py-1.5 text-sm text-night-text"
+        >
+          <option value="CASH">Наличные</option>
+          <option value="TRANSFER">Б/н (перевод)</option>
+        </select>
+      </label>
+      <Button type="button" disabled={loading} onClick={issueSelected} className="border-none bg-gradient-admin-cta">
+        {loading ? "…" : "Выдать"}
+      </Button>
+    </div>
   );
 
   if (tickets.length === 0) {
     return (
       <span className="inline-flex flex-col items-start gap-1">
-        {issuePicker || <span className="text-sm text-admin-muted">—</span>}
+        {issueOptions.length > 0 ? (
+          <button type="button" disabled={loading} onClick={() => setOpen(true)} className="disabled:cursor-not-allowed disabled:opacity-50">
+            <StatusBadge label="Выдать билет" variant="danger" />
+          </button>
+        ) : (
+          <span className="text-sm text-admin-muted">—</span>
+        )}
         {festivalPassButton}
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        {!open && error && <span className="text-xs text-red-400">{error}</span>}
+
+        {open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={() => setOpen(false)} role="presentation">
+            <div
+              className="flex w-full max-w-[380px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="issue-ticket-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-admin-border px-5 py-4">
+                <h3 id="issue-ticket-title" className="m-0 text-[17px] font-extrabold text-night-text">
+                  Выдать билет
+                </h3>
+              </div>
+              {issueForm}
+              {error && <p className="m-0 px-5 pb-3 text-xs text-red-400">{error}</p>}
+              <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
+                <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={() => setOpen(false)}>
+                  Отмена
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </span>
     );
   }

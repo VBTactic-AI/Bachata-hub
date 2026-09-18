@@ -202,11 +202,12 @@ export const EVENT_TYPE_REGISTRY: Record<EventFormat, EventTypeConfig> = {
   },
 };
 
-// Порядок карточек на первом экране мастера — только три "первых типа" из
-// задачи; остальные значения EventFormat остаются валидными (генерируются
-// формой без карточки, см. WIZARD_EVENT_FORMATS ниже), но не рекламируются
-// как основной путь.
-export const FEATURED_EVENT_FORMATS: EventFormat[] = ["PARTY", "MASTERCLASS", "CONTEST"];
+// Порядок карточек на первом экране мастера — только два "первых типа" из
+// задачи (было три, пока в их числе был CONTEST — см. комментарий у
+// WIZARD_SELECTABLE_EVENT_FORMATS ниже); остальные значения EventFormat
+// остаются валидными (генерируются формой без карточки, см.
+// WIZARD_EVENT_FORMATS ниже), но не рекламируются как основной путь.
+export const FEATURED_EVENT_FORMATS: EventFormat[] = ["PARTY", "MASTERCLASS"];
 export const ALL_EVENT_FORMATS: EventFormat[] = [
   "PARTY",
   "MASTERCLASS",
@@ -219,15 +220,22 @@ export const ALL_EVENT_FORMATS: EventFormat[] = [
   "OTHER",
 ];
 
-// Festival Engine — форматы, которые организатор может выбрать САМ при
-// создании обычного события (Event Wizard/EventTemplate). FESTIVAL
-// исключён: он больше не создаётся выбором формата — bridge-Event для
-// Festival заводится изнутри флоу создания Festival, см. комментарий у
-// EVENT_TYPE_REGISTRY.FESTIVAL. Отличается от ALL_EVENT_FORMATS
-// (используется там, где FESTIVAL — валидный существующий формат для
-// фильтра/подписки, а не выбор при создании — списки событий, настройки
-// уведомлений).
-export const WIZARD_SELECTABLE_EVENT_FORMATS: EventFormat[] = ALL_EVENT_FORMATS.filter((f) => f !== "FESTIVAL");
+// Форматы, которые организатор может выбрать САМ при создании обычного
+// события (Event Wizard/EventTemplate). FESTIVAL исключён: он больше не
+// создаётся выбором формата — bridge-Event для Festival заводится изнутри
+// флоу создания Festival, см. комментарий у EVENT_TYPE_REGISTRY.FESTIVAL.
+// CONTEST исключён (2026-09-18, по прямому запросу пользователя) — конкурс
+// (Jack & Jill) и его Competition (дивизионы/раунды/судьи, слой 3) теперь
+// заводятся ТОЛЬКО вместе, одним действием на /admin/competitions/new (см.
+// createCompetition() в server/competition/create-competition.ts) — раньше
+// Event Wizard мог создать Event с format=CONTEST, для которого Competition
+// подтягивался отдельным шагом при публикации (upsertEventDraft), из-за чего
+// на практике оказывались события без единой связанной Competition (см.
+// докстроку duplicateEvent()) и наоборот — Competition без публичной
+// карточки. Оба списка ниже отличаются от ALL_EVENT_FORMATS (используется
+// там, где CONTEST/FESTIVAL — валидные существующие форматы для
+// фильтра/подписки на уже опубликованные события, а не выбор при создании).
+export const WIZARD_SELECTABLE_EVENT_FORMATS: EventFormat[] = ALL_EVENT_FORMATS.filter((f) => f !== "FESTIVAL" && f !== "CONTEST");
 
 export function getEventTypeConfig(format: EventFormat): EventTypeConfig {
   return EVENT_TYPE_REGISTRY[format];

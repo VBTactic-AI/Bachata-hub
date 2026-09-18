@@ -12,6 +12,14 @@ import type { ReactNode } from "react";
 
 export type NavItem = { href: string; label: string; icon: ReactNode; match: (p: string) => boolean };
 
+export function MenuIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M4 6.5h16M4 12h16M4 17.5h16" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
@@ -135,16 +143,48 @@ export function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 // Рамка сайдбара (лого + контейнер `<nav>`) — общая для всех пяти узких
 // сайдбаров разделов. Лого всегда ведёт на /admin (хаб-пикер), независимо от
 // текущего раздела.
+//
+// Мобильный переключатель (2026-09-18, по прямому запросу пользователя,
+// UI-аудит — раньше вся навигация раздела горизонтальной лентой ВСЕГДА
+// разворачивалась НАД шапкой страницы и контентом, отъедая заметную высоту
+// экрана ещё до того, как видно хоть что-то полезное) — свёрнуто по
+// умолчанию в одну строку "Разделы ▾", тот же приём grid-template-rows, что
+// уже используется у NavGroup рядом (и у "Управление событием"/"Управление
+// серией" в EventAdminSidebar.tsx). На десктопе (sm:) эта обёртка становится
+// `display: contents` — просто исчезает из потока, дети (группы NavLink,
+// которые собирают сами EventAdminSidebar/CompetitionAdminSidebar/...)
+// становятся обычными flex-элементами вертикального сайдбара, как и раньше;
+// сами дочерние файлы разделов не меняются.
 export function SidebarFrame({ children }: { children: ReactNode }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <nav
-      className="flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-admin-border bg-admin-bg pb-3 font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-b-0 sm:border-r sm:bg-admin-card/30 sm:px-3 sm:pb-6 sm:pt-6"
+      className="flex shrink-0 flex-col border-b border-admin-border bg-admin-bg font-night sm:sticky sm:top-0 sm:h-[100dvh] sm:w-[232px] sm:border-b-0 sm:border-r sm:bg-admin-card/30 sm:px-3 sm:pb-6 sm:pt-6"
       aria-label="Разделы админки"
     >
       <Link href="/admin" className="mb-1 hidden px-3 pb-5 no-underline hover:no-underline sm:block" aria-label="Jack &amp; Jill">
         <Image src="/branding/jnj-logo.png" alt="Jack & Jill" width={483} height={343} className="h-auto w-full mix-blend-screen" priority />
       </Link>
-      {children}
+
+      <button
+        type="button"
+        onClick={() => setMobileOpen((v) => !v)}
+        aria-expanded={mobileOpen}
+        className="flex w-full shrink-0 items-center gap-2 px-3 py-2.5 text-sm font-semibold text-night-text sm:hidden"
+      >
+        <span className="text-admin-primary">
+          <MenuIcon />
+        </span>
+        Разделы
+        <span className="ml-auto text-admin-disabled">
+          <ChevronIcon open={mobileOpen} />
+        </span>
+      </button>
+      <div className={`grid shrink-0 transition-[grid-template-rows] duration-300 ease-out sm:contents ${mobileOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="min-h-0 overflow-hidden sm:contents">
+          <div className="flex flex-col gap-3 px-1 pb-3 sm:contents sm:gap-0 sm:px-0 sm:pb-0">{children}</div>
+        </div>
+      </div>
     </nav>
   );
 }

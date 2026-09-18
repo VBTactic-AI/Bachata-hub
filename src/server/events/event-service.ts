@@ -7,8 +7,6 @@ import { shouldAutoApproveEvent } from "@/lib/events/moderation";
 import { logModeration } from "@/lib/moderation";
 import { computePublishChecklist, isChecklistComplete, type ChecklistItem } from "@/lib/events/event-type-registry";
 import { createCompetition } from "@/server/competition/create-competition";
-import { can } from "@/server/rbac/authorize";
-import { getActor } from "@/server/rbac/actor";
 import { emitDomainEvent } from "@/server/notifications/emit-domain-event";
 import type { EventDraftInput } from "./schemas";
 
@@ -37,6 +35,8 @@ export const EVENT_FORBIDDEN_MESSAGES: Record<string, string> = {
   forbidden: "У вашего аккаунта нет прав на создание или редактирование событий.",
   forbidden_school: "Вы не можете создавать события от имени этой школы.",
   forbidden_competition_create: "У вашего аккаунта нет прав на создание соревнований.",
+  forbidden_duplicate_contest: "Конкурсы (Jack & Jill) нельзя дублировать этим способом — создайте новое соревнование на странице /admin/competitions/new.",
+  forbidden_contest_via_wizard: "Конкурсы (Jack & Jill) создаются только на странице /admin/competitions/new — этот мастер для них больше не используется.",
 };
 
 const BASELINE_IDS = new Set(["title", "city", "venue", "startsAt"]);
@@ -84,11 +84,6 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
     throw new EventForbiddenError("forbidden_school");
   }
 
-  if (input.format === "CONTEST") {
-    const actor = await getActor();
-    if (!can(actor, "competition:create")) throw new EventForbiddenError("forbidden_competition_create");
-  }
-
   const checklist = computePublishChecklist(input.format, {
     title: input.title,
     cityId: input.cityId,
@@ -104,6 +99,17 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
   const existing = existingId ? await prisma.event.findUnique({ where: { id: existingId } }) : null;
   if (existingId && (!existing || (existing.createdById !== user.id && user.role !== "ADMIN"))) {
     throw new EventForbiddenError("forbidden");
+  }
+  // Конкурс (JNJ) + его Competition теперь заводятся только вместе, одним
+  // действием на /admin/competitions/new (см. комментарий у
+  // WIZARD_SELECTABLE_EVENT_FORMATS в event-type-registry.ts) — этот сервис
+  // (общий Event Wizard) больше не создаёт события формата CONTEST и не
+  // позволяет переключить в него уже существующее событие другого формата.
+  // Редактирование ОСТАЛЬНЫХ полей уже существующего CONTEST-события (оно
+  // могло быть заведено до этой задачи) по-прежнему разрешено — формат в
+  // этом случае просто не меняется.
+  if (input.format === "CONTEST" && existing?.format !== "CONTEST") {
+    throw new EventForbiddenError("forbidden_contest_via_wizard");
   }
   // QA BUG-001: ARCHIVED — терминальное состояние для этого сервиса (сюда
   // ведёт только cancelEvent()). Без этой проверки ARCHIVED→PUBLISHED
@@ -472,6 +478,94 @@ export async function cancelEvent(eventId: string, user: User) {
           createdById: row.createdById,
         },
         idempotencyKey: `EVENT_CANCELLED:${row.id}`,
+      });
+    }
+
+    return row;
+  });
+}
+
+// "Дублировать" из таблички "Мои события" (2026-09-18, по прямому запросу
+// пользователя) — быстрый старт для организатора, который регулярно
+// проводит похожие мероприятия. Копия всегда уходит в DRAFT (никогда не
+// публикуется сама) — организатор обязательно проходит через мастер ещё
+// раз перед тем, как копия станет видна кому-либо (дата и название почти
+// всегда нужно поправить). Сознательно НЕ копируются: медиа/афиша, билеты/
+// Pass/промокоды (это проданные/настроенные инстансы — слепое копирование
+// создало бы путаницу с ценами у уже не того события), регистрации
+// участников, серия/шаблон (дубликат — обычное разовое событие, даже если
+// исходное было частью серии).
+export async function duplicateEvent(eventId: string, user: User) {
+  const source = await getEventDraftForEdit(eventId, user);
+  // Конкурс (JNJ) теперь заводится только через createCompetition()
+  // (/admin/competitions/new, см. комментарий там) — дублирование сюда
+  // создало бы Event с format=CONTEST без связанного Competition, тупиковый
+  // и в мастере (там формат больше не выбираем), и на публичной странице.
+  if (source.format === "CONTEST") {
+    throw new EventForbiddenError("forbidden_duplicate_contest");
+  }
+
+  const slug = await uniqueSlug("event", `${source.title} (копия)`);
+
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.event.create({
+      data: {
+        title: `${source.title} (копия)`,
+        cityId: source.cityId,
+        schoolId: source.schoolId,
+        organizerName: source.organizerName,
+        format: source.format,
+        eventType: "REGULAR",
+        level: source.level,
+        startsAt: source.startsAt,
+        endsAt: source.endsAt,
+        venueName: source.venueName,
+        venueAddress: source.venueAddress,
+        capacity: source.capacity,
+        description: source.description,
+        priceText: source.priceText,
+        externalLinkUrl: source.externalLinkUrl,
+        ticketingMode: source.ticketingMode,
+        tags: source.tags,
+        certainty: source.certainty,
+        slug,
+        status: "DRAFT",
+        createdById: user.id,
+      },
+    });
+
+    if (source.partyDetails) {
+      const pd = source.partyDetails;
+      await tx.partyDetails.create({
+        data: {
+          eventId: row.id,
+          musicStyles: pd.musicStyles,
+          djs: pd.djs,
+          danceFloors: pd.danceFloors,
+          artists: pd.artists,
+          dressCode: pd.dressCode,
+          photographer: pd.photographer,
+          foodAndDrinks: pd.foodAndDrinks,
+          parking: pd.parking,
+          cloakroom: pd.cloakroom,
+        },
+      });
+    }
+    if (source.masterclassDetails) {
+      const md = source.masterclassDetails;
+      await tx.masterclassDetails.create({
+        data: { eventId: row.id, style: md.style, format: md.format, partnerRequired: md.partnerRequired },
+      });
+    }
+    if (source.priceOptions.length > 0) {
+      await tx.eventPriceOption.createMany({
+        data: source.priceOptions.map((o) => ({
+          eventId: row.id,
+          label: o.label,
+          price: o.price,
+          currency: o.currency,
+          order: o.order,
+        })),
       });
     }
 

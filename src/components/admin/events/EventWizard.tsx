@@ -46,7 +46,6 @@ export function EventWizard({
   cities,
   ownedSchools,
   teachers,
-  canCreateCompetition,
   isVerifiedEventOrganizer = false,
   initialDraft,
   basePath = "/admin/content",
@@ -54,7 +53,6 @@ export function EventWizard({
   cities: { id: string; nameRu: string }[];
   ownedSchools: { id: string; name: string; verificationStatus: "COMMUNITY" | "VERIFIED" }[];
   teachers: { id: string; name: string }[];
-  canCreateCompetition: boolean;
   // QA BUG-012 — "будет опубликовано без модерации" должно совпадать с
   // реальным shouldAutoApproveEvent() на сервере (ADMIN или верифицированный
   // организатор), а не только с верифицированной школой.
@@ -355,7 +353,6 @@ export function EventWizard({
                 patch({ format });
                 setStepIndex(0);
               }}
-              canCreateCompetition={canCreateCompetition}
             />
             <div className="min-w-0">{renderStep(currentStep)}</div>
             {previewSidebar}

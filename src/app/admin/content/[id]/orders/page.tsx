@@ -124,7 +124,13 @@ export default async function EventOrdersPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {/* "Выручка" — тот же ярлык и место в сетке, что и на вкладке
+            "Билеты" (2026-09-18, по прямому запросу пользователя): раньше
+            единственная сводная цифра по всем заказам (netRevenue) была
+            мелкой строкой текста под плитками, а не самой плиткой — теряла
+            сравнение с "Билеты/Pass выручка" визуально. */}
+        <StatCard label="Выручка" value={`${totalRevenue} ${currency}`} icon={<CardIcon />} tone="success" />
         <StatCard label="Заказов" value={rows.length} icon={<PeopleIcon />} tone="primary" />
         <StatCard
           label="Наличные"
@@ -145,9 +151,6 @@ export default async function EventOrdersPage({
         <StatCard label="Скидка по промокодам" value={`${totalDiscount} ${currency}`} icon={<AlertIcon />} tone="primary" />
         <StatCard label="Возвращено" value={`${totalRefunded} ${currency}`} icon={<AlertIcon />} tone="danger" />
       </div>
-      <p className="m-0 text-xs text-admin-muted">
-        Чистая выручка (все способы оплаты): {totalRevenue} {currency}
-      </p>
 
       <DoorSalePanel eventSlug={event.slug} products={sellableProducts} />
 

@@ -1,12 +1,15 @@
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { getCurrentUser, canCreateEvents } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Input, Select } from "@/components/ui/field";
+import { DateFilterField } from "@/components/ui/DateFilterField";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { StatCard } from "@/components/admin/StatCard";
-import { GridIcon, PencilIcon, CheckCircleIcon, AlertIcon, GearIcon, RepeatIcon, PlayIcon } from "@/components/admin/icons";
+import { GridIcon, PencilIcon, CheckCircleIcon, AlertIcon, GearIcon, RepeatIcon, PlayIcon, ArchiveBoxIcon, CalendarIcon } from "@/components/admin/icons";
 import { EventDeleteButton } from "@/components/admin/events/EventDeleteButton";
+import { EventDuplicateButton } from "@/components/admin/events/EventDuplicateButton";
 import { PostActionButton } from "@/components/admin/events/PostActionButton";
 import {
   EVENT_TYPE_REGISTRY,
@@ -17,7 +20,7 @@ import {
   myEventStatusFilterWhere,
   type MyEventStatusVariant,
 } from "@/lib/events/event-type-registry";
-import { formatDateTime } from "@/lib/format";
+import { formatEventDateRange } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 // Табличка "Мои события" (редизайн 2026-09-16, по прямому запросу
@@ -39,7 +42,35 @@ import { cn } from "@/lib/cn";
 // обложку/тинт формата, вторую строку (город · дата) и цветную полосу статуса
 // слева; три текстовые/иконочные действия сведены к трём одинаковым
 // icon-button (Управление/Редактировать/Удалить).
-type SearchParams = { q?: string; format?: string; status?: string; regular?: string };
+//
+// Третий проход (2026-09-18, по прямому запросу пользователя, UI-аудит):
+// - Плитки "В архиве" (тот же статус-фильтр, что уже был в Select, просто
+//   раньше не имел своей плитки) и "Актуальные" (НЕ статус — отдельная ось
+//   "when=upcoming": не в архиве И startsAt ещё не наступил, см. `whenWhere`).
+// - Фильтр по датам (С даты / По дату) — тот же DateFilterField и та же
+//   логика (`gte`/`lt +1 день`), что уже используется на публичной /events
+//   (searchEvents() в lib/events.ts), раньше здесь отсутствовала.
+// - Пагинация (findMany без take/skip раньше грузил СРАЗУ ВСЕ события
+//   организатора) — тот же паттерн `?page=`, что и на "Участниках"
+//   (registrations/page.tsx): 20 на страницу, номер страницы в query, "Назад/
+//   Вперёд" внизу. Другие списки этого раздела (Регулярные события, Шаблоны)
+//   пагинацию не получили — там одна строка на серию/шаблон, а не на каждое
+//   их порождённое событие, поэтому естественный размер списка у организатора
+//   на порядки меньше и не растёт так же быстро.
+// - "Дублировать" (иконка рядом с "Редактировать"/"Удалить") — копия всегда
+//   уходит в DRAFT, см. duplicateEvent() в event-service.ts. Не показывается
+//   для формата "Конкурс" (CONTEST) — конкурсы теперь заводятся только через
+//   /admin/competitions/new, дублировать через этот путь их нельзя.
+type SearchParams = {
+  q?: string;
+  format?: string;
+  status?: string;
+  regular?: string;
+  when?: string;
+  from?: string;
+  to?: string;
+  page?: string;
+};
 
 function buildHref(current: SearchParams, overrides: Partial<SearchParams>) {
   const merged = { ...current, ...overrides };
@@ -58,6 +89,8 @@ const ROW_BORDER_CLASS: Record<MyEventStatusVariant, string> = {
   neutral: "border-l-admin-disabled",
 };
 
+const PAGE_SIZE = 20;
+
 export default async function AdminContentPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -65,21 +98,65 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
 
   const sp = await searchParams;
   const format = ALL_EVENT_FORMATS.find((f) => f === sp.format);
-  const hasActiveFilter = Boolean(sp.q || sp.format || sp.status || sp.regular);
+  const hasActiveFilter = Boolean(sp.q || sp.format || sp.status || sp.regular || sp.when || sp.from || sp.to);
   const regularWhere = sp.regular === "yes" ? { seriesId: { not: null } } : sp.regular === "no" ? { seriesId: null } : {};
 
-  const [events, totalCount, draftCount, pendingCount, publishedCount] = await Promise.all([
+  // "Актуальные" (2026-09-18) — не статус, а отдельная ось "когда": ещё не
+  // наступило. Независима от sp.status (можно, например, одновременно
+  // смотреть "Черновики" + "Актуальные" — черновики, у которых дата ещё в
+  // будущем); архив уже и так исключён статусным фильтром по умолчанию
+  // (myEventStatusFilterWhere(undefined) => status.not = ARCHIVED), явно
+  // дублировать это условие здесь не нужно.
+  //
+  // Диапазон дат (С даты / По дату) — тот же приём, что и searchEvents() для
+  // публичной /events (lib/events.ts): "По дату" включительно, поэтому
+  // верхняя граница — начало СЛЕДУЮЩЕГО дня, не сам день. Обе оси пишут в
+  // один и тот же startsAt-фильтр (не в отдельные объекты, которые бы просто
+  // перезаписали друг друга при спреде одного и того же ключа) — если задано
+  // и "Актуальные", и "С даты", нижней границей становится более поздняя.
+  const startsAtFilter: Prisma.DateTimeFilter = {};
+  if (sp.when === "upcoming") startsAtFilter.gte = new Date();
+  if (sp.from) {
+    const fromDate = new Date(sp.from);
+    startsAtFilter.gte = startsAtFilter.gte && startsAtFilter.gte > fromDate ? startsAtFilter.gte : fromDate;
+  }
+  if (sp.to) {
+    const d = new Date(sp.to);
+    d.setDate(d.getDate() + 1);
+    startsAtFilter.lt = d;
+  }
+
+  const page = Math.max(1, Number(sp.page) || 1);
+
+  const where: Prisma.EventWhereInput = {
+    createdById: user.id,
+    ...myEventStatusFilterWhere(sp.status),
+    ...(format ? { format } : {}),
+    ...(sp.q ? { title: { contains: sp.q, mode: "insensitive" } } : {}),
+    ...regularWhere,
+    ...(Object.keys(startsAtFilter).length > 0 ? { startsAt: startsAtFilter } : {}),
+  };
+
+  const [events, filteredCount, totalCount, draftCount, pendingCount, publishedCount, archivedCount, upcomingCount] = await Promise.all([
     prisma.event.findMany({
-      where: {
-        createdById: user.id,
-        ...myEventStatusFilterWhere(sp.status),
-        ...(format ? { format } : {}),
-        ...(sp.q ? { title: { contains: sp.q, mode: "insensitive" } } : {}),
-        ...regularWhere,
-      },
+      where,
       orderBy: { updatedAt: "desc" },
-      select: { id: true, title: true, format: true, status: true, moderationStatus: true, photoUrl: true, startsAt: true, seriesId: true, city: { select: { nameRu: true } } },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+      select: {
+        id: true,
+        title: true,
+        format: true,
+        status: true,
+        moderationStatus: true,
+        photoUrl: true,
+        startsAt: true,
+        endsAt: true,
+        seriesId: true,
+        city: { select: { nameRu: true } },
+      },
     }),
+    prisma.event.count({ where }),
     // KPI-плитки считают ВСЕ свои события целиком, независимо от q/format —
     // тот же принцип, что и totalOverall/waitlistCount на вкладке
     // "Участники" (registrations/page.tsx): числа стабильны, применённый
@@ -88,13 +165,20 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
     prisma.event.count({ where: { createdById: user.id, ...myEventStatusFilterWhere("DRAFT") } }),
     prisma.event.count({ where: { createdById: user.id, ...myEventStatusFilterWhere("PENDING") } }),
     prisma.event.count({ where: { createdById: user.id, ...myEventStatusFilterWhere("PUBLISHED") } }),
+    prisma.event.count({ where: { createdById: user.id, ...myEventStatusFilterWhere("ARCHIVED") } }),
+    prisma.event.count({ where: { createdById: user.id, status: { not: "ARCHIVED" }, startsAt: { gte: new Date() } } }),
   ]);
 
+  const totalPages = Math.max(Math.ceil(filteredCount / PAGE_SIZE), 1);
   const totalActive = !hasActiveFilter;
   const totalHref = "/admin/content";
-  function statusTileHref(value: "DRAFT" | "PENDING" | "PUBLISHED") {
-    return buildHref({ q: sp.q, format: sp.format }, { status: sp.status === value ? undefined : value });
+  function statusTileHref(value: "DRAFT" | "PENDING" | "PUBLISHED" | "ARCHIVED") {
+    return buildHref({ q: sp.q, format: sp.format }, { status: sp.status === value ? undefined : value, when: undefined, page: undefined });
   }
+  function upcomingTileHref() {
+    return buildHref({ q: sp.q, format: sp.format }, { when: sp.when === "upcoming" ? undefined : "upcoming", status: undefined, page: undefined });
+  }
+  const currentFilterParams: SearchParams = { q: sp.q, format: sp.format, status: sp.status, regular: sp.regular, when: sp.when, from: sp.from, to: sp.to };
 
   return (
     <div className="flex flex-col gap-4">
@@ -108,8 +192,16 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
         </a>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Всего" value={totalCount} icon={<GridIcon />} tone="primary" href={totalHref} active={totalActive} />
+        <StatCard
+          label="Актуальные"
+          value={upcomingCount}
+          icon={<CalendarIcon />}
+          tone="success"
+          href={upcomingTileHref()}
+          active={sp.when === "upcoming"}
+        />
         <StatCard
           label="Черновики"
           value={draftCount}
@@ -133,6 +225,14 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
           tone="success"
           href={statusTileHref("PUBLISHED")}
           active={sp.status === "PUBLISHED"}
+        />
+        <StatCard
+          label="В архиве"
+          value={archivedCount}
+          icon={<ArchiveBoxIcon />}
+          tone="primary"
+          href={statusTileHref("ARCHIVED")}
+          active={sp.status === "ARCHIVED"}
         />
       </div>
 
@@ -188,6 +288,14 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
             <option value="yes">Только регулярные</option>
             <option value="no">Только разовые</option>
           </Select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          С даты
+          <DateFilterField name="from" defaultValue={sp.from ?? ""} theme="admin" className="border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-admin-muted">
+          По дату
+          <DateFilterField name="to" defaultValue={sp.to ?? ""} theme="admin" className="border-admin-border bg-admin-card2 py-1.5 text-sm text-night-text" />
         </label>
         <Button type="submit" size="sm">
           Найти
@@ -251,7 +359,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                               )}
                             </div>
                             <p className="m-0 truncate text-xs text-admin-muted">
-                              {e.city.nameRu} · {formatDateTime(e.startsAt)}
+                              {e.city.nameRu} · {formatEventDateRange(e.startsAt, e.endsAt)}
                             </p>
                           </div>
                         </div>
@@ -283,6 +391,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                           >
                             <PencilIcon />
                           </a>
+                          {e.format !== "CONTEST" && <EventDuplicateButton eventId={e.id} title={e.title} />}
                           <EventDeleteButton eventId={e.id} title={e.title} />
                         </div>
                       </td>
@@ -313,10 +422,13 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
                         <a href={`/admin/content/${e.id}`} className="block truncate font-medium text-night-text hover:text-admin-primaryHover hover:underline">
                           {e.title || "Без названия"}
                         </a>
-                        <EventDeleteButton eventId={e.id} title={e.title} />
+                        <div className="flex shrink-0 items-center gap-1">
+                          {e.format !== "CONTEST" && <EventDuplicateButton eventId={e.id} title={e.title} />}
+                          <EventDeleteButton eventId={e.id} title={e.title} />
+                        </div>
                       </div>
                       <p className="m-0 mt-0.5 truncate text-xs text-admin-muted">
-                        {EVENT_TYPE_REGISTRY[e.format].label} · {e.city.nameRu} · {formatDateTime(e.startsAt)}
+                        {EVENT_TYPE_REGISTRY[e.format].label} · {e.city.nameRu} · {formatEventDateRange(e.startsAt, e.endsAt)}
                       </p>
                     </div>
                   </div>
@@ -345,6 +457,24 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
             })}
           </div>
         </>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center gap-3 text-sm text-admin-muted">
+          {page > 1 && (
+            <a href={buildHref(currentFilterParams, { page: String(page - 1) })} className="hover:text-night-text hover:underline">
+              ← Назад
+            </a>
+          )}
+          <span>
+            Страница {page} из {totalPages} ({filteredCount} {filteredCount === 1 ? "событие" : "событий"})
+          </span>
+          {page < totalPages && (
+            <a href={buildHref(currentFilterParams, { page: String(page + 1) })} className="hover:text-night-text hover:underline">
+              Вперёд →
+            </a>
+          )}
+        </div>
       )}
     </div>
   );

@@ -1,17 +1,38 @@
 import { z } from "zod";
 import { registrationRoleSchema } from "./registration-schemas";
 
-export const createCompetitionSchema = z.object({
-  name: z.string().min(3).max(200),
-  description: z.string().max(2000).optional(),
-  organizerName: z.string().max(200).optional(),
-  venue: z.string().max(200).optional(),
-  cityId: z.string().optional(),
-  timezone: z.string().min(1).default("Europe/Minsk"),
-  startAt: z.coerce.date().optional(),
-  endAt: z.coerce.date().optional(),
-  eventId: z.string().optional(),
-});
+const danceLevelSchema = z.enum(["BEGINNER", "ALL_LEVELS", "ADVANCED"]);
+
+// Конкурс (JNJ) + его публичная карточка события теперь заводятся ТОЛЬКО
+// вместе, одним действием (2026-09-18, по прямому запросу пользователя — см.
+// комментарий у WIZARD_SELECTABLE_EVENT_FORMATS в
+// lib/events/event-type-registry.ts). eventId — единственная "лазейка": если
+// он передан явно, createCompetition() просто привязывается к УЖЕ
+// существующему Event, ничего нового не создаёт (единственный сегодняшний
+// вызывающий этот путь — реконсиляция легаси-событий в event-service.ts, у
+// которых Event уже был заведён ДО этой задачи). Поэтому cityId/venue/
+// startAt обязательны, только когда eventId НЕ передан — иначе они стали бы
+// NOT NULL-полями настоящего Event уже здесь, на входе, а не при INSERT.
+export const createCompetitionSchema = z
+  .object({
+    name: z.string().min(3).max(200),
+    description: z.string().max(2000).optional(),
+    organizerName: z.string().max(200).optional(),
+    venue: z.string().max(200).optional(),
+    venueAddress: z.string().max(200).optional(),
+    cityId: z.string().optional(),
+    level: danceLevelSchema.optional(),
+    timezone: z.string().min(1).default("Europe/Minsk"),
+    startAt: z.coerce.date().optional(),
+    endAt: z.coerce.date().optional(),
+    eventId: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.eventId) return;
+    if (!data.cityId) ctx.addIssue({ code: "custom", path: ["cityId"], message: "Укажите город" });
+    if (!data.venue) ctx.addIssue({ code: "custom", path: ["venue"], message: "Укажите площадку" });
+    if (!data.startAt) ctx.addIssue({ code: "custom", path: ["startAt"], message: "Укажите дату и время начала" });
+  });
 export type CreateCompetitionInput = z.infer<typeof createCompetitionSchema>;
 
 // Режим ротации партнёров дивизиона по умолчанию (Этап 6, docs/00_DECISIONS.md,

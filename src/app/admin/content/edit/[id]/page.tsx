@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, canCreateEvents } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
 import { getEventDraftForEdit, EventNotFoundError, EventForbiddenError } from "@/server/events/event-service";
 import { EventWizard } from "@/components/admin/events/EventWizard";
 import { dateToLocalInputValue, emptyWizardRecurrenceState, type WizardDraft } from "@/components/admin/events/wizard-types";
@@ -27,17 +25,15 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
     throw err;
   }
 
-  const [cities, ownedSchoolsRaw, teachers, actor] = await Promise.all([
+  const [cities, ownedSchoolsRaw, teachers] = await Promise.all([
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     user.role === "SCHOOL_REP"
       ? prisma.school.findMany({ where: { ownerUserId: user.id }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
     prisma.teacher.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    getActor(),
   ]);
 
   const ownedSchools = ownedSchoolsRaw.map((s) => ({ id: s.id, name: s.name, verificationStatus: s.verificationStatus }));
-  const canCreateCompetition = can(actor, "competition:create");
 
   const initialDraft: WizardDraft = {
     id: event.id,
@@ -115,7 +111,6 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
       cities={cities}
       ownedSchools={ownedSchools}
       teachers={teachers}
-      canCreateCompetition={canCreateCompetition}
       isVerifiedEventOrganizer={user.role === "ADMIN" || user.isVerifiedEventOrganizer}
       initialDraft={initialDraft}
       basePath="/admin/content"

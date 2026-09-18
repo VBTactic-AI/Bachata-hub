@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getActor } from "@/server/rbac/actor";
-import { can } from "@/server/rbac/authorize";
 import { EventWizard } from "@/components/admin/events/EventWizard";
 import { emptyWizardDraft } from "@/components/admin/events/wizard-types";
 
@@ -13,13 +11,11 @@ export default async function NewSystemEventPage() {
   if (!user) redirect("/login");
   if (!isAdmin(user)) redirect("/admin");
 
-  const [cities, teachers, actor] = await Promise.all([
+  const [cities, teachers] = await Promise.all([
     prisma.city.findMany({ where: { isActive: true }, orderBy: { nameRu: "asc" } }),
     prisma.teacher.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    getActor(),
   ]);
 
-  const canCreateCompetition = can(actor, "competition:create");
   const initialDraft = emptyWizardDraft(cities[0]?.id ?? "");
 
   return (
@@ -27,7 +23,6 @@ export default async function NewSystemEventPage() {
       cities={cities}
       ownedSchools={[]}
       teachers={teachers}
-      canCreateCompetition={canCreateCompetition}
       isVerifiedEventOrganizer
       initialDraft={initialDraft}
       basePath="/admin/system/events"

@@ -31,24 +31,31 @@ export function EventDashboardTabs({ eventId, canManageTeam }: { eventId: string
   // более раннего решения того же дня, см. EventAdminSidebar.tsx и
   // /admin/content/pass-templates/page.tsx).
   return (
-    <div role="tablist" aria-label="Разделы события" className="flex items-center gap-1 overflow-x-auto rounded-app border border-admin-border bg-admin-card/50 p-1">
-      {eventTabs.map((tab) => {
-        const isActive = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href);
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            role="tab"
-            aria-selected={isActive}
-            className={cn(
-              "shrink-0 whitespace-nowrap rounded-app-sm px-4 py-2 text-sm font-semibold no-underline transition-colors hover:no-underline",
-              isActive ? "bg-admin-primary text-white shadow-sm" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
-            )}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
+    // relative + градиент-затухание с правого края (2026-09-18, UI-аудит) —
+    // на телефоне все 6 вкладок не помещаются в ширину экрана, а сама лента
+    // раньше ничем не намекала, что часть вкладок ("Статистика"/"Команда")
+    // спрятана за скроллом вправо, без него незаметна.
+    <div className="relative">
+      <div role="tablist" aria-label="Разделы события" className="flex items-center gap-1 overflow-x-auto rounded-app border border-admin-border bg-admin-card/50 p-1">
+        {eventTabs.map((tab) => {
+          const isActive = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href);
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              role="tab"
+              aria-selected={isActive}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-app-sm px-4 py-2 text-sm font-semibold no-underline transition-colors hover:no-underline",
+                isActive ? "bg-admin-primary text-white shadow-sm" : "text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+              )}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-app bg-gradient-to-l from-admin-bg to-transparent sm:hidden" aria-hidden="true" />
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { EVENT_TYPE_REGISTRY, myEventStatusLabel } from "@/lib/events/event-type
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { EventDashboardTabs } from "@/components/admin/events/EventDashboardTabs";
 import { buttonVariants } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/format";
+import { formatEventDateRange } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 // §12 ТЗ (Event Dashboard, 2026-09-15) — единая оболочка ОДНОГО события:
@@ -45,6 +45,7 @@ export default async function EventDashboardLayout({
       format: true,
       photoUrl: true,
       startsAt: true,
+      endsAt: true,
       city: { select: { nameRu: true } },
     },
   });
@@ -82,7 +83,7 @@ export default async function EventDashboardLayout({
               {event.certainty === "TENTATIVE" && <StatusBadge label="Дата уточняется" variant="warning" />}
             </div>
             <p className="m-0 mt-0.5 text-sm text-admin-muted">
-              {EVENT_TYPE_REGISTRY[event.format].label} · {event.city.nameRu} · {formatDateTime(event.startsAt)}
+              {EVENT_TYPE_REGISTRY[event.format].label} · {event.city.nameRu} · {formatEventDateRange(event.startsAt, event.endsAt)}
             </p>
           </div>
         </div>

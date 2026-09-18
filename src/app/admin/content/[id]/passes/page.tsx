@@ -102,6 +102,18 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
   const totalTicketSold = ticketTypes.reduce((sum, t) => sum + t.soldQuantity, 0);
   const totalTicketAvailable = limitedTicketTypes.reduce((sum, t) => sum + (t.availableQuantity ?? 0), 0);
 
+  // "Осталось мест" считается только по билетам/Pass с ограниченной
+  // вместимостью (limitedPasses/limitedTicketTypes) — если у события ВСЕ
+  // билеты/Pass безлимитные, сумма по пустому массиву раньше молча давала 0
+  // и рисовалась красной "тревожной" плиткой, как будто всё распродано,
+  // хотя лимита не было вовсе (найдено вживую при UI-аудите, 2026-09-18).
+  // "∞" + нейтральный тон — когда ограниченных предложений нет вообще; когда
+  // они есть, тревожный тон включаем только при реальном totalAvailable === 0.
+  const passesAvailableValue: string | number = limitedPasses.length > 0 ? totalPassAvailable : "∞";
+  const passesAvailableTone = limitedPasses.length > 0 && totalPassAvailable === 0 ? "danger" : "primary";
+  const ticketsAvailableValue: string | number = limitedTicketTypes.length > 0 ? totalTicketAvailable : "∞";
+  const ticketsAvailableTone = limitedTicketTypes.length > 0 && totalTicketAvailable === 0 ? "danger" : "primary";
+
   const passRows = passes.map((p) => ({
     id: p.id,
     name: p.name,
@@ -171,7 +183,7 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <StatCard label="Продано" value={totalTicketSold} icon={<PeopleIcon />} tone="primary" />
-              <StatCard label="Осталось мест" value={totalTicketAvailable} icon={<AlertIcon />} tone="danger" />
+              <StatCard label="Осталось мест" value={ticketsAvailableValue} icon={<AlertIcon />} tone={ticketsAvailableTone} />
               <StatCard label="Выручка" value={`${ticketTypeRevenue} BYN`} icon={<CardIcon />} tone="success" />
             </div>
             <TicketTypeManager eventSlug={event.slug} registrationsPath={registrationsPath} ticketTypes={ticketTypeRows} />
@@ -195,7 +207,7 @@ export default async function EventPassesPage({ params }: { params: Promise<{ id
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <StatCard label="Продано" value={totalPassSold} icon={<PeopleIcon />} tone="primary" />
-              <StatCard label="Осталось мест" value={totalPassAvailable} icon={<AlertIcon />} tone="danger" />
+              <StatCard label="Осталось мест" value={passesAvailableValue} icon={<AlertIcon />} tone={passesAvailableTone} />
               <StatCard label="Выручка" value={`${passRevenue} BYN`} icon={<CardIcon />} tone="success" />
               <StatCard label="Конверсия продаж" value={passConversionPct == null ? "—" : `${passConversionPct}%`} icon={<TargetIcon />} tone="primary" />
             </div>
