@@ -176,6 +176,42 @@ function assertOnSale(pass: { status: string; salesStartAt: Date | null; salesEn
   }
 }
 
+// Commerce Engine v1 (2026-09-18) — максимум ОДИН билет допуска на танцора
+// на ОДНО событие, независимо от того, из какого каталога он взят (Pass или
+// TicketType) — прямое решение пользователя после разбора живого кейса
+// (танцор одновременно держал "Танцор" Pass и "Преподаватель" TicketType на
+// одну и ту же вечеринку, что бессмысленно: один человек — один способ
+// войти). НЕ путать с межсобытийным Pass фестиваля (issueFestivalPassEntry)
+// — там речь о ДРУГОМ (дочернем) событии, это правило его не касается.
+// Исключение — сам покупаемый продукт (иначе повторная покупка того же Pass
+// падала бы на эту проверку раньше, чем на понятный DuplicateTicketError от
+// уникального констрейнта). Advisory lock на пару (event, dancer) — тот же
+// приём, что и в markRegistrationPayment, закрывает гонку "два разных
+// продукта выданы одновременно, до commit друг друга".
+async function assertSingleAdmissionPerEvent(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  dancerId: string,
+  excluding: { passId: string | null; ticketTypeId: string | null }
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${eventId}), hashtext(${dancerId}))`;
+  const existing = await tx.ticket.findFirst({
+    where: {
+      eventId,
+      dancerId,
+      status: "ISSUED",
+      NOT: { passId: excluding.passId, ticketTypeId: excluding.ticketTypeId },
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    throw new TicketValidationError(
+      "already_has_admission",
+      "У этого танцора уже есть действующий билет на это событие — выдать второй одновременно нельзя. Сначала отмените или верните существующий."
+    );
+  }
+}
+
 // Commerce Engine v1 (2026-09-18) — применение скидки PromoCode. Раньше
 // PromoCode существовал только как схема + CRUD (pass-service.ts) — ни один
 // код скидку не считал (прямое решение пользователя в более ранней сессии:
@@ -249,6 +285,7 @@ export async function issueTicket(
     // registerForEvent (два одновременных запроса на последнее место не
     // должны оба увидеть "есть место" до commit друг друга).
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${passId}))`;
+    await assertSingleAdmissionPerEvent(tx, pass.eventId, dancerId, { passId, ticketTypeId: null });
 
     const current = await tx.pass.findUniqueOrThrow({ where: { id: passId } });
     assertOnSale(current);
@@ -406,6 +443,7 @@ export async function issueTicketForType(
 
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${ticketTypeId}))`;
+    await assertSingleAdmissionPerEvent(tx, ticketType.eventId, dancerId, { passId: null, ticketTypeId });
 
     const current = await tx.ticketType.findUniqueOrThrow({ where: { id: ticketTypeId } });
     assertOnSale(current);

@@ -1126,3 +1126,51 @@ describe("issueTicket() — применение скидки PromoCode (Commerc
     expect(txTicketCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ promoCodeId: null, discountAmount: null }) });
   });
 });
+
+describe("issueTicket()/issueTicketForType() — максимум один билет на событие (Commerce Engine v1, 2026-09-18)", () => {
+  it("issueTicket — у танцора уже есть ISSUED TicketType-билет на это же событие — already_has_admission", async () => {
+    txTicketFindFirst.mockResolvedValue({ id: "existing-tt-ticket" });
+    await expect(issueTicket("pass1", "dancer1", owner)).rejects.toMatchObject({ code: "already_has_admission" });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("issueTicket — у танцора уже есть ISSUED билет на ДРУГОЙ Pass этого же события — already_has_admission", async () => {
+    txTicketFindFirst.mockResolvedValue({ id: "existing-other-pass-ticket" });
+    await expect(issueTicket("pass1", "dancer1", owner)).rejects.toMatchObject({ code: "already_has_admission" });
+  });
+
+  it("issueTicket — проверка исключает ТЕКУЩИЙ покупаемый Pass (повторная покупка falls through к DuplicateTicketError, не блокируется этой проверкой)", async () => {
+    txTicketFindFirst.mockResolvedValue(null); // мок уже исключает переданный passId/ticketTypeId (NOT {passId, ticketTypeId})
+    txTicketCreate.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
+    await expect(issueTicket("pass1", "dancer1", owner)).rejects.toBeInstanceOf(DuplicateTicketError);
+    expect(txTicketFindFirst).toHaveBeenCalledWith({
+      where: { eventId: "event1", dancerId: "dancer1", status: "ISSUED", NOT: { passId: "pass1", ticketTypeId: null } },
+      select: { id: true },
+    });
+  });
+
+  it("issueTicket — два advisory lock'а: на Pass и на пару (event, dancer)", async () => {
+    await issueTicket("pass1", "dancer1", owner);
+    expect(executeRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it("issueTicket — свободных билетов на это событие нет — проходит", async () => {
+    txTicketFindFirst.mockResolvedValue(null);
+    await expect(issueTicket("pass1", "dancer1", owner)).resolves.toBeDefined();
+  });
+
+  it("issueTicketForType — у танцора уже есть ISSUED Pass-билет на это же событие — already_has_admission", async () => {
+    txTicketFindFirst.mockResolvedValue({ id: "existing-pass-ticket" });
+    await expect(issueTicketForType("tt1", "dancer1", owner)).rejects.toMatchObject({ code: "already_has_admission" });
+    expect(txTicketCreate).not.toHaveBeenCalled();
+  });
+
+  it("issueTicketForType — проверка исключает ТЕКУЩИЙ покупаемый TicketType", async () => {
+    txTicketFindFirst.mockResolvedValue(null);
+    await issueTicketForType("tt1", "dancer1", owner);
+    expect(txTicketFindFirst).toHaveBeenCalledWith({
+      where: { eventId: "event1", dancerId: "dancer1", status: "ISSUED", NOT: { passId: null, ticketTypeId: "tt1" } },
+      select: { id: true },
+    });
+  });
+});
