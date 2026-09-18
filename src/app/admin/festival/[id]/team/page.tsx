@@ -50,7 +50,11 @@ export default async function FestivalTeamPage({ params }: { params: Promise<{ i
 
       <EventTeamManager
         eventSlug={bridgeEvent.slug}
-        initialMembers={members.map((m) => ({ id: m.id, role: m.role, user: { id: m.user.id, email: m.user.email } }))}
+        initialMembers={members.map((m) => ({
+          id: m.id,
+          role: m.role,
+          user: { id: m.user.id, email: m.user.email, displayName: m.user.dancer?.displayName ?? null },
+        }))}
       />
     </div>
   );

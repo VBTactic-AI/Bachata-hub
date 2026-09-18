@@ -13,7 +13,7 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/
 // (Слой 3) — другой домен, другая модель.
 
 const addSchema = z.object({
-  email: z.string().email(),
+  userId: z.string().min(1),
   role: z.enum(["MANAGER", "EDITOR", "CHECK_IN", "FINANCE"]),
 });
 
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   if (!event) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   try {
-    const member = await addTeamMember(event.id, user, parsed.data.email, parsed.data.role);
+    const member = await addTeamMember(event.id, user, parsed.data.userId, parsed.data.role);
     return NextResponse.json({ ok: true, member });
   } catch (e) {
     if (e instanceof RegistrationForbiddenError) return NextResponse.json({ error: e.code }, { status: 403 });
