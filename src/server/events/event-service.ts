@@ -249,21 +249,31 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
           include: { ticketTypes: true, passes: true },
         });
         if (template && (template.createdById === user.id || user.role === "ADMIN")) {
-          if (template.ticketTypes.length > 0) {
-            await tx.ticketType.createMany({
-              data: template.ticketTypes.map((t) => ({
+          // По одному через create(), не createMany() (2026-09-18, исправление
+          // бага, найденного пользователем при проверке "переносятся ли поля
+          // шаблона") — Commerce Engine v1 требует у каждого Pass/TicketType
+          // свой Product (см. createPass()/createTicketType() в pass-service.ts/
+          // ticket-type-service.ts, тот же приём): createMany() физически не
+          // может вернуть id вставленных строк, чтобы тут же завести Product на
+          // каждую, и билет по такому "безpродуктовому" Pass/TicketType вообще
+          // нельзя было бы выдать — issueTicket()/issueTicketForType() упали бы
+          // с "Product не найден — рассинхронизация Commerce Engine".
+          for (const t of template.ticketTypes) {
+            const created = await tx.ticketType.create({
+              data: {
                 eventId: row.id,
                 name: t.name,
                 description: t.description,
                 price: t.price,
                 currency: t.currency,
                 quantity: t.quantity,
-              })),
+              },
             });
+            await tx.product.create({ data: { eventId: row.id, type: "EVENT_TICKET", ticketTypeId: created.id } });
           }
-          if (template.passes.length > 0) {
-            await tx.pass.createMany({
-              data: template.passes.map((p) => ({
+          for (const p of template.passes) {
+            const created = await tx.pass.create({
+              data: {
                 eventId: row.id,
                 name: p.name,
                 description: p.description,
@@ -273,8 +283,9 @@ export async function upsertEventDraft(input: EventDraftInput, user: User, exist
                 quantity: p.quantity,
                 imageUrl: p.imageUrl,
                 allowMultipleEntry: p.allowMultipleEntry,
-              })),
+              },
             });
+            await tx.product.create({ data: { eventId: row.id, type: "PASS", passId: created.id } });
           }
         }
       }

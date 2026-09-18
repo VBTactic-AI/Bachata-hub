@@ -34,8 +34,12 @@ const eventCreate = vi.fn();
 // Наследование тикетов/Pass шаблоном (см. комментарий у upsertEventDraft,
 // event-service.ts) — задействуются только когда input.templateId задан.
 const eventTemplateFindUnique = vi.fn().mockResolvedValue(null);
-const ticketTypeCreateMany = vi.fn();
-const passCreateMany = vi.fn();
+// Commerce Engine v1 (2026-09-18) — по одному через create(), не createMany()
+// (см. комментарий у upsertEventDraft, event-service.ts): каждый
+// скопированный TicketType/Pass должен сразу получить свой Product.
+const ticketTypeCreate = vi.fn();
+const passCreate = vi.fn();
+const templateProductCreate = vi.fn();
 
 const fakeTx = {
   event: { update: (...a: unknown[]) => eventUpdate(...a), create: (...a: unknown[]) => eventCreate(...a) },
@@ -46,8 +50,9 @@ const fakeTx = {
   // с публикации (см. isUnpublishing в event-service.ts).
   eventRegistration: { count: vi.fn().mockResolvedValue(0) },
   eventTemplate: { findUnique: (...a: unknown[]) => eventTemplateFindUnique(...a) },
-  ticketType: { createMany: (...a: unknown[]) => ticketTypeCreateMany(...a) },
-  pass: { createMany: (...a: unknown[]) => passCreateMany(...a) },
+  ticketType: { create: (...a: unknown[]) => ticketTypeCreate(...a) },
+  pass: { create: (...a: unknown[]) => passCreate(...a) },
+  product: { create: (...a: unknown[]) => templateProductCreate(...a) },
 };
 
 vi.mock("@/lib/prisma", () => ({
@@ -102,8 +107,9 @@ beforeEach(() => {
   fakeTx.eventRegistration.count.mockReset().mockResolvedValue(0);
   shouldAutoApproveMock.mockReset().mockReturnValue(true);
   eventTemplateFindUnique.mockReset().mockResolvedValue(null);
-  ticketTypeCreateMany.mockReset();
-  passCreateMany.mockReset();
+  ticketTypeCreate.mockReset();
+  passCreate.mockReset();
+  templateProductCreate.mockReset();
 });
 
 describe("upsertEventDraft() — EVENT_PUBLISHED (Notification & Subscription Engine, Phase 6)", () => {
@@ -464,7 +470,7 @@ describe("upsertEventDraft() — republish после REJECTED требует н
 // пользователя) — templateId копируется в TicketType/Pass РОВНО ОДИН РАЗ,
 // только при создании нового события (см. комментарий в event-service.ts).
 describe("upsertEventDraft() — наследование тикетов/Pass из EventTemplate.templateId", () => {
-  it("создание с templateId — копирует ticketTypes/passes шаблона на новое событие", async () => {
+  it("создание с templateId — копирует ticketTypes/passes шаблона на новое событие, каждый с собственным Product", async () => {
     eventCreate.mockResolvedValue({ id: "event1", slug: "party-slug", title: "Bachata Night", cityId: "city1", format: "PARTY", schoolId: null, updatedAt: new Date() });
     eventTemplateFindUnique.mockResolvedValue({
       id: "tpl_1",
@@ -472,18 +478,25 @@ describe("upsertEventDraft() — наследование тикетов/Pass и
       ticketTypes: [{ name: "Early Bird", description: null, price: "25.00", currency: "BYN", quantity: 50 }],
       passes: [{ name: "Full Pass", description: null, type: "FULL_PASS", price: "120.00", currency: "BYN", quantity: null, imageUrl: null, allowMultipleEntry: true }],
     });
+    ticketTypeCreate.mockResolvedValue({ id: "tt1" });
+    passCreate.mockResolvedValue({ id: "pass1" });
 
     await upsertEventDraft(baseInput({ templateId: "tpl_1" }), user);
 
     expect(eventTemplateFindUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "tpl_1" } })
     );
-    expect(ticketTypeCreateMany).toHaveBeenCalledWith({
-      data: [{ eventId: "event1", name: "Early Bird", description: null, price: "25.00", currency: "BYN", quantity: 50 }],
+    expect(ticketTypeCreate).toHaveBeenCalledWith({
+      data: { eventId: "event1", name: "Early Bird", description: null, price: "25.00", currency: "BYN", quantity: 50 },
     });
-    expect(passCreateMany).toHaveBeenCalledWith({
-      data: [{ eventId: "event1", name: "Full Pass", description: null, type: "FULL_PASS", price: "120.00", currency: "BYN", quantity: null, imageUrl: null, allowMultipleEntry: true }],
+    expect(passCreate).toHaveBeenCalledWith({
+      data: { eventId: "event1", name: "Full Pass", description: null, type: "FULL_PASS", price: "120.00", currency: "BYN", quantity: null, imageUrl: null, allowMultipleEntry: true },
     });
+    // Commerce Engine v1 — без Product билет по такому Pass/TicketType
+    // вообще нельзя было бы выдать (issueTicket() упал бы с "рассинхронизация
+    // Commerce Engine").
+    expect(templateProductCreate).toHaveBeenCalledWith({ data: { eventId: "event1", type: "EVENT_TICKET", ticketTypeId: "tt1" } });
+    expect(templateProductCreate).toHaveBeenCalledWith({ data: { eventId: "event1", type: "PASS", passId: "pass1" } });
   });
 
   it("templateId, принадлежащий чужому пользователю — тихо игнорируется, тикеты не копируются", async () => {
@@ -497,7 +510,7 @@ describe("upsertEventDraft() — наследование тикетов/Pass и
 
     await upsertEventDraft(baseInput({ templateId: "tpl_1" }), user);
 
-    expect(ticketTypeCreateMany).not.toHaveBeenCalled();
+    expect(ticketTypeCreate).not.toHaveBeenCalled();
   });
 
   it("редактирование существующего события — templateId в input игнорируется (не переприменяется задним числом)", async () => {
