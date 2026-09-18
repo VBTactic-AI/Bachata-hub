@@ -536,3 +536,43 @@ export async function setPromoCodeActive(promoCodeId: string, user: User, isActi
   if (!isOwnerOrAdmin(code.event, user)) throw new RegistrationForbiddenError("forbidden");
   return prisma.promoCode.update({ where: { id: promoCodeId }, data: { isActive } });
 }
+
+export type ActivePromoCodeOption = {
+  id: string;
+  code: string;
+  discountType: PromoDiscountType;
+  discountValue: number;
+  passIds: string[]; // пусто — применим к любому Pass события
+};
+
+// Commerce Engine v1 (2026-09-18) — для попапа "Билеты участника": организатор
+// (ЛЮБОЙ член команды, не только владелец — hasEventAccess, тот же уровень
+// доступа, что и у самой выдачи билета в issueTicket) выбирает код из списка,
+// а не вводит вручную ("это для клиентов, для админа — просто выбор того,
+// что сказал танцор", прямые слова пользователя). Только СЕЙЧАС валидные —
+// те же условия, что issueTicket проверит на сервере (isPromoCodeCurrentlyValid
+// в ticket-service.ts), продублировано намеренно: импорт оттуда сюда создал
+// бы циклическую зависимость (ticket-service.ts уже импортирует из
+// pass-service.ts).
+export async function listActivePromoCodesForEvent(eventId: string, user: User): Promise<ActivePromoCodeOption[]> {
+  await requireEventAccessForEvent(eventId, user);
+  const now = new Date();
+  const codes = await prisma.promoCode.findMany({
+    where: {
+      eventId,
+      isActive: true,
+      OR: [{ validFrom: null }, { validFrom: { lte: now } }],
+    },
+    include: { passes: true },
+    orderBy: { code: "asc" },
+  });
+  return codes
+    .filter((c) => (c.validUntil == null || c.validUntil >= now) && (c.maxUses == null || c.usedCount < c.maxUses))
+    .map((c) => ({
+      id: c.id,
+      code: c.code,
+      discountType: c.discountType,
+      discountValue: Number(c.discountValue),
+      passIds: c.passes.map((p) => p.passId),
+    }));
+}

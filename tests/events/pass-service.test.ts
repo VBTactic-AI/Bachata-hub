@@ -85,6 +85,7 @@ const {
   setAccessGrants,
   createPromoCode,
   setPromoCodeActive,
+  listActivePromoCodesForEvent,
   deriveRefundFields,
   validateRefundPolicy,
   PassValidationError,
@@ -632,5 +633,57 @@ describe("deletePass() — настоящее удаление (2026-09-16, по
   it("Pass не найден — RegistrationNotFoundError", async () => {
     passFindUnique.mockResolvedValue(null);
     await expect(deletePass("missing", owner)).rejects.toBeInstanceOf(RegistrationNotFoundError);
+  });
+});
+
+describe("listActivePromoCodesForEvent() — Commerce Engine v1 (2026-09-18)", () => {
+  const activeCode = {
+    id: "promo1",
+    code: "DANCEFOREVER",
+    discountType: "FIXED_AMOUNT" as const,
+    discountValue: "2.00",
+    validFrom: null as Date | null,
+    validUntil: null as Date | null,
+    maxUses: null as number | null,
+    usedCount: 0,
+    isActive: true,
+    passes: [] as { passId: string }[],
+  };
+
+  it("владелец — видит действующие коды, discountValue приведён к числу", async () => {
+    promoCodeFindMany.mockResolvedValue([activeCode]);
+    const result = await listActivePromoCodesForEvent("event1", owner);
+    expect(result).toEqual([{ id: "promo1", code: "DANCEFOREVER", discountType: "FIXED_AMOUNT", discountValue: 2, passIds: [] }]);
+  });
+
+  it("доступ через hasEventAccess (член команды), а не только владелец — в отличие от listPromoCodesForEvent", async () => {
+    eventFindUnique.mockResolvedValue({ id: "event1", createdById: "someone-else" });
+    eventTeamMemberFindUnique.mockResolvedValue({ id: "member1" });
+    promoCodeFindMany.mockResolvedValue([activeCode]);
+    await expect(listActivePromoCodesForEvent("event1", owner)).resolves.toHaveLength(1);
+  });
+
+  it("чужое событие, не член команды — RegistrationForbiddenError", async () => {
+    eventFindUnique.mockResolvedValue({ id: "event1", createdById: "someone-else" });
+    eventTeamMemberFindUnique.mockResolvedValue(null);
+    await expect(listActivePromoCodesForEvent("event1", owner)).rejects.toBeInstanceOf(RegistrationForbiddenError);
+  });
+
+  it("истёкший код (validUntil в прошлом) — отфильтрован", async () => {
+    promoCodeFindMany.mockResolvedValue([{ ...activeCode, validUntil: new Date(Date.now() - 86_400_000) }]);
+    const result = await listActivePromoCodesForEvent("event1", owner);
+    expect(result).toEqual([]);
+  });
+
+  it("лимит использований исчерпан — отфильтрован", async () => {
+    promoCodeFindMany.mockResolvedValue([{ ...activeCode, maxUses: 5, usedCount: 5 }]);
+    const result = await listActivePromoCodesForEvent("event1", owner);
+    expect(result).toEqual([]);
+  });
+
+  it("код привязан к конкретным Pass — passIds заполнен", async () => {
+    promoCodeFindMany.mockResolvedValue([{ ...activeCode, passes: [{ passId: "pass1" }, { passId: "pass2" }] }]);
+    const result = await listActivePromoCodesForEvent("event1", owner);
+    expect(result[0].passIds).toEqual(["pass1", "pass2"]);
   });
 });

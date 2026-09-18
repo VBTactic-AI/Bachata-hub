@@ -9,6 +9,7 @@ const issueSchema = z.object({
   markPaid: z.boolean().optional(),
   referralCode: z.string().min(1).optional(),
   promoCode: z.string().min(1).optional(),
+  paymentMethod: z.enum(["CASH", "TRANSFER"]).optional(),
 });
 
 // Билеты одного Pass — GET список держателей, POST выдать новый билет
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       markPaid: parsed.data.markPaid,
       referralCode: parsed.data.referralCode,
       promoCode: parsed.data.promoCode,
+      paymentMethod: parsed.data.paymentMethod,
     });
     return NextResponse.json({ ok: true, ticket });
   } catch (e) {

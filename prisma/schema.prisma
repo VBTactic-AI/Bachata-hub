@@ -1311,6 +1311,11 @@ enum PaymentProvider {
   MANUAL
 }
 
+enum PaymentMethod {
+  CASH // наличные
+  TRANSFER // безналичный перевод (карта/счёт)
+}
+
 enum PaymentStatus {
   PENDING
   PAID
@@ -1332,6 +1337,14 @@ model Payment {
   amount            Decimal         @db.Decimal(10, 2)
   currency          String?
   status            PaymentStatus   @default(PENDING)
+  // Способ расчёта (2026-09-18, по прямому запросу пользователя) — только для
+  // provider=MANUAL: как именно организатор получил деньги, наличными на
+  // руки или переводом на карту/счёт. Nullable — старые Payment (до этой
+  // миграции) метод не указывали, это НЕ "неизвестный наличные", а
+  // буквально "не зафиксировано", UI должен показывать эти два случая
+  // по-разному, не подставлять произвольное значение задним числом
+  // (CLAUDE.md §51 — не переписываем историю).
+  method            PaymentMethod?
   paidAt            DateTime?
   failureReason     String?
 

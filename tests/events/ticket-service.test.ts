@@ -498,11 +498,11 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
       expect.objectContaining({ where: { eventId: "event1", dancerId: { in: ["d1", "d2"] }, status: "ISSUED" } })
     );
     expect(result.get("d1")).toEqual([
-      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false },
-      { id: "t2", passId: "p2", passName: "VIP Pass", ticketTypeId: null, ticketTypeName: null, isPaid: false, checkedIn: false },
+      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false, price: null, currency: null, discountAmount: null },
+      { id: "t2", passId: "p2", passName: "VIP Pass", ticketTypeId: null, ticketTypeName: null, isPaid: false, checkedIn: false, price: null, currency: null, discountAmount: null },
     ]);
     expect(result.get("d2")).toEqual([
-      { id: "t3", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false },
+      { id: "t3", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false, price: null, currency: null, discountAmount: null },
     ]);
   });
 
@@ -514,7 +514,7 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
     const result = await listTicketsByDancerForEvent("event1", ["d1"]);
 
     expect(result.get("d1")).toEqual([
-      { id: "t1", passId: null, passName: null, ticketTypeId: "tt1", ticketTypeName: "Dancer", isPaid: true, checkedIn: false },
+      { id: "t1", passId: null, passName: null, ticketTypeId: "tt1", ticketTypeName: "Dancer", isPaid: true, checkedIn: false, price: null, currency: null, discountAmount: null },
     ]);
   });
 
@@ -526,7 +526,29 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
     const result = await listTicketsByDancerForEvent("event1", ["d1"]);
 
     expect(result.get("d1")).toEqual([
-      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: true },
+      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: true, price: null, currency: null, discountAmount: null },
+    ]);
+  });
+
+  it("билет со скидкой по промокоду — price/discountAmount снимок", async () => {
+    ticketFindMany.mockResolvedValue([
+      {
+        id: "t1",
+        dancerId: "d1",
+        passId: "p1",
+        ticketTypeId: null,
+        isPaid: true,
+        pass: { name: "Full Pass" },
+        price: "13.00",
+        currency: "BYN",
+        discountAmount: "2.00",
+      },
+    ]);
+
+    const result = await listTicketsByDancerForEvent("event1", ["d1"]);
+
+    expect(result.get("d1")).toEqual([
+      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false, price: 13, currency: "BYN", discountAmount: 2 },
     ]);
   });
 
@@ -535,25 +557,23 @@ describe("listTicketsByDancerForEvent() / summarizePayment()", () => {
     expect(summarizePayment([])).toBe("UNPAID");
   });
 
+  const baseTicketInfo = { passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, checkedIn: false, price: null, currency: null, discountAmount: null } as const;
+
   it("summarizePayment: все оплачены — PAID", () => {
-    expect(
-      summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false }])
-    ).toBe("PAID");
+    expect(summarizePayment([{ id: "1", ...baseTicketInfo, isPaid: true }])).toBe("PAID");
   });
 
   it("summarizePayment: часть оплачена — PARTIAL", () => {
     expect(
       summarizePayment([
-        { id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false },
-        { id: "2", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false, checkedIn: false },
+        { id: "1", ...baseTicketInfo, isPaid: true },
+        { id: "2", ...baseTicketInfo, isPaid: false },
       ])
     ).toBe("PARTIAL");
   });
 
   it("summarizePayment: ничего не оплачено — UNPAID", () => {
-    expect(
-      summarizePayment([{ id: "1", passId: null, passName: null, ticketTypeId: null, ticketTypeName: null, isPaid: false, checkedIn: false }])
-    ).toBe("UNPAID");
+    expect(summarizePayment([{ id: "1", ...baseTicketInfo, isPaid: false }])).toBe("UNPAID");
   });
 });
 
@@ -635,7 +655,9 @@ describe("listTicketsForRegistration()", () => {
 
     const result = await listTicketsForRegistration("reg1", owner);
 
-    expect(result).toEqual([{ id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false }]);
+    expect(result).toEqual([
+      { id: "t1", passId: "p1", passName: "Full Pass", ticketTypeId: null, ticketTypeName: null, isPaid: true, checkedIn: false, price: null, currency: null, discountAmount: null },
+    ]);
   });
 });
 

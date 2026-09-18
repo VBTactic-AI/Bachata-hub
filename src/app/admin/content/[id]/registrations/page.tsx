@@ -7,7 +7,8 @@ import {
   type RegistrationSortBy,
   type RegistrationSortDir,
 } from "@/server/events/registration-service";
-import { listTicketsByDancerForEvent, getEventPaymentSummaryCounts, findFestivalPassForEvent } from "@/server/events/ticket-service";
+import { listTicketsByDancerForEvent, getEventPaymentSummaryCounts, findFestivalPassForEvent, summarizePayment } from "@/server/events/ticket-service";
+import { listActivePromoCodesForEvent } from "@/server/events/pass-service";
 import { EventRegistrationStatusSelect } from "@/components/admin/events/EventRegistrationStatusSelect";
 import { TicketPaymentCell, type FestivalPassMatch } from "@/components/admin/events/TicketPaymentCell";
 import { EventRegistrationCheckInToggle } from "@/components/admin/events/EventRegistrationCheckInToggle";
@@ -47,7 +48,7 @@ import {
 
 const SORT_VALUES: RegistrationSortBy[] = ["date", "name"];
 
-type SearchParams = { page?: string; q?: string; status?: string; sort?: string; dir?: string; pass?: string };
+type SearchParams = { page?: string; q?: string; status?: string; sort?: string; dir?: string; pass?: string; paid?: string };
 
 function buildHref(basePath: string, current: Record<string, string | undefined>, overrides: Record<string, string | undefined>) {
   const qs = new URLSearchParams();
@@ -94,6 +95,21 @@ export default async function EventRegistrationsPage({
     }
   }
 
+  // Drill-down с плиток "Оплачено"/"Не оплачено" (?paid=paid|unpaid, по
+  // прямому запросу пользователя, 2026-09-18) — тот же приём, что и у
+  // ?pass= выше: агрегат по Ticket не выражается простым Prisma where без
+  // join (см. комментарий в шапке файла), поэтому список dancerId считаем
+  // отдельным запросом и пересекаем с ?pass=, если оба фильтра заданы.
+  if (sp.paid === "paid" || sp.paid === "unpaid") {
+    const allDancerIds = (await prisma.eventRegistration.findMany({ where: { eventId: event.id }, select: { dancerId: true } })).map(
+      (r) => r.dancerId
+    );
+    const byDancer = await listTicketsByDancerForEvent(event.id, allDancerIds);
+    const wantedStatus = sp.paid === "paid" ? "PAID" : "UNPAID";
+    const paymentDancerIds = allDancerIds.filter((did) => summarizePayment(byDancer.get(did)) === wantedStatus);
+    dancerIds = dancerIds ? dancerIds.filter((did) => paymentDancerIds.includes(did)) : paymentDancerIds;
+  }
+
   let result;
   try {
     result = await listEventRegistrations(event.id, user, { page, pageSize: 50, search: sp.q, status, dancerIds, sortBy, sortDir });
@@ -108,30 +124,52 @@ export default async function EventRegistrationsPage({
   // которые вообще можно выдать танцору прямо отсюда (2026-09-16: без этого
   // soldQuantity никогда не менялось бы — единственный способ создать
   // привязанный Ticket отсюда).
-  const [passCount, activePasses, ticketTypeCount, activeTicketTypes, ticketsByDancer, paymentCounts, festivalProgramItem] = await Promise.all([
-    prisma.pass.count({ where: { eventId: event.id } }),
-    prisma.pass.findMany({ where: { eventId: event.id, status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
-    prisma.ticketType.count({ where: { eventId: event.id } }),
-    prisma.ticketType.findMany({ where: { eventId: event.id, status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
-    listTicketsByDancerForEvent(
-      event.id,
-      result.items.map((r) => r.dancerId)
-    ),
-    getEventPaymentSummaryCounts(
-      event.id,
-      // Счётчики KPI — по ВСЕМ регистрациям события, не только текущей
-      // странице (тот же принцип, что и totalOverall/waitlistCount).
-      (
-        await prisma.eventRegistration.findMany({ where: { eventId: event.id }, select: { dancerId: true } })
-      ).map((r) => r.dancerId)
-    ),
-    // Этап 3 — дешёвая проверка "является ли это событие пунктом программы
-    // какого-то фестиваля" ДО того, как гонять findFestivalPassForEvent по
-    // каждому танцору страницы (для подавляющего большинства обычных
-    // событий этот запрос вернёт null, и вся festival-pass-логика ниже
-    // просто пропускается).
-    prisma.programItem.findFirst({ where: { linkedEventId: event.id }, select: { id: true } }),
-  ]);
+  const [passCountRaw, activePassesRaw, ticketTypeCount, activeTicketTypesRaw, ticketsByDancer, paymentCounts, festivalProgramItem, assignablePromoCodes] =
+    await Promise.all([
+      prisma.pass.count({ where: { eventId: event.id } }),
+      prisma.pass.findMany({
+        where: { eventId: event.id, status: "ACTIVE" },
+        select: { id: true, name: true, price: true, currency: true },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.ticketType.count({ where: { eventId: event.id } }),
+      prisma.ticketType.findMany({
+        where: { eventId: event.id, status: "ACTIVE" },
+        select: { id: true, name: true, price: true, currency: true },
+        orderBy: { sortOrder: "asc" },
+      }),
+      listTicketsByDancerForEvent(
+        event.id,
+        result.items.map((r) => r.dancerId)
+      ),
+      getEventPaymentSummaryCounts(
+        event.id,
+        // Счётчики KPI — по ВСЕМ регистрациям события, не только текущей
+        // странице (тот же принцип, что и totalOverall/waitlistCount).
+        (
+          await prisma.eventRegistration.findMany({ where: { eventId: event.id }, select: { dancerId: true } })
+        ).map((r) => r.dancerId)
+      ),
+      // Этап 3 — дешёвая проверка "является ли это событие пунктом программы
+      // какого-то фестиваля" ДО того, как гонять findFestivalPassForEvent по
+      // каждому танцору страницы (для подавляющего большинства обычных
+      // событий этот запрос вернёт null, и вся festival-pass-логика ниже
+      // просто пропускается).
+      prisma.programItem.findFirst({ where: { linkedEventId: event.id }, select: { id: true } }),
+      // Commerce Engine v1 (2026-09-18) — промокоды для попапа выдачи билета
+      // (см. TicketPaymentCell) — hasEventAccess, не только владелец.
+      listActivePromoCodesForEvent(event.id, user),
+    ]);
+  const passCount = passCountRaw;
+  // Decimal → number: серверный компонент передаёт пропы клиентскому,
+  // Prisma Decimal не сериализуется через границу RSC/клиент напрямую.
+  const activePasses = activePassesRaw.map((p) => ({ id: p.id, name: p.name, price: p.price == null ? null : Number(p.price), currency: p.currency }));
+  const activeTicketTypes = activeTicketTypesRaw.map((t) => ({
+    id: t.id,
+    name: t.name,
+    price: t.price == null ? null : Number(t.price),
+    currency: t.currency,
+  }));
   const hasPassCatalog = passCount > 0;
   const hasTicketTypeCatalog = ticketTypeCount > 0;
   // issueTicket()/issueTicketForType() требуют активную регистрацию
@@ -162,7 +200,7 @@ export default async function EventRegistrationsPage({
   // "Текущие" параметры фильтра — переносятся во ВСЕ остальные ссылки
   // (пагинация, сортировка, экспорт), чтобы переключение одного не сбрасывало
   // остальные.
-  const currentFilterParams = { q: sp.q, status: sp.status, sort: sp.sort, dir: sp.dir, pass: sp.pass };
+  const currentFilterParams = { q: sp.q, status: sp.status, sort: sp.sort, dir: sp.dir, pass: sp.pass, paid: sp.paid };
   const exportHref = buildHref("/api/events/" + event.slug + "/registrations/export", currentFilterParams, {});
 
   function sortHref(field: RegistrationSortBy) {
@@ -174,13 +212,19 @@ export default async function EventRegistrationsPage({
     return <span aria-hidden="true">{sortDir === "asc" ? " ▲" : " ▼"}</span>;
   }
 
-  const hasActiveFilter = Boolean(sp.q || sp.status || passFilterName);
+  const hasActiveFilter = Boolean(sp.q || sp.status || passFilterName || sp.paid);
 
   const waitlistActive = sp.status === "WAITLIST";
   const totalActive = !hasActiveFilter;
+  const paidActive = sp.paid === "paid";
+  const unpaidActive = sp.paid === "unpaid";
 
   const totalHref = basePath;
   const waitlistHref = buildHref(basePath, currentFilterParams, { status: waitlistActive ? undefined : "WAITLIST", page: undefined });
+  // Плитки "Оплачено"/"Не оплачено" — тоже быстрый фильтр (клик по уже
+  // активной плитке снимает фильтр), тот же приём, что и у "Лист ожидания".
+  const paidHref = buildHref(basePath, currentFilterParams, { paid: paidActive ? undefined : "paid", page: undefined });
+  const unpaidHref = buildHref(basePath, currentFilterParams, { paid: unpaidActive ? undefined : "unpaid", page: undefined });
 
   return (
     <div className="flex flex-col gap-4">
@@ -202,6 +246,15 @@ export default async function EventRegistrationsPage({
         </div>
       )}
 
+      {(paidActive || unpaidActive) && (
+        <div className="flex items-center gap-2 rounded-app border border-admin-primary/40 bg-admin-primary/10 px-3 py-2 text-sm text-night-text">
+          <span>Показаны только {paidActive ? "оплатившие" : "не оплатившие"}</span>
+          <a href={buildHref(basePath, currentFilterParams, { paid: undefined, page: undefined })} className="ml-auto text-admin-muted hover:text-night-text hover:underline">
+            Сбросить фильтр
+          </a>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Всего регистраций" value={result.totalOverall} icon={<PeopleIcon />} tone="primary" href={totalHref} active={totalActive} />
         <StatCard
@@ -210,6 +263,8 @@ export default async function EventRegistrationsPage({
           icon={<CardIcon />}
           tone="success"
           percent={pctOverall(paymentCounts.paidCount)}
+          href={paidHref}
+          active={paidActive}
         />
         <StatCard
           label="Не оплачено"
@@ -217,6 +272,8 @@ export default async function EventRegistrationsPage({
           icon={<AlertIcon />}
           tone="danger"
           percent={pctOverall(paymentCounts.unpaidCount)}
+          href={unpaidHref}
+          active={unpaidActive}
         />
         <StatCard
           label="Лист ожидания"
@@ -323,6 +380,7 @@ export default async function EventRegistrationsPage({
                         initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
                         assignablePasses={ELIGIBLE_FOR_PASS.has(r.status) ? activePasses : []}
                         assignableTicketTypes={ELIGIBLE_FOR_PASS.has(r.status) ? activeTicketTypes : []}
+                        assignablePromoCodes={ELIGIBLE_FOR_PASS.has(r.status) ? assignablePromoCodes : []}
                         festivalPassMatch={festivalPassByDancer.get(r.dancerId) ?? null}
                       />
                     </td>
@@ -350,6 +408,7 @@ export default async function EventRegistrationsPage({
                     initialTickets={ticketsByDancer.get(r.dancerId) ?? []}
                     assignablePasses={ELIGIBLE_FOR_PASS.has(r.status) ? activePasses : []}
                     assignableTicketTypes={ELIGIBLE_FOR_PASS.has(r.status) ? activeTicketTypes : []}
+                        assignablePromoCodes={ELIGIBLE_FOR_PASS.has(r.status) ? assignablePromoCodes : []}
                     festivalPassMatch={festivalPassByDancer.get(r.dancerId) ?? null}
                   />
                 </div>

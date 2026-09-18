@@ -14,10 +14,27 @@ export type TicketPaymentInfo = {
   isPaid: boolean;
   // TicketCheckIn (Commerce Engine v1, 2026-09-17) — явка по этому билету.
   checkedIn: boolean;
+  // Commerce Engine v1 (2026-09-18) — снимок фактической суммы (price — уже
+  // ПОСЛЕ скидки) и суммы скидки (discountAmount), если билет выдан по
+  // промокоду. "Было" для зачёркнутой цены = price + discountAmount.
+  price: number | null;
+  currency: string | null;
+  discountAmount: number | null;
 };
-export type AssignablePassOption = { id: string; name: string };
-export type AssignableTicketTypeOption = { id: string; name: string };
+export type AssignablePassOption = { id: string; name: string; price: number | null; currency: string | null };
+export type AssignableTicketTypeOption = { id: string; name: string; price: number | null; currency: string | null };
+export type AssignablePromoCodeOption = {
+  id: string;
+  code: string;
+  discountType: "PERCENT" | "FIXED_AMOUNT";
+  discountValue: number;
+  passIds: string[]; // пусто — применим к любому Pass события
+};
 export type FestivalPassMatch = { passId: string; passName: string };
+
+function formatMoney(price: number | null, currency: string | null): string {
+  return price == null ? "Бесплатно" : `${price} ${currency ?? ""}`.trim();
+}
 
 // Оплата билетов участника (2026-09-16, Ticket Engine v2) — заменяет старый
 // EventRegistrationPaymentToggle: оплата больше не поле EventRegistration,
@@ -51,6 +68,7 @@ export function TicketPaymentCell({
   initialTickets,
   assignablePasses,
   assignableTicketTypes,
+  assignablePromoCodes,
   festivalPassMatch,
 }: {
   eventSlug: string;
@@ -64,6 +82,12 @@ export function TicketPaymentCell({
   // соответствующего каталога или ни один сейчас не в продаже.
   assignablePasses: AssignablePassOption[];
   assignableTicketTypes: AssignableTicketTypeOption[];
+  // Действующие промокоды события (2026-09-18) — организатор выбирает из
+  // списка, не вводит руками (см. комментарий у listActivePromoCodesForEvent
+  // в pass-service.ts — "это для клиентов, для админа просто выбор того, что
+  // сказал танцор"). Применимость к конкретному Pass фильтруется на клиенте
+  // по passIds (пусто = применим к любому).
+  assignablePromoCodes: AssignablePromoCodeOption[];
   // Этап 3 — действующий Pass фестиваля (см. findFestivalPassForEvent в
   // ticket-service.ts), дающий доступ ИМЕННО к этому (дочернему) событию,
   // если это событие вообще является пунктом программы какого-то фестиваля
@@ -89,8 +113,13 @@ export function TicketPaymentCell({
   const [selectedOption, setSelectedOption] = useState("");
   // Промокод применяется только к Pass (PromoCodePass — единственная связь в
   // схеме, TicketType промокодов не поддерживает, см. issueTicket в
-  // ticket-service.ts) — показывается, только когда выбран именно Pass.
-  const [promoCodeInput, setPromoCodeInput] = useState("");
+  // ticket-service.ts) — выбор из списка (id промокода), а не ручной ввод:
+  // "это для клиентов, для админа — просто выбор того, что сказал танцор"
+  // (прямые слова пользователя, 2026-09-18).
+  const [selectedPromoCodeId, setSelectedPromoCodeId] = useState("");
+  // Способ расчёта (2026-09-18) — наличные/безнал, по умолчанию "Наличные"
+  // (самый частый случай на входе на вечеринку).
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER">("CASH");
 
   // Pass/TicketType, которые этот танцор ещё не получал — сравниваем с уже
   // имеющимися билетами (см. комментарий у функции выше про регрессию).
@@ -99,17 +128,36 @@ export function TicketPaymentCell({
   const availableToIssue = assignablePasses.filter((p) => !ownedPassIds.has(p.id));
   const availableTicketTypesToIssue = assignableTicketTypes.filter((t) => !ownedTicketTypeIds.has(t.id));
 
-  type IssueOption = { key: string; kind: "pass" | "tickettype"; id: string; name: string };
+  type IssueOption = { key: string; kind: "pass" | "tickettype"; id: string; name: string; price: number | null; currency: string | null };
   const issueOptions: IssueOption[] = [
-    ...availableToIssue.map((p) => ({ key: `pass:${p.id}`, kind: "pass" as const, id: p.id, name: p.name })),
-    ...availableTicketTypesToIssue.map((t) => ({ key: `tickettype:${t.id}`, kind: "tickettype" as const, id: t.id, name: t.name })),
+    ...availableToIssue.map((p) => ({ key: `pass:${p.id}`, kind: "pass" as const, id: p.id, name: p.name, price: p.price, currency: p.currency })),
+    ...availableTicketTypesToIssue.map((t) => ({
+      key: `tickettype:${t.id}`,
+      kind: "tickettype" as const,
+      id: t.id,
+      name: t.name,
+      price: t.price,
+      currency: t.currency,
+    })),
   ];
   // НЕ полагаться на selectedOption как на единственный источник истины (тот
   // же класс бага, что и с initialTickets/useState выше) — если сохранённый
   // выбор больше не входит в актуальный список, тихо откатываемся на первый
   // доступный вариант.
   const effectiveOption = issueOptions.find((o) => o.key === selectedOption) ?? issueOptions[0] ?? null;
+  // Промокоды, применимые к ВЫБРАННОМУ прямо сейчас Pass — пусто у кода =
+  // применим к любому Pass события (см. listActivePromoCodesForEvent).
+  const applicablePromoCodes =
+    effectiveOption?.kind === "pass"
+      ? assignablePromoCodes.filter((c) => c.passIds.length === 0 || c.passIds.includes(effectiveOption.id))
+      : [];
+  const effectivePromoCode = applicablePromoCodes.find((c) => c.id === selectedPromoCodeId) ?? null;
   const hasFestivalPassEntry = festivalPassMatch != null && tickets.some((t) => t.passId === festivalPassMatch.passId);
+
+  function promoCodeLabel(c: AssignablePromoCodeOption): string {
+    const discount = c.discountType === "PERCENT" ? `-${c.discountValue}%` : `-${c.discountValue}`;
+    return `${c.code} (${discount})`;
+  }
 
   // Выдать танцору выбранный товар — Pass или TicketType, определяется по
   // effectiveOption.kind (2026-09-16, по прямому запросу пользователя —
@@ -128,8 +176,8 @@ export function TicketPaymentCell({
         : `/api/events/${eventSlug}/ticket-types/${effectiveOption.id}/tickets`;
     const body =
       effectiveOption.kind === "pass"
-        ? { dancerId, markPaid: true, promoCode: promoCodeInput.trim() || undefined }
-        : { dancerId, markPaid: true };
+        ? { dancerId, markPaid: true, promoCode: effectivePromoCode?.code, paymentMethod }
+        : { dancerId, markPaid: true, paymentMethod };
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setLoading(false);
     if (!res.ok) {
@@ -137,7 +185,7 @@ export function TicketPaymentCell({
       setError(data.message || data.error || "Не удалось выдать билет.");
       return;
     }
-    setPromoCodeInput("");
+    setSelectedPromoCodeId("");
     router.refresh();
   }
 
@@ -193,6 +241,27 @@ export function TicketPaymentCell({
     router.refresh();
   }
 
+  // Возврат оплаты (2026-09-18, по прямому запросу пользователя — "Как можно
+  // вернуть оплату?") — в отличие от toggleOne (просто снимает флажок
+  // isPaid), бьёт в уже существующий refundTicket() (ticket-service.ts):
+  // создаёт запись Refund, переводит Order/UserPass в REFUNDED/REVOKED и
+  // освобождает место допуска на событие — билет пропадёт из этого списка
+  // (listTicketsByDancerForEvent отдаёт только status: "ISSUED"), пикер
+  // "Выдать" появится снова.
+  async function refundOne(ticketId: string) {
+    if (!window.confirm("Вернуть оплату за этот билет? Билет будет отменён, место на событие освободится.")) return;
+    setLoading(true);
+    setError(null);
+    const res = await fetch(`/api/events/${eventSlug}/tickets/${ticketId}/refund`, { method: "POST" });
+    setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.message || data.error || "Не удалось вернуть оплату.");
+      return;
+    }
+    router.refresh();
+  }
+
   // TicketCheckIn-тумблер здесь убран (2026-09-18, по прямому решению
   // пользователя): раз на событие теперь максимум один билет допуска
   // (Commerce Engine v1, assertSingleAdmissionPerEvent), явка по билету и
@@ -204,6 +273,23 @@ export function TicketPaymentCell({
 
   function ticketLabel(t: TicketPaymentInfo): string {
     return t.passName ?? t.ticketTypeName ?? "Входной билет";
+  }
+
+  // Commerce Engine v1 (2026-09-18) — название + сумма, зачёркнутая исходная
+  // цена при скидке по промокоду ("15 ~~перечёркнуто~~ 13", по прямому
+  // запросу пользователя, чтобы было наглядно видно применённый промокод).
+  function TicketPriceLabel({ t, nameClassName }: { t: TicketPaymentInfo; nameClassName: string }) {
+    const hasDiscount = t.price != null && t.discountAmount != null && t.discountAmount > 0;
+    const original = hasDiscount ? t.price! + t.discountAmount! : null;
+    return (
+      <span className="flex flex-col">
+        <span className={nameClassName}>{ticketLabel(t)}</span>
+        <span className="text-xs text-admin-muted">
+          {original != null && <span className="mr-1 text-admin-disabled line-through">{formatMoney(original, t.currency)}</span>}
+          {formatMoney(t.price, t.currency)}
+        </span>
+      </span>
+    );
   }
 
   // Пикер "Использовать Pass фестиваля" — отдельная кнопка, не смешивается с
@@ -221,17 +307,28 @@ export function TicketPaymentCell({
   );
 
   if (!hasPassCatalog && !hasTicketTypeCatalog) {
-    const isPaid = tickets[0]?.isPaid ?? false;
+    const soleTicket = tickets[0];
+    const isPaid = soleTicket?.isPaid ?? false;
     return (
       <span className="inline-flex flex-col items-start gap-1">
         <button
           type="button"
           disabled={loading}
-          onClick={() => toggleSimple(tickets[0], !isPaid)}
+          onClick={() => toggleSimple(soleTicket, !isPaid)}
           className="disabled:cursor-not-allowed disabled:opacity-50"
         >
           <StatusBadge label={isPaid ? "Оплачено" : "Не оплачено"} variant={isPaid ? "success" : "danger"} />
         </button>
+        {isPaid && soleTicket && (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => refundOne(soleTicket.id)}
+            className="text-xs text-red-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Вернуть оплату
+          </button>
+        )}
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </span>
@@ -255,7 +352,7 @@ export function TicketPaymentCell({
           <optgroup label="Pass">
             {availableToIssue.map((p) => (
               <option key={`pass:${p.id}`} value={`pass:${p.id}`}>
-                {p.name}
+                {p.name} — {formatMoney(p.price, p.currency)}
               </option>
             ))}
           </optgroup>
@@ -264,22 +361,36 @@ export function TicketPaymentCell({
           <optgroup label="Билет">
             {availableTicketTypesToIssue.map((t) => (
               <option key={`tickettype:${t.id}`} value={`tickettype:${t.id}`}>
-                {t.name}
+                {t.name} — {formatMoney(t.price, t.currency)}
               </option>
             ))}
           </optgroup>
         )}
       </select>
-      {effectiveOption?.kind === "pass" && (
-        <input
-          type="text"
-          value={promoCodeInput}
-          onChange={(e) => setPromoCodeInput(e.target.value)}
+      {effectiveOption?.kind === "pass" && applicablePromoCodes.length > 0 && (
+        <select
+          value={selectedPromoCodeId}
+          onChange={(e) => setSelectedPromoCodeId(e.target.value)}
           disabled={loading}
-          placeholder="Промокод (необязательно)"
-          className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text placeholder:text-admin-disabled"
-        />
+          className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
+        >
+          <option value="">Без промокода</option>
+          {applicablePromoCodes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {promoCodeLabel(c)}
+            </option>
+          ))}
+        </select>
       )}
+      <select
+        value={paymentMethod}
+        onChange={(e) => setPaymentMethod(e.target.value as "CASH" | "TRANSFER")}
+        disabled={loading}
+        className="w-full rounded-app-sm border border-admin-border bg-admin-card2 px-1.5 py-0.5 text-xs text-night-text"
+      >
+        <option value="CASH">Наличные</option>
+        <option value="TRANSFER">Б/н (перевод)</option>
+      </select>
       <button
         type="button"
         disabled={loading}
@@ -312,7 +423,7 @@ export function TicketPaymentCell({
     const hadOtherOption = issueOptions.length > 0;
     return (
       <span className="inline-flex flex-col items-start gap-1">
-        <span className="text-xs text-admin-muted">{ticketLabel(t)}</span>
+        <TicketPriceLabel t={t} nameClassName="text-xs text-admin-muted" />
         <button
           type="button"
           disabled={loading}
@@ -321,6 +432,16 @@ export function TicketPaymentCell({
         >
           <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
         </button>
+        {t.isPaid && (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => refundOne(t.id)}
+            className="text-xs text-red-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Вернуть оплату
+          </button>
+        )}
         {hadOtherOption && <span className="text-xs text-admin-disabled">Второй билет на это событие не выдаётся</span>}
         {festivalPassButton}
         {error && <span className="text-xs text-red-400">{error}</span>}
@@ -358,15 +479,27 @@ export function TicketPaymentCell({
             <div className="flex-1 overflow-y-auto py-1.5">
               {tickets.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-admin-card2">
-                  <span className="truncate text-sm font-semibold text-night-text">{ticketLabel(t)}</span>
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => toggleOne(t.id, !t.isPaid)}
-                    className="shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
-                  </button>
+                  <TicketPriceLabel t={t} nameClassName="truncate text-sm font-semibold text-night-text" />
+                  <span className="flex shrink-0 flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => toggleOne(t.id, !t.isPaid)}
+                      className="disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <StatusBadge label={t.isPaid ? "Оплачено" : "Не оплачено"} variant={t.isPaid ? "success" : "danger"} />
+                    </button>
+                    {t.isPaid && (
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => refundOne(t.id)}
+                        className="text-xs text-red-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Вернуть оплату
+                      </button>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>

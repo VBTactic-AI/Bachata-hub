@@ -77,6 +77,10 @@ type ManualOrderArgs = {
   paidAt: Date | null;
   issuedById: string;
   issuedAt: Date;
+  // Способ расчёта (2026-09-18) — наличные/безнал, только имеет смысл когда
+  // isPaid=true; null, если оплата ещё не отмечена (нечего фиксировать) или
+  // организатор не указал способ.
+  paymentMethod: "CASH" | "TRANSFER" | null;
 };
 
 // Создаёт Order(1 позиция)+OrderItem+Payment(MANUAL) одной группой внутри уже
@@ -124,6 +128,7 @@ async function recordManualOrderInTx(tx: Prisma.TransactionClient, args: ManualO
       amount: total,
       currency: args.currency,
       status: args.isPaid ? "PAID" : "PENDING",
+      method: args.isPaid ? args.paymentMethod : null,
       paidAt: args.paidAt,
       recordedById: args.issuedById,
       createdAt: args.issuedAt,
@@ -264,7 +269,7 @@ export async function issueTicket(
   passId: string,
   dancerId: string,
   user: User,
-  options: { markPaid?: boolean; referralCode?: string; promoCode?: string } = {}
+  options: { markPaid?: boolean; referralCode?: string; promoCode?: string; paymentMethod?: "CASH" | "TRANSFER" } = {}
 ): Promise<Ticket> {
   const pass = await requireAccessForPass(passId, user);
   const dancer = await prisma.dancer.findUnique({ where: { id: dancerId } });
@@ -370,6 +375,7 @@ export async function issueTicket(
       paidAt: paidAtNow,
       issuedById: user.id,
       issuedAt: new Date(),
+      paymentMethod: options.paymentMethod ?? null,
     });
     if (!userPass.orderItemId) {
       await tx.userPass.update({ where: { id: userPass.id }, data: { orderItemId } });
@@ -425,7 +431,7 @@ export async function issueTicketForType(
   ticketTypeId: string,
   dancerId: string,
   user: User,
-  options: { markPaid?: boolean } = {}
+  options: { markPaid?: boolean; paymentMethod?: "CASH" | "TRANSFER" } = {}
 ): Promise<Ticket> {
   const ticketType = await requireAccessForTicketType(ticketTypeId, user);
   const dancer = await prisma.dancer.findUnique({ where: { id: dancerId } });
@@ -474,6 +480,7 @@ export async function issueTicketForType(
       paidAt: paidAtNow,
       issuedById: user.id,
       issuedAt: new Date(),
+      paymentMethod: options.paymentMethod ?? null,
     });
 
     let ticket: Ticket;
@@ -664,6 +671,13 @@ export type DancerTicketInfo = {
   // билету (см. ticket-checkin-service.ts). Отдельно от isPaid — оплаченный
   // билет ещё не обязательно предъявлен на входе.
   checkedIn: boolean;
+  // Commerce Engine v1 (2026-09-18) — снимок фактически уплаченной суммы
+  // (price) и суммы скидки по промокоду (discountAmount), если она была.
+  // price уже ПОСЛЕ вычета скидки (см. issueTicket в ticket-service.ts) —
+  // "было" для зачёркнутой цены в UI = price + discountAmount.
+  price: number | null;
+  currency: string | null;
+  discountAmount: number | null;
 };
 
 // Только ISSUED — отменённые/возвращённые билеты не участвуют в подсчёте
@@ -687,6 +701,9 @@ export async function listTicketsByDancerForEvent(eventId: string, dancerIds: st
       ticketTypeName: t.ticketType?.name ?? null,
       isPaid: t.isPaid,
       checkedIn: t.checkIn != null,
+      price: t.price == null ? null : Number(t.price),
+      currency: t.currency ?? null,
+      discountAmount: t.discountAmount == null ? null : Number(t.discountAmount),
     });
     map.set(t.dancerId, list);
   }

@@ -7,6 +7,7 @@ import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/
 const issueSchema = z.object({
   dancerId: z.string().min(1),
   markPaid: z.boolean().optional(),
+  paymentMethod: z.enum(["CASH", "TRANSFER"]).optional(),
 });
 
 // Билеты одного TicketType — GET список держателей, POST выдать новый
@@ -36,7 +37,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!parsed.success) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
 
   try {
-    const ticket = await issueTicketForType(id, parsed.data.dancerId, user, { markPaid: parsed.data.markPaid });
+    const ticket = await issueTicketForType(id, parsed.data.dancerId, user, {
+      markPaid: parsed.data.markPaid,
+      paymentMethod: parsed.data.paymentMethod,
+    });
     return NextResponse.json({ ok: true, ticket });
   } catch (e) {
     if (e instanceof RegistrationForbiddenError) return NextResponse.json({ error: e.code }, { status: 403 });
