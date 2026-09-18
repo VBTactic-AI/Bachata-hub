@@ -20,11 +20,20 @@ async function requireOwnerOrAdminEvent(eventId: string, user: User) {
   return event;
 }
 
-export async function listOrdersForEvent(eventId: string, user: User) {
+export type OrderListFilters = {
+  productId?: string;
+  paymentMethod?: "CASH" | "TRANSFER";
+};
+
+export async function listOrdersForEvent(eventId: string, user: User, filters: OrderListFilters = {}) {
   await requireOwnerOrAdminEvent(eventId, user);
 
   return prisma.order.findMany({
-    where: { eventId },
+    where: {
+      eventId,
+      ...(filters.productId ? { items: { some: { productId: filters.productId } } } : {}),
+      ...(filters.paymentMethod ? { payments: { some: { method: filters.paymentMethod } } } : {}),
+    },
     include: {
       dancer: { select: { id: true, displayName: true, avatarUrl: true } },
       items: { include: { product: { select: { type: true } } } },
@@ -35,6 +44,18 @@ export async function listOrdersForEvent(eventId: string, user: User) {
     },
     orderBy: { createdAt: "desc" },
   });
+}
+
+// Список товаров события для фильтра "Заказов" по товару (2026-09-18) —
+// Product сам по себе безымянный (тонкая обёртка, см. комментарий у модели в
+// schema.prisma), название берём из Pass/TicketType.
+export async function listProductsForEvent(eventId: string, user: User) {
+  await requireOwnerOrAdminEvent(eventId, user);
+  const products = await prisma.product.findMany({
+    where: { eventId },
+    include: { pass: { select: { name: true } }, ticketType: { select: { name: true } } },
+  });
+  return products.map((p) => ({ id: p.id, name: p.pass?.name ?? p.ticketType?.name ?? "—", type: p.type }));
 }
 
 export async function getOrder(orderId: string, user: User) {

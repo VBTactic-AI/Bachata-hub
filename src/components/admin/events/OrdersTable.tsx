@@ -18,7 +18,13 @@ export type OrderRow = {
   promoCode: string | null;
   referralCode: string | null;
   paymentStatus: string | null;
+  paymentMethod: string | null;
   refundedTotal: number;
+};
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: "Наличные",
+  TRANSFER: "Б/н (перевод)",
 };
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
@@ -86,7 +92,11 @@ export function OrdersTable({ orders }: { orders: OrderRow[] }) {
                 {o.refundedTotal > 0 && <div className="text-xs text-red-400">возвращено {formatAmount(o.refundedTotal, o.currency)}</div>}
               </td>
               <td className="px-3 py-3 align-middle text-admin-muted">
-                {o.paymentStatus ? (o.paymentStatus === "PAID" ? "Оплачено (наличные/перевод)" : "Ожидается") : "—"}
+                {o.paymentStatus === "PAID"
+                  ? (o.paymentMethod ? PAYMENT_METHOD_LABELS[o.paymentMethod] : null) ?? "Оплачено (способ не указан)"
+                  : o.paymentStatus
+                    ? "Ожидается"
+                    : "—"}
               </td>
               <td className="px-3 py-3 align-middle">
                 <StatusBadge label={ORDER_STATUS_LABELS[o.status] ?? o.status} variant={ORDER_STATUS_VARIANTS[o.status] ?? "neutral"} />
