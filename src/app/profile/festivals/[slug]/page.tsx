@@ -1,10 +1,12 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDancerRef } from "@/lib/dancer";
+import { prisma } from "@/lib/prisma";
 import { getMyFestivalAccess } from "@/server/events/festival-member-service";
+import { formatEventDate, formatEventTime } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { FestivalPassQrCode } from "@/components/festival/FestivalPassQrCode";
+import { FestivalPublicProgram, type PublicProgramItem } from "@/components/FestivalPublicProgram";
 
 // Festival Engine — Stage 6 (2026-09-17, docs/FESTIVAL_SERVICE_LAYER_PLAN.md).
 // Личный кабинет участника фестиваля: свой Pass + расписание, доступное
@@ -13,13 +15,11 @@ import { FestivalPassQrCode } from "@/components/festival/FestivalPassQrCode";
 // QR (2026-09-17, следующий заход) — FestivalPassQrCode.tsx, генерируется на
 // клиенте из ticket.id (библиотека `qrcode` установлена пользователем
 // вручную — npm registry был недоступен через прокси предыдущей сессии).
-
-const PROGRAM_ITEM_TYPE_LABELS: Record<string, string> = {
-  WORKSHOP: "Мастер-класс",
-  PARTY: "Вечеринка",
-  COMPETITION: "Конкурс",
-  OTHER: "Другое",
-};
+//
+// Персональное приветствие + day-strip (Stage R10 переноса UI-прототипа,
+// 2026-09-19) — day-strip переиспользует FestivalPublicProgram (тот же
+// компонент, что и на публичной странице), группировка по дню считается
+// здесь же, теми же средствами formatEventDate/formatEventTime.
 
 function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
@@ -42,14 +42,42 @@ export default async function MyFestivalPage({ params }: { params: Promise<{ slu
     );
   }
 
-  const access = await getMyFestivalAccess(slug, dancer.id);
+  const [access, dancerProfile] = await Promise.all([
+    getMyFestivalAccess(slug, dancer.id),
+    prisma.dancer.findUnique({ where: { id: dancer.id }, select: { displayName: true } }),
+  ]);
   if (!access) notFound();
 
   const { festival, ticket, accessibleProgramItems } = access;
 
+  const programDays: [string, PublicProgramItem[]][] =
+    accessibleProgramItems.length > 0
+      ? Array.from(
+          accessibleProgramItems.reduce((map, item) => {
+            const key = formatEventDate(item.startTime);
+            const list = map.get(key) ?? [];
+            list.push({
+              id: item.id,
+              title: item.title,
+              type: item.type,
+              timeLabel: item.endTime ? `${formatEventTime(item.startTime)}–${formatEventTime(item.endTime)}` : formatEventTime(item.startTime),
+              teacherName: item.teacher?.name ?? null,
+              capacity: item.capacity,
+              showCapacityPublicly: item.showCapacityPublicly,
+              linkedEventSlug: item.linkedEvent?.slug ?? null,
+            });
+            map.set(key, list);
+            return map;
+          }, new Map<string, PublicProgramItem[]>())
+        )
+      : [];
+
   return (
     <div className="flex flex-col gap-5">
       <div>
+        {dancerProfile?.displayName && (
+          <p className="m-0 mb-1 text-sm font-semibold text-night-pink">Привет, {dancerProfile.displayName}! 👋</p>
+        )}
         <h1 className="m-0 font-night text-xl font-extrabold text-night-text">{festival.name}</h1>
         <p className="mt-1 text-sm text-night-muted">
           {festival.venueName ? `${festival.venueName} · ` : ""}
@@ -66,7 +94,7 @@ export default async function MyFestivalPage({ params }: { params: Promise<{ slu
         </Card>
       ) : (
         <>
-          <Card className="flex flex-col items-center gap-3 border-night-border bg-night-card py-6 text-center">
+          <Card className="flex flex-col items-center gap-3 border-night-primary/50 bg-gradient-to-b from-night-primary/10 to-night-card py-6 text-center">
             <span className="text-xs font-semibold uppercase tracking-wide text-night-muted">Мой Pass</span>
             <strong className="font-night text-lg text-night-text">{ticket.passName}</strong>
             <FestivalPassQrCode value={ticket.id} />
@@ -78,40 +106,10 @@ export default async function MyFestivalPage({ params }: { params: Promise<{ slu
 
           <div>
             <h2 className="m-0 mb-2 font-night text-base font-bold text-night-text">Доступная вам программа</h2>
-            {accessibleProgramItems.length === 0 ? (
+            {programDays.length === 0 ? (
               <p className="text-sm text-night-muted">Программа фестиваля пока не опубликована.</p>
             ) : (
-              <div className="flex flex-col gap-3">
-                {accessibleProgramItems.map((item) => {
-                  const body = (
-                    <>
-                      <div className="flex items-center justify-between gap-2">
-                        <strong className="text-night-text">{item.title}</strong>
-                        <span className="shrink-0 rounded-full bg-night-card2 px-2.5 py-1 text-xs font-semibold text-night-pink">
-                          {PROGRAM_ITEM_TYPE_LABELS[item.type] ?? item.type}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-night-muted">
-                        {formatDateTime(item.startTime)}
-                        {item.endTime ? ` — ${formatDateTime(item.endTime)}` : ""}
-                        {item.teacher ? ` · ${item.teacher.name}` : ""}
-                      </p>
-                    </>
-                  );
-
-                  return item.linkedEvent ? (
-                    <Link key={item.id} href={`/events/${item.linkedEvent.slug}`} className="block no-underline">
-                      <Card interactive className="border-night-border bg-night-card hover:border-night-primary/60">
-                        {body}
-                      </Card>
-                    </Link>
-                  ) : (
-                    <Card key={item.id} className="border-night-border bg-night-card">
-                      {body}
-                    </Card>
-                  );
-                })}
-              </div>
+              <FestivalPublicProgram days={programDays} />
             )}
           </div>
         </>
