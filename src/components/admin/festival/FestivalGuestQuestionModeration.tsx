@@ -24,10 +24,15 @@ const STATUS_VARIANTS = { PENDING: "warning", APPROVED: "success", REJECTED: "da
 // фильтр) и answer (ответил ли организатор) — вопрос может быть одобрен, но
 // без ответа ("Ожидает ответа" на публичной странице). Форма ответа не
 // зависит от статуса модерации — можно ответить и до одобрения.
+//
+// Ответ — оверлей-модалка вместо всегда открытой инлайн-формы под каждым
+// вопросом (Stage R7 переноса UI-прототипа, 2026-09-19, единый модальный
+// паттерн проекта).
 export function FestivalGuestQuestionModeration({ festivalId, items }: { festivalId: string; items: GuestQuestionRow[] }) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [answering, setAnswering] = useState<Record<string, string>>({});
+  const [answerModal, setAnswerModal] = useState<GuestQuestionRow | null>(null);
+  const [answerText, setAnswerText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function moderate(id: string, action: "approve" | "reject") {
@@ -47,15 +52,14 @@ export function FestivalGuestQuestionModeration({ festivalId, items }: { festiva
     router.refresh();
   }
 
-  async function submitAnswer(id: string) {
-    const answer = (answering[id] ?? "").trim();
-    if (!answer) return;
-    setLoadingId(id);
+  async function submitAnswer() {
+    if (!answerModal || !answerText.trim()) return;
+    setLoadingId(answerModal.id);
     setError(null);
-    const res = await fetch(`/api/festivals/${festivalId}/guest-questions/${id}/answer`, {
+    const res = await fetch(`/api/festivals/${festivalId}/guest-questions/${answerModal.id}/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answer }),
+      body: JSON.stringify({ answer: answerText.trim() }),
     });
     setLoadingId(null);
     if (!res.ok) {
@@ -63,6 +67,8 @@ export function FestivalGuestQuestionModeration({ festivalId, items }: { festiva
       setError(data.message || data.error || "Не удалось сохранить ответ.");
       return;
     }
+    setAnswerModal(null);
+    setAnswerText("");
     router.refresh();
   }
 
@@ -83,42 +89,75 @@ export function FestivalGuestQuestionModeration({ festivalId, items }: { festiva
               </div>
               <p className="m-0 mt-1 text-night-text">{item.question}</p>
 
-              {item.moderationStatus === "PENDING" && (
-                <div className="mt-2 flex gap-2">
-                  <Button type="button" size="sm" variant="admin" disabled={loadingId === item.id} onClick={() => moderate(item.id, "approve")}>
-                    Одобрить
-                  </Button>
-                  <Button type="button" size="sm" variant="adminOutline" disabled={loadingId === item.id} onClick={() => moderate(item.id, "reject")}>
-                    Скрыть
-                  </Button>
-                </div>
-              )}
-
-              {item.answer ? (
-                <p className="m-0 mt-2 rounded-app-sm bg-admin-card2 p-2 text-admin-muted">Ответ: {item.answer}</p>
-              ) : (
-                <div className="mt-2 flex flex-col gap-2">
-                  <Textarea
-                    value={answering[item.id] ?? ""}
-                    onChange={(e) => setAnswering((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                    className={FIELD_CLASS}
-                    rows={2}
-                    placeholder="Ваш ответ…"
-                  />
+              <div className="mt-2 flex flex-wrap gap-2">
+                {item.moderationStatus === "PENDING" && (
+                  <>
+                    <Button type="button" size="sm" variant="admin" disabled={loadingId === item.id} onClick={() => moderate(item.id, "approve")}>
+                      Одобрить
+                    </Button>
+                    <Button type="button" size="sm" variant="adminOutline" disabled={loadingId === item.id} onClick={() => moderate(item.id, "reject")}>
+                      Скрыть
+                    </Button>
+                  </>
+                )}
+                {!item.answer && (
                   <Button
                     type="button"
                     size="sm"
                     variant="adminOutline"
-                    disabled={loadingId === item.id || !(answering[item.id] ?? "").trim()}
-                    onClick={() => submitAnswer(item.id)}
-                    className="self-start"
+                    disabled={loadingId === item.id}
+                    onClick={() => {
+                      setAnswerModal(item);
+                      setAnswerText("");
+                    }}
                   >
                     Ответить
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
+
+              {item.answer && <p className="m-0 mt-2 rounded-app-sm bg-admin-card2 p-2 text-admin-muted">Ответ: {item.answer}</p>}
             </div>
           ))}
+        </div>
+      )}
+
+      {answerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={() => setAnswerModal(null)} role="presentation">
+          <div
+            className="flex max-h-[90vh] w-full max-w-[460px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="answer-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-admin-border px-5 py-4">
+              <h3 id="answer-modal-title" className="m-0 text-[15px] font-extrabold text-night-text">
+                Ответ на вопрос гостя
+              </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <p className="m-0 mb-3 text-sm text-admin-muted">
+                {answerModal.askerName || "Гость"}: «{answerModal.question}»
+              </p>
+              <Textarea
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+                className={FIELD_CLASS}
+                rows={4}
+                placeholder="Ваш ответ…"
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t border-admin-border px-5 py-4">
+              <Button type="button" variant="adminOutline" onClick={() => setAnswerModal(null)} disabled={loadingId === answerModal.id}>
+                Отмена
+              </Button>
+              <Button type="button" variant="admin" disabled={loadingId === answerModal.id || !answerText.trim()} onClick={submitAnswer}>
+                {loadingId === answerModal.id ? "Сохранение…" : "Ответить"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
