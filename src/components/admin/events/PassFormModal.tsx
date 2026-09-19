@@ -84,11 +84,110 @@ function toLocalInput(iso: string | null): string {
   return iso.slice(0, 16);
 }
 
+function formatShortDate(localInput: string): string {
+  const [datePart] = localInput.split("T");
+  if (!datePart) return "";
+  const [year, month, day] = datePart.split("-");
+  return `${day}.${month}.${year}`;
+}
+
+type TierForm = { id?: string; label: string; price: string; currency: string; validFrom: string; validUntil: string };
+
+// Попап одного ценового периода (Early Bird/Regular/Late — 2026-09-19, по
+// прямому запросу пользователя: "можно как-то сделать возможность создавать
+// множество Early Bird" — backend уже поддерживал произвольное число тиров
+// (PassPriceTier), ограничение было только в UI, где помещался ровно один).
+// Вложен внутрь основного попапа Pass — z-[60], выше основного z-50.
+function PriceTierFormModal({
+  initial,
+  defaultCurrency,
+  onSave,
+  onClose,
+}: {
+  initial: TierForm | null;
+  defaultCurrency: string;
+  onSave: (form: TierForm) => void;
+  onClose: () => void;
+}) {
+  const [label, setLabel] = useState(initial?.label ?? "");
+  const [price, setPrice] = useState(initial?.price ?? "");
+  const [currency, setCurrency] = useState(initial?.currency || defaultCurrency);
+  const [validFrom, setValidFrom] = useState(initial?.validFrom ?? "");
+  const [validUntil, setValidUntil] = useState(initial?.validUntil ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  function save() {
+    if (!label.trim()) {
+      setError("Название периода обязательно.");
+      return;
+    }
+    if (!price) {
+      setError("Цена обязательна.");
+      return;
+    }
+    onSave({ id: initial?.id, label: label.trim(), price, currency, validFrom, validUntil });
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-5" onClick={onClose} role="presentation">
+      <div
+        className="flex max-h-[90vh] w-full max-w-[400px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="price-tier-form-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-admin-border px-5 py-4">
+          <h3 id="price-tier-form-title" className="m-0 text-[17px] font-extrabold text-night-text">
+            {initial ? "Изменить период" : "Новый ценовой период"}
+          </h3>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="flex flex-col gap-3">
+            <Label className="text-admin-muted">
+              Название
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} className={FIELD_CLASS} placeholder="Early Bird" />
+            </Label>
+            <div className="grid grid-cols-2 gap-2">
+              <Label className="text-admin-muted">
+                Цена
+                <Input type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className={FIELD_CLASS} />
+              </Label>
+              <Label className="text-admin-muted">
+                Валюта
+                <Input value={currency} onChange={(e) => setCurrency(e.target.value)} className={FIELD_CLASS} />
+              </Label>
+            </div>
+            <Label className="text-admin-muted">
+              Действует с (необязательно)
+              <DateTimeField value={validFrom} onChange={setValidFrom} className={FIELD_CLASS} />
+            </Label>
+            <Label className="text-admin-muted">
+              Действует до (необязательно)
+              <DateTimeField value={validUntil} onChange={setValidUntil} className={FIELD_CLASS} />
+            </Label>
+            {error && <p className="m-0 text-sm text-red-400">{error}</p>}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-admin-border px-5 py-4">
+          <Button type="button" size="sm" variant="ghost" className="text-admin-muted hover:text-admin-primaryHover" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button type="button" size="sm" variant="admin" onClick={save}>
+            Сохранить
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Создание/редактирование Pass (2026-09-16) — одна модалка на оба режима.
-// Секции: основное, цена (+ Early Bird — один ценовой период в этом релизе
-// UI, backend уже поддерживает несколько), количество/период продаж, доступ
-// к пунктам программы/сессиям (только если у события они есть), обложка,
-// повторный вход. "Начать из шаблона" — только в режиме создания.
+// Секции: основное, цена (+ произвольное число ценовых периодов —
+// Early Bird/Regular/Late, см. PriceTierFormModal выше), количество/период
+// продаж, доступ к пунктам программы/сессиям (только если у события они
+// есть), обложка, повторный вход. "Начать из шаблона" — только в режиме
+// создания.
 //
 // scope="template" (2026-09-18, по прямому запросу пользователя — "везде
 // один и тот же экран") — этот же компонент переиспользован в
@@ -148,30 +247,32 @@ export function PassFormModal({
   const [refundPolicy, setRefundPolicy] = useState(initial?.refundPolicy ?? "NONE");
   const [refundDeadline, setRefundDeadline] = useState(toLocalInput(initial?.refundDeadline ?? null));
   const [refundFeePercent, setRefundFeePercent] = useState(initial?.refundFeePercent != null ? String(initial.refundFeePercent) : "");
-  const [earlyBirdEnabled, setEarlyBirdEnabled] = useState(false);
-  const [earlyBirdPrice, setEarlyBirdPrice] = useState("");
-  const [earlyBirdUntil, setEarlyBirdUntil] = useState("");
-  const [earlyBirdTierId, setEarlyBirdTierId] = useState<string | null>(null);
+  const [tiers, setTiers] = useState<TierForm[]>([]);
+  const [initialTierIds, setInitialTierIds] = useState<string[]>([]);
+  const [editingTier, setEditingTier] = useState<number | "new" | null>(null);
   const [selectedTargets, setSelectedTargets] = useState<string[]>(initialAccessTargetIds ?? []);
   const [templateId, setTemplateId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Редактирование — подтягиваем уже существующий Early Bird тир (если есть),
-  // берём первый (см. комментарий класса выше про упрощение UI). Только для
-  // scope="event" — у шаблона Early Bird не бывает вовсе.
+  // Редактирование — подтягиваем ВСЕ уже существующие ценовые периоды
+  // (2026-09-19, раньше — только первый). Только для scope="event" — у
+  // шаблона периодов не бывает вовсе.
   useEffect(() => {
     if (scope !== "event" || mode !== "edit" || !initial) return;
     fetch(`/api/events/${eventSlug}/passes/${initial.id}/price-tiers`)
       .then((r) => r.json())
-      .then((data) => {
-        const tier = data.tiers?.[0];
-        if (tier) {
-          setEarlyBirdEnabled(true);
-          setEarlyBirdTierId(tier.id);
-          setEarlyBirdPrice(String(tier.price));
-          setEarlyBirdUntil(toLocalInput(tier.validUntil));
-        }
+      .then((data: { tiers?: { id: string; label: string; price: number | string; currency: string | null; validFrom: string | null; validUntil: string | null }[] }) => {
+        const loaded: TierForm[] = (data.tiers ?? []).map((t) => ({
+          id: t.id,
+          label: t.label,
+          price: String(t.price),
+          currency: t.currency ?? "",
+          validFrom: toLocalInput(t.validFrom),
+          validUntil: toLocalInput(t.validUntil),
+        }));
+        setTiers(loaded);
+        setInitialTierIds(loaded.map((t) => t.id!));
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -269,16 +370,25 @@ export function PassFormModal({
     }
     const passId: string = mode === "create" ? data.pass.id : initial!.id;
 
-    // Early Bird — один тир в этом релизе UI.
-    if (earlyBirdEnabled && earlyBirdPrice) {
+    // Ценовые периоды (2026-09-19) — diff применяется здесь: убранные из
+    // списка тиры удаляются, новые (без id, добавленные через
+    // PriceTierFormModal) создаются, изменённые — обновляются. Каждый тир
+    // хранит свою собственную валюту (не обязательно совпадает с основной
+    // ценой Pass — организатор мог сменить валюту периода отдельно).
+    const currentTierIds = tiers.filter((t) => t.id).map((t) => t.id!);
+    for (const removedId of initialTierIds.filter((id) => !currentTierIds.includes(id))) {
+      await fetch(`/api/events/${eventSlug}/passes/${passId}/price-tiers/${removedId}`, { method: "DELETE" });
+    }
+    for (const t of tiers) {
       const tierBody = {
-        label: "Early Bird",
-        price: Number(earlyBirdPrice),
-        currency: isFree ? null : currency || null,
-        validUntil: earlyBirdUntil ? new Date(earlyBirdUntil).toISOString() : null,
+        label: t.label,
+        price: Number(t.price),
+        currency: t.currency || null,
+        validFrom: t.validFrom ? new Date(t.validFrom).toISOString() : null,
+        validUntil: t.validUntil ? new Date(t.validUntil).toISOString() : null,
       };
-      if (earlyBirdTierId) {
-        await fetch(`/api/events/${eventSlug}/passes/${passId}/price-tiers/${earlyBirdTierId}`, {
+      if (t.id) {
+        await fetch(`/api/events/${eventSlug}/passes/${passId}/price-tiers/${t.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(tierBody),
@@ -290,8 +400,6 @@ export function PassFormModal({
           body: JSON.stringify(tierBody),
         });
       }
-    } else if (!earlyBirdEnabled && earlyBirdTierId) {
-      await fetch(`/api/events/${eventSlug}/passes/${passId}/price-tiers/${earlyBirdTierId}`, { method: "DELETE" });
     }
 
     // Доступ к пунктам программы/сессиям — полная замена (пусто = без ограничений).
@@ -330,6 +438,7 @@ export function PassFormModal({
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={onClose} role="presentation">
       <div
         className="flex max-h-[90vh] w-full max-w-[520px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
@@ -406,32 +515,53 @@ export function PassFormModal({
 
               {scope === "event" && !isFree && (
                 <div className="mt-3 border-t border-admin-border pt-3">
-                  <label className="flex items-center gap-2 text-sm text-night-text">
-                    <input
-                      type="checkbox"
-                      checked={earlyBirdEnabled}
-                      onChange={(e) => setEarlyBirdEnabled(e.target.checked)}
-                      className="accent-admin-primary"
-                    />
-                    Использовать Early Bird
-                  </label>
-                  {earlyBirdEnabled && (
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <Label className="text-admin-muted">
-                        Цена Early Bird
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={earlyBirdPrice}
-                          onChange={(e) => setEarlyBirdPrice(e.target.value)}
-                          className={FIELD_CLASS}
-                        />
-                      </Label>
-                      <Label className="text-admin-muted">
-                        До
-                        <DateTimeField value={earlyBirdUntil} onChange={setEarlyBirdUntil} className={FIELD_CLASS} />
-                      </Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="m-0 text-sm text-night-text">Ценовые периоды (Early Bird и т.д.)</p>
+                    <button
+                      type="button"
+                      className="text-xs text-admin-primaryHover hover:underline"
+                      onClick={() => setEditingTier("new")}
+                    >
+                      + Добавить период
+                    </button>
+                  </div>
+                  {tiers.length === 0 ? (
+                    <p className="m-0 mt-1 text-xs text-admin-muted">Периодов нет — действует цена, указанная выше.</p>
+                  ) : (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      {tiers.map((tier, i) => (
+                        <div
+                          key={tier.id ?? `new-${i}`}
+                          className="flex items-center justify-between gap-2 rounded-app-sm border border-admin-border bg-admin-card2/50 px-2.5 py-1.5 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-semibold text-night-text">{tier.label}</span>{" "}
+                            <span className="text-admin-muted">
+                              {tier.price} {tier.currency}
+                            </span>
+                            {(tier.validFrom || tier.validUntil) && (
+                              <p className="m-0 text-xs text-admin-disabled">
+                                {tier.validFrom && `с ${formatShortDate(tier.validFrom)}`}
+                                {tier.validFrom && tier.validUntil && " "}
+                                {tier.validUntil && `до ${formatShortDate(tier.validUntil)}`}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button type="button" className="text-xs text-admin-primaryHover hover:underline" onClick={() => setEditingTier(i)}>
+                              Изменить
+                            </button>
+                            <button
+                              type="button"
+                              className="text-admin-muted hover:text-red-400"
+                              aria-label="Удалить период"
+                              onClick={() => setTiers((prev) => prev.filter((_, idx) => idx !== i))}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -566,5 +696,17 @@ export function PassFormModal({
         </div>
       </div>
     </div>
+    {editingTier !== null && (
+      <PriceTierFormModal
+        initial={editingTier === "new" ? null : tiers[editingTier]}
+        defaultCurrency={currency || "BYN"}
+        onClose={() => setEditingTier(null)}
+        onSave={(form) => {
+          setTiers((prev) => (editingTier === "new" ? [...prev, form] : prev.map((row, idx) => (idx === editingTier ? form : row))));
+          setEditingTier(null);
+        }}
+      />
+    )}
+    </>
   );
 }
