@@ -6,13 +6,11 @@ import { cn } from "@/lib/cn";
 
 // Консоль одного фестиваля — тот же приём, что и EventDashboardTabs.tsx
 // (Events Engine): каждая вкладка — отдельная страница со своей загрузкой
-// данных, не показ/скрытие уже загруженного. Список вкладок расширяется по
-// мере переноса разделов UI-макета (docs/PROGRESS.md, Festival Engine UI
-// transfer, Stage UI-1/2/3/4: Обзор/Программа/Команда/Пассы/Спонсоры и
-// FAQ/Вопросы и отзывы/Бюджет; рассылка по Pass — не своя вкладка, часть
-// «Пассы», см. FestivalPassBroadcastPanel.tsx) — публичная страница
-// (Stage UI-5) остаётся следующей стадией, чтобы не заводить ссылки на
-// несуществующие страницы (404 хуже отсутствующей вкладки).
+// данных, не показ/скрытие уже загруженного. Рассылка по Pass — не своя
+// вкладка, часть «Пассы» (см. FestivalPassBroadcastPanel.tsx). «Публикация»
+// (2026-09-19, Stage R3 переноса UI-прототипа) — вынесена с «Обзора» в
+// отдельную вкладку по образцу прототипа (чеклист + danger-zone архивации/
+// удаления).
 export function FestivalDashboardTabs({ festivalId }: { festivalId: string }) {
   const pathname = usePathname();
   const base = `/admin/festival/${festivalId}`;
@@ -25,6 +23,7 @@ export function FestivalDashboardTabs({ festivalId }: { festivalId: string }) {
     { href: `${base}/sponsors-faq`, label: "Спонсоры и FAQ", exact: false },
     { href: `${base}/guests`, label: "Вопросы и отзывы", exact: false },
     { href: `${base}/budget`, label: "Бюджет", exact: false },
+    { href: `${base}/publish`, label: "Публикация", exact: false },
   ];
 
   return (

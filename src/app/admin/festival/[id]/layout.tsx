@@ -39,19 +39,31 @@ export default async function FestivalDashboardLayout({
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <a href="/admin/festival" className="text-sm text-admin-muted hover:text-night-text hover:underline">
-          ← К моим фестивалям
-        </a>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">{festival.name}</h1>
-          <StatusBadge label={STATUS_LABELS[status]} variant={STATUS_VARIANTS[status]} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <a href="/admin/festival" className="text-sm text-admin-muted hover:text-night-text hover:underline">
+            ← К моим фестивалям
+          </a>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h1 className="m-0 font-night text-xl font-extrabold text-night-text sm:text-2xl">{festival.name}</h1>
+            <StatusBadge label={STATUS_LABELS[status]} variant={STATUS_VARIANTS[status]} />
+          </div>
+          <p className="m-0 mt-0.5 text-sm text-admin-muted">
+            {formatDateTime(festival.startsAt)}
+            {festival.endsAt ? ` — ${formatDateTime(festival.endsAt)}` : ""}
+            {festival.venueName ? ` · ${festival.venueName}` : ""}
+          </p>
         </div>
-        <p className="m-0 mt-0.5 text-sm text-admin-muted">
-          {formatDateTime(festival.startsAt)}
-          {festival.endsAt ? ` — ${formatDateTime(festival.endsAt)}` : ""}
-          {festival.venueName ? ` · ${festival.venueName}` : ""}
-        </p>
+        {status === "PUBLISHED" && (
+          <a
+            href={`/festivals/${festival.slug}`}
+            target="_blank"
+            rel="noreferrer"
+            className="whitespace-nowrap text-sm font-semibold text-admin-primaryHover hover:underline"
+          >
+            Открыть публичную страницу →
+          </a>
+        )}
       </div>
 
       <FestivalDashboardTabs festivalId={festival.id} />
