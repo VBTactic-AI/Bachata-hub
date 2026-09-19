@@ -34,7 +34,16 @@ export async function getAdminSectionAccess(user: User, actor: Actor | null): Pr
     // что уже используется для общего редиректа с /admin (authorize.ts).
     competitions: isAdmin(user) || (actor !== null && !hasNoAdminAccess(actor)),
     school: !!school,
-    festival: user.isVerifiedFestivalOrganizer,
+    // 2026-09-19, по прямому вопросу пользователя ("почему у супер админа
+    // нету доступа к админке фестиваля") — не хватало bypass isAdmin(user),
+    // хотя сама /admin/festival/layout.tsx его уже давно проверяет (см. её
+    // комментарий про точно такую же рассинхронизацию, найденную раньше).
+    // Из-за этого ADMIN, не помеченный ОТДЕЛЬНО isVerifiedFestivalOrganizer,
+    // на самой странице /admin/festival спокойно проходил (её собственный
+    // гейт bypass уже имел), но не видел карточку "Фестивали" на хабе /admin
+    // и кнопку "Админ панель" на /profile её тоже не предлагала — доступ
+    // технически был, обнаружить его было неоткуда.
+    festival: user.isVerifiedFestivalOrganizer || isAdmin(user),
   };
 }
 

@@ -69,3 +69,27 @@ describe("getAdminSectionAccess() — раздел «Соревнования»"
     expect(access.competitions).toBe(true);
   });
 });
+
+// 2026-09-19, по прямому вопросу пользователя ("почему у супер админа нету
+// доступа к админке фестиваля") — реальный баг: /admin/festival/layout.tsx
+// уже давно пускает site-ADMIN (isAdmin(user) bypass), но getAdminSectionAccess()
+// эту же ветку не учитывала — ADMIN без ОТДЕЛЬНОГО isVerifiedFestivalOrganizer
+// технически проходил на саму страницу, но карточки "Фестивали" на хабе
+// /admin и кнопки "Админ панель" на /profile не видел — доступ был, найти
+// его было неоткуда.
+describe("getAdminSectionAccess() — раздел «Фестивали»", () => {
+  it("site-роль ADMIN — festival: true, даже без isVerifiedFestivalOrganizer", async () => {
+    const access = await getAdminSectionAccess(makeUser({ role: "ADMIN", isVerifiedFestivalOrganizer: false }), null);
+    expect(access.festival).toBe(true);
+  });
+
+  it("isVerifiedFestivalOrganizer без роли ADMIN — festival: true", async () => {
+    const access = await getAdminSectionAccess(makeUser({ isVerifiedFestivalOrganizer: true }), null);
+    expect(access.festival).toBe(true);
+  });
+
+  it("ни ADMIN, ни isVerifiedFestivalOrganizer — festival: false", async () => {
+    const access = await getAdminSectionAccess(makeUser(), null);
+    expect(access.festival).toBe(false);
+  });
+});
