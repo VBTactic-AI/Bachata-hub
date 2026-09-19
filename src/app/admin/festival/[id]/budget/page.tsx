@@ -26,23 +26,34 @@ export default async function FestivalBudgetPage({ params }: { params: Promise<{
     throw e;
   }
 
+  const marginPct = summary.totalIncome > 0 ? Math.round((summary.balance / summary.totalIncome) * 100) : null;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Доход" value={`${summary.totalIncome} BYN`} icon={<CheckCircleIcon />} tone="success" />
-        <StatCard label="из них Pass" value={`${summary.passRevenue} BYN`} icon={<CardIcon />} tone="primary" />
-        <StatCard label="из них спонсоры" value={`${summary.sponsorIncome} BYN`} icon={<CardIcon />} tone="primary" />
         <StatCard label="Расходы" value={`${summary.totalExpenses} BYN`} icon={<AlertIcon />} tone="danger" />
+        <StatCard
+          label="Баланс"
+          value={`${summary.balance} BYN`}
+          icon={<TargetIcon />}
+          tone={summary.balance >= 0 ? "success" : "danger"}
+        />
+        <StatCard label="Маржа" value={marginPct == null ? "—" : `${marginPct}%`} icon={<CardIcon />} tone="primary" />
       </div>
 
       <div className="rounded-app border border-admin-border bg-admin-card p-4">
-        <div className="flex items-center gap-2">
-          <TargetIcon />
-          <span className="text-sm font-semibold uppercase tracking-wide text-admin-muted">Баланс</span>
+        <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Доход — из чего складывается</h2>
+        <div className="flex flex-col">
+          <div className="flex items-center justify-between border-b border-admin-border py-2 text-sm last:border-none">
+            <span className="text-night-text">Продажа пассов</span>
+            <span className="font-bold tabular-nums text-night-text">{summary.passRevenue} BYN</span>
+          </div>
+          <div className="flex items-center justify-between py-2 text-sm">
+            <span className="text-night-text">Спонсорские взносы</span>
+            <span className="font-bold tabular-nums text-night-text">{summary.sponsorIncome} BYN</span>
+          </div>
         </div>
-        <p className={`m-0 mt-2 text-2xl font-extrabold ${summary.balance >= 0 ? "text-night-success" : "text-red-400"}`}>
-          {summary.balance} BYN
-        </p>
       </div>
 
       <FestivalExpenseManager
