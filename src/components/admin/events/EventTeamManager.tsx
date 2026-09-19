@@ -28,6 +28,12 @@ type SearchResult = { userId: string; displayName: string; email: string };
 export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: string; initialMembers: EventTeamMemberRow[] }) {
   const router = useRouter();
   const [members, setMembers] = useState(initialMembers);
+  // Фильтр по уже добавленным участникам (перенос UI-прототипа Festival
+  // Engine, Stage R5, 2026-09-19, по прямому запросу пользователя — только
+  // фильтр, без переключателя поиска по email) — локальный, без похода на
+  // сервер: список участников события/фестиваля короткий (единицы-десятки),
+  // не тысячи.
+  const [memberFilter, setMemberFilter] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [selected, setSelected] = useState<SearchResult | null>(null);
@@ -176,37 +182,57 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
       {members.length === 0 ? (
         <p className="text-sm text-admin-muted">В команде пока только вы (владелец события).</p>
       ) : (
-        <div className="overflow-x-auto rounded-app border border-admin-border">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Имя</th>
-                <th className="px-3 py-2 font-semibold">Роль</th>
-                <th className="px-3 py-2 text-right font-semibold">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((m) => (
-                <tr key={m.id} className="border-t border-admin-border">
-                  <td className="px-3 py-2 text-night-text">
-                    {m.user.displayName ?? m.user.email}
-                    {m.user.displayName && <span className="ml-1.5 text-xs text-admin-muted">{m.user.email}</span>}
-                  </td>
-                  <td className="px-3 py-2 text-admin-muted">{ROLE_LABELS[m.role] ?? m.role}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => removeMember(m.user.id)}
-                      className="text-xs text-red-400 hover:underline disabled:opacity-50"
-                    >
-                      Убрать
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-2">
+          {members.length > 4 && (
+            <Input
+              value={memberFilter}
+              onChange={(e) => setMemberFilter(e.target.value)}
+              placeholder="Фильтр по имени/email…"
+              className={FIELD_CLASS}
+              style={{ maxWidth: 280 }}
+            />
+          )}
+          {(() => {
+            const q = memberFilter.trim().toLowerCase();
+            const filtered = q
+              ? members.filter((m) => (m.user.displayName ?? "").toLowerCase().includes(q) || m.user.email.toLowerCase().includes(q))
+              : members;
+            if (filtered.length === 0) return <p className="m-0 text-sm text-admin-muted">Никого не найдено по фильтру.</p>;
+            return (
+              <div className="overflow-x-auto rounded-app border border-admin-border">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Имя</th>
+                      <th className="px-3 py-2 font-semibold">Роль</th>
+                      <th className="px-3 py-2 text-right font-semibold">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((m) => (
+                      <tr key={m.id} className="border-t border-admin-border">
+                        <td className="px-3 py-2 text-night-text">
+                          {m.user.displayName ?? m.user.email}
+                          {m.user.displayName && <span className="ml-1.5 text-xs text-admin-muted">{m.user.email}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-admin-muted">{ROLE_LABELS[m.role] ?? m.role}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            disabled={loading}
+                            onClick={() => removeMember(m.user.id)}
+                            className="text-xs text-red-400 hover:underline disabled:opacity-50"
+                          >
+                            Убрать
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
