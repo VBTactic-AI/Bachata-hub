@@ -1,4 +1,4 @@
-import type { Event, EventStatus, Festival, ModerationStatus, Pass, User } from "@prisma/client";
+import type { City, Event, EventStatus, Festival, ModerationStatus, Pass, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isAdmin, isVerifiedFestivalOrganizer } from "@/lib/auth";
 import { uniqueSlug } from "@/lib/slug";
@@ -109,10 +109,13 @@ export async function getFestivalBySlug(slug: string) {
   });
 }
 
-export async function listFestivalsForUser(user: User): Promise<(Festival & { event: Event | null })[]> {
+// `city` — добавлено в Stage R1 переноса UI-прототипа (2026-09-19): карточка
+// хаба показывает город рядом с датами, как и остальные карточки списков
+// событий в проекте (EventCardPreview и т.п.).
+export async function listFestivalsForUser(user: User): Promise<(Festival & { event: Event | null; city: City })[]> {
   return prisma.festival.findMany({
     where: user.role === "ADMIN" ? {} : { createdById: user.id },
-    include: { event: true },
+    include: { event: true, city: true },
     orderBy: { createdAt: "desc" },
   });
 }
