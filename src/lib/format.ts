@@ -40,6 +40,18 @@ export function formatEventDateRange(start: Date, end: Date | null): string {
   return `${dateOnlyFormatter.format(start)}, ${formatEventTime(start)}–${formatEventTime(end)}`;
 }
 
+// Число дней события для бейджа многодневности на карточке (фестивали/
+// интенсивы) — null для однодневных, чтобы карточка просто не показывала
+// бейдж, а не "1 день" (по образцу formatRelativeDayLabel — null тоже
+// осмысленное "показывать нечего", не 0).
+export function eventDayCount(start: Date, end: Date | null): number | null {
+  if (!end) return null;
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  const diffDays = Math.round((endDay.getTime() - startDay.getTime()) / 86_400_000) + 1;
+  return diffDays > 1 ? diffDays : null;
+}
+
 // Короткий "плашечный" лейбл для карточки события ("сегодня", "завтра",
 // "через N дн.") — сознательно без склонения числительного (как в афишах),
 // поэтому не нужен pluralizeRu и не рискуем ошибиться со склонением.

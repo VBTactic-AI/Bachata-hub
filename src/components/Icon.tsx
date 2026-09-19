@@ -79,6 +79,21 @@ export function PhoneIcon({ size = 15 }: IconProps) {
   );
 }
 
+// Избранное на карточке события (FollowButton variant="icon") — заполненная
+// звезда, если fill="currentColor", контурная при fill="none".
+export function StarIcon({ size = 15, filled = false }: IconProps & { filled?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill={filled ? "currentColor" : "none"} aria-hidden="true">
+      <path
+        d="M10 2.5 12.3 7.6 18 8.3 13.8 12.1 15 17.5 10 14.6 5 17.5 6.2 12.1 2 8.3 7.7 7.6Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function MailIcon({ size = 15 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">

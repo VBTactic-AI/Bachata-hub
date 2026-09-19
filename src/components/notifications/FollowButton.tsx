@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { StarIcon } from "@/components/Icon";
+import { cn } from "@/lib/cn";
 
 export type FollowSubscriptionType = "EVENT" | "SCHOOL" | "CITY" | "COUNTRY" | "EVENT_TYPE" | "INSTRUCTOR" | "ORGANIZER";
 
@@ -17,6 +19,7 @@ export function FollowButton({
   labelFollow = "Подписаться",
   labelFollowing = "Подписан",
   className,
+  variant = "button",
 }: {
   type: FollowSubscriptionType;
   targetId: string;
@@ -25,12 +28,17 @@ export function FollowButton({
   labelFollow?: string;
   labelFollowing?: string;
   className?: string;
+  // "icon" — компактная звезда для сеток карточек (/events), где полноразмерная
+  // кнопка с текстом перегрузила бы карточку (CLAUDE.md §40 — не только для
+  // судейского UI, тот же принцип и для плотных публичных лент).
+  variant?: "button" | "icon";
 }) {
   const [subscriptionId, setSubscriptionId] = useState(initialSubscriptionId);
   const [error, setError] = useState<string | null>(null);
   const following = subscriptionId !== null;
 
   if (!loggedIn) {
+    if (variant === "icon") return null; // звезда молча не показывается гостю — нет места под текст-приглашение в карточке
     return (
       <a href="/login" className="text-sm text-night-primary no-underline hover:underline">
         Войдите, чтобы подписаться
@@ -64,6 +72,25 @@ export function FollowButton({
         setError("Не удалось подписаться, попробуйте ещё раз.");
       }
     }
+  }
+
+  if (variant === "icon") {
+    return (
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={following ? `${labelFollowing}: ${labelFollow}` : labelFollow}
+        aria-pressed={following}
+        title={error ?? (following ? labelFollowing : labelFollow)}
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-full border border-night-border bg-black/45 text-white backdrop-blur-sm transition hover:border-night-primary",
+          following && "text-night-primary",
+          className
+        )}
+      >
+        <StarIcon size={15} filled={following} />
+      </button>
+    );
   }
 
   return (

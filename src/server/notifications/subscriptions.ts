@@ -94,3 +94,20 @@ export async function getSubscribedTargetIds(
   });
   return new Set(rows.map((r) => r.targetId));
 }
+
+// Тот же батч-принцип, что у getSubscribedTargetIds выше, но возвращает id
+// самой строки Subscription (не просто факт наличия) — нужен FollowButton'у
+// в списке карточек (/events): у него initialSubscriptionId используется для
+// DELETE /api/subscriptions/[id] при отписке, просто bool тут недостаточно.
+export async function getSubscriptionIdMap(
+  userId: string,
+  type: SubscriptionType,
+  targetIds: string[]
+): Promise<Map<string, string>> {
+  if (targetIds.length === 0) return new Map();
+  const rows = await prisma.subscription.findMany({
+    where: { userId, type, targetId: { in: targetIds } },
+    select: { id: true, targetId: true },
+  });
+  return new Map(rows.map((r) => [r.targetId, r.id]));
+}

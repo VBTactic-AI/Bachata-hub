@@ -31,6 +31,7 @@ const {
   unsubscribe,
   listSubscriptions,
   getSubscribedTargetIds,
+  getSubscriptionIdMap,
   SubscriptionTargetInvalidError,
   SubscriptionNotFoundError,
 } = await import("@/server/notifications/subscriptions");
@@ -220,6 +221,35 @@ describe("getSubscribedTargetIds() — батч для follow-кнопок в с
     expect(subscriptionFindMany).toHaveBeenCalledWith({
       where: { userId: "user1", type: "SCHOOL", targetId: { in: ["school1", "school2", "school3"] } },
       select: { targetId: true },
+    });
+  });
+});
+
+describe("getSubscriptionIdMap() — батч id подписки (не только факт наличия) для FollowButton в списках", () => {
+  it("пустой список targetIds — пустая Map без запроса к БД", async () => {
+    const result = await getSubscriptionIdMap("user1", "EVENT", []);
+
+    expect(result).toEqual(new Map());
+    expect(subscriptionFindMany).not.toHaveBeenCalled();
+  });
+
+  it("возвращает Map targetId -> id строки подписки, а не только факт наличия", async () => {
+    subscriptionFindMany.mockResolvedValue([
+      { id: "sub1", targetId: "event1" },
+      { id: "sub3", targetId: "event3" },
+    ]);
+
+    const result = await getSubscriptionIdMap("user1", "EVENT", ["event1", "event2", "event3"]);
+
+    expect(result).toEqual(
+      new Map([
+        ["event1", "sub1"],
+        ["event3", "sub3"],
+      ])
+    );
+    expect(subscriptionFindMany).toHaveBeenCalledWith({
+      where: { userId: "user1", type: "EVENT", targetId: { in: ["event1", "event2", "event3"] } },
+      select: { id: true, targetId: true },
     });
   });
 });

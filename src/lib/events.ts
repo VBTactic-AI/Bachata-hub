@@ -103,11 +103,21 @@ export type EventFilters = {
   schoolSlug?: string;
   dateFrom?: string;
   dateTo?: string;
+  query?: string;
 };
 
 export async function searchEvents(filters: EventFilters) {
   const where: Prisma.EventWhereInput = { ...activeEventFilter() };
 
+  if (filters.query) {
+    // Поиск по названию/организатору/школе — тот же принцип allowlist полей,
+    // что и у остальных фильтров ниже: только то, что и так видно карточкой.
+    where.OR = [
+      { title: { contains: filters.query, mode: "insensitive" } },
+      { organizerName: { contains: filters.query, mode: "insensitive" } },
+      { school: { name: { contains: filters.query, mode: "insensitive" } } },
+    ];
+  }
   if (filters.citySlug) {
     where.city = { slug: filters.citySlug };
   }
