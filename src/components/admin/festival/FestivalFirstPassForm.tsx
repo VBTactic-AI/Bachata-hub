@@ -26,7 +26,22 @@ const PASS_TYPE_LABELS: Record<string, string> = {
 // полной PassFormModal (без Early Bird/доступа к программе/обложки) — это
 // быстрый старт, тонкая настройка доступна сразу после через уже готовый
 // PassManager, который подключается, как только bridge появится.
-export function FestivalFirstPassForm({ festivalId }: { festivalId: string }) {
+export type CreatedFestivalPass = { id: string; name: string; type: string; price: number | null; currency: string | null };
+
+export function FestivalFirstPassForm({
+  festivalId,
+  compact = false,
+  onCreated,
+}: {
+  festivalId: string;
+  // Мастер создания фестиваля (Stage R2, 2026-09-19) переиспользует эту же
+  // форму на шаге 3 для добавления НЕСКОЛЬКИХ пассов подряд, до появления
+  // Festival — там неуместны интро-абзац и заголовок "Первый Pass" (шаг сам
+  // подписан), а после успеха форма должна очищаться для следующего пасса,
+  // а не router.refresh() (см. onCreated ниже).
+  compact?: boolean;
+  onCreated?: (pass: CreatedFestivalPass) => void;
+}) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [type, setType] = useState("FULL_PASS");
@@ -56,6 +71,21 @@ export function FestivalFirstPassForm({ festivalId }: { festivalId: string }) {
         setError(data?.message ?? "Не удалось создать Pass.");
         return;
       }
+      if (onCreated) {
+        const data = await res.json();
+        // Pass.price — Prisma Decimal, сериализуется в JSON как строка.
+        onCreated({
+          id: data.pass.id,
+          name: data.pass.name,
+          type: data.pass.type,
+          price: data.pass.price != null ? Number(data.pass.price) : null,
+          currency: data.pass.currency,
+        });
+        setName("");
+        setPrice("");
+        setIsFree(false);
+        return;
+      }
       router.refresh();
     } finally {
       setSaving(false);
@@ -63,12 +93,16 @@ export function FestivalFirstPassForm({ festivalId }: { festivalId: string }) {
   }
 
   return (
-    <div className="rounded-app border border-admin-border bg-admin-card p-5">
-      <h2 className="m-0 mb-1 text-sm font-semibold uppercase tracking-wide text-admin-muted">Первый Pass</h2>
-      <p className="m-0 mb-3 text-sm text-admin-muted">
-        У фестиваля ещё нет ни одного Pass — без него нельзя опубликовать фестиваль и не появится страница продаж. После создания
-        здесь же откроется полное управление Pass (цены, лимиты, доступ к программе, промокоды, реферальные коды).
-      </p>
+    <div className={compact ? "" : "rounded-app border border-admin-border bg-admin-card p-5"}>
+      {!compact && (
+        <>
+          <h2 className="m-0 mb-1 text-sm font-semibold uppercase tracking-wide text-admin-muted">Первый Pass</h2>
+          <p className="m-0 mb-3 text-sm text-admin-muted">
+            У фестиваля ещё нет ни одного Pass — без него нельзя опубликовать фестиваль и не появится страница продаж. После
+            создания здесь же откроется полное управление Pass (цены, лимиты, доступ к программе, промокоды, реферальные коды).
+          </p>
+        </>
+      )}
 
       <FormRoot onSubmit={handleSubmit} className="max-w-[420px]">
         {error && <p className="m-0 text-sm text-red-400">{error}</p>}
@@ -107,8 +141,8 @@ export function FestivalFirstPassForm({ festivalId }: { festivalId: string }) {
           </div>
         )}
 
-        <Button type="submit" variant="admin" disabled={saving || !name.trim()}>
-          {saving ? "Создание…" : "Создать первый Pass"}
+        <Button type="submit" variant="admin" size={compact ? "sm" : undefined} disabled={saving || !name.trim()}>
+          {saving ? "Создание…" : compact ? "Добавить Pass" : "Создать первый Pass"}
         </Button>
       </FormRoot>
     </div>

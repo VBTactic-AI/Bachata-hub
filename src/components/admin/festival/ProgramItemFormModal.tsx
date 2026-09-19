@@ -45,6 +45,7 @@ export function ProgramItemFormModal({
   teachers,
   linkedEventOptions,
   onClose,
+  onSaved,
 }: {
   festivalId: string;
   mode: "create" | "edit";
@@ -52,6 +53,12 @@ export function ProgramItemFormModal({
   teachers: TeacherOption[];
   linkedEventOptions: LinkedEventOption[];
   onClose: () => void;
+  // Мастер создания фестиваля (Stage R2 переноса UI, 2026-09-19) держит
+  // список пунктов программы в собственном локальном состоянии (страница
+  // /admin/festival/new статична, router.refresh() там некому подхватить —
+  // не привязана к конкретному festivalId) — если передан, модалка отдаёт
+  // созданный пункт вызывающему вместо router.refresh().
+  onSaved?: (item: ProgramItemFormValue) => void;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -101,6 +108,22 @@ export function ProgramItemFormModal({
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         setError(data?.message ?? "Не удалось сохранить пункт программы.");
+        return;
+      }
+      if (onSaved) {
+        const data = await res.json();
+        onSaved({
+          id: data.item.id,
+          title: data.item.title,
+          type: data.item.type,
+          startTime: data.item.startTime,
+          endTime: data.item.endTime,
+          teacherId: data.item.teacherId,
+          linkedEventId: data.item.linkedEventId,
+          capacity: data.item.capacity,
+          showCapacityPublicly: data.item.showCapacityPublicly,
+        });
+        onClose();
         return;
       }
       onClose();
