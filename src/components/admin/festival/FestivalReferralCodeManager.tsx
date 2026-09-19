@@ -29,6 +29,10 @@ type StatsState = { ticketCount: number; totalDiscountAmount: number; totalCommi
 // CRUD-поверхность здесь тоже зеркалит PromoCodeManager.tsx — создание/
 // список/переключение active, без произвольного редактирования и без
 // удаления (см. комментарий в festival-referral-code-service.ts).
+//
+// Создание — оверлей-модалка вместо инлайн-раскрытия (Stage R6 переноса
+// UI-прототипа, 2026-09-19, единый модальный паттерн проекта, как у
+// ProgramItemFormModal/SponsorFormModal).
 export function FestivalReferralCodeManager({
   festivalId,
   initialCodes,
@@ -111,90 +115,11 @@ export function FestivalReferralCodeManager({
     <div className="rounded-app border border-admin-border bg-admin-card p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-admin-muted">Реферальные коды</h2>
-        <Button type="button" variant="adminOutline" size="sm" onClick={() => setOpen((v) => !v)}>
-          {open ? "Отмена" : "+ Код"}
+        <Button type="button" variant="adminOutline" size="sm" onClick={() => setOpen(true)}>
+          + Код
         </Button>
       </div>
 
-      {open && (
-        <div className="mt-3 flex flex-col gap-2 rounded-app-sm border border-admin-border p-3">
-          <div className="grid grid-cols-2 gap-2">
-            <Label className="text-admin-muted">
-              Код
-              <Input value={code} onChange={(e) => setCode(e.target.value)} className={FIELD_CLASS} placeholder="ANA10" />
-            </Label>
-            <Label className="text-admin-muted">
-              Владелец
-              <Select
-                value={ownerType}
-                onChange={(e) => {
-                  const next = e.target.value as "teacher" | "school";
-                  setOwnerType(next);
-                  setOwnerId((next === "teacher" ? teachers : schools)[0]?.id ?? "");
-                }}
-                className={FIELD_CLASS}
-              >
-                <option value="teacher">Артист</option>
-                <option value="school">Школа</option>
-              </Select>
-            </Label>
-          </div>
-
-          <Label className="text-admin-muted">
-            {ownerType === "teacher" ? "Артист" : "Школа"}
-            <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={FIELD_CLASS}>
-              {ownerOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </Label>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Label className="text-admin-muted">
-              Комиссия — тип
-              <Select value={commissionType} onChange={(e) => setCommissionType(e.target.value as "PERCENT" | "FIXED_AMOUNT")} className={FIELD_CLASS}>
-                <option value="PERCENT">%</option>
-                <option value="FIXED_AMOUNT">Сумма</option>
-              </Select>
-            </Label>
-            <Label className="text-admin-muted">
-              Комиссия — размер
-              <Input type="number" min="0" value={commissionValue} onChange={(e) => setCommissionValue(e.target.value)} className={FIELD_CLASS} />
-            </Label>
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-night-text">
-            <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} />
-            Даёт скидку покупателю
-          </label>
-          {hasDiscount && (
-            <div className="grid grid-cols-2 gap-2">
-              <Label className="text-admin-muted">
-                Скидка — тип
-                <Select value={discountType} onChange={(e) => setDiscountType(e.target.value as "PERCENT" | "FIXED_AMOUNT")} className={FIELD_CLASS}>
-                  <option value="PERCENT">%</option>
-                  <option value="FIXED_AMOUNT">Сумма</option>
-                </Select>
-              </Label>
-              <Label className="text-admin-muted">
-                Скидка — размер
-                <Input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className={FIELD_CLASS} />
-              </Label>
-            </div>
-          )}
-
-          <Button type="button" variant="admin" size="sm" disabled={loading || ownerOptions.length === 0} onClick={create}>
-            Создать
-          </Button>
-          {ownerOptions.length === 0 && (
-            <p className="m-0 text-xs text-admin-muted">
-              Нет ни одного {ownerType === "teacher" ? "артиста" : "школы"} для выбора.
-            </p>
-          )}
-        </div>
-      )}
       {error && <p className="m-0 mt-2 text-xs text-red-400">{error}</p>}
 
       {codes.length === 0 ? (
@@ -235,6 +160,110 @@ export function FestivalReferralCodeManager({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={() => setOpen(false)} role="presentation">
+          <div
+            className="flex max-h-[90vh] w-full max-w-[460px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="referral-code-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-admin-border px-5 py-4">
+              <h3 id="referral-code-modal-title" className="m-0 text-[15px] font-extrabold text-night-text">
+                Новый реферальный код
+              </h3>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="flex flex-col gap-3">
+                {error && <p className="m-0 text-sm text-red-400">{error}</p>}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Label className="text-admin-muted">
+                    Код
+                    <Input value={code} onChange={(e) => setCode(e.target.value)} className={FIELD_CLASS} placeholder="ANA10" />
+                  </Label>
+                  <Label className="text-admin-muted">
+                    Владелец
+                    <Select
+                      value={ownerType}
+                      onChange={(e) => {
+                        const next = e.target.value as "teacher" | "school";
+                        setOwnerType(next);
+                        setOwnerId((next === "teacher" ? teachers : schools)[0]?.id ?? "");
+                      }}
+                      className={FIELD_CLASS}
+                    >
+                      <option value="teacher">Артист</option>
+                      <option value="school">Школа</option>
+                    </Select>
+                  </Label>
+                </div>
+
+                <Label className="text-admin-muted">
+                  {ownerType === "teacher" ? "Артист" : "Школа"}
+                  <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={FIELD_CLASS}>
+                    {ownerOptions.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Label className="text-admin-muted">
+                    Комиссия — тип
+                    <Select value={commissionType} onChange={(e) => setCommissionType(e.target.value as "PERCENT" | "FIXED_AMOUNT")} className={FIELD_CLASS}>
+                      <option value="PERCENT">%</option>
+                      <option value="FIXED_AMOUNT">Сумма</option>
+                    </Select>
+                  </Label>
+                  <Label className="text-admin-muted">
+                    Комиссия — размер
+                    <Input type="number" min="0" value={commissionValue} onChange={(e) => setCommissionValue(e.target.value)} className={FIELD_CLASS} />
+                  </Label>
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-night-text">
+                  <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} />
+                  Даёт скидку покупателю
+                </label>
+                {hasDiscount && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Label className="text-admin-muted">
+                      Скидка — тип
+                      <Select value={discountType} onChange={(e) => setDiscountType(e.target.value as "PERCENT" | "FIXED_AMOUNT")} className={FIELD_CLASS}>
+                        <option value="PERCENT">%</option>
+                        <option value="FIXED_AMOUNT">Сумма</option>
+                      </Select>
+                    </Label>
+                    <Label className="text-admin-muted">
+                      Скидка — размер
+                      <Input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className={FIELD_CLASS} />
+                    </Label>
+                  </div>
+                )}
+
+                {ownerOptions.length === 0 && (
+                  <p className="m-0 text-xs text-admin-muted">Нет ни одного {ownerType === "teacher" ? "артиста" : "школы"} для выбора.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-admin-border px-5 py-4">
+              <Button type="button" variant="adminOutline" onClick={() => setOpen(false)} disabled={loading}>
+                Отмена
+              </Button>
+              <Button type="button" variant="admin" disabled={loading || ownerOptions.length === 0} onClick={create}>
+                {loading ? "Создание…" : "Создать"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

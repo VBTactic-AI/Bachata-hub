@@ -13,7 +13,11 @@ export type BroadcastPassOption = { id: string; name: string };
 // инструмент только для ADMIN и работает по всем Pass сайта). clientRequestId
 // генерируется при каждой отправке — идемпотентность на стороне
 // sendBroadcast() (broadcast.ts), защита от двойного клика/сетевого ретрая.
+//
+// Оверлей-модалка вместо всегда развёрнутой формы (Stage R6 переноса
+// UI-прототипа, 2026-09-19, единый модальный паттерн проекта).
 export function FestivalPassBroadcastPanel({ festivalId, passes }: { festivalId: string; passes: BroadcastPassOption[] }) {
+  const [open, setOpen] = useState(false);
   const [passId, setPassId] = useState(passes[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -41,6 +45,10 @@ export function FestivalPassBroadcastPanel({ festivalId, passes }: { festivalId:
       setResult(`Отправлено ${data.recipientCount} получателям.`);
       setTitle("");
       setBody("");
+      setTimeout(() => {
+        setOpen(false);
+        setResult(null);
+      }, 1400);
     } finally {
       setSending(false);
     }
@@ -56,38 +64,70 @@ export function FestivalPassBroadcastPanel({ festivalId, passes }: { festivalId:
   }
 
   return (
-    <div className="rounded-app border border-admin-border bg-admin-card p-4">
-      <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Рассылка держателям Pass</h2>
+    <div className="flex items-center justify-between gap-2 rounded-app border border-admin-border bg-admin-card p-4">
+      <div>
+        <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-admin-muted">Рассылка держателям Pass</h2>
+      </div>
+      <Button type="button" variant="adminOutline" size="sm" onClick={() => setOpen(true)}>
+        Отправить рассылку
+      </Button>
 
-      <FormRoot onSubmit={handleSubmit} className="max-w-none">
-        {error && <p className="m-0 text-sm text-red-400">{error}</p>}
-        {result && <p className="m-0 text-sm text-night-success">{result}</p>}
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={() => !sending && setOpen(false)} role="presentation">
+          <div
+            className="flex max-h-[90vh] w-full max-w-[460px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="broadcast-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-admin-border px-5 py-4">
+              <h3 id="broadcast-modal-title" className="m-0 text-[15px] font-extrabold text-night-text">
+                Рассылка держателям Pass
+              </h3>
+            </div>
 
-        <Label className="text-admin-muted">
-          Pass
-          <Select value={passId} onChange={(e) => setPassId(e.target.value)} className={FIELD_CLASS}>
-            {passes.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </Select>
-        </Label>
+            <FormRoot onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto px-5 py-4">
+                <div className="flex flex-col gap-3">
+                  {error && <p className="m-0 text-sm text-red-400">{error}</p>}
+                  {result && <p className="m-0 text-sm text-night-success">✓ {result}</p>}
 
-        <Label className="text-admin-muted">
-          Заголовок
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} className={FIELD_CLASS} placeholder="Изменение в расписании" required />
-        </Label>
+                  <Label className="text-admin-muted">
+                    Pass
+                    <Select value={passId} onChange={(e) => setPassId(e.target.value)} className={FIELD_CLASS}>
+                      {passes.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Label>
 
-        <Label className="text-admin-muted">
-          Текст
-          <Textarea value={body} onChange={(e) => setBody(e.target.value)} className={FIELD_CLASS} rows={3} required />
-        </Label>
+                  <Label className="text-admin-muted">
+                    Заголовок
+                    <Input value={title} onChange={(e) => setTitle(e.target.value)} className={FIELD_CLASS} placeholder="Изменение в расписании" required />
+                  </Label>
 
-        <Button type="submit" variant="admin" disabled={sending || !title.trim() || !body.trim()}>
-          {sending ? "Отправка…" : "Отправить"}
-        </Button>
-      </FormRoot>
+                  <Label className="text-admin-muted">
+                    Текст
+                    <Textarea value={body} onChange={(e) => setBody(e.target.value)} className={FIELD_CLASS} rows={3} required />
+                  </Label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-admin-border px-5 py-4">
+                <Button type="button" variant="adminOutline" onClick={() => setOpen(false)} disabled={sending}>
+                  Отмена
+                </Button>
+                <Button type="submit" variant="admin" disabled={sending || !title.trim() || !body.trim()}>
+                  {sending ? "Отправка…" : "Отправить"}
+                </Button>
+              </div>
+            </FormRoot>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/admin/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/admin/ConfirmModal";
+import { PencilIcon, PlayIcon, PauseIcon, ArchiveBoxIcon, TrashIcon } from "@/components/admin/icons";
 import { PassFormModal, type PassFormValue, type PassTemplateOption, type AccessTargetOption } from "./PassFormModal";
 
 const PASS_TYPE_LABELS: Record<string, string> = {
@@ -56,6 +58,11 @@ export type PassRow = PassFormValue & {
   availableQuantity: number | null;
 };
 
+// Карточки-строки с прогресс-баром вместо таблицы (перенос UI-прототипа
+// Festival Engine, Stage R6, 2026-09-19, по прямому запросу пользователя —
+// "перевести в карточки повсюду") — компонент общий с обычной консолью
+// события (`/admin/content/[id]/passes`), поэтому решение сознательно
+// затрагивает весь Events Engine, не только фестивали.
 export function PassManager({
   eventSlug,
   registrationsPath,
@@ -72,6 +79,7 @@ export function PassManager({
   const router = useRouter();
   const [modal, setModal] = useState<{ mode: "create" | "edit"; pass?: PassRow } | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<PassRow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function setStatus(passId: string, status: string) {
@@ -96,28 +104,26 @@ export function PassManager({
   // === 0, см. deletePass в pass-service.ts). Для уже проданных — только
   // "Закрыть" (архивация), сервер это и так отклонит понятной ошибкой, но
   // кнопка здесь просто не показывается, чтобы не провоцировать.
-  async function deletePassPermanently(passId: string, name: string) {
-    if (!window.confirm(`Удалить Pass «${name}» безвозвратно? Это действие нельзя отменить.`)) return;
-    setLoadingId(passId);
+  async function deletePassPermanently(pass: PassRow) {
+    setLoadingId(pass.id);
     setError(null);
-    const res = await fetch(`/api/events/${eventSlug}/passes/${passId}`, { method: "DELETE" });
+    const res = await fetch(`/api/events/${eventSlug}/passes/${pass.id}`, { method: "DELETE" });
     setLoadingId(null);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.message || data.error || "Не удалось удалить Pass.");
       return;
     }
+    setConfirmingDelete(null);
     router.refresh();
   }
-
-  const ACTION_CLASS = "text-xs text-admin-muted hover:text-night-text hover:underline disabled:cursor-not-allowed disabled:opacity-50";
 
   // SOLD_OUT/ENDED — только сервер (см. pass-service.ts::syncPassLifecycle),
   // вручную из DRAFT/PAUSED/ACTIVE/ARCHIVED сюда не попасть и отсюда никуда
   // вручную не перейти — поэтому для этих двух статусов action-кнопки нет.
-  function statusActionLabel(pass: PassRow): { label: string; next: string } | null {
-    if (pass.status === "PAUSED" || pass.status === "DRAFT") return { label: "Активировать", next: "ACTIVE" };
-    if (pass.status === "ACTIVE") return { label: "Пауза", next: "PAUSED" };
+  function statusAction(pass: PassRow): { label: string; next: string; icon: React.ReactNode } | null {
+    if (pass.status === "PAUSED" || pass.status === "DRAFT") return { label: "Активировать", next: "ACTIVE", icon: <PlayIcon /> };
+    if (pass.status === "ACTIVE") return { label: "Пауза", next: "PAUSED", icon: <PauseIcon /> };
     return null;
   }
 
@@ -137,76 +143,84 @@ export function PassManager({
       {passes.length === 0 ? (
         <p className="text-sm text-admin-muted">Pass для этого события ещё не созданы.</p>
       ) : (
-        <div className="overflow-x-auto rounded-app border border-admin-border">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Pass</th>
-                <th className="px-3 py-2 text-right font-semibold">Цена</th>
-                <th className="px-3 py-2 font-semibold">Продано / Доступно</th>
-                <th className="px-3 py-2 font-semibold">Статус</th>
-                <th className="px-3 py-2 text-right font-semibold">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {passes.map((pass) => (
-                <tr key={pass.id} className="border-t border-admin-border hover:bg-admin-card2/50">
-                  <td className="px-3 py-2 align-top">
-                    <p className="m-0 font-medium text-night-text">{pass.name}</p>
-                    <p className="m-0 text-xs text-admin-muted">{PASS_TYPE_LABELS[pass.type] ?? pass.type}</p>
-                  </td>
-                  <td className="px-3 py-2 align-top text-right tabular-nums text-night-text">
-                    {pass.price == null ? "Бесплатно" : `${pass.price} ${pass.currency ?? ""}`}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <a href={`${registrationsPath}?pass=${pass.id}`} className="text-sm text-admin-primaryHover hover:underline">
-                      {pass.soldQuantity} / {pass.availableQuantity == null ? "∞" : pass.soldQuantity + pass.availableQuantity}
-                    </a>
-                  </td>
-                  <td className="px-3 py-2 align-top">
+        <div className="rounded-app border border-admin-border">
+          {passes.map((pass) => {
+            const total = pass.availableQuantity == null ? null : pass.soldQuantity + pass.availableQuantity;
+            const pct = total ? Math.min(100, Math.round((pass.soldQuantity / total) * 100)) : null;
+            const action = statusAction(pass);
+            return (
+              <div key={pass.id} className="flex items-center gap-3.5 border-b border-admin-border px-4 py-3 last:border-none">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-app-sm bg-admin-card2 text-base" aria-hidden="true">
+                  🎫
+                </span>
+                <button type="button" onClick={() => setModal({ mode: "edit", pass })} className="min-w-0 flex-1 cursor-pointer text-left">
+                  <span className="block truncate text-sm font-semibold text-night-text">{pass.name}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-admin-muted">
+                    <span>{PASS_TYPE_LABELS[pass.type] ?? pass.type}</span>
                     <StatusBadge label={STATUS_LABELS[pass.status] ?? pass.status} variant={STATUS_VARIANTS[pass.status] ?? "neutral"} />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button type="button" className={ACTION_CLASS} onClick={() => setModal({ mode: "edit", pass })}>
-                        Изменить
-                      </button>
-                      {statusActionLabel(pass) && (
-                        <button
-                          type="button"
-                          disabled={loadingId === pass.id}
-                          className={ACTION_CLASS}
-                          onClick={() => setStatus(pass.id, statusActionLabel(pass)!.next)}
-                        >
-                          {statusActionLabel(pass)!.label}
-                        </button>
-                      )}
-                      {pass.status !== "ARCHIVED" && (
-                        <button
-                          type="button"
-                          disabled={loadingId === pass.id}
-                          className={`${ACTION_CLASS} hover:text-red-400`}
-                          onClick={() => setStatus(pass.id, "ARCHIVED")}
-                        >
-                          Закрыть
-                        </button>
-                      )}
-                      {pass.soldQuantity === 0 && (
-                        <button
-                          type="button"
-                          disabled={loadingId === pass.id}
-                          className={`${ACTION_CLASS} hover:text-red-400`}
-                          onClick={() => deletePassPermanently(pass.id, pass.name)}
-                        >
-                          Удалить
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                </button>
+                <span className="w-20 shrink-0 text-right text-sm font-bold tabular-nums text-night-text">
+                  {pass.price == null ? "Бесплатно" : `${pass.price} ${pass.currency ?? ""}`}
+                </span>
+                <a href={`${registrationsPath}?pass=${pass.id}`} className="w-24 shrink-0 text-right text-xs text-admin-muted hover:text-admin-primaryHover hover:underline">
+                  {pass.soldQuantity} / {total == null ? "∞" : total}
+                  {pct != null && (
+                    <span className="mt-1 block h-[5px] w-full overflow-hidden rounded-full bg-admin-card2">
+                      <span className="block h-full bg-admin-primary" style={{ width: `${pct}%` }} />
+                    </span>
+                  )}
+                </a>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    title="Изменить"
+                    aria-label="Изменить Pass"
+                    onClick={() => setModal({ mode: "edit", pass })}
+                    className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+                  >
+                    <PencilIcon />
+                  </button>
+                  {action && (
+                    <button
+                      type="button"
+                      title={action.label}
+                      aria-label={action.label}
+                      disabled={loadingId === pass.id}
+                      onClick={() => setStatus(pass.id, action.next)}
+                      className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-night-text disabled:opacity-50"
+                    >
+                      {action.icon}
+                    </button>
+                  )}
+                  {pass.status !== "ARCHIVED" && (
+                    <button
+                      type="button"
+                      title="Закрыть"
+                      aria-label="Закрыть Pass"
+                      disabled={loadingId === pass.id}
+                      onClick={() => setStatus(pass.id, "ARCHIVED")}
+                      className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-night-text disabled:opacity-50"
+                    >
+                      <ArchiveBoxIcon />
+                    </button>
+                  )}
+                  {pass.soldQuantity === 0 && (
+                    <button
+                      type="button"
+                      title="Удалить"
+                      aria-label="Удалить Pass"
+                      disabled={loadingId === pass.id}
+                      onClick={() => setConfirmingDelete(pass)}
+                      className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-red-400/10 hover:text-red-400 disabled:opacity-50"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -218,6 +232,18 @@ export function PassManager({
           templates={templates}
           accessOptions={accessOptions}
           onClose={() => setModal(null)}
+        />
+      )}
+
+      {confirmingDelete && (
+        <ConfirmModal
+          title="Удалить Pass?"
+          message={`«${confirmingDelete.name}» будет удалён безвозвратно — это действие нельзя отменить.`}
+          confirmLabel="Удалить"
+          danger
+          pending={loadingId === confirmingDelete.id}
+          onConfirm={() => deletePassPermanently(confirmingDelete)}
+          onClose={() => setConfirmingDelete(null)}
         />
       )}
     </div>
