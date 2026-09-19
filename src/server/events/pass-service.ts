@@ -305,13 +305,21 @@ export async function listPassesForEvent(eventId: string, user: User): Promise<P
 // которая вообще показывает Pass гостям — /festivals/[slug]). Только
 // ACTIVE/SOLD_OUT — DRAFT/PAUSED/ARCHIVED/ENDED организатор ещё не готов
 // либо больше не хочет показывать посетителям.
-export async function listPublicPassesForEvent(eventId: string): Promise<PassWithAvailability[]> {
+//
+// priceTiers — добавлено в Stage R9 переноса UI-прототипа (2026-09-19), чтобы
+// публичная карточка Pass могла показать текущую цену по тарифу (Early
+// Bird/Regular/...) и обратный отсчёт до конца текущего тарифа — тот же
+// getCurrentPassPrice(), что уже используется в door-sale-service.ts.
+export type PublicPassRow = PassWithAvailability & { priceTiers: PassPriceTier[] };
+
+export async function listPublicPassesForEvent(eventId: string): Promise<PublicPassRow[]> {
   const passes = await prisma.pass.findMany({
     where: { eventId, status: { in: ["ACTIVE", "SOLD_OUT"] } },
+    include: { priceTiers: { orderBy: { sortOrder: "asc" } } },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
   const synced = await Promise.all(passes.map((p) => syncPassLifecycle(p)));
-  return synced.map(withAvailability);
+  return synced.map((p, i) => ({ ...withAvailability(p), priceTiers: passes[i].priceTiers }));
 }
 
 export async function getPass(passId: string, user: User): Promise<PassWithAvailability> {

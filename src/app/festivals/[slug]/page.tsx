@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getFestivalBySlug, computeFestivalStatus } from "@/server/events/festival-service";
-import { listPublicPassesForEvent } from "@/server/events/pass-service";
+import { listPublicPassesForEvent, getCurrentPassPrice, type PublicPassRow } from "@/server/events/pass-service";
 import { listPublicFestivalSponsors } from "@/server/events/festival-sponsor-service";
 import { listPublicFestivalFaqItems } from "@/server/events/festival-faq-service";
 import { listPublicFestivalReviews } from "@/server/events/festival-review-service";
@@ -13,15 +13,9 @@ import { safeJsonLd } from "@/lib/json-ld";
 import { EventRegistrationButton } from "@/components/EventRegistrationButton";
 import { FestivalReviewForm } from "@/components/FestivalReviewForm";
 import { FestivalGuestQuestionForm } from "@/components/FestivalGuestQuestionForm";
+import { FestivalPublicProgram, type PublicProgramItem } from "@/components/FestivalPublicProgram";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
-
-const PROGRAM_ITEM_TYPE_LABELS: Record<string, string> = {
-  WORKSHOP: "Мастер-класс",
-  PARTY: "Вечеринка",
-  COMPETITION: "Конкурс",
-  OTHER: "Другое",
-};
 
 const REFUND_POLICY_LABELS: Record<string, string> = {
   NONE: "Без возврата",
@@ -29,6 +23,17 @@ const REFUND_POLICY_LABELS: Record<string, string> = {
   PARTIAL: "Частичный возврат (с комиссией)",
   FULL: "Полный возврат в любой момент",
 };
+
+// Активный ценовой период Pass прямо сейчас — тот же фильтр, что и внутри
+// getCurrentPassPrice() (door-sale-service.ts использует её же для чекаута),
+// здесь дополнительно нужен сам объект тира (не только цену), чтобы показать
+// дедлайн (validUntil) как обратный отсчёт.
+function getActiveTier(tiers: PublicPassRow["priceTiers"], now: Date = new Date()) {
+  const active = tiers
+    .filter((t) => (t.validFrom == null || t.validFrom <= now) && (t.validUntil == null || t.validUntil >= now))
+    .sort((a, b) => b.sortOrder - a.sortOrder);
+  return active[0] ?? null;
+}
 
 async function getVisibleFestival(slug: string) {
   const festival = await getFestivalBySlug(slug);
@@ -145,47 +150,23 @@ export default async function FestivalPage({ params }: { params: Promise<{ slug:
           {programDays.length > 0 && (
             <section>
               <h2 className="m-0 mb-3 font-night text-base font-bold text-night-text">Программа</h2>
-              <div className="flex flex-col gap-5">
-                {programDays.map(([day, items]) => (
-                  <div key={day}>
-                    <p className="m-0 mb-2 text-xs font-bold uppercase tracking-wide text-night-muted">{day}</p>
-                    <div className="flex flex-col gap-2">
-                      {items.map((item) => {
-                        const body = (
-                          <>
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="m-0 text-sm font-semibold text-night-text">{item.title}</p>
-                              <span className="shrink-0 rounded-full bg-night-card2 px-2.5 py-1 text-xs font-semibold text-night-pink">
-                                {PROGRAM_ITEM_TYPE_LABELS[item.type] ?? item.type}
-                              </span>
-                            </div>
-                            <p className="m-0 mt-0.5 text-xs text-night-muted">
-                              {[
-                                formatEventTime(item.startTime),
-                                item.teacher?.name,
-                                item.capacity != null && item.showCapacityPublicly ? `до ${item.capacity} чел.` : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </p>
-                          </>
-                        );
-                        return (
-                          <div key={item.id} className="rounded-app-sm border border-night-border bg-night-card px-3.5 py-3">
-                            {item.linkedEvent ? (
-                              <a href={`/events/${item.linkedEvent.slug}`} className="block no-underline hover:no-underline">
-                                {body}
-                              </a>
-                            ) : (
-                              body
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <FestivalPublicProgram
+                days={programDays.map(([day, items]) => [
+                  day,
+                  items.map(
+                    (item): PublicProgramItem => ({
+                      id: item.id,
+                      title: item.title,
+                      type: item.type,
+                      timeLabel: formatEventTime(item.startTime),
+                      teacherName: item.teacher?.name ?? null,
+                      capacity: item.capacity,
+                      showCapacityPublicly: item.showCapacityPublicly,
+                      linkedEventSlug: item.linkedEvent?.slug ?? null,
+                    })
+                  ),
+                ])}
+              />
             </section>
           )}
 
@@ -193,19 +174,35 @@ export default async function FestivalPage({ params }: { params: Promise<{ slug:
             <section>
               <h2 className="m-0 mb-3 font-night text-base font-bold text-night-text">Пассы</h2>
               <div className="flex flex-col gap-2">
-                {passes.map((p) => (
-                  <div key={p.id} className="rounded-app-sm border border-night-border bg-night-card px-3.5 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-night-text">{p.name}</span>
-                      <span className="tabular-nums text-night-muted">{p.price != null ? `${p.price} ${p.currency ?? ""}`.trim() : "Бесплатно"}</span>
+                {passes.map((p) => {
+                  const activeTier = getActiveTier(p.priceTiers);
+                  const effective = getCurrentPassPrice(p, p.priceTiers);
+                  const basePrice = p.price == null ? null : Number(p.price);
+                  const showStrike = activeTier != null && basePrice != null && effective.price != null && effective.price < basePrice;
+                  return (
+                    <div key={p.id} className="rounded-app-sm border border-night-border bg-night-card px-3.5 py-3">
+                      {activeTier?.validUntil && (
+                        <span className="mb-1.5 inline-block rounded-app-sm bg-night-warning/15 px-2 py-1 text-[11px] font-bold text-night-warning">
+                          🔥 {activeTier.label} до {formatEventDate(activeTier.validUntil)}
+                        </span>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-night-text">{p.name}</span>
+                        <span className="flex items-baseline gap-1.5 tabular-nums">
+                          {showStrike && <span className="text-xs text-night-muted line-through">{basePrice}</span>}
+                          <span className="font-semibold text-night-text">
+                            {effective.price != null ? `${effective.price} ${effective.currency ?? ""}`.trim() : "Бесплатно"}
+                          </span>
+                        </span>
+                      </div>
+                      {p.description && <p className="m-0 mt-1 text-sm text-night-muted">{p.description}</p>}
+                      <p className="m-0 mt-1 text-xs text-night-muted">
+                        {p.status === "SOLD_OUT" ? "Мест не осталось" : "Условия возврата: "}
+                        {p.status !== "SOLD_OUT" && (REFUND_POLICY_LABELS[p.refundPolicy] ?? p.refundPolicy)}
+                      </p>
                     </div>
-                    {p.description && <p className="m-0 mt-1 text-sm text-night-muted">{p.description}</p>}
-                    <p className="m-0 mt-1 text-xs text-night-muted">
-                      {p.status === "SOLD_OUT" ? "Мест не осталось" : "Условия возврата: "}
-                      {p.status !== "SOLD_OUT" && (REFUND_POLICY_LABELS[p.refundPolicy] ?? p.refundPolicy)}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <p className="m-0 mt-2 text-xs text-night-muted">
                 Чтобы купить Pass, сначала зарегистрируйтесь ниже — организатор свяжется с вами и оформит оплату.
@@ -252,9 +249,18 @@ export default async function FestivalPage({ params }: { params: Promise<{ slug:
           )}
 
           <section>
-            <h2 className="m-0 mb-3 font-night text-base font-bold text-night-text">
-              Отзывы участников{avgRating != null ? ` · ${avgRating.toFixed(1)} ★` : ""}
-            </h2>
+            <h2 className="m-0 mb-3 font-night text-base font-bold text-night-text">Отзывы участников</h2>
+            {avgRating != null && (
+              <div className="mb-3 flex items-center gap-3">
+                <span className="font-night text-3xl font-extrabold text-night-text">{avgRating.toFixed(1)}</span>
+                <div>
+                  <p className="m-0 tracking-wide text-night-pink">{"★".repeat(Math.round(avgRating))}{"☆".repeat(5 - Math.round(avgRating))}</p>
+                  <p className="m-0 text-xs text-night-muted">
+                    {reviews.length} {reviews.length === 1 ? "отзыв" : "отзывов"}
+                  </p>
+                </div>
+              </div>
+            )}
             {reviews.length > 0 && (
               <div className="mb-3 flex flex-col gap-2">
                 {reviews.map((r) => (

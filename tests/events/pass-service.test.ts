@@ -440,6 +440,7 @@ describe("listPublicPassesForEvent() — Stage UI-5, без RBAC", () => {
     const result = await listPublicPassesForEvent("event1");
     expect(passFindMany).toHaveBeenCalledWith({
       where: { eventId: "event1", status: { in: ["ACTIVE", "SOLD_OUT"] } },
+      include: { priceTiers: { orderBy: { sortOrder: "asc" } } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
     expect(result).toHaveLength(1);
