@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/admin/ConfirmModal";
+import { ArchiveBoxIcon } from "@/components/admin/icons";
 
 export function FestivalArchiveButton({ festivalId, name }: { festivalId: string; name: string }) {
   const router = useRouter();
@@ -29,7 +30,14 @@ export function FestivalArchiveButton({ festivalId, name }: { festivalId: string
 
   return (
     <>
-      <Button type="button" variant="adminOutline" onClick={() => setConfirming(true)} disabled={pending}>
+      <Button
+        type="button"
+        variant="adminOutline"
+        className="border-night-warning/50 text-night-warning hover:border-night-warning"
+        onClick={() => setConfirming(true)}
+        disabled={pending}
+      >
+        <ArchiveBoxIcon />
         Архивировать
       </Button>
       {confirming && (

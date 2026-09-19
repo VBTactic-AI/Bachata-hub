@@ -552,6 +552,57 @@ export async function setPromoCodeActive(promoCodeId: string, user: User, isActi
   return prisma.promoCode.update({ where: { id: promoCodeId }, data: { isActive } });
 }
 
+export type PromoCodePatch = Partial<{
+  code: string;
+  discountType: PromoDiscountType;
+  discountValue: number;
+  maxUses: number | null;
+  validUntil: Date | null;
+  isActive: boolean;
+}>;
+
+// Редактирование через попап (перенос UI-прототипа, 2026-09-20, по прямому
+// запросу пользователя) — только собственные поля кода, area/passIds не
+// трогаем (в самом попапе прототипа их тоже нет отдельно от создания).
+export async function updatePromoCode(promoCodeId: string, user: User, patch: PromoCodePatch): Promise<PromoCode> {
+  const code = await prisma.promoCode.findUnique({ where: { id: promoCodeId }, include: { event: true } });
+  if (!code) throw new RegistrationNotFoundError();
+  if (!isOwnerOrAdmin(code.event, user)) throw new RegistrationForbiddenError("forbidden");
+  validatePromoCodeInput({ code: patch.code, discountType: patch.discountType ?? code.discountType, discountValue: patch.discountValue ?? undefined });
+
+  try {
+    return await prisma.promoCode.update({
+      where: { id: promoCodeId },
+      data: {
+        ...(patch.code !== undefined ? { code: patch.code.trim().toUpperCase() } : {}),
+        ...(patch.discountType !== undefined ? { discountType: patch.discountType } : {}),
+        ...(patch.discountValue !== undefined ? { discountValue: patch.discountValue } : {}),
+        ...(patch.maxUses !== undefined ? { maxUses: patch.maxUses } : {}),
+        ...(patch.validUntil !== undefined ? { validUntil: patch.validUntil } : {}),
+        ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
+      },
+    });
+  } catch (err) {
+    if ((err as { code?: string })?.code === "P2002") {
+      throw new PassValidationError("duplicate_promo_code", "Такой код уже используется в этом событии.");
+    }
+    throw err;
+  }
+}
+
+// Настоящее удаление — только если кодом ещё никто не воспользовался
+// (usedCount === 0, тот же принцип, что и у deletePass — история применения
+// скидки не должна стираться молча).
+export async function deletePromoCode(promoCodeId: string, user: User): Promise<void> {
+  const code = await prisma.promoCode.findUnique({ where: { id: promoCodeId }, include: { event: true } });
+  if (!code) throw new RegistrationNotFoundError();
+  if (!isOwnerOrAdmin(code.event, user)) throw new RegistrationForbiddenError("forbidden");
+  if (code.usedCount > 0) {
+    throw new PassValidationError("promo_code_in_use", "Промокод уже использовался — его нельзя удалить, только деактивировать.");
+  }
+  await prisma.promoCode.delete({ where: { id: promoCodeId } });
+}
+
 export type ActivePromoCodeOption = {
   id: string;
   code: string;

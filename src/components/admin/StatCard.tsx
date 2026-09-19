@@ -14,6 +14,16 @@ const PERCENT_TONE = {
   danger: "text-red-400",
 } as const;
 
+// Цвет самого числа (не только кружка иконки) — перенос UI-прототипа
+// Festival Engine, Stage F (2026-09-20, по прямому запросу пользователя:
+// "выдели суммы доход/расход зелёным/красным как в артефакте"). Опционален
+// и не меняет поведение уже существующих мест использования StatCard.
+const VALUE_TONE = {
+  primary: "text-night-text",
+  success: "text-night-success",
+  danger: "text-red-400",
+} as const;
+
 // Переиспользуемая KPI-карточка (CLAUDE.md/задача redesign §21 — не плодить
 // дубликаты инлайн-вёрстки). icon/tone/percent — опциональны (redesign
 // вкладки "Участники", 2026-09-09, по референсу пользователя): без них
@@ -29,6 +39,7 @@ export function StatCard({
   onClick,
   active,
   href,
+  valueTone,
 }: {
   label: string;
   value: string | number;
@@ -36,6 +47,9 @@ export function StatCard({
   icon?: React.ReactNode;
   tone?: keyof typeof ICON_TONE;
   percent?: number;
+  // Красит само число (Доход — зелёным, Расход — красным и т.д.) — отдельно
+  // от tone, которое красит только кружок иконки/значок процента.
+  valueTone?: keyof typeof VALUE_TONE;
   // Необязательно — карточка одновременно и сводка, и быстрый фильтр (по
   // запросу пользователя, 2026-09-09: "ещё фильтр оплаты" — второй, более
   // заметный вход в тот же фильтр, что и выпадающий список над таблицей).
@@ -57,7 +71,7 @@ export function StatCard({
           {percent !== undefined && <span className={`text-sm font-semibold ${PERCENT_TONE[tone]}`}>{percent}%</span>}
         </div>
         <p className="m-0 mt-2 text-sm text-admin-muted">{label}</p>
-        <p className="m-0 mt-0.5 text-2xl font-extrabold text-night-text">{value}</p>
+        <p className={cn("m-0 mt-0.5 text-2xl font-extrabold", valueTone ? VALUE_TONE[valueTone] : "text-night-text")}>{value}</p>
       </>
     );
 

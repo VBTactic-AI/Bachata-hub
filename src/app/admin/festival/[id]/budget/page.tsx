@@ -31,13 +31,14 @@ export default async function FestivalBudgetPage({ params }: { params: Promise<{
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Доход" value={`${summary.totalIncome} BYN`} icon={<CheckCircleIcon />} tone="success" />
-        <StatCard label="Расходы" value={`${summary.totalExpenses} BYN`} icon={<AlertIcon />} tone="danger" />
+        <StatCard label="Доход" value={`${summary.totalIncome} BYN`} icon={<CheckCircleIcon />} tone="success" valueTone="success" />
+        <StatCard label="Расходы" value={`${summary.totalExpenses} BYN`} icon={<AlertIcon />} tone="danger" valueTone="danger" />
         <StatCard
           label="Баланс"
-          value={`${summary.balance} BYN`}
+          value={`${summary.balance >= 0 ? "+" : ""}${summary.balance} BYN`}
           icon={<TargetIcon />}
           tone={summary.balance >= 0 ? "success" : "danger"}
+          valueTone={summary.balance >= 0 ? "success" : "danger"}
         />
         <StatCard label="Маржа" value={marginPct == null ? "—" : `${marginPct}%`} icon={<CardIcon />} tone="primary" />
       </div>
@@ -46,12 +47,12 @@ export default async function FestivalBudgetPage({ params }: { params: Promise<{
         <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Доход — из чего складывается</h2>
         <div className="flex flex-col">
           <div className="flex items-center justify-between border-b border-admin-border py-2 text-sm last:border-none">
-            <span className="text-night-text">Продажа пассов</span>
-            <span className="font-bold tabular-nums text-night-text">{summary.passRevenue} BYN</span>
+            <span className="text-night-text">🎫 Продажа пассов</span>
+            <span className="font-bold tabular-nums text-night-success">{summary.passRevenue} BYN</span>
           </div>
           <div className="flex items-center justify-between py-2 text-sm">
-            <span className="text-night-text">Спонсорские взносы</span>
-            <span className="font-bold tabular-nums text-night-text">{summary.sponsorIncome} BYN</span>
+            <span className="text-night-text">🤝 Спонсорские взносы</span>
+            <span className="font-bold tabular-nums text-night-success">{summary.sponsorIncome} BYN</span>
           </div>
         </div>
       </div>

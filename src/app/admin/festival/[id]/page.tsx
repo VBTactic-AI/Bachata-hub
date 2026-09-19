@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getFestivalForEdit, computeFestivalStatus } from "@/server/events/festival-service";
 import { RegistrationForbiddenError, RegistrationNotFoundError } from "@/server/events/registration-service";
 import { FestivalOverviewForm } from "@/components/admin/festival/FestivalOverviewForm";
+import { FestivalCoverUpload } from "@/components/admin/festival/FestivalCoverUpload";
 import { StatCard } from "@/components/admin/StatCard";
 import { GridIcon, CalendarIcon, PeopleIcon, CardIcon } from "@/components/admin/icons";
 import { cn } from "@/lib/cn";
@@ -46,18 +47,24 @@ export default async function FestivalOverviewPage({ params }: { params: Promise
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <FestivalOverviewForm
-          festival={{
-            id: festival.id,
-            name: festival.name,
-            description: festival.description,
-            cityId: festival.cityId,
-            venueName: festival.venueName,
-            startsAt: festival.startsAt.toISOString(),
-            endsAt: festival.endsAt ? festival.endsAt.toISOString() : null,
-          }}
-          cities={cities}
-        />
+        <div className="flex flex-col gap-4">
+          <div className="rounded-app border border-admin-border bg-admin-card p-4">
+            <h2 className="m-0 mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Обложка карточки</h2>
+            <FestivalCoverUpload festivalId={festival.id} coverUrl={festival.coverUrl} />
+          </div>
+          <FestivalOverviewForm
+            festival={{
+              id: festival.id,
+              name: festival.name,
+              description: festival.description,
+              cityId: festival.cityId,
+              venueName: festival.venueName,
+              startsAt: festival.startsAt.toISOString(),
+              endsAt: festival.endsAt ? festival.endsAt.toISOString() : null,
+            }}
+            cities={cities}
+          />
+        </div>
 
         <div className={cn("rounded-app border-l-[3px] bg-admin-card p-4", festival.eventId ? "border-l-night-success" : "border-l-night-warning")}>
           <h2 className="m-0 mb-2 text-sm font-semibold uppercase tracking-wide text-admin-muted">Связанное событие</h2>

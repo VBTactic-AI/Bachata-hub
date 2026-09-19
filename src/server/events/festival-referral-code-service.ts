@@ -8,12 +8,16 @@ import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFound
 // Реферальный код артиста/школы — ОТДЕЛЬНАЯ модель от PromoCode (решение
 // пользователя, docs/FESTIVAL_UI_TO_DB_PLAN.md §2.4): в первую очередь
 // атрибуция продаж конкретному владельцу, скидка покупателю опциональна.
-// CRUD-поверхность сознательно зеркалит уже существующий PromoCode
-// (createPromoCode/listPromoCodesForEvent/setPromoCodeActive в
-// pass-service.ts) — НЕТ отдельного "update" произвольных полей и НЕТ
-// физического удаления: код может уже быть привязан к Ticket
-// (referralCodeId), удаление истории продаж запрещено (CLAUDE.md §18).
-// Деактивация (active=false) — единственный способ "выключить" код.
+// CRUD-поверхность зеркалит уже существующий PromoCode (createPromoCode/
+// listPromoCodesForEvent/setPromoCodeActive в pass-service.ts).
+//
+// Редактирование/удаление (2026-09-20, по прямому запросу пользователя —
+// отменяет более раннее ограничение "без update/delete"): updateReferralCode
+// меняет условия для БУДУЩИХ применений, не переписывая уже случившуюся
+// атрибуцию (снимки скидки/комиссии лежат на самом Ticket, не пересчитываются
+// задним числом). deleteReferralCode — настоящее удаление, но ТОЛЬКО пока
+// кодом ни разу не воспользовались (CLAUDE.md §18) — иначе только
+// деактивация (active=false).
 
 export class FestivalReferralCodeValidationError extends EventsValidationError {}
 
@@ -115,6 +119,74 @@ async function requireAccessForCode(codeId: string, user: User) {
 export async function setReferralCodeActive(codeId: string, user: User, active: boolean): Promise<FestivalReferralCode> {
   await requireAccessForCode(codeId, user);
   return prisma.festivalReferralCode.update({ where: { id: codeId }, data: { active } });
+}
+
+export type FestivalReferralCodePatch = Partial<{
+  code: string;
+  owner: ReferralCodeOwner;
+  discountType: PromoDiscountType | null;
+  discountValue: number | null;
+  commissionType: ReferralCommissionType;
+  commissionValue: number;
+  active: boolean;
+  startsAt: Date | null;
+  expiresAt: Date | null;
+}>;
+
+// Полное редактирование попапом (2026-09-20, по прямому запросу
+// пользователя — отменяет более раннее решение "без произвольного
+// редактирования", см. комментарий у модели выше) — владелец/код можно
+// менять и после того, как код уже привёл покупки: это не переписывает
+// историю атрибуции задним числом (снимки уже лежат на Ticket), только
+// определяет условия для БУДУЩИХ применений.
+export async function updateReferralCode(codeId: string, user: User, patch: FestivalReferralCodePatch): Promise<FestivalReferralCode> {
+  const existing = await requireAccessForCode(codeId, user);
+  validate({
+    code: patch.code ?? existing.code,
+    owner: patch.owner ?? { ownerTeacherId: existing.ownerTeacherId ?? undefined, ownerSchoolId: existing.ownerSchoolId ?? undefined } as ReferralCodeOwner,
+    discountType: patch.discountType !== undefined ? patch.discountType : existing.discountType,
+    discountValue: patch.discountValue !== undefined ? patch.discountValue : existing.discountValue == null ? null : Number(existing.discountValue),
+    commissionType: patch.commissionType ?? existing.commissionType,
+    commissionValue: patch.commissionValue ?? Number(existing.commissionValue),
+    startsAt: patch.startsAt !== undefined ? patch.startsAt : existing.startsAt,
+    expiresAt: patch.expiresAt !== undefined ? patch.expiresAt : existing.expiresAt,
+  });
+
+  try {
+    return await prisma.festivalReferralCode.update({
+      where: { id: codeId },
+      data: {
+        ...(patch.code !== undefined ? { code: patch.code.trim().toUpperCase() } : {}),
+        ...(patch.owner !== undefined ? { ownerTeacherId: patch.owner.ownerTeacherId ?? null, ownerSchoolId: patch.owner.ownerSchoolId ?? null } : {}),
+        ...(patch.discountType !== undefined ? { discountType: patch.discountType } : {}),
+        ...(patch.discountValue !== undefined ? { discountValue: patch.discountValue } : {}),
+        ...(patch.commissionType !== undefined ? { commissionType: patch.commissionType } : {}),
+        ...(patch.commissionValue !== undefined ? { commissionValue: patch.commissionValue } : {}),
+        ...(patch.active !== undefined ? { active: patch.active } : {}),
+        ...(patch.startsAt !== undefined ? { startsAt: patch.startsAt } : {}),
+        ...(patch.expiresAt !== undefined ? { expiresAt: patch.expiresAt } : {}),
+      },
+    });
+  } catch (err) {
+    if ((err as { code?: string })?.code === "P2002") {
+      throw new FestivalReferralCodeValidationError("duplicate_referral_code", "Такой код уже используется в этом фестивале.");
+    }
+    throw err;
+  }
+}
+
+// Настоящее удаление — только если код ещё ни разу не был применён
+// (CLAUDE.md §18 — история атрибуции/комиссии не удаляется молча).
+export async function deleteReferralCode(codeId: string, user: User): Promise<void> {
+  await requireAccessForCode(codeId, user);
+  const ticketCount = await prisma.ticket.count({ where: { referralCodeId: codeId } });
+  if (ticketCount > 0) {
+    throw new FestivalReferralCodeValidationError(
+      "referral_code_in_use",
+      "Кодом уже воспользовались — его нельзя удалить, только деактивировать."
+    );
+  }
+  await prisma.festivalReferralCode.delete({ where: { id: codeId } });
 }
 
 export async function listReferralCodesForFestival(festivalId: string, user: User): Promise<FestivalReferralCode[]> {

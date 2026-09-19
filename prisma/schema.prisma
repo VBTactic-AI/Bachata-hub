@@ -1622,6 +1622,11 @@ model Festival {
   slug        String    @unique
   name        String
   description String?
+  // Обложка карточки — минимальное решение (одно фото), не полноценная
+  // галерея, как у Event.EventMedia (2026-09-20, перенос UI-прототипа —
+  // сам прототип оставлял это открытым вопросом, выбран более простой
+  // вариант, см. FestivalOverviewForm.tsx/festival-media-service.ts).
+  coverUrl    String?
   cityId      String
   city        City      @relation(fields: [cityId], references: [id])
   // Свободный текст, как Event.venueName/Competition.venue — формальной

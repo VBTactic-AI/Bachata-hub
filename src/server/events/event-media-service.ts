@@ -119,6 +119,17 @@ export async function listEventMedia(eventId: string) {
   return prisma.eventMedia.findMany({ where: { eventId }, orderBy: { sortOrder: "asc" } });
 }
 
+// Общая часть pipeline (валидация -> сжатие -> Storage), без записи в
+// EventMedia — для мест, которым не нужна полноценная галерея, только одно
+// изображение (2026-09-20: обложка Festival, см. festival-service.ts::
+// uploadFestivalCover). keyPrefix — путь внутри того же бакета "event-images"
+// (например `festivals/<id>`), не обязательно связан с реальным Event.
+export async function uploadGenericImage(keyPrefix: string, file: File): Promise<{ url: string }> {
+  const prepared = await prepareUpload(file);
+  const { url } = await uploadToStorage(keyPrefix, prepared.buffer);
+  return { url };
+}
+
 export async function uploadEventMedia(eventId: string, user: User, file: File) {
   await assertOwnership(eventId, user);
   const prepared = await prepareUpload(file);

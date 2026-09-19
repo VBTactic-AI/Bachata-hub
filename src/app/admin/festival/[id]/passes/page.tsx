@@ -120,6 +120,8 @@ export default async function FestivalPassesPage({ params }: { params: Promise<{
     ownerLabel: c.ownerTeacherId
       ? (teacherNameById.get(c.ownerTeacherId) ?? "—")
       : (schoolNameById.get(c.ownerSchoolId!) ?? "—"),
+    ownerTeacherId: c.ownerTeacherId,
+    ownerSchoolId: c.ownerSchoolId,
     discountType: c.discountType,
     discountValue: c.discountValue == null ? null : Number(c.discountValue),
     commissionType: c.commissionType,

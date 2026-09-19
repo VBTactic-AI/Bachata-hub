@@ -7,6 +7,7 @@ import { decidePublishModeration } from "./event-service";
 import { validateCommon as validatePassInput, deriveRefundFields, type PassInput } from "./pass-service";
 import { isOwnerOrAdminFestival, hasFestivalAccess } from "./access";
 import { EventsValidationError, RegistrationForbiddenError, RegistrationNotFoundError } from "./registration-service";
+import { uploadGenericImage } from "./event-media-service";
 
 // Festival Engine — сервисный слой (2026-09-17, план
 // docs/FESTIVAL_SERVICE_LAYER_PLAN.md, Stage 1). До этой правки сервисного
@@ -92,6 +93,21 @@ export async function getFestivalForEdit(festivalId: string, user: User) {
   if (!festival) throw new RegistrationNotFoundError();
   if (!(await hasFestivalAccess(festival, user))) throw new RegistrationForbiddenError("forbidden");
   return festival;
+}
+
+// Обложка карточки фестиваля (2026-09-20, перенос UI-прототипа) —
+// минимальное решение (одно фото, Festival.coverUrl), переиспользует общий
+// upload-pipeline события (валидация/сжатие/Storage), не полноценную
+// EventMedia-галерею. Менять может владелец/ADMIN — тот же isOwnerOrAdminFestival,
+// что и остальное редактирование Обзора (не команда — обложка не входит в
+// "просмотр участников").
+export async function uploadFestivalCover(festivalId: string, user: User, file: File): Promise<Festival> {
+  const festival = await prisma.festival.findUnique({ where: { id: festivalId } });
+  if (!festival) throw new RegistrationNotFoundError();
+  if (!isOwnerOrAdminFestival(festival, user)) throw new RegistrationForbiddenError("forbidden");
+
+  const { url } = await uploadGenericImage(`festivals/${festivalId}`, file);
+  return prisma.festival.update({ where: { id: festivalId }, data: { coverUrl: url } });
 }
 
 // Публичная — без RBAC, но и без прав вызывающего решать, что показывать:

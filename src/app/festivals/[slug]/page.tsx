@@ -8,7 +8,7 @@ import { listPublicFestivalFaqItems } from "@/server/events/festival-faq-service
 import { listPublicFestivalReviews } from "@/server/events/festival-review-service";
 import { listPublicGuestQuestions } from "@/server/events/festival-guest-question-service";
 import { getCurrentUser } from "@/lib/auth";
-import { formatDateTime, formatEventDate, formatEventTime } from "@/lib/format";
+import { formatEventDate, formatEventTime, formatEventDateRange } from "@/lib/format";
 import { safeJsonLd } from "@/lib/json-ld";
 import { EventRegistrationButton } from "@/components/EventRegistrationButton";
 import { FestivalReviewForm } from "@/components/FestivalReviewForm";
@@ -16,6 +16,7 @@ import { FestivalGuestQuestionForm } from "@/components/FestivalGuestQuestionFor
 import { FestivalPublicProgram, type PublicProgramItem } from "@/components/FestivalPublicProgram";
 import { Card } from "@/components/ui/card";
 import { Tag } from "@/components/ui/tag";
+import { cn } from "@/lib/cn";
 
 const REFUND_POLICY_LABELS: Record<string, string> = {
   NONE: "Без возврата",
@@ -89,6 +90,7 @@ export default async function FestivalPage({ params }: { params: Promise<{ slug:
   ]);
 
   const avgRating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : null;
+  const teacherNames = [...new Map(festival.programItems.filter((i) => i.teacher).map((i) => [i.teacher!.id, i.teacher!.name])).values()];
 
   // Программа по дням — та же группировка, что и у сессий мастер-класса на
   // /events/[slug]/page.tsx.
@@ -129,19 +131,34 @@ export default async function FestivalPage({ params }: { params: Promise<{ slug:
         </div>
       )}
 
-      <div className="flex flex-col gap-3">
-        <Tag className="bg-night-card2 text-night-pink">Фестиваль</Tag>
-        <h1 className="m-0 font-night text-[1.7rem] font-extrabold leading-tight text-night-text sm:text-[2.1rem]">{festival.name}</h1>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-          <span className="font-semibold tabular-nums text-night-text">
-            {formatDateTime(festival.startsAt)}
-            {festival.endsAt ? ` — ${formatDateTime(festival.endsAt)}` : ""}
-          </span>
+      {festival.coverUrl && (
+        <div className="relative -mx-4 aspect-[21/9] overflow-hidden sm:mx-0 sm:rounded-app">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={festival.coverUrl} alt="" className="h-full w-full object-cover" />
         </div>
-        <p className="m-0 text-sm text-night-muted">
-          {festival.venueName ? `${festival.venueName} · ` : ""}
-          {festival.city.nameRu}
-        </p>
+      )}
+
+      <div className="flex flex-col gap-3">
+        <Tag className="bg-night-card2 text-night-pink">Фестиваль · {festival.city.nameRu}</Tag>
+        <h1 className="m-0 font-night text-[1.7rem] font-extrabold leading-tight text-night-text sm:text-[2.1rem]">{festival.name}</h1>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-night-muted">
+          <span>
+            📅 <b className="font-semibold text-night-text">{formatEventDateRange(festival.startsAt, festival.endsAt)}</b>
+          </span>
+          <span>
+            📍 <b className="font-semibold text-night-text">{festival.venueName ?? festival.city.nameRu}</b>
+          </span>
+          {teacherNames.length > 0 && (
+            <span>
+              🎓 <b className="font-semibold text-night-text">{teacherNames.length} преподавателей</b>
+            </span>
+          )}
+          {festival.programItems.length > 0 && (
+            <span>
+              🕺 <b className="font-semibold text-night-text">{festival.programItems.length} пунктов программы</b>
+            </span>
+          )}
+        </div>
         {festival.description && <p className="m-0 max-w-[64ch] whitespace-pre-wrap text-sm leading-relaxed text-night-muted">{festival.description}</p>}
       </div>
 
@@ -170,43 +187,16 @@ export default async function FestivalPage({ params }: { params: Promise<{ slug:
             </section>
           )}
 
-          {passes.length > 0 && (
+          {teacherNames.length > 0 && (
             <section>
-              <h2 className="m-0 mb-3 font-night text-base font-bold text-night-text">Пассы</h2>
-              <div className="flex flex-col gap-2">
-                {passes.map((p) => {
-                  const activeTier = getActiveTier(p.priceTiers);
-                  const effective = getCurrentPassPrice(p, p.priceTiers);
-                  const basePrice = p.price == null ? null : Number(p.price);
-                  const showStrike = activeTier != null && basePrice != null && effective.price != null && effective.price < basePrice;
-                  return (
-                    <div key={p.id} className="rounded-app-sm border border-night-border bg-night-card px-3.5 py-3">
-                      {activeTier?.validUntil && (
-                        <span className="mb-1.5 inline-block rounded-app-sm bg-night-warning/15 px-2 py-1 text-[11px] font-bold text-night-warning">
-                          🔥 {activeTier.label} до {formatEventDate(activeTier.validUntil)}
-                        </span>
-                      )}
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-night-text">{p.name}</span>
-                        <span className="flex items-baseline gap-1.5 tabular-nums">
-                          {showStrike && <span className="text-xs text-night-muted line-through">{basePrice}</span>}
-                          <span className="font-semibold text-night-text">
-                            {effective.price != null ? `${effective.price} ${effective.currency ?? ""}`.trim() : "Бесплатно"}
-                          </span>
-                        </span>
-                      </div>
-                      {p.description && <p className="m-0 mt-1 text-sm text-night-muted">{p.description}</p>}
-                      <p className="m-0 mt-1 text-xs text-night-muted">
-                        {p.status === "SOLD_OUT" ? "Мест не осталось" : "Условия возврата: "}
-                        {p.status !== "SOLD_OUT" && (REFUND_POLICY_LABELS[p.refundPolicy] ?? p.refundPolicy)}
-                      </p>
-                    </div>
-                  );
-                })}
+              <h2 className="m-0 mb-3 font-night text-base font-bold text-night-text">Преподаватели</h2>
+              <div className="flex flex-wrap gap-2">
+                {teacherNames.map((name) => (
+                  <span key={name} className="rounded-full border border-night-border bg-night-card px-3.5 py-2 text-sm font-semibold text-night-text">
+                    {name}
+                  </span>
+                ))}
               </div>
-              <p className="m-0 mt-2 text-xs text-night-muted">
-                Чтобы купить Pass, сначала зарегистрируйтесь ниже — организатор свяжется с вами и оформит оплату.
-              </p>
             </section>
           )}
 
@@ -293,7 +283,60 @@ export default async function FestivalPage({ params }: { params: Promise<{ slug:
         </main>
 
         <aside className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start">
-          <Card className="flex flex-col gap-3 border-night-border bg-night-card">
+          {passes.length > 0 && (
+            <div>
+              <h3 className="m-0 mb-2 text-sm font-bold text-night-text">Пассы</h3>
+              <div className="flex flex-col gap-3">
+                {passes.map((p, i) => {
+                  const activeTier = getActiveTier(p.priceTiers);
+                  const effective = getCurrentPassPrice(p, p.priceTiers);
+                  const basePrice = p.price == null ? null : Number(p.price);
+                  const showStrike = activeTier != null && basePrice != null && effective.price != null && effective.price < basePrice;
+                  const highlighted = i === 0;
+                  return (
+                    <div
+                      key={p.id}
+                      className={cn(
+                        "rounded-app border p-4",
+                        highlighted ? "border-night-primary bg-gradient-to-b from-night-primary/10 to-night-card" : "border-night-border bg-night-card"
+                      )}
+                    >
+                      {activeTier?.validUntil && (
+                        <span className="mb-2 inline-block rounded-app-sm bg-night-warning/15 px-2 py-1 text-[11px] font-bold text-night-warning">
+                          🔥 {activeTier.label} до {formatEventDate(activeTier.validUntil)}
+                        </span>
+                      )}
+                      <p className="m-0 text-sm font-extrabold text-night-text">{p.name}</p>
+                      <p className="m-0 mt-1 flex items-baseline gap-1.5 text-xl font-extrabold text-night-text">
+                        {effective.price != null ? `${effective.price} ${effective.currency ?? ""}`.trim() : "Бесплатно"}
+                        {showStrike && <s className="text-sm font-normal text-night-muted">{basePrice}</s>}
+                      </p>
+                      {p.description && <p className="m-0 mt-1.5 text-xs leading-relaxed text-night-muted">{p.description}</p>}
+                      <p className="m-0 mt-2 text-xs text-night-muted">
+                        {p.status === "SOLD_OUT" ? "Мест не осталось" : `↩ ${REFUND_POLICY_LABELS[p.refundPolicy] ?? p.refundPolicy}`}
+                      </p>
+                      {p.status !== "SOLD_OUT" && (
+                        <a
+                          href="#register"
+                          className={cn(
+                            "mt-3 block rounded-full py-2.5 text-center text-sm font-bold no-underline hover:no-underline",
+                            highlighted ? "bg-gradient-to-r from-night-primary to-[#d6006c] text-white" : "border border-night-border text-night-text"
+                          )}
+                        >
+                          Купить {p.name}
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="m-0 mt-2 text-xs text-night-muted">
+                Онлайн-оплаты нет — зарегистрируйтесь ниже, организатор свяжется с вами и оформит выдачу Pass.
+              </p>
+            </div>
+          )}
+
+          <Card id="register" className="flex flex-col gap-3 border-night-border bg-night-card">
             {bridgeEvent && (
               <div className="flex flex-col gap-1.5">
                 <EventRegistrationButton eventSlug={bridgeEvent.slug} initialStatus={myRegistration?.status ?? null} loggedIn={!!user} />

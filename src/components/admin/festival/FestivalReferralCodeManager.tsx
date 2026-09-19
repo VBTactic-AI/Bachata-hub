@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Input, Select, Label } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-
-const FIELD_CLASS = "border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/admin/ConfirmModal";
+import { PencilIcon, TrashIcon } from "@/components/admin/icons";
+import { ReferralCodeFormModal } from "./ReferralCodeFormModal";
 
 export type ReferralOwnerOption = { id: string; label: string };
 
@@ -14,6 +14,8 @@ export type ReferralCodeRow = {
   id: string;
   code: string;
   ownerLabel: string;
+  ownerTeacherId?: string | null;
+  ownerSchoolId?: string | null;
   discountType: "PERCENT" | "FIXED_AMOUNT" | null;
   discountValue: number | null;
   commissionType: "PERCENT" | "FIXED_AMOUNT";
@@ -26,13 +28,14 @@ type StatsState = { ticketCount: number; totalDiscountAmount: number; totalCommi
 // Реферальные коды артистов/школ — Stage 4 сервисного слоя
 // (docs/FESTIVAL_SERVICE_LAYER_PLAN.md), отдельная модель от PromoCode:
 // атрибуция продаж конкретному владельцу, скидка покупателю опциональна.
-// CRUD-поверхность здесь тоже зеркалит PromoCodeManager.tsx — создание/
-// список/переключение active, без произвольного редактирования и без
-// удаления (см. комментарий в festival-referral-code-service.ts).
 //
-// Создание — оверлей-модалка вместо инлайн-раскрытия (Stage R6 переноса
-// UI-прототипа, 2026-09-19, единый модальный паттерн проекта, как у
-// ProgramItemFormModal/SponsorFormModal).
+// Создание/редактирование — оверлей-модалка (Stage R6/Stage F переноса
+// UI-прототипа, 2026-09-19/20, единый модальный паттерн проекта) — попап
+// отдаёт готовую строку через onSaved, поэтому новый код появляется в
+// таблице сразу, без router.refresh() (найденный вживую баг — раньше
+// строка не добавлялась в локальный список, только после ручного
+// обновления страницы). Удаление корзинкой — по прямому запросу
+// пользователя, отменяет более раннее решение "без удаления".
 export function FestivalReferralCodeManager({
   festivalId,
   initialCodes,
@@ -46,62 +49,25 @@ export function FestivalReferralCodeManager({
 }) {
   const router = useRouter();
   const [codes, setCodes] = useState(initialCodes);
-  const [open, setOpen] = useState(false);
-  const [code, setCode] = useState("");
-  const [ownerType, setOwnerType] = useState<"teacher" | "school">("teacher");
-  const [ownerId, setOwnerId] = useState(teachers[0]?.id ?? "");
-  const [commissionType, setCommissionType] = useState<"PERCENT" | "FIXED_AMOUNT">("PERCENT");
-  const [commissionValue, setCommissionValue] = useState("");
-  const [hasDiscount, setHasDiscount] = useState(false);
-  const [discountType, setDiscountType] = useState<"PERCENT" | "FIXED_AMOUNT">("PERCENT");
-  const [discountValue, setDiscountValue] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<{ mode: "create" | "edit"; code?: ReferralCodeRow } | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<ReferralCodeRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, StatsState>>({});
 
-  const ownerOptions = ownerType === "teacher" ? teachers : schools;
-
-  async function create() {
-    if (!code.trim() || !commissionValue || !ownerId) return;
-    setLoading(true);
-    setError(null);
-    const res = await fetch(`/api/festivals/${festivalId}/referral-codes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code: code.trim(),
-        [ownerType === "teacher" ? "ownerTeacherId" : "ownerSchoolId"]: ownerId,
-        commissionType,
-        commissionValue: Number(commissionValue),
-        ...(hasDiscount ? { discountType, discountValue: Number(discountValue) } : {}),
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setLoading(false);
+  async function handleDelete(c: ReferralCodeRow) {
+    setDeleting(true);
+    setDeleteError(null);
+    const res = await fetch(`/api/festivals/${festivalId}/referral-codes/${c.id}`, { method: "DELETE" });
+    setDeleting(false);
     if (!res.ok) {
-      setError(data.message || data.error || "Не удалось создать код.");
+      const data = await res.json().catch(() => null);
+      setDeleteError(data?.message ?? "Не удалось удалить код.");
       return;
     }
-    setCode("");
-    setCommissionValue("");
-    setDiscountValue("");
-    setHasDiscount(false);
-    setOpen(false);
+    setCodes((prev) => prev.filter((x) => x.id !== c.id));
+    setConfirmingDelete(null);
     router.refresh();
-  }
-
-  async function toggleActive(id: string, active: boolean) {
-    setLoading(true);
-    const res = await fetch(`/api/festivals/${festivalId}/referral-codes/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active }),
-    });
-    setLoading(false);
-    if (res.ok) {
-      setCodes((prev) => prev.map((c) => (c.id === id ? { ...c, active } : c)));
-      router.refresh();
-    }
   }
 
   async function loadStats(id: string) {
@@ -115,12 +81,10 @@ export function FestivalReferralCodeManager({
     <div className="rounded-app border border-admin-border bg-admin-card p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-admin-muted">Реферальные коды</h2>
-        <Button type="button" variant="adminOutline" size="sm" onClick={() => setOpen(true)}>
-          + Код
+        <Button type="button" variant="adminOutline" size="sm" onClick={() => setModal({ mode: "create" })}>
+          Добавить реферальный код
         </Button>
       </div>
-
-      {error && <p className="m-0 mt-2 text-xs text-red-400">{error}</p>}
 
       {codes.length === 0 ? (
         <p className="m-0 mt-3 text-sm text-admin-muted">Реферальных кодов пока нет.</p>
@@ -141,9 +105,27 @@ export function FestivalReferralCodeManager({
                       скидка {c.discountType === "PERCENT" ? `${c.discountValue}%` : `${c.discountValue} BYN`}
                     </span>
                   )}
-                  <button type="button" disabled={loading} className="ml-auto" onClick={() => toggleActive(c.id, !c.active)}>
-                    <StatusBadge label={c.active ? "Активен" : "Выключен"} variant={c.active ? "success" : "neutral"} />
-                  </button>
+                  <StatusBadge label={c.active ? "Активен" : "Выключен"} variant={c.active ? "success" : "neutral"} className="ml-auto" />
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      title="Редактировать"
+                      aria-label="Редактировать код"
+                      onClick={() => setModal({ mode: "edit", code: c })}
+                      className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-admin-card2 hover:text-night-text"
+                    >
+                      <PencilIcon />
+                    </button>
+                    <button
+                      type="button"
+                      title="Удалить"
+                      aria-label="Удалить код"
+                      onClick={() => setConfirmingDelete(c)}
+                      className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-red-400/10 hover:text-red-400"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
                 </div>
                 {codeStats == null ? (
                   <button type="button" className="mt-1 text-xs text-admin-primaryHover hover:underline" onClick={() => loadStats(c.id)}>
@@ -163,108 +145,34 @@ export function FestivalReferralCodeManager({
         </div>
       )}
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5" onClick={() => setOpen(false)} role="presentation">
-          <div
-            className="flex max-h-[90vh] w-full max-w-[460px] flex-col overflow-hidden rounded-app border border-admin-border bg-admin-card shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="referral-code-modal-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-admin-border px-5 py-4">
-              <h3 id="referral-code-modal-title" className="m-0 text-[15px] font-extrabold text-night-text">
-                Новый реферальный код
-              </h3>
-            </div>
+      {modal && (
+        <ReferralCodeFormModal
+          festivalId={festivalId}
+          mode={modal.mode}
+          initial={modal.code}
+          teachers={teachers}
+          schools={schools}
+          onClose={() => setModal(null)}
+          onSaved={(saved) => {
+            setCodes((prev) => (modal.mode === "create" ? [saved, ...prev] : prev.map((c) => (c.id === saved.id ? saved : c))));
+            router.refresh();
+          }}
+        />
+      )}
 
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              <div className="flex flex-col gap-3">
-                {error && <p className="m-0 text-sm text-red-400">{error}</p>}
-
-                <div className="grid grid-cols-2 gap-2">
-                  <Label className="text-admin-muted">
-                    Код
-                    <Input value={code} onChange={(e) => setCode(e.target.value)} className={FIELD_CLASS} placeholder="ANA10" />
-                  </Label>
-                  <Label className="text-admin-muted">
-                    Владелец
-                    <Select
-                      value={ownerType}
-                      onChange={(e) => {
-                        const next = e.target.value as "teacher" | "school";
-                        setOwnerType(next);
-                        setOwnerId((next === "teacher" ? teachers : schools)[0]?.id ?? "");
-                      }}
-                      className={FIELD_CLASS}
-                    >
-                      <option value="teacher">Артист</option>
-                      <option value="school">Школа</option>
-                    </Select>
-                  </Label>
-                </div>
-
-                <Label className="text-admin-muted">
-                  {ownerType === "teacher" ? "Артист" : "Школа"}
-                  <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={FIELD_CLASS}>
-                    {ownerOptions.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Label>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <Label className="text-admin-muted">
-                    Комиссия — тип
-                    <Select value={commissionType} onChange={(e) => setCommissionType(e.target.value as "PERCENT" | "FIXED_AMOUNT")} className={FIELD_CLASS}>
-                      <option value="PERCENT">%</option>
-                      <option value="FIXED_AMOUNT">Сумма</option>
-                    </Select>
-                  </Label>
-                  <Label className="text-admin-muted">
-                    Комиссия — размер
-                    <Input type="number" min="0" value={commissionValue} onChange={(e) => setCommissionValue(e.target.value)} className={FIELD_CLASS} />
-                  </Label>
-                </div>
-
-                <label className="flex items-center gap-2 text-sm text-night-text">
-                  <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} />
-                  Даёт скидку покупателю
-                </label>
-                {hasDiscount && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <Label className="text-admin-muted">
-                      Скидка — тип
-                      <Select value={discountType} onChange={(e) => setDiscountType(e.target.value as "PERCENT" | "FIXED_AMOUNT")} className={FIELD_CLASS}>
-                        <option value="PERCENT">%</option>
-                        <option value="FIXED_AMOUNT">Сумма</option>
-                      </Select>
-                    </Label>
-                    <Label className="text-admin-muted">
-                      Скидка — размер
-                      <Input type="number" min="0" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className={FIELD_CLASS} />
-                    </Label>
-                  </div>
-                )}
-
-                {ownerOptions.length === 0 && (
-                  <p className="m-0 text-xs text-admin-muted">Нет ни одного {ownerType === "teacher" ? "артиста" : "школы"} для выбора.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-admin-border px-5 py-4">
-              <Button type="button" variant="adminOutline" onClick={() => setOpen(false)} disabled={loading}>
-                Отмена
-              </Button>
-              <Button type="button" variant="admin" disabled={loading || ownerOptions.length === 0} onClick={create}>
-                {loading ? "Создание…" : "Создать"}
-              </Button>
-            </div>
-          </div>
-        </div>
+      {confirmingDelete && (
+        <ConfirmModal
+          title="Удалить реферальный код?"
+          message={deleteError ?? `«${confirmingDelete.code}» будет удалён без возможности восстановления.`}
+          confirmLabel="Удалить"
+          danger
+          pending={deleting}
+          onConfirm={() => handleDelete(confirmingDelete)}
+          onClose={() => {
+            setConfirmingDelete(null);
+            setDeleteError(null);
+          }}
+        />
       )}
     </div>
   );

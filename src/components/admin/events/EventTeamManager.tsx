@@ -2,45 +2,46 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Input, Select, Label } from "@/components/ui/field";
+import { Input, Label } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
-
-const ROLE_LABELS: Record<string, string> = {
-  MANAGER: "Менеджер",
-  EDITOR: "Редактор",
-  CHECK_IN: "Check-in",
-  FINANCE: "Финансы",
-};
+import { ConfirmModal } from "@/components/admin/ConfirmModal";
+import { TrashIcon } from "@/components/admin/icons";
 
 const FIELD_CLASS = "border-admin-border bg-admin-card2 text-night-text focus:border-admin-primary focus:ring-admin-primary/20";
+
+// Роль сегодня не даёт разных прав — все варианты видят и меняют статус/
+// оплату участников одинаково (QA BUG-011) — фиксированное значение,
+// UI-выбор роли убран целиком (Stage F, 2026-09-20, по прямому запросу
+// пользователя), чтобы не обещать разграничение доступа, которого нет.
+const DEFAULT_ROLE = "MANAGER";
 
 export type EventTeamMemberRow = { id: string; role: string; user: { id: string; email: string; displayName: string | null } };
 type SearchResult = { userId: string; displayName: string; email: string };
 
-// Events Engine, этап 5 — минимальная команда события (см. комментарий у
-// EventTeamMember в schema.prisma: все роли сегодня дают одинаковый
-// эффективный доступ, role — пока только для отображения "кто есть кто").
-// Добавление — поиск существующего пользователя по имени (2026-09-18, по
-// прямому запросу пользователя — заменяет прежний точный email, тот же
-// UX-паттерн, что и DancerSearchBox/AddParticipantPanel в Competition
-// Engine: организатор ищет, выбирает из результатов, кнопка недоступна,
-// пока никто не выбран).
+// Events Engine, этап 5 — минимальная команда события. Добавление — поиск
+// существующего пользователя по имени (2026-09-18, по прямому запросу
+// пользователя — заменяет прежний точный email, тот же UX-паттерн, что и
+// DancerSearchBox/AddParticipantPanel в Competition Engine: организатор
+// ищет, выбирает из результатов, кнопка недоступна, пока никто не выбран).
+//
+// Строка участника — только имя + корзинка с подсветкой при наведении
+// (перенос UI-прототипа Festival Engine, Stage F, 2026-09-20, по прямому
+// запросу пользователя — email и роль в списке НЕ показываются, в отличие
+// от самого прототипа, который их рисует: тут прямое решение пользователя
+// сознательно упрощает экран).
 export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: string; initialMembers: EventTeamMemberRow[] }) {
   const router = useRouter();
   const [members, setMembers] = useState(initialMembers);
-  // Фильтр по уже добавленным участникам (перенос UI-прототипа Festival
-  // Engine, Stage R5, 2026-09-19, по прямому запросу пользователя — только
-  // фильтр, без переключателя поиска по email) — локальный, без похода на
-  // сервер: список участников события/фестиваля короткий (единицы-десятки),
-  // не тысячи.
+  // Фильтр по уже добавленным участникам (Stage R5, 2026-09-19) — локальный,
+  // без похода на сервер: список участников события/фестиваля короткий.
   const [memberFilter, setMemberFilter] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [selected, setSelected] = useState<SearchResult | null>(null);
-  const [role, setRole] = useState("MANAGER");
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingRemove, setConfirmingRemove] = useState<EventTeamMemberRow | null>(null);
 
   async function search() {
     setError(null);
@@ -63,7 +64,7 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
     const res = await fetch(`/api/events/${eventSlug}/team`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: selected.userId, role }),
+      body: JSON.stringify({ userId: selected.userId, role: DEFAULT_ROLE }),
     });
     const data = await res.json().catch(() => ({}));
     setLoading(false);
@@ -73,7 +74,7 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
     }
     setMembers((prev) => [
       ...prev.filter((m) => m.user.id !== selected.userId),
-      { id: data.member.id, role, user: { id: selected.userId, email: selected.email, displayName: selected.displayName } },
+      { id: data.member.id, role: DEFAULT_ROLE, user: { id: selected.userId, email: selected.email, displayName: selected.displayName } },
     ]);
     setSelected(null);
     setQuery("");
@@ -81,30 +82,23 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
     router.refresh();
   }
 
-  async function removeMember(userId: string) {
+  async function removeMember(member: EventTeamMemberRow) {
     setLoading(true);
     setError(null);
-    const res = await fetch(`/api/events/${eventSlug}/team/${userId}`, { method: "DELETE" });
+    const res = await fetch(`/api/events/${eventSlug}/team/${member.user.id}`, { method: "DELETE" });
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Не удалось убрать участника.");
       return;
     }
-    setMembers((prev) => prev.filter((m) => m.user.id !== userId));
+    setMembers((prev) => prev.filter((m) => m.user.id !== member.user.id));
+    setConfirmingRemove(null);
     router.refresh();
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {/* QA BUG-011: роль сегодня не даёт разных прав — все 4 варианта видят
-          и меняют статус/оплату участников одинаково; название роли не
-          обещает больше этого (например, "Редактор" НЕ даёт прав
-          редактировать само событие). */}
-      <p className="m-0 text-xs text-admin-muted">
-        Роль пока влияет только на подпись в списке — все роли дают одинаковый доступ: просмотр участников и изменение их статуса/оплаты.
-      </p>
-
       <div className="flex flex-col gap-2 rounded-app border border-admin-border bg-admin-card/50 p-3">
         <Label className="text-admin-muted">
           Найти участника по имени
@@ -161,21 +155,9 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
           </div>
         )}
 
-        <div className="flex flex-wrap items-end gap-2">
-          <Label className="text-admin-muted">
-            Роль
-            <Select value={role} onChange={(e) => setRole(e.target.value)} className={FIELD_CLASS} style={{ maxWidth: 180 }}>
-              {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-          </Label>
-          <Button type="button" variant="admin" disabled={loading || !selected} onClick={addMember}>
-            Добавить
-          </Button>
-        </div>
+        <Button type="button" variant="admin" disabled={loading || !selected} onClick={addMember} className="w-fit">
+          Добавить
+        </Button>
       </div>
       {error && <p className="m-0 text-sm text-red-400">{error}</p>}
 
@@ -187,7 +169,7 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
             <Input
               value={memberFilter}
               onChange={(e) => setMemberFilter(e.target.value)}
-              placeholder="Фильтр по имени/email…"
+              placeholder="Фильтр по имени…"
               className={FIELD_CLASS}
               style={{ maxWidth: 280 }}
             />
@@ -195,45 +177,45 @@ export function EventTeamManager({ eventSlug, initialMembers }: { eventSlug: str
           {(() => {
             const q = memberFilter.trim().toLowerCase();
             const filtered = q
-              ? members.filter((m) => (m.user.displayName ?? "").toLowerCase().includes(q) || m.user.email.toLowerCase().includes(q))
+              ? members.filter((m) => (m.user.displayName ?? m.user.email).toLowerCase().includes(q))
               : members;
             if (filtered.length === 0) return <p className="m-0 text-sm text-admin-muted">Никого не найдено по фильтру.</p>;
             return (
-              <div className="overflow-x-auto rounded-app border border-admin-border">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-admin-card2 text-xs font-semibold uppercase tracking-wide text-admin-disabled">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Имя</th>
-                      <th className="px-3 py-2 font-semibold">Роль</th>
-                      <th className="px-3 py-2 text-right font-semibold">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((m) => (
-                      <tr key={m.id} className="border-t border-admin-border">
-                        <td className="px-3 py-2 text-night-text">
-                          {m.user.displayName ?? m.user.email}
-                          {m.user.displayName && <span className="ml-1.5 text-xs text-admin-muted">{m.user.email}</span>}
-                        </td>
-                        <td className="px-3 py-2 text-admin-muted">{ROLE_LABELS[m.role] ?? m.role}</td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            disabled={loading}
-                            onClick={() => removeMember(m.user.id)}
-                            className="text-xs text-red-400 hover:underline disabled:opacity-50"
-                          >
-                            Убрать
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="rounded-app border border-admin-border">
+                {filtered.map((m) => (
+                  <div key={m.id} className="flex items-center gap-3 border-b border-admin-border px-3.5 py-2.5 last:border-none">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-admin-card2 text-xs font-bold text-admin-muted">
+                      {(m.user.displayName ?? m.user.email).slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-night-text">{m.user.displayName ?? m.user.email}</span>
+                    <button
+                      type="button"
+                      title="Убрать из команды"
+                      aria-label="Убрать из команды"
+                      disabled={loading}
+                      onClick={() => setConfirmingRemove(m)}
+                      className="inline-flex items-center justify-center rounded-app-sm p-1.5 text-admin-muted hover:bg-red-400/10 hover:text-red-400 disabled:opacity-50"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                ))}
               </div>
             );
           })()}
         </div>
+      )}
+
+      {confirmingRemove && (
+        <ConfirmModal
+          title="Убрать из команды?"
+          message={`«${confirmingRemove.user.displayName ?? confirmingRemove.user.email}» потеряет доступ к управлению этим событием.`}
+          confirmLabel="Убрать"
+          danger
+          pending={loading}
+          onConfirm={() => removeMember(confirmingRemove)}
+          onClose={() => setConfirmingRemove(null)}
+        />
       )}
     </div>
   );

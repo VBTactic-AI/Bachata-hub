@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/admin/ConfirmModal";
+import { TrashIcon } from "@/components/admin/icons";
 
 // Настоящее физическое удаление — только для черновика без bridge-Event
 // (deleteFestivalDraft, festival-service.ts, CLAUDE.md §18) — сервер сам
@@ -40,6 +41,7 @@ export function FestivalDeleteButton({ festivalId, name }: { festivalId: string;
         onClick={() => setConfirming(true)}
         disabled={pending}
       >
+        <TrashIcon />
         Удалить черновик
       </Button>
       {confirming && (
